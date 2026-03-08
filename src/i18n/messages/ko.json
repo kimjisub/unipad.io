@@ -1,0 +1,69 @@
+{
+  "common": {
+    "download": "다운로드",
+    "docs": "문서",
+    "notices": "공지사항",
+    "backTo": "{page}(으)로 돌아가기",
+    "copyright": "© {year} UniPad. All rights reserved.",
+    "downloadOnGooglePlay": "Google Play에서 다운로드",
+    "pages": "페이지",
+    "openMenu": "메뉴 열기",
+    "closeMenu": "메뉴 닫기",
+    "mainNav": "메인 내비게이션",
+    "skipToContent": "본문으로 건너뛰기",
+    "skipToNav": "내비게이션으로 이동",
+    "community": "커뮤니티"
+  },
+  "hero": {
+    "tagline": "리듬을 연주하다, UniPad",
+    "description": "스마트폰으로 Launchpad를 연주하세요. UniPack 시스템으로 프로젝트를 공유하고, 자동 연주와 연습 모드로 효율적으로 학습할 수 있습니다.",
+    "downloadCta": "Google Play에서 다운로드",
+    "viewDocs": "문서 보기",
+    "typewriter": {
+      "0": "리듬을 연주하다",
+      "1": "음악을 만들다",
+      "2": "UniPack을 공유하다",
+      "3": "어디서든 연습하다"
+    }
+  },
+  "features": {
+    "title": "기능",
+    "subtitle": "UniPad가 제공하는 핵심 기능들을 소개합니다.",
+    "practice": {
+      "title": "효율적인 연습",
+      "description": "자동 연주와 연습 모드를 활용하여 효과적으로 퍼포먼스를 연습할 수 있습니다."
+    },
+    "unipack": {
+      "title": "UniPack 시스템",
+      "description": "프로젝트 파일을 쉽게 주고받고 재생할 수 있는 UniPack 포맷을 지원합니다."
+    },
+    "integration": {
+      "title": "강력한 연동성",
+      "description": "USB로 실제 Launchpad에 연결하면 즉시 연주할 수 있습니다."
+    }
+  },
+  "footer": {
+    "description": "스마트폰으로 Launchpad를 연주하세요. UniPack 시스템으로 프로젝트를 공유하고 연습할 수 있습니다."
+  },
+  "docs": {
+    "title": "문서",
+    "subtitle": "UniPad 관련 문서들을 확인할 수 있습니다.",
+    "unipack": {
+      "title": "UniPack",
+      "description": "UniPack 프로젝트 파일 포맷의 구조와 사용법을 알아보세요."
+    },
+    "terms": {
+      "title": "이용약관",
+      "description": "개인정보 처리방침 및 앱 사용 범위를 확인하세요."
+    }
+  },
+  "notices": {
+    "title": "공지사항",
+    "subtitle": "UniPad의 최신 소식과 업데이트를 확인하세요.",
+    "readMore": "더 읽기",
+    "postedOn": "{date}에 게시됨",
+    "by": "{author} 작성",
+    "noPosts": "공지사항이 아직 없습니다.",
+    "backToList": "공지사항으로 돌아가기"
+  }
+}

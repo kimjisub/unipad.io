@@ -1,0 +1,69 @@
+{
+  "common": {
+    "download": "Download",
+    "docs": "Docs",
+    "notices": "Notices",
+    "backTo": "Back to {page}",
+    "copyright": "© {year} UniPad. All rights reserved.",
+    "downloadOnGooglePlay": "Download on Google Play",
+    "pages": "Pages",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "mainNav": "Main navigation",
+    "skipToContent": "Skip to content",
+    "skipToNav": "Go to navigation",
+    "community": "Community"
+  },
+  "hero": {
+    "tagline": "Play Rhythm, UniPad",
+    "description": "Play Launchpad on your smartphone. Share projects with the UniPack system, and learn efficiently with auto-play and practice modes.",
+    "downloadCta": "Download on Google Play",
+    "viewDocs": "View Docs",
+    "typewriter": {
+      "0": "Play Rhythm",
+      "1": "Create Music",
+      "2": "Share UniPacks",
+      "3": "Practice Anywhere"
+    }
+  },
+  "features": {
+    "title": "Features",
+    "subtitle": "Discover the core features of UniPad.",
+    "practice": {
+      "title": "Efficient Practice",
+      "description": "Practice your performance effectively with auto-play and practice modes."
+    },
+    "unipack": {
+      "title": "UniPack System",
+      "description": "Easily share and play project files using the UniPack format."
+    },
+    "integration": {
+      "title": "Powerful Integration",
+      "description": "Connect to a real Launchpad via USB and start playing immediately."
+    }
+  },
+  "footer": {
+    "description": "Play Launchpad on your smartphone. Share projects and practice with the UniPack system."
+  },
+  "docs": {
+    "title": "Documentation",
+    "subtitle": "Browse UniPad documentation.",
+    "unipack": {
+      "title": "UniPack",
+      "description": "Learn the structure and usage of the UniPack project file format."
+    },
+    "terms": {
+      "title": "Terms of Use",
+      "description": "Check the privacy policy and app usage scope."
+    }
+  },
+  "notices": {
+    "title": "Notices",
+    "subtitle": "Latest news and updates from UniPad.",
+    "readMore": "Read more",
+    "postedOn": "Posted on {date}",
+    "by": "by {author}",
+    "noPosts": "No notices yet.",
+    "backToList": "Back to Notices"
+  }
+}

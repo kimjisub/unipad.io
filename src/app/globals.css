@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #161e2b;
+    --foreground: #ffffff;
+
+    --card: #1e2a3a;
+    --card-foreground: #ffffff;
+
+    --primary: #ff8f00;
+    --primary-foreground: #ffffff;
+
+    --secondary: #00b8d4;
+    --secondary-foreground: #ffffff;
+
+    --muted: #414F66;
+    --muted-foreground: #a6b4c9;
+
+    --accent: #ff8f00;
+    --accent-foreground: #ffffff;
+
+    --border: #2a3650;
+    --ring: #ff8f00;
+
+    --mesh-color-1: #ff8f00;
+    --mesh-color-2: #00b8d4;
+    --mesh-color-3: #009db5;
+    --mesh-color-4: #ffa726;
+  }
+
+  *:focus {
+    outline: none;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  html {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  body {
+    font-size: 15px;
+    line-height: 1.6;
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  @media (min-width: 640px) {
+    body {
+      font-size: 16px;
+    }
+  }
+}
+
+@layer components {
+  .glass-card {
+    background-color: var(--card);
+    @apply border border-border rounded-xl;
+  }
+}
+
+/* Animated Gradient Text */
+@keyframes gradient-flow {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+.animated-gradient-text {
+  background: linear-gradient(
+    270deg,
+    var(--accent),
+    var(--mesh-color-2),
+    var(--mesh-color-4),
+    var(--mesh-color-2),
+    var(--accent)
+  );
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: gradient-flow 6s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-gradient-text {
+    animation: none;
+    background-size: 100% 100%;
+    background-position: 0% 50%;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skip Link */
+.skip-link {
+  position: absolute;
+  top: -2.5rem;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--foreground);
+}
+
+/* Prose styling for docs */
+.prose {
+  --tw-prose-links: var(--accent);
+}

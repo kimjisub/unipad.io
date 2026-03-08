@@ -1,0 +1,17 @@
+# Git
+.git
+
+# Development
+.env.local
+.env.development
+
+# Large/unnecessary files
+*.log
+*.tsbuildinfo
+
+# pnpm store (should never be in serverless functions)
+.pnpm-store
+node_modules/.pnpm-store
+
+# Cached content (not needed in production)
+src/content_prev
