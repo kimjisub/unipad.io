@@ -12,13 +12,28 @@
     "mainNav": "Main navigation",
     "skipToContent": "Skip to content",
     "skipToNav": "Go to navigation",
-    "community": "Community"
+    "community": "Community",
+    "playOnWeb": "Play on Web",
+    "play": "Play",
+    "comingSoon": "Coming Soon"
   },
   "hero": {
+    "badge": "Free & Open Source",
     "tagline": "Play Rhythm, UniPad",
-    "description": "Play Launchpad on your smartphone. Share projects with the UniPack system, and learn efficiently with auto-play and practice modes.",
+    "description": "Phone, tablet, or browser — play like a Launchpad anywhere. Follow LED guides, create with UniPacks, and share with the world.",
     "downloadCta": "Download on Google Play",
+    "playOnWeb": "Play on Web",
     "viewDocs": "View Docs",
+    "platforms": {
+      "title": "Available Platforms",
+      "web": "Web",
+      "webDesc": "Play directly in your browser",
+      "android": "Android",
+      "androidDesc": "Download on Google Play",
+      "ios": "iOS",
+      "iosDesc": "Coming soon",
+      "comingSoon": "Coming Soon"
+    },
     "typewriter": {
       "0": "Play Rhythm",
       "1": "Create Music",
@@ -26,24 +41,125 @@
       "3": "Practice Anywhere"
     }
   },
+  "stats": {
+    "title": "Trusted by Millions",
+    "subtitle": "Growing with users worldwide since 2016.",
+    "achievement": "#1 Music Game on Google Play",
+    "downloads": "Total Downloads",
+    "downloadsValue": "9.2M+",
+    "downloadsDesc": "Across Android and Web",
+    "reviews": "Google Play Reviews",
+    "reviewsValue": "100K+",
+    "reviewsDesc": "From players worldwide",
+    "since": "Since",
+    "sinceValue": "2016",
+    "sinceDesc": "9+ years of development",
+    "openSource": "Open Source",
+    "openSourceValue": "100%",
+    "openSourceDesc": "Completely free, no ads or payments",
+    "featuredOn": "Featured on"
+  },
   "features": {
-    "title": "Features",
-    "subtitle": "Discover the core features of UniPad.",
+    "title": "Everything You Need",
+    "learnMore": "Learn more",
+    "tryIt": "Try it",
+    "subtitle": "From practice to performance — UniPad has you covered.",
     "practice": {
       "title": "Efficient Practice",
-      "description": "Practice your performance effectively with auto-play and practice modes."
+      "description": "Preview songs with auto-play, then learn note by note with LED guides in practice mode. Record your performances to track your progress.",
+      "tags": "LED Guide · Auto-Play · Recording"
     },
     "unipack": {
       "title": "UniPack System",
-      "description": "Easily share and play project files using the UniPack format."
+      "description": "Bundle sounds, LEDs, and auto-play into a single shareable package. Discover and exchange songs with the community.",
+      "tags": "Sounds · LEDs · Sharing"
     },
     "integration": {
       "title": "Powerful Integration",
-      "description": "Connect to a real Launchpad via USB and start playing immediately."
+      "description": "Connect a real Launchpad via USB and the app recognizes it instantly. Web MIDI support brings hardware play to the browser too.",
+      "tags": "USB · MIDI · Launchpad"
+    },
+    "theme": {
+      "title": "Custom Skins",
+      "description": "Personalize your play screen with custom themes. Change pad buttons, backgrounds, chain visuals, and UI colors — all packaged in a simple ZIP.",
+      "tags": "Pads · Background · Chain"
     }
   },
+  "howItWorks": {
+    "title": "Get Playing in Seconds",
+    "subtitle": "No installation required. Just open and play.",
+    "step1": {
+      "title": "Choose a UniPack",
+      "description": "Browse community packs or load your own ZIP file."
+    },
+    "step2": {
+      "title": "Hit the Pads",
+      "description": "Tap the colorful pads to play sounds. LEDs guide you through each note."
+    },
+    "step3": {
+      "title": "Master & Share",
+      "description": "Use practice mode to learn, then record and share your performance."
+    },
+    "startNow": "Start Now"
+  },
+  "community": {
+    "title": "Join the Community",
+    "subtitle": "Connect with creators and players worldwide.",
+    "discord": "Chat on Discord",
+    "discordDesc": "Questions, feedback, share UniPacks",
+    "facebook": "Facebook Page",
+    "facebookDesc": "News and updates",
+    "youtube": "YouTube",
+    "youtubeDesc": "Watch performances and tutorials",
+    "github": "GitHub",
+    "githubDesc": "Contribute to open source"
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "subtitle": "Everything you need to know about UniPad.",
+    "moreQuestions": "Still have questions?",
+    "askOnDiscord": "Ask on Discord",
+    "items": {
+      "0": {
+        "q": "Is UniPad really free?",
+        "a": "Yes! UniPad is 100% free with no ads or in-app purchases. The entire source code is open on GitHub."
+      },
+      "1": {
+        "q": "What is a UniPack?",
+        "a": "A UniPack is a ZIP file containing sounds, LED sequences, and auto-play data. It's UniPad's standard format for sharing musical projects."
+      },
+      "2": {
+        "q": "Can I use a real Launchpad?",
+        "a": "Yes! Connect your Launchpad via USB on Android, or use Web MIDI in your browser. The app automatically detects and maps your hardware."
+      },
+      "3": {
+        "q": "How do I create custom skins?",
+        "a": "Create a ZIP file with custom button images, backgrounds, and a theme.json file. Check the Theme documentation for the full specification."
+      },
+      "4": {
+        "q": "Where can I find UniPacks to play?",
+        "a": "Join our Discord community or browse Facebook groups where creators share thousands of UniPacks for free."
+      },
+      "5": {
+        "q": "What's the difference between the Web and Android versions?",
+        "a": "Core features are the same. The Web version works instantly in your browser with no install, while the Android app offers lower audio latency and USB Launchpad support."
+      },
+      "6": {
+        "q": "Can I create my own UniPack?",
+        "a": "Yes! Write sound files along with keySound, keyLed, and autoPlay text files, then bundle them into a ZIP. Check the UniPack documentation for the full format specification."
+      }
+    }
+  },
+  "cta": {
+    "title": "Get Started Now",
+    "subtitle": "Play directly in your browser — no sign-up, no install.",
+    "playNow": "Play on Web",
+    "download": "Download App",
+    "socialProof": "9.2M+ downloads · 4.0★ on Google Play · 100% free",
+    "free": "100% Free"
+  },
   "footer": {
-    "description": "Play Launchpad on your smartphone. Share projects and practice with the UniPack system."
+    "description": "Turn your device into a Launchpad. Play, create, and share music with the UniPack ecosystem — across Web, Android, and iOS."
   },
   "docs": {
     "title": "Documentation",
@@ -51,6 +167,10 @@
     "unipack": {
       "title": "UniPack",
       "description": "Learn the structure and usage of the UniPack project file format."
+    },
+    "theme": {
+      "title": "Theme",
+      "description": "Learn about the theme system for customizing the play screen appearance."
     },
     "terms": {
       "title": "Terms of Use",

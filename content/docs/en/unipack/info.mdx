@@ -1,0 +1,32 @@
+The `info` file defines the metadata of a UniPack.
+Each line is written in `key=value` format, and leading/trailing whitespace is ignored.
+
+## Properties
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `title` | string | O | UniPack title |
+| `producerName` | string | O | Creator name |
+| `buttonX` | int | O | Number of horizontal buttons (1 or more) |
+| `buttonY` | int | O | Number of vertical buttons (1 or more) |
+| `chain` | int | O | Number of chains/banks (**1~24**) |
+| `squareButton` | boolean | | Square button mode (default: false) |
+| `website` | string | | Creator website URL |
+
+## Example
+
+```
+title=My UniPack
+producerName=UniPad
+buttonX=8
+buttonY=8
+chain=4
+squareButton=true
+website=https://unipad.io
+```
+
+## Validation
+
+- A warning is raised if `title` or `producerName` is empty.
+- A warning is raised if `buttonX`, `buttonY`, or `chain` is 0.
+- Loading is **aborted** if `chain` is outside the 1~24 range.

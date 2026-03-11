@@ -6,6 +6,7 @@
   :root {
     --background: #161e2b;
     --foreground: #ffffff;
+    --color-background: #161e2b;
 
     --card: #1e2a3a;
     --card-foreground: #ffffff;
@@ -44,6 +45,7 @@
   html {
     background-color: var(--background);
     color: var(--foreground);
+    scroll-behavior: smooth;
   }
 
   body {
@@ -67,6 +69,28 @@
     background-color: var(--card);
     @apply border border-border rounded-xl;
   }
+}
+
+/* Hero pad grid pulse */
+@keyframes pad-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    box-shadow: none;
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px 2px var(--pad-glow, rgba(255, 143, 0, 0.2));
+  }
+}
+
+/* HowItWorks shimmer line */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.animate-shimmer {
+  animation: shimmer 3s linear infinite;
 }
 
 /* Animated Gradient Text */
@@ -134,7 +158,31 @@
   color: var(--foreground);
 }
 
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Override Radix Theme background */
+.radix-themes {
+  --color-background: var(--background);
+}
+
 /* Prose styling for docs */
 .prose {
   --tw-prose-links: var(--accent);
 }
+

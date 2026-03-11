@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, MotionConfig } from 'framer-motion';
 
 interface AnimatePresenceWrapperProps {
 	children: React.ReactNode;
@@ -12,8 +12,10 @@ interface AnimatePresenceWrapperProps {
  */
 export function AnimatePresenceWrapper({ children }: AnimatePresenceWrapperProps) {
 	return (
-		<AnimatePresence mode="wait" initial={false}>
-			{children}
-		</AnimatePresence>
+		<MotionConfig reducedMotion="user">
+			<AnimatePresence mode="wait" initial={false}>
+				{children}
+			</AnimatePresence>
+		</MotionConfig>
 	);
 }

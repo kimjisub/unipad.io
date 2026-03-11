@@ -1,0 +1,32 @@
+`info` 파일은 UniPack의 메타데이터를 정의합니다.
+각 줄은 `key=value` 형식으로 작성하며, 앞뒤 공백은 무시됩니다.
+
+## 속성
+
+| Key | Type | 필수 | 설명 |
+|-----|------|------|------|
+| `title` | string | O | UniPack 제목 |
+| `producerName` | string | O | 제작자 이름 |
+| `buttonX` | int | O | 가로 버튼 수 (1 이상) |
+| `buttonY` | int | O | 세로 버튼 수 (1 이상) |
+| `chain` | int | O | 체인(뱅크) 수 (**1~24**) |
+| `squareButton` | boolean | | 정사각형 버튼 여부 (기본: false) |
+| `website` | string | | 제작자 웹사이트 URL |
+
+## 예시
+
+```
+title=My UniPack
+producerName=UniPad
+buttonX=8
+buttonY=8
+chain=4
+squareButton=true
+website=https://unipad.io
+```
+
+## 유효성 검사
+
+- `title`, `producerName`이 비어있으면 경고가 발생합니다.
+- `buttonX`, `buttonY`, `chain`이 0이면 경고가 발생합니다.
+- `chain`이 1~24 범위를 벗어나면 **로드가 중단**됩니다.

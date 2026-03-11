@@ -90,7 +90,7 @@ export const TypewriterEffect = ({
 
       {/* framer-motion cursor blink */}
       <motion.span
-        className="ml-[2px] inline-block w-[2px] rounded-sm bg-current align-middle self-center"
+        className="ml-[2px] inline-block w-[2px] rounded-sm bg-accent align-middle self-center"
         style={{ height: '1.1em' }}
         animate={{ opacity: [1, 1, 0, 0] }}
         transition={{

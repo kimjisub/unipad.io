@@ -1,6 +1,6 @@
 import { Link } from '@/i18n/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Music, Shield } from 'lucide-react';
+import { Music, Palette, Shield } from 'lucide-react';
 
 const docSections = [
   {
@@ -8,6 +8,12 @@ const docSections = [
     descriptionKey: 'unipack.description' as const,
     href: '/docs/unipack',
     icon: Music,
+  },
+  {
+    titleKey: 'theme.title' as const,
+    descriptionKey: 'theme.description' as const,
+    href: '/docs/theme',
+    icon: Palette,
   },
   {
     titleKey: 'terms.title' as const,

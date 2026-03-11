@@ -1,0 +1,57 @@
+The `keySound` file maps sound files to each button.
+Write one mapping per line, separated by spaces.
+
+## Syntax
+
+```
+chain  x  y  soundFile  [loop]  [wormhole]
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `chain` | int | O | Chain number (1 ~ chain) |
+| `x` | int | O | Button X coordinate (1 ~ buttonX) |
+| `y` | int | O | Button Y coordinate (1 ~ buttonY) |
+| `soundFile` | string | O | File path within `sounds/` folder |
+| `loop` | int | | Loop setting (see below) |
+| `wormhole` | int | | Chain number to jump to after playback |
+
+### Loop Values
+
+The `loop` value is internally stored with 1 subtracted.
+
+| Written Value | Behavior |
+|---------------|----------|
+| Omitted or `1` | Play once (default) |
+| `0` | Loop indefinitely |
+| `N` (2 or more) | Repeat N-1 times |
+
+## Example
+
+```
+1 1 1 kick.wav
+1 2 1 snare.wav
+1 3 1 hihat.wav 0
+2 1 1 bass.wav 1 3
+```
+
+- `1 3 1 hihat.wav 0` — Chain 1, position (3,1), loop hihat.wav indefinitely
+- `2 1 1 bass.wav 1 3` — Chain 2, position (1,1), play bass.wav once then jump to chain 3
+
+## Circular Queue (Multi-mapping)
+
+When multiple sounds are mapped to the same `chain x y` coordinate, they **cycle in order** each time the button is pressed.
+
+```
+1 1 1 sound_a.wav
+1 1 1 sound_b.wav
+1 1 1 sound_c.wav
+```
+
+Each press of button (1,1): sound\_a → sound\_b → sound\_c → sound\_a → ...
+
+<Callout title="Validation">
+- Empty lines and lines with fewer than 3 columns are ignored.
+- Lines with out-of-range coordinates are skipped with a warning.
+- A warning is logged if the referenced sound file is not found in the `sounds/` folder.
+</Callout>

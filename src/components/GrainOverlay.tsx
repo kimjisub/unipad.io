@@ -15,6 +15,9 @@ export default function GrainOverlay() {
 	useEffect(() => {
 		if (!mounted) return;
 
+		const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (prefersReducedMotion) return;
+
 		const animate = () => {
 			frameRef.current++;
 			if (frameRef.current % 8 === 0 && turbulenceRef.current) {
@@ -81,7 +84,7 @@ export default function GrainOverlay() {
 				style={{
 					zIndex: 9990,
 					filter: 'url(#portfolio-grain-filter)',
-					opacity: 0.07,
+					opacity: 0.04,
 					mixBlendMode: 'overlay',
 					willChange: 'filter',
 				}}

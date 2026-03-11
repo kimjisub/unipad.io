@@ -12,13 +12,28 @@
     "mainNav": "메인 내비게이션",
     "skipToContent": "본문으로 건너뛰기",
     "skipToNav": "내비게이션으로 이동",
-    "community": "커뮤니티"
+    "community": "커뮤니티",
+    "playOnWeb": "웹에서 바로 플레이",
+    "play": "플레이하기",
+    "comingSoon": "개발 중"
   },
   "hero": {
+    "badge": "무료 & 오픈소스",
     "tagline": "리듬을 연주하다, UniPad",
-    "description": "스마트폰으로 Launchpad를 연주하세요. UniPack 시스템으로 프로젝트를 공유하고, 자동 연주와 연습 모드로 효율적으로 학습할 수 있습니다.",
+    "description": "스마트폰, 태블릿, 브라우저 — 어디서든 Launchpad처럼. LED 가이드를 따라 연주하고, UniPack으로 만들고, 전 세계와 공유하세요.",
     "downloadCta": "Google Play에서 다운로드",
+    "playOnWeb": "웹에서 바로 플레이",
     "viewDocs": "문서 보기",
+    "platforms": {
+      "title": "지원 플랫폼",
+      "web": "Web",
+      "webDesc": "브라우저에서 바로 플레이",
+      "android": "Android",
+      "androidDesc": "Google Play에서 다운로드",
+      "ios": "iOS",
+      "iosDesc": "개발 중",
+      "comingSoon": "개발 중"
+    },
     "typewriter": {
       "0": "리듬을 연주하다",
       "1": "음악을 만들다",
@@ -26,24 +41,125 @@
       "3": "어디서든 연습하다"
     }
   },
+  "stats": {
+    "title": "수백만 유저가 선택한 UniPad",
+    "subtitle": "2016년 출시 이후 전 세계 유저들과 함께 성장하고 있습니다.",
+    "achievement": "Google Play 음악 게임 1위 달성",
+    "downloads": "누적 다운로드",
+    "downloadsValue": "9.2M+",
+    "downloadsDesc": "Android · Web 합산",
+    "reviews": "Google Play 리뷰",
+    "reviewsValue": "100K+",
+    "reviewsDesc": "전 세계 플레이어",
+    "since": "서비스 시작",
+    "sinceValue": "2016",
+    "sinceDesc": "9년+ 지속 개발",
+    "openSource": "오픈소스",
+    "openSourceValue": "100%",
+    "openSourceDesc": "광고·결제 없는 완전 무료",
+    "featuredOn": "소개된 곳"
+  },
   "features": {
-    "title": "기능",
-    "subtitle": "UniPad가 제공하는 핵심 기능들을 소개합니다.",
+    "title": "필요한 모든 것",
+    "learnMore": "자세히 보기",
+    "tryIt": "체험하기",
+    "subtitle": "연습부터 퍼포먼스까지 — UniPad 하나면 충분합니다.",
     "practice": {
       "title": "효율적인 연습",
-      "description": "자동 연주와 연습 모드를 활용하여 효과적으로 퍼포먼스를 연습할 수 있습니다."
+      "description": "자동 연주 기능으로 곡을 미리 들어보고, 연습 모드에서 LED 가이드를 따라 한 음씩 익혀보세요. 녹음 기능으로 연주를 저장할 수도 있습니다.",
+      "tags": "LED 가이드 · 자동 연주 · 녹음"
     },
     "unipack": {
       "title": "UniPack 시스템",
-      "description": "프로젝트 파일을 쉽게 주고받고 재생할 수 있는 UniPack 포맷을 지원합니다."
+      "description": "사운드, LED, 자동 연주를 하나의 패키지로 묶어 쉽게 공유할 수 있는 UniPack 포맷. 커뮤니티에서 다양한 곡을 주고받으세요.",
+      "tags": "사운드 · LED · 공유"
     },
     "integration": {
       "title": "강력한 연동성",
-      "description": "USB로 실제 Launchpad에 연결하면 즉시 연주할 수 있습니다."
+      "description": "USB로 실제 Launchpad를 연결하면 앱이 자동으로 인식합니다. Web MIDI도 지원하여 브라우저에서도 하드웨어 연주가 가능합니다.",
+      "tags": "USB · MIDI · Launchpad"
+    },
+    "theme": {
+      "title": "커스텀 스킨",
+      "description": "나만의 테마로 연주 화면을 꾸미세요. 패드 버튼, 배경, 체인 비주얼, UI 색상까지 — ZIP 파일 하나로 간편하게 적용됩니다.",
+      "tags": "패드 · 배경 · 체인"
     }
   },
+  "howItWorks": {
+    "title": "몇 초 만에 시작하세요",
+    "subtitle": "설치 없이 바로 플레이할 수 있습니다.",
+    "step1": {
+      "title": "UniPack 선택",
+      "description": "커뮤니티 팩을 탐색하거나, 직접 ZIP 파일을 불러오세요."
+    },
+    "step2": {
+      "title": "패드를 눌러 연주",
+      "description": "화면의 패드를 터치해 사운드를 재생하세요. LED가 각 음을 안내해줍니다."
+    },
+    "step3": {
+      "title": "마스터 & 공유",
+      "description": "연습 모드로 곡을 익히고, 녹음해서 공유하세요."
+    },
+    "startNow": "지금 시작하기"
+  },
+  "community": {
+    "title": "커뮤니티에 참여하세요",
+    "subtitle": "전 세계 크리에이터, 플레이어들과 소통하세요.",
+    "discord": "Discord에서 대화하기",
+    "discordDesc": "질문, 피드백, UniPack 공유",
+    "facebook": "Facebook 페이지",
+    "facebookDesc": "새 소식과 업데이트",
+    "youtube": "YouTube",
+    "youtubeDesc": "퍼포먼스 영상과 튜토리얼",
+    "github": "GitHub",
+    "githubDesc": "오픈소스 코드 기여하기"
+  },
+  "faq": {
+    "title": "자주 묻는 질문",
+    "subtitle": "UniPad에 대해 궁금한 모든 것.",
+    "moreQuestions": "더 궁금한 것이 있으신가요?",
+    "askOnDiscord": "Discord에서 질문하기",
+    "items": {
+      "0": {
+        "q": "UniPad는 정말 무료인가요?",
+        "a": "네! UniPad는 광고나 인앱 결제 없이 100% 무료입니다. 전체 소스 코드가 GitHub에 공개되어 있습니다."
+      },
+      "1": {
+        "q": "UniPack이 뭔가요?",
+        "a": "UniPack은 사운드, LED 시퀀스, 자동 연주 데이터를 담은 ZIP 파일입니다. 음악 프로젝트를 공유하기 위한 UniPad의 표준 포맷입니다."
+      },
+      "2": {
+        "q": "실제 Launchpad를 연결할 수 있나요?",
+        "a": "네! Android에서는 USB로, 브라우저에서는 Web MIDI로 Launchpad를 연결할 수 있습니다. 앱이 자동으로 하드웨어를 인식하고 매핑합니다."
+      },
+      "3": {
+        "q": "커스텀 스킨은 어떻게 만드나요?",
+        "a": "커스텀 버튼 이미지, 배경, theme.json 파일을 담은 ZIP 파일을 만들면 됩니다. Theme 문서에서 전체 스펙을 확인할 수 있습니다."
+      },
+      "4": {
+        "q": "연주할 UniPack은 어디서 찾나요?",
+        "a": "Discord 커뮤니티나 Facebook 그룹에서 크리에이터들이 수천 개의 UniPack을 무료로 공유하고 있습니다."
+      },
+      "5": {
+        "q": "Web 버전과 Android 앱의 차이점은 무엇인가요?",
+        "a": "핵심 기능은 동일합니다. Web 버전은 설치 없이 브라우저에서 바로 사용할 수 있고, Android 앱은 더 낮은 오디오 지연과 USB Launchpad 연결을 지원합니다."
+      },
+      "6": {
+        "q": "나만의 UniPack을 만들 수 있나요?",
+        "a": "네! 사운드 파일과 keySound, keyLed, autoPlay 텍스트 파일을 작성하여 ZIP으로 묶으면 됩니다. UniPack 문서에서 포맷 사양을 확인하세요."
+      }
+    }
+  },
+  "cta": {
+    "title": "지금 바로 시작하세요",
+    "subtitle": "회원가입도, 설치도 필요 없습니다. 바로 시작하세요.",
+    "playNow": "웹에서 플레이",
+    "download": "앱 다운로드",
+    "socialProof": "9.2M+ 다운로드 · Google Play 4.0★ · 완전 무료",
+    "free": "완전 무료"
+  },
   "footer": {
-    "description": "스마트폰으로 Launchpad를 연주하세요. UniPack 시스템으로 프로젝트를 공유하고 연습할 수 있습니다."
+    "description": "당신의 기기를 Launchpad로. UniPack 생태계로 음악을 연주하고, 만들고, 공유하세요 — Web, Android, iOS 어디서든."
   },
   "docs": {
     "title": "문서",
@@ -51,6 +167,10 @@
     "unipack": {
       "title": "UniPack",
       "description": "UniPack 프로젝트 파일 포맷의 구조와 사용법을 알아보세요."
+    },
+    "theme": {
+      "title": "Theme",
+      "description": "연주 화면의 외관을 커스터마이징하는 테마 시스템을 알아보세요."
     },
     "terms": {
       "title": "이용약관",

@@ -1,0 +1,22 @@
+{
+  "name": "UniPad",
+  "short_name": "UniPad",
+  "description": "Turn your device into a Launchpad. Play, create, and share music with the UniPack ecosystem.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#161e2b",
+  "theme_color": "#161e2b",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-round-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

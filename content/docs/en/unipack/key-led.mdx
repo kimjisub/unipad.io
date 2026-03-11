@@ -1,0 +1,111 @@
+The `keyLED` folder stores LED animation files.
+Each file defines a LED sequence that plays when a specific button is pressed.
+
+## File Naming Convention
+
+The file name itself contains the mapping information, **separated by spaces**.
+
+```
+chain x y [loop]
+```
+
+| Field | Description |
+|-------|-------------|
+| `chain` | Chain number (1 ~ chain) |
+| `x` | Button X coordinate (1 ~ buttonX) |
+| `y` | Button Y coordinate (1 ~ buttonY) |
+| `loop` | Repeat count (default: 1, `0` = infinite loop) |
+
+### Example File Names
+
+```
+keyLED/
+├── 1 1 1          → Chain 1, (1,1), play once
+├── 1 1 1 0        → Chain 1, (1,1), infinite loop
+├── 1 2 3 2        → Chain 1, (2,3), repeat 2 times
+└── 2 1 1          → Chain 2, (1,1), play once
+```
+
+Mapping multiple files to the same coordinate creates a circular queue, just like `keySound`.
+
+## Event Syntax
+
+Write LED events one per line inside the file. Fields are separated by spaces.
+
+### `on` — Turn LED On
+
+```
+on x y color [velocity]
+on x y auto velocity
+```
+
+Shorthand: `o`
+
+| Field | Description |
+|-------|-------------|
+| `x` | LED X coordinate, or `*` / `mc` (chain round LED) |
+| `y` | LED Y coordinate |
+| `color` | 6-digit HEX color (e.g., `FF0000`) or `auto` / `a` |
+| `velocity` | MIDI velocity (0~127), required when using `auto` |
+
+#### Color Specification
+
+| Format | Example | Behavior |
+|--------|---------|----------|
+| HEX only | `on 1 1 FF0000` | Displays red in the app |
+| HEX + velocity | `on 1 1 FF0000 5` | Red in app, sends velocity 5 to Launchpad |
+| auto + velocity | `on 1 1 auto 72` | Uses Launchpad palette color mapped to velocity 72 |
+
+#### Special Coordinates
+
+| Token | Meaning |
+|-------|---------|
+| `*` or `mc` | Round (chain) LEDs on Launchpad top/sides |
+| `l` | Logo LED (not supported, ignored) |
+
+### `off` — Turn LED Off
+
+```
+off x y
+```
+
+Shorthand: `f`. You can use `*` / `mc` for the `x` position.
+
+### `delay` — Wait
+
+```
+delay ms
+```
+
+Shorthand: `d`. Waits the specified milliseconds before the next event.
+
+### `chain` — Switch Chain
+
+```
+chain chainNumber
+```
+
+Shorthand: `c`. Switches chains during LED sequence execution.
+
+## Full Example
+
+File name: `1 3 2 0` (Chain 1, coordinate (3,2), infinite loop)
+
+```
+on 3 2 FF0000
+on 3 3 00B8D4
+delay 100
+off 3 2
+off 3 3
+delay 50
+on * 1 auto 72
+delay 100
+off * 1
+```
+
+<Callout title="Validation">
+- Files with out-of-range coordinates in the file name are ignored.
+- The `on` command requires either `color` (4 tokens) or `auto` + `velocity` (5 tokens).
+- Unrecognized commands are skipped.
+- A warning is logged if `loop` is negative.
+</Callout>

@@ -17,6 +17,17 @@ pnpm install
 pnpm dev
 ```
 
+## Environment Variables
+
+Store download proxy allowlist can be extended by setting:
+
+```bash
+STORE_DOWNLOAD_ALLOWED_HOSTS=example.com,cdn.example.com,*.googleusercontent.com
+# note: *.unipad.io is allowed by default
+```
+
+Firebase web config should be provided in `.env.local` with `NEXT_PUBLIC_FIREBASE_*` keys.
+
 ## Project Structure
 
 ```

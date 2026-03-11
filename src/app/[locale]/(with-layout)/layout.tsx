@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { hasLocale } from 'next-intl';
@@ -9,8 +10,10 @@ import '@radix-ui/themes/styles.css';
 import '../../globals.css';
 
 import Footer from '@/components/Footer';
+import { FirebaseAnalytics } from '@/components/FirebaseAnalytics';
 import GrainOverlay from '@/components/GrainOverlay';
 import ScrollProgressIndicator from '@/components/ScrollProgressIndicator';
+import { ScrollToTop } from '@/components/ScrollToTop';
 import { SkipToContent } from '@/components/SkipToContent';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import TopBar from '@/components/TopBar';
@@ -30,8 +33,8 @@ export const metadata: Metadata = {
 		default: 'UniPad - Play Rhythm',
 		template: '%s | UniPad',
 	},
-	description: 'UniPad is a music app that lets you play Launchpad on your smartphone. Share projects with the UniPack system, and use efficient practice modes and USB connectivity.',
-	keywords: ['UniPad', 'Launchpad', 'UniPack', 'Music', 'Android', 'App'],
+	description: 'Turn your device into a Launchpad. Play, create, and share music with 9.2M+ downloads worldwide. Free, open-source, with LED guides, auto-play, custom skins, and the UniPack ecosystem.',
+	keywords: ['UniPad', 'Launchpad', 'UniPack', 'Music', 'Rhythm', 'Android', 'Web', 'MIDI', 'LED', 'Free', 'Open Source', 'Music Game', 'Pad', 'DJ'],
 	authors: [{ name: 'UniPad Team', url: siteUrl }],
 	creator: 'UniPad Team',
 	openGraph: {
@@ -39,25 +42,23 @@ export const metadata: Metadata = {
 		url: siteUrl,
 		siteName: 'UniPad',
 		title: 'UniPad - Play Rhythm',
-		description: 'UniPad is a music app that lets you play Launchpad on your smartphone.',
-		images: [
-			{
-				url: '/og-image.png',
-				width: 1200,
-				height: 630,
-				alt: 'UniPad',
-			},
-		],
+		description: 'Turn your device into a Launchpad. 9.2M+ downloads. Free & open-source with LED guides, custom skins, and the UniPack ecosystem.',
+		images: [{ url: '/icon-192.png', width: 192, height: 192, alt: 'UniPad Logo' }],
 	},
 	twitter: {
 		card: 'summary_large_image',
 		title: 'UniPad - Play Rhythm',
-		description: 'UniPad is a music app that lets you play Launchpad on your smartphone.',
-		images: ['/og-image.png'],
+		description: 'Turn your device into a Launchpad. 9.2M+ downloads. Free & open-source with LED guides, custom skins, and the UniPack ecosystem.',
 	},
 	robots: {
 		index: true,
 		follow: true,
+	},
+	alternates: {
+		languages: {
+			en: `${siteUrl}/en`,
+			ko: `${siteUrl}/ko`,
+		},
 	},
 };
 
@@ -86,10 +87,18 @@ export default async function RootLayout({
 		<html lang={locale} className={`${inter.variable} dark`}>
 			<head>
 				<meta name="theme-color" content="#161e2b" />
+				<meta name="apple-mobile-web-app-capable" content="yes" />
+				<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+				<link rel="manifest" href="/manifest.json" />
+				<link rel="apple-touch-icon" href="/icon-192.png" />
+				<link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+				<link rel="dns-prefetch" href="https://play.google.com" />
+				<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 			</head>
 			<body className="font-sans bg-background text-foreground antialiased">
 				<NextIntlClientProvider locale={locale} messages={messages}>
 					<ThemeProvider>
+						<Suspense fallback={null}><FirebaseAnalytics /></Suspense>
 						<SkipToContent />
 						<GrainOverlay />
 						<ScrollProgressIndicator />
@@ -101,6 +110,7 @@ export default async function RootLayout({
 								</AnimatePresenceWrapper>
 							</main>
 							<Footer />
+							<ScrollToTop />
 						</div>
 					</ThemeProvider>
 				</NextIntlClientProvider>

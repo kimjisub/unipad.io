@@ -1,0 +1,44 @@
+The `autoPlay` file defines the auto-play sequence.
+This data is used in auto-play mode and practice mode.
+
+## Commands
+
+| Command | Shorthand | Syntax | Description |
+|---------|-----------|--------|-------------|
+| `on` | `o` | `on x y` | Button press (play sound + start LED) |
+| `off` | `f` | `off x y` | Button release |
+| `touch` | `t` | `touch x y` | Press + immediate release (on + off in one line) |
+| `chain` | `c` | `chain N` | Switch to chain N |
+| `delay` | `d` | `delay ms` | Wait in milliseconds |
+
+## Behavior
+
+- Events are executed sequentially from top to bottom.
+- The `on` event plays the sound at the given coordinate and advances to the next sound in the circular queue.
+- If a sound has a **wormhole** set, executing `on` will automatically switch to that chain.
+- When switching chains via `chain`, all button circular queue counters are reset.
+
+## Example
+
+```
+chain 1
+on 1 1
+on 1 2
+delay 100
+off 1 1
+off 1 2
+delay 200
+touch 2 1
+touch 2 2
+delay 100
+chain 2
+on 1 1
+delay 500
+off 1 1
+```
+
+<Callout title="Notes">
+- Consecutive events without `delay` are executed simultaneously.
+- Lines with out-of-range coordinates are skipped.
+- In practice mode, chain switches automatically pause so the user can practice at their own pace.
+</Callout>

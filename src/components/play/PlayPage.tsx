@@ -1,0 +1,1234 @@
+'use client';
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { logEvent } from 'firebase/analytics';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useUniPadEngine } from './useUniPadEngine';
+import { PadGrid } from './PadGrid';
+import { ChainBar } from './ChainBar';
+import { ControlPanel } from './ControlPanel';
+import { OptionPanel } from './OptionPanel';
+import { MainScreen } from './MainScreen';
+import { StoreModal } from './StoreModal';
+import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import {
+  parseUniPack,
+  saveUniPack,
+  getUniPack,
+  listUniPacks,
+  deleteUniPack,
+  updateUniPackLastOpened,
+  saveTheme,
+  getTheme,
+  listThemes,
+  deleteTheme,
+  setSetting,
+  getSetting,
+} from '@/lib/unipack';
+import {
+  downloadStoreItem,
+  fetchStoreItems,
+  fetchStoreCount,
+  getStoreYoutubeSearchUrl,
+  subscribeStoreCount,
+  subscribeStoreItems,
+  type StoreItem,
+} from '@/lib/store';
+import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
+import type { LaunchpadProfile } from '@/lib/unipack';
+import { initFirebaseServices } from '@/lib/firebase';
+
+const PACK_QUERY_KEY = 'pack';
+const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
+
+export function PlayPage() {
+  const {
+    state,
+    loadUniPack,
+    unload,
+    padTouchOn,
+    padTouchOff,
+    setChain,
+    toggleAutoPlay,
+    autoPlayPlayPause,
+    autoPlayPrev,
+    autoPlayNext,
+    togglePracticeMode,
+    toggleFeedbackLight,
+    toggleLed,
+    toggleRecording,
+    toggleHideUI,
+    toggleWatermark,
+    toggleTraceLog,
+    clearTraceLog,
+    toggleProLightMode,
+    loadTheme,
+    setMidiProfile,
+    connectMidi,
+    disconnectMidi,
+    setMidiUiContext,
+    setVolumeLevel,
+    resumeAudio,
+  } = useUniPadEngine();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const themeInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [savedPacks, setSavedPacks] = useState<StoredUniPack[]>([]);
+  const [savedThemes, setSavedThemes] = useState<StoredTheme[]>([]);
+  const [restoringFromStorage, setRestoringFromStorage] = useState(true);
+  const [optionPanelOpen, setOptionPanelOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeWarning, setStoreWarning] = useState<string | null>(null);
+  const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
+  const [downloadingStoreCode, setDownloadingStoreCode] = useState<string | null>(null);
+  const [failedStoreCode, setFailedStoreCode] = useState<string | null>(null);
+  const [preferredStoreCode, setPreferredStoreCode] = useState<string | null>(null);
+  const [storeProgress, setStoreProgress] = useState(0);
+  const [storeCount, setStoreCount] = useState(0);
+  const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [errorDialogShown, setErrorDialogShown] = useState(false);
+  const [midiConnecting, setMidiConnecting] = useState(false);
+  const [launchpadSettingsOpen, setLaunchpadSettingsOpen] = useState(false);
+  const [lastPlayedPackId, setLastPlayedPackId] = useState<string | null>(null);
+  const [loadingPackTitle, setLoadingPackTitle] = useState<string | null>(null);
+  const centerStageRef = useRef<HTMLDivElement | null>(null);
+  const [centerStageSize, setCenterStageSize] = useState({ width: 0, height: 0 });
+  const prevLoadedRef = useRef(false);
+  const currentPackIdRef = useRef<string | null>(null);
+  const currentThemeIdRef = useRef<string | null>(null);
+  const storeUnsubscribeRef = useRef<(() => void) | null>(null);
+  const storeCountUnsubscribeRef = useRef<(() => void) | null>(null);
+  const storeItemsRef = useRef<StoreItem[]>([]);
+  const toastTimerRef = useRef<number | null>(null);
+  const storeDownloadAbortRef = useRef<AbortController | null>(null);
+  const triedUrlPackRestoreRef = useRef(false);
+
+  const syncPackUrl = useCallback((packId: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (packId) {
+      url.searchParams.set(PACK_QUERY_KEY, packId);
+    } else {
+      url.searchParams.delete(PACK_QUERY_KEY);
+    }
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  const getPackIdFromUrl = useCallback((): string | null => {
+    if (typeof window === 'undefined') return null;
+    const value = new URLSearchParams(window.location.search).get(PACK_QUERY_KEY);
+    return value?.trim() || null;
+  }, []);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2600);
+  }, []);
+
+  const normalizeStoreError = useCallback((error: unknown): string => {
+    const raw = error instanceof Error ? error.message : String(error);
+    if (/aborted|canceled/i.test(raw)) return 'Download canceled.';
+    if (/HTTP 403|Host not allowed/i.test(raw)) return 'Download source is blocked by server policy.';
+    if (/HTTP 404/i.test(raw)) return 'Pack not found on server.';
+    if (/HTTP 5\d\d/i.test(raw)) return 'Store server is temporarily unavailable.';
+    if (/Network error/i.test(raw)) return 'Network error. Please check your connection.';
+    if (/Invalid UniPack|parse/i.test(raw)) return 'Downloaded file is not a valid UniPack.';
+    return raw;
+  }, []);
+
+  const trackStoreEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
+    initFirebaseServices().then((services) => {
+      if (!services?.analytics) return;
+      logEvent(services.analytics, name, params);
+    }).catch(() => {
+      // ignore analytics failures
+    });
+  }, []);
+
+  const refreshLists = useCallback(async () => {
+    try {
+      const [packs, themes] = await Promise.all([listUniPacks(), listThemes()]);
+      setSavedPacks(packs);
+      setSavedThemes(themes);
+    } catch {
+      /* IndexedDB unavailable */
+    }
+  }, []);
+
+  // 페이지 로드 시 목록만 불러오기 (자동 재생 하지 않음)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await refreshLists();
+        const savedMidiProfile = await getSetting(MIDI_PROFILE_SETTING_KEY);
+        if (
+          savedMidiProfile === 'auto'
+          || savedMidiProfile === 'none'
+          || savedMidiProfile === 'launchpad_x'
+          || savedMidiProfile === 'launchpad_mini_mk3'
+          || savedMidiProfile === 'launchpad_pro_mk3'
+          || savedMidiProfile === 'launchpad_pro'
+        ) {
+          setMidiProfile(savedMidiProfile);
+        }
+        const count = await fetchStoreCount();
+        const prev = Number(await getSetting('prevStoreCount') ?? '0');
+        if (!cancelled) {
+          setStoreCount(count);
+          setHasStoreUpdate(count > prev);
+        }
+      } catch {
+        /* storage unavailable */
+      }
+      if (!cancelled) setRestoringFromStorage(false);
+    })();
+    return () => { cancelled = true; };
+  }, [refreshLists, setMidiProfile]);
+
+  useEffect(() => {
+    subscribeStoreCount(
+      async (count) => {
+        setStoreCount(count);
+        const prev = Number(await getSetting('prevStoreCount') ?? '0');
+        setHasStoreUpdate(count > prev);
+      },
+    ).then((unsub) => {
+      storeCountUnsubscribeRef.current = unsub;
+    }).catch(() => {
+      // ignore
+    });
+
+    return () => {
+      storeCountUnsubscribeRef.current?.();
+      storeCountUnsubscribeRef.current = null;
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (storeItems.length > 0 && storeError) {
+      setStoreError(null);
+    }
+    storeItemsRef.current = storeItems;
+  }, [storeItems, storeError]);
+
+  useEffect(() => {
+    if (!downloadingStoreCode) return;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [downloadingStoreCode]);
+
+  // 로딩 완료 후 에러가 있으면 다이얼로그 표시
+  useEffect(() => {
+    if (state.loaded && !prevLoadedRef.current && state.errors.length > 0) {
+      setErrorDialogShown(true);
+    }
+    prevLoadedRef.current = state.loaded;
+  }, [state.loaded, state.errors]);
+
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      await resumeAudio();
+      const buffer = await file.arrayBuffer();
+      await loadUniPack(buffer);
+
+      try {
+        const parsed = await parseUniPack(buffer.slice(0));
+        const id = await saveUniPack(buffer, {
+          ...parsed.info,
+          keyLedExist: parsed.keyLedExist,
+          autoPlayExist: parsed.autoPlayExist,
+        });
+        currentPackIdRef.current = id;
+        await setSetting('lastUniPackId', id);
+        syncPackUrl(id);
+        await refreshLists();
+
+        // 마지막 테마도 적용
+        const lastThemeId = await getSetting('lastThemeId');
+        if (lastThemeId) {
+          const theme = await getTheme(lastThemeId);
+          if (theme) {
+            currentThemeIdRef.current = lastThemeId;
+            await loadTheme(theme.zipData);
+          }
+        }
+      } catch {
+        /* storage error */
+      }
+    },
+    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl],
+  );
+
+  const handleImportThemeFile = useCallback(
+    async (file: File) => {
+      const buffer = await file.arrayBuffer();
+      // 플레이 중이면 바로 적용
+      if (state.loaded) {
+        await loadTheme(buffer);
+      }
+
+      try {
+        const { loadThemeFromZip } = await import('@/lib/unipack');
+        const parsed = await loadThemeFromZip(buffer.slice(0));
+        const id = await saveTheme(buffer, parsed.metadata);
+        currentThemeIdRef.current = id;
+        await setSetting('lastThemeId', id);
+        await refreshLists();
+      } catch {
+        /* storage error */
+      }
+    },
+    [loadTheme, refreshLists, state.loaded],
+  );
+
+  const handlePlay = useCallback(
+    async (id: string) => {
+      try {
+        await resumeAudio();
+        const pack = await getUniPack(id);
+        if (!pack) return false;
+        currentPackIdRef.current = id;
+        setLoadingPackTitle(pack.title);
+        await setSetting('lastUniPackId', id);
+        syncPackUrl(id);
+        await updateUniPackLastOpened(id);
+        await loadUniPack(pack.zipData);
+
+        const lastThemeId = await getSetting('lastThemeId');
+        if (lastThemeId) {
+          const theme = await getTheme(lastThemeId);
+          if (theme) {
+            currentThemeIdRef.current = lastThemeId;
+            await loadTheme(theme.zipData);
+          }
+        }
+        return true;
+      } catch {
+        /* error */
+        return false;
+      }
+    },
+    [loadUniPack, loadTheme, resumeAudio, syncPackUrl],
+  );
+
+  useEffect(() => {
+    if (restoringFromStorage || state.loaded || state.loading) return;
+    if (triedUrlPackRestoreRef.current) return;
+    const packId = getPackIdFromUrl();
+    if (!packId) return;
+
+    triedUrlPackRestoreRef.current = true;
+    handlePlay(packId).then((ok) => {
+      if (!ok) {
+        syncPackUrl(null);
+      }
+    }).catch(() => {
+      syncPackUrl(null);
+    });
+  }, [getPackIdFromUrl, handlePlay, restoringFromStorage, state.loaded, state.loading, syncPackUrl]);
+
+  const handleDeletePack = useCallback(
+    async (id: string) => {
+      await deleteUniPack(id);
+      if (currentPackIdRef.current === id) {
+        await setSetting('lastUniPackId', '');
+        syncPackUrl(null);
+      }
+      await refreshLists();
+    },
+    [refreshLists, syncPackUrl],
+  );
+
+  const handleDeleteTheme = useCallback(
+    async (id: string) => {
+      await deleteTheme(id);
+      if (currentThemeIdRef.current === id) {
+        await setSetting('lastThemeId', '');
+      }
+      await refreshLists();
+    },
+    [refreshLists],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleImportFile(file);
+    },
+    [handleImportFile],
+  );
+
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) handleImportFile(file);
+      e.target.value = '';
+    },
+    [handleImportFile],
+  );
+
+  const handleThemeInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) handleImportThemeFile(file);
+      e.target.value = '';
+    },
+    [handleImportThemeFile],
+  );
+
+  // Android: back toggles option menu, quit exits to main
+  const handleBack = useCallback(() => {
+    if (optionPanelOpen) {
+      setOptionPanelOpen(false);
+    } else {
+      setOptionPanelOpen(true);
+    }
+  }, [optionPanelOpen]);
+
+  const handleQuit = useCallback(() => {
+    setOptionPanelOpen(false);
+    setLastPlayedPackId(currentPackIdRef.current);
+    setLoadingPackTitle(null);
+    unload();
+    currentPackIdRef.current = null;
+    syncPackUrl(null);
+    refreshLists();
+  }, [unload, refreshLists, syncPackUrl]);
+
+  const handleStartPracticeFromMenu = useCallback(() => {
+    togglePracticeMode();
+    setOptionPanelOpen(false);
+  }, [togglePracticeMode]);
+
+  useEffect(() => {
+    setMidiUiContext({
+      optionPanelOpen,
+      onToggleOptionPanel: () => setOptionPanelOpen((prev) => !prev),
+      onQuit: handleQuit,
+    });
+  }, [handleQuit, optionPanelOpen, setMidiUiContext]);
+
+  // Escape key = close topmost overlay, then toggle option panel
+  useEffect(() => {
+    if (!state.loaded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        (document.activeElement as HTMLElement)?.blur?.();
+        if (errorDialogShown) {
+          if (!state.criticalError) setErrorDialogShown(false);
+        } else if (launchpadSettingsOpen) {
+          setLaunchpadSettingsOpen(false);
+        } else if (state.hideUI) {
+          toggleHideUI();
+        } else if (optionPanelOpen) {
+          setOptionPanelOpen(false);
+        } else {
+          setOptionPanelOpen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state.loaded, state.hideUI, state.criticalError, toggleHideUI, errorDialogShown, launchpadSettingsOpen, optionPanelOpen]);
+
+  useEffect(() => {
+    const base = 'UniPad Web Player';
+    const title = state.unipack?.info.title;
+    document.title = title ? `${title} | ${base}` : base;
+    return () => { document.title = base; };
+  }, [state.unipack?.info.title]);
+
+  const handleConnectMidi = useCallback(async () => {
+    if (midiConnecting) return;
+    setMidiConnecting(true);
+    try {
+      const ok = await connectMidi();
+      if (!ok) {
+        showToast('No MIDI device found.');
+      } else {
+        showToast('MIDI connected.');
+      }
+    } catch {
+      showToast('MIDI connection failed.');
+    } finally {
+      setMidiConnecting(false);
+    }
+  }, [connectMidi, midiConnecting, showToast]);
+
+  const handleDisconnectMidi = useCallback(() => {
+    disconnectMidi();
+    showToast('MIDI disconnected.');
+  }, [disconnectMidi, showToast]);
+
+  const handleChangeMidiProfile = useCallback((profile: LaunchpadProfile) => {
+    setMidiProfile(profile);
+    setSetting(MIDI_PROFILE_SETTING_KEY, profile).catch(() => {});
+  }, [setMidiProfile]);
+
+  const loadStoreItems = useCallback(async () => {
+    setStoreLoading(true);
+    setStoreError(null);
+    setStoreWarning(null);
+    try {
+      const items = await fetchStoreItems();
+      setStoreItems(items);
+      if (items.length === 0) {
+        setStoreWarning('Store list is empty or unavailable.');
+      }
+    } catch (error) {
+      setStoreError(error instanceof Error ? error.message : 'Failed to load store');
+    } finally {
+      setStoreLoading(false);
+    }
+  }, []);
+
+  const handleOpenStore = useCallback(() => {
+    setStoreOpen(true);
+    setStoreLoading(true);
+    setStoreError(null);
+    setStoreWarning(null);
+    setHasStoreUpdate(false);
+    setSetting('prevStoreCount', String(storeCount)).catch(() => {});
+    trackStoreEvent('store_open', { store_count: storeCount });
+    loadStoreItems();
+  }, [loadStoreItems, storeCount, trackStoreEvent]);
+
+  useEffect(() => {
+    if (!storeOpen) {
+      storeUnsubscribeRef.current?.();
+      storeUnsubscribeRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    subscribeStoreItems(
+      (items) => {
+        if (cancelled) return;
+        setStoreItems(items);
+        setStoreLoading(false);
+      },
+      (message) => {
+        if (cancelled) return;
+        setStoreWarning(message);
+        if (storeItemsRef.current.length === 0) {
+          setStoreError(message);
+        }
+        setStoreLoading(false);
+      },
+    ).then((unsub) => {
+      if (cancelled) {
+        unsub();
+        return;
+      }
+      storeUnsubscribeRef.current = unsub;
+    }).catch((error) => {
+      if (cancelled) return;
+      setStoreError(error instanceof Error ? error.message : 'Failed to subscribe store');
+      setStoreLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+      storeUnsubscribeRef.current?.();
+      storeUnsubscribeRef.current = null;
+    };
+  }, [storeOpen]);
+
+  const handleDownloadStoreItem = useCallback(async (item: StoreItem) => {
+    if (downloadingStoreCode) return;
+
+    setDownloadingStoreCode(item.code);
+    setPreferredStoreCode(item.code);
+    setFailedStoreCode(null);
+    setStoreProgress(0);
+    setStoreError(null);
+    const controller = new AbortController();
+    storeDownloadAbortRef.current = controller;
+
+    try {
+      trackStoreEvent('store_download_start', { code: item.code });
+      const zipData = await downloadStoreItem(item, (percent) => {
+        setStoreProgress(percent);
+      }, controller.signal);
+      const parsed = await parseUniPack(zipData.slice(0));
+
+      const packs = await listUniPacks();
+      const existing = packs.find((p) => p.storeCode === item.code);
+      if (existing) {
+        await deleteUniPack(existing.id);
+      }
+
+      await saveUniPack(zipData, {
+        ...parsed.info,
+        keyLedExist: parsed.keyLedExist,
+        autoPlayExist: parsed.autoPlayExist,
+        storeCode: item.code,
+      });
+
+      await refreshLists();
+      await loadStoreItems();
+      setStoreProgress(100);
+      setPreferredStoreCode(item.code);
+      trackStoreEvent('store_download_success', { code: item.code });
+      showToast(`Downloaded: ${item.title}`);
+    } catch (error) {
+      const message = normalizeStoreError(error);
+      setStoreError(message);
+      setFailedStoreCode(item.code);
+      trackStoreEvent('store_download_fail', { code: item.code, message });
+      showToast(message);
+    } finally {
+      storeDownloadAbortRef.current = null;
+      setDownloadingStoreCode(null);
+    }
+  }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, trackStoreEvent]);
+
+  const handleCancelStoreDownload = useCallback(() => {
+    storeDownloadAbortRef.current?.abort();
+    trackStoreEvent('store_download_cancel');
+  }, [trackStoreEvent]);
+
+  const handleRetryStoreItem = useCallback((item: StoreItem) => {
+    handleDownloadStoreItem(item);
+  }, [handleDownloadStoreItem]);
+
+  const handleStoreYoutube = useCallback((item: StoreItem) => {
+    trackStoreEvent('store_youtube_click', { code: item.code });
+    window.open(getStoreYoutubeSearchUrl(item), '_blank', 'noopener,noreferrer');
+  }, [trackStoreEvent]);
+
+  const handleStoreWebsite = useCallback((item: StoreItem) => {
+    if (!item.url) return;
+    trackStoreEvent('store_website_click', { code: item.code });
+    window.open(item.url, '_blank', 'noopener,noreferrer');
+  }, [trackStoreEvent]);
+
+  const handlePlayDownloadedStoreItem = useCallback((item: StoreItem) => {
+    const pack = savedPacks.find((p) => p.storeCode === item.code);
+    if (!pack) {
+      showToast('Downloaded pack not found. Please refresh.');
+      return;
+    }
+    trackStoreEvent('store_play_downloaded', { code: item.code });
+    setStoreOpen(false);
+    handlePlay(pack.id);
+  }, [savedPacks, showToast, trackStoreEvent, handlePlay]);
+
+  const downloadedStoreCodes = useMemo(
+    () => new Set(savedPacks.map((p) => p.storeCode).filter((code): code is string => Boolean(code))),
+    [savedPacks],
+  );
+
+  const downloadedPackIdByCode = useMemo(
+    () => new Map(
+      savedPacks
+        .filter((p) => Boolean(p.storeCode))
+        .map((p) => [p.storeCode as string, p.id]),
+    ),
+    [savedPacks],
+  );
+
+  useLayoutEffect(() => {
+    const target = centerStageRef.current;
+    if (!target) return undefined;
+
+    const syncSize = () => {
+      const rect = target.getBoundingClientRect();
+      setCenterStageSize((prev) => {
+        const nextWidth = Math.round(rect.width);
+        const nextHeight = Math.round(rect.height);
+        if (prev.width === nextWidth && prev.height === nextHeight) return prev;
+        return { width: nextWidth, height: nextHeight };
+      });
+    };
+    syncSize();
+
+    let observer: ResizeObserver | null = null;
+    const onWindowResize = () => syncSize();
+    window.addEventListener('resize', onWindowResize);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => syncSize());
+      observer.observe(target);
+    }
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+    };
+  }, [state.loaded, state.hideUI, state.unipack?.info.buttonX, state.unipack?.info.buttonY]);
+
+  // Loading spinner
+  if (restoringFromStorage) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-[var(--background)] text-white">
+        <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+        <p className="text-white/40 text-sm">Loading...</p>
+      </div>
+    );
+  }
+
+  // Main Screen (UniPack list)
+  if (!state.loaded && !state.loading) {
+    return (
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        <MainScreen
+          savedPacks={savedPacks}
+          savedThemes={savedThemes}
+          lastPlayedPackId={lastPlayedPackId}
+          keyboardDisabled={storeOpen}
+          onPlay={handlePlay}
+          onOpenStore={handleOpenStore}
+          storeCount={storeCount}
+          hasStoreUpdate={hasStoreUpdate}
+          onImport={() => fileInputRef.current?.click()}
+          onImportTheme={() => themeInputRef.current?.click()}
+          onDeletePack={handleDeletePack}
+          onDeleteTheme={handleDeleteTheme}
+        />
+
+        <StoreModal
+          visible={storeOpen}
+          loading={storeLoading}
+          error={storeError}
+          warning={storeWarning}
+          items={storeItems}
+          downloadedCodes={downloadedStoreCodes}
+          downloadedPackIdByCode={downloadedPackIdByCode}
+          downloadingCode={downloadingStoreCode}
+          failedCode={failedStoreCode}
+          downloadProgress={storeProgress}
+          preferredCode={preferredStoreCode}
+          onClose={() => {
+            if (!downloadingStoreCode) {
+              setStoreOpen(false);
+              (document.activeElement as HTMLElement)?.blur?.();
+            }
+          }}
+          onReload={loadStoreItems}
+          onDownload={handleDownloadStoreItem}
+          onRetryFailed={handleRetryStoreItem}
+          onPlayDownloaded={handlePlayDownloadedStoreItem}
+          onCancelDownload={handleCancelStoreDownload}
+          onYoutube={handleStoreYoutube}
+          onWebsite={handleStoreWebsite}
+        />
+
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
+              initial={{ opacity: 0, y: 10, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+            >
+              {toast}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {dragOver && (
+          <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500/30 flex items-center justify-center z-50 pointer-events-none">
+            <p className="text-white text-lg font-bold">Drop UniPack here</p>
+          </div>
+        )}
+
+        <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
+        <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
+      </div>
+    );
+  }
+
+  // Loading screen (Android style: semi-transparent overlay with cyan progress)
+  if (state.loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[var(--background)] text-white">
+        <div className="bg-black/60 rounded-2xl px-6 py-5 w-[280px] flex flex-col items-center gap-3">
+          {loadingPackTitle && (
+            <p className="text-xs text-white/50 truncate max-w-full">{loadingPackTitle}</p>
+          )}
+          <p className="text-sm text-white/80">{state.loadPhase || 'Loading...'}</p>
+          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-200"
+              style={{
+                width: `${state.loadProgress}%`,
+                backgroundColor: '#4FC3F7',
+              }}
+            />
+          </div>
+          <p className="text-xs text-white/40">{state.loadProgress}%</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { unipack, theme } = state;
+  const actualChainCount = unipack?.info.chain ?? 0;
+  const showChainBar = state.proLightMode || actualChainCount > 1;
+  const chainSlots = actualChainCount;
+  const chainAreaSlots = showChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
+  const logoVisible = Boolean(theme.customLogo && state.watermark && !optionPanelOpen);
+  const optionPanelWidth = 280;
+  const topHudHeight = 52;
+  const overlayGap = 12;
+  const leftPanelWidth = unipack?.info.squareButton ? 120 : 100;
+  const rightOverlayWidth = optionPanelOpen ? optionPanelWidth : (logoVisible ? 102 : 0);
+  const stageInsetTop = topHudHeight + overlayGap;
+  const stageInsetLeft = leftPanelWidth + overlayGap * 2;
+  const stageInsetRight = rightOverlayWidth + overlayGap;
+  const stageInsetBottom = overlayGap;
+  const stageMetrics = (() => {
+    if (!unipack) {
+      return {
+        totalWidth: 0,
+        totalHeight: 0,
+        padWidth: 0,
+        padHeight: 0,
+        chainWidth: 0,
+      };
+    }
+
+    const cw = centerStageSize.width;
+    const ch = centerStageSize.height;
+    if (cw <= 0 || ch <= 0) {
+      return {
+        totalWidth: 0,
+        totalHeight: 0,
+        padWidth: 0,
+        padHeight: 0,
+        chainWidth: 0,
+      };
+    }
+
+    // Use integer pixel units to avoid sub-pixel seams between pad and chain.
+    const padCols = unipack.info.buttonY;
+    const padRows = unipack.info.buttonX;
+    const chainCols = showChainBar ? 1 : 0;
+    const unit = Math.max(1, Math.floor(Math.min(cw / (padCols + chainCols), ch / padRows)));
+    const padHeight = unit * padRows;
+    const padWidth = unit * padCols;
+    const chainWidth = showChainBar ? unit : 0;
+    return {
+      totalWidth: padWidth + chainWidth,
+      totalHeight: padHeight,
+      padWidth,
+      padHeight,
+      chainWidth,
+    };
+  })();
+  if (!unipack) return null;
+
+  // Hide UI mode
+  if (state.hideUI) {
+    return (
+      <div
+        className="h-screen flex items-center justify-center overflow-hidden"
+        style={{
+          backgroundColor: 'var(--background)',
+          backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+        onClick={toggleHideUI}
+      >
+        <div className="w-full h-full flex items-center justify-center p-2">
+          <div className="h-full" style={{ aspectRatio: `${unipack.info.buttonY} / ${unipack.info.buttonX}`, maxWidth: '95vw' }}>
+            <PadGrid
+              buttonX={unipack.info.buttonX}
+              buttonY={unipack.info.buttonY}
+              padStates={state.padStates}
+              squareButton={unipack.info.squareButton}
+              theme={theme}
+              traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+              onPadDown={padTouchOn}
+              onPadUp={padTouchOff}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Player screen: [Controls LEFT] [PAD GRID center] [CHAINS RIGHT]
+  return (
+    <div
+      className="relative h-screen text-white overflow-hidden"
+      style={{
+        backgroundColor: 'var(--background)',
+        backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
+      {/* Top bar overlay - keeps stage truly centered like Android */}
+      <div
+        className="absolute inset-x-0 top-0 z-30 px-3 pt-2 pointer-events-none"
+        style={{ paddingRight: `${stageInsetRight}px` }}
+      >
+        <div className="flex items-start justify-between gap-3 pointer-events-auto">
+          <div className="max-w-[40vw] rounded-lg bg-black/30 px-2.5 py-1.5 backdrop-blur-md">
+            <h1 className="text-[11px] font-bold leading-tight truncate">{unipack.info.title}</h1>
+            <p className="text-[10px] leading-tight text-white/45 truncate">{unipack.info.producerName}</p>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-2.5 py-1.5 backdrop-blur-md">
+            <button
+              className={`px-2 py-1 rounded-md text-[10px] border transition-colors ${
+                state.midiConnected
+                  ? 'border-emerald-400/40 text-emerald-300 bg-emerald-500/10'
+                  : 'border-white/20 text-white/60 hover:bg-white/10'
+              }`}
+              onClick={() => setLaunchpadSettingsOpen(true)}
+              disabled={midiConnecting}
+              aria-label="Launchpad Settings"
+            >
+              {midiConnecting ? 'MIDI...' : (state.midiConnected ? 'MIDI ON' : 'MIDI')}
+            </button>
+            {state.practiceMode && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-green-400 bg-green-500/15">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Practice
+              </span>
+            )}
+            {state.recording && (
+              <span className="flex items-center gap-1 text-[10px] text-red-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                REC
+              </span>
+            )}
+            {state.errors.length > 0 && (
+              <button
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/25 transition-colors"
+                onClick={() => setErrorDialogShown(true)}
+                aria-label={`${state.errors.length} warnings`}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                {state.errors.length}
+              </button>
+            )}
+            <button
+              className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
+              onClick={handleBack}
+              aria-label="Menu"
+            >
+              <svg className="w-4 h-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Android-like left overlay controls: sits beside the stage safe area */}
+      <div
+        className="absolute left-0 z-20 pointer-events-none px-1.5"
+        style={{
+          top: `${stageInsetTop}px`,
+          bottom: `${stageInsetBottom}px`,
+          width: `${stageInsetLeft}px`,
+        }}
+      >
+        <div
+          className="h-full pointer-events-auto flex flex-col"
+          style={{ width: `${leftPanelWidth}px` }}
+        >
+          <div
+            className="rounded-xl backdrop-blur-sm"
+            style={{
+              backgroundColor: theme.colors.optionWindow
+                ? `${theme.colors.optionWindow}40`
+                : 'rgba(0,0,0,0.3)',
+            }}
+          >
+            <ControlPanel
+              squareButton={unipack.info.squareButton}
+              keyLedExist={unipack.keyLedExist}
+              feedbackLight={state.feedbackLight}
+              ledEnabled={state.ledEnabled}
+              autoPlayEnabled={state.autoPlayEnabled}
+              autoPlayPlaying={state.autoPlayPlaying}
+              autoPlayControlsVisible={state.autoPlayControlsVisible}
+              autoPlayExist={unipack.autoPlayExist}
+              midiConnected={state.midiConnected}
+              recording={state.recording}
+              hideUI={state.hideUI}
+              traceLog={state.traceLog}
+              practiceMode={state.practiceMode}
+              autoPlayProgress={state.autoPlayProgress}
+              autoPlayTotal={state.autoPlayTotal}
+              themeColors={theme.colors}
+              onToggleFeedbackLight={toggleFeedbackLight}
+              onToggleLed={toggleLed}
+              onToggleAutoPlay={toggleAutoPlay}
+              onAutoPlayPlayPause={autoPlayPlayPause}
+              onAutoPlayPrev={autoPlayPrev}
+              onAutoPlayNext={autoPlayNext}
+              onTogglePracticeMode={togglePracticeMode}
+              onToggleRecording={toggleRecording}
+              onToggleHideUI={toggleHideUI}
+              onToggleTraceLog={toggleTraceLog}
+              onClearTraceLog={clearTraceLog}
+              onConnectMidi={handleConnectMidi}
+              midiConnecting={midiConnecting}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Center safe area: [PAD GRID center] [CHAINS RIGHT] */}
+      <div
+        className="absolute z-10 min-w-0"
+        ref={centerStageRef}
+        style={{
+          top: `${stageInsetTop}px`,
+          left: `${stageInsetLeft}px`,
+          right: `${stageInsetRight}px`,
+          bottom: `${stageInsetBottom}px`,
+        }}
+      >
+        <div className="flex h-full items-center justify-center min-w-0">
+          <div
+            className="flex items-center min-w-0"
+            style={{
+              width: stageMetrics.totalWidth > 0 ? `${stageMetrics.totalWidth}px` : undefined,
+              height: stageMetrics.totalHeight > 0 ? `${stageMetrics.totalHeight}px` : undefined,
+            }}
+          >
+            <div
+              className="max-h-full"
+              style={{
+                width: stageMetrics.padWidth > 0 ? `${stageMetrics.padWidth}px` : undefined,
+                height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
+              }}
+            >
+              <PadGrid
+                buttonX={unipack.info.buttonX}
+                buttonY={unipack.info.buttonY}
+                padStates={state.padStates}
+                squareButton={unipack.info.squareButton}
+                theme={theme}
+                traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                onPadDown={padTouchOn}
+                onPadUp={padTouchOff}
+              />
+            </div>
+            {showChainBar && (
+              <div
+                className="max-h-full overflow-hidden"
+                style={{
+                  width: stageMetrics.chainWidth > 0 ? `${stageMetrics.chainWidth}px` : undefined,
+                  height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
+                }}
+              >
+                <ChainBar
+                  chainCount={chainSlots}
+                  slotCount={chainAreaSlots}
+                  chainStates={state.chainStates}
+                  currentChain={state.chain}
+                  showSelectedState={!optionPanelOpen && state.watermark}
+                  theme={theme}
+                  proLightMode={state.proLightMode}
+                  onChainSelect={setChain}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Custom logo (Android: TopEnd, 16dp padding, 90dp width) */}
+      {theme.customLogo && state.watermark && !optionPanelOpen && (
+        <img
+          src={theme.customLogo}
+          alt=""
+          className="fixed z-30 pointer-events-none opacity-80"
+          style={{
+            top: `${stageInsetTop}px`,
+            right: `${overlayGap}px`,
+            width: '90px',
+          }}
+          draggable={false}
+        />
+      )}
+
+      {/* Option Panel (Android: slide-in from right) */}
+      <OptionPanel
+        visible={optionPanelOpen}
+        unipackInfo={unipack.info}
+        keyLedExist={unipack.keyLedExist}
+        autoPlayExists={unipack.autoPlayExist}
+        theme={theme}
+        feedbackLight={state.feedbackLight}
+        ledEnabled={state.ledEnabled}
+        autoPlayEnabled={state.autoPlayEnabled}
+        practiceMode={state.practiceMode}
+        recording={state.recording}
+        hideUI={state.hideUI}
+        watermark={state.watermark}
+        traceLog={state.traceLog}
+        proLightMode={state.proLightMode}
+        midiConnected={state.midiConnected}
+        midiConnecting={midiConnecting}
+        onToggleFeedbackLight={toggleFeedbackLight}
+        onToggleLed={toggleLed}
+        onToggleAutoPlay={toggleAutoPlay}
+        onStartPractice={handleStartPracticeFromMenu}
+        onToggleRecording={toggleRecording}
+        onToggleHideUI={toggleHideUI}
+        onToggleWatermark={toggleWatermark}
+        onToggleTraceLog={toggleTraceLog}
+        onClearTraceLog={clearTraceLog}
+        onToggleProLightMode={toggleProLightMode}
+        volumeLevel={state.volumeLevel}
+        onVolumeChange={setVolumeLevel}
+        onConnectMidi={handleConnectMidi}
+        onOpenLaunchpadSettings={() => { setOptionPanelOpen(false); setLaunchpadSettingsOpen(true); }}
+        onClose={() => { setOptionPanelOpen(false); (document.activeElement as HTMLElement)?.blur?.(); }}
+        onQuit={handleQuit}
+      />
+
+      <LaunchpadSettingsModal
+        visible={launchpadSettingsOpen}
+        midiConnected={state.midiConnected}
+        midiInputName={state.midiInputName}
+        midiOutputName={state.midiOutputName}
+        requestedProfile={state.midiRequestedProfile}
+        resolvedProfile={state.midiResolvedProfile}
+        connecting={midiConnecting}
+        onClose={() => { setLaunchpadSettingsOpen(false); (document.activeElement as HTMLElement)?.blur?.(); }}
+        onChangeProfile={handleChangeMidiProfile}
+        onConnect={handleConnectMidi}
+        onDisconnect={handleDisconnectMidi}
+      />
+
+      {/* Drag overlay */}
+      {dragOver && (
+        <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500/30 flex items-center justify-center z-50 pointer-events-none">
+          <p className="text-white text-lg font-bold">Drop UniPack here</p>
+        </div>
+      )}
+
+      {/* Error/Warning Dialog */}
+      {errorDialogShown && state.errors.length > 0 && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
+            if (!state.criticalError) setErrorDialogShown(false);
+          }} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? 'Error' : 'Warning'}>
+            <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {state.criticalError ? 'Error' : 'Warning'}
+                </h2>
+                <span className="text-[10px] text-white/40">
+                  {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+                {state.errors.map((err, i) => (
+                  <ErrorMessageItem key={i} message={err} />
+                ))}
+              </div>
+              <button
+                className={`w-full py-2 rounded-lg text-sm font-medium ${
+                  state.criticalError
+                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                    : 'bg-white/10 text-white/80 hover:bg-white/20'
+                }`}
+                onClick={() => {
+                  setErrorDialogShown(false);
+                  if (state.criticalError) handleQuit();
+                }}
+              >
+                {state.criticalError ? 'Quit' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
+            initial={{ opacity: 0, y: 10, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
+      <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
+    </div>
+  );
+}
+
+const ERROR_MSG_TRUNCATE = 120;
+
+function ErrorMessageItem({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = message.length > ERROR_MSG_TRUNCATE;
+  const label = message.split(':')[0] || 'Error';
+  const detail = message.includes(':') ? message.slice(message.indexOf(':') + 1).trim() : message;
+
+  return (
+    <div className="rounded-md bg-white/5 px-3 py-2">
+      <div className="text-[11px] font-medium text-white/80 mb-0.5">{label}</div>
+      <div
+        className={`text-[10px] text-white/50 font-mono break-all leading-relaxed ${
+          !expanded && isLong ? 'line-clamp-3' : ''
+        }`}
+      >
+        {detail}
+      </div>
+      {isLong && (
+        <button
+          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+}

@@ -2,67 +2,36 @@ import type { MetadataRoute } from 'next';
 
 const siteUrl = 'https://unipad.io';
 
+function entry(
+	path: string,
+	opts: { changeFrequency: MetadataRoute.Sitemap[0]['changeFrequency']; priority: number },
+): MetadataRoute.Sitemap[0] {
+	return {
+		url: `${siteUrl}${path}`,
+		lastModified: new Date(),
+		changeFrequency: opts.changeFrequency,
+		priority: opts.priority,
+		alternates: {
+			languages: {
+				en: `${siteUrl}/en${path}`,
+				ko: `${siteUrl}/ko${path}`,
+			},
+		},
+	};
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
 	return [
-		{
-			url: siteUrl,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 1,
-		},
-		{
-			url: `${siteUrl}/docs`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.9,
-		},
-		{
-			url: `${siteUrl}/docs/unipack`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.8,
-		},
-		{
-			url: `${siteUrl}/docs/unipack/info`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.7,
-		},
-		{
-			url: `${siteUrl}/docs/unipack/sounds`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.7,
-		},
-		{
-			url: `${siteUrl}/docs/unipack/key-sound`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.7,
-		},
-		{
-			url: `${siteUrl}/docs/unipack/key-led`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.7,
-		},
-		{
-			url: `${siteUrl}/docs/unipack/auto-play`,
-			lastModified: new Date(),
-			changeFrequency: 'monthly',
-			priority: 0.7,
-		},
-		{
-			url: `${siteUrl}/docs/terms`,
-			lastModified: new Date(),
-			changeFrequency: 'yearly',
-			priority: 0.5,
-		},
-		{
-			url: `${siteUrl}/notices`,
-			lastModified: new Date(),
-			changeFrequency: 'weekly',
-			priority: 0.8,
-		},
+		entry('', { changeFrequency: 'monthly', priority: 1 }),
+		entry('/play', { changeFrequency: 'monthly', priority: 0.9 }),
+		entry('/docs', { changeFrequency: 'monthly', priority: 0.9 }),
+		entry('/docs/unipack', { changeFrequency: 'monthly', priority: 0.8 }),
+		entry('/docs/unipack/info', { changeFrequency: 'monthly', priority: 0.7 }),
+		entry('/docs/unipack/sounds', { changeFrequency: 'monthly', priority: 0.7 }),
+		entry('/docs/unipack/key-sound', { changeFrequency: 'monthly', priority: 0.7 }),
+		entry('/docs/unipack/key-led', { changeFrequency: 'monthly', priority: 0.7 }),
+		entry('/docs/unipack/auto-play', { changeFrequency: 'monthly', priority: 0.7 }),
+		entry('/docs/terms', { changeFrequency: 'yearly', priority: 0.5 }),
+		entry('/notices', { changeFrequency: 'weekly', priority: 0.8 }),
 	];
 }
