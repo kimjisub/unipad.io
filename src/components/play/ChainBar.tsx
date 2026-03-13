@@ -10,10 +10,15 @@ interface ChainBarProps {
   showSelectedState?: boolean;
   theme: ThemeAssets | null;
   proLightMode?: boolean;
+  /** Chain index range to display (default: 0..7 for right bar) */
+  rangeStart?: number;
+  rangeEnd?: number;
+  /** Reverse display order (Android: left chain bar is reversed) */
+  reversed?: boolean;
   onChainSelect: (c: number) => void;
 }
 
-const MAX_CHAIN_BUTTONS = 24;
+const CHAINS_PER_SIDE = 8;
 
 export function ChainBar({
   chainCount,
@@ -23,20 +28,29 @@ export function ChainBar({
   showSelectedState = true,
   theme,
   proLightMode = false,
+  rangeStart = 0,
+  rangeEnd = CHAINS_PER_SIDE,
+  reversed = false,
   onChainSelect,
 }: ChainBarProps) {
   const isLedMode = theme?.isChainLed && theme?.chainled;
-  const desiredSlots = slotCount ?? chainCount;
-  const visibleCount = Math.max(1, proLightMode ? Math.max(MAX_CHAIN_BUTTONS, desiredSlots) : desiredSlots);
+  const slotsInRange = rangeEnd - rangeStart;
+  const desiredSlots = slotCount ?? slotsInRange;
+  const visibleCount = Math.max(1, proLightMode ? Math.max(slotsInRange, desiredSlots) : desiredSlots);
   const heightPercent = visibleCount > 0 ? 100 / visibleCount : 100;
+
+  const indices = Array.from({ length: visibleCount }, (_, slot) => {
+    const chainIdx = rangeStart + (reversed ? (visibleCount - 1 - slot) : slot);
+    return chainIdx;
+  });
 
   return (
     <div className="h-full flex flex-col gap-0 items-center">
-      {Array.from({ length: visibleCount }, (_, i) => {
-        if (i >= chainCount) {
+      {indices.map((chainIdx, slot) => {
+        if (chainIdx >= chainCount || chainIdx < 0) {
           return (
             <div
-              key={i}
+              key={slot}
               className="w-full"
               style={{
                 height: `${heightPercent}%`,
@@ -46,25 +60,25 @@ export function ChainBar({
           );
         }
 
-        const state = chainStates[i];
-        const isActive = showSelectedState && i === currentChain;
+        const state = chainStates[chainIdx];
+        const isActive = showSelectedState && chainIdx === currentChain;
         const isGuide = state?.guide || false;
         const bgColor = state?.color || 'transparent';
-        const stateOverlay = isLedMode
-          ? theme?.chainled ?? null
-          : (isGuide ? (theme?.chainGuide ?? theme?.chain ?? null) : (isActive ? (theme?.chainSelected ?? theme?.chain ?? null) : (theme?.chain ?? null)));
-        const backgroundBase = isLedMode ? (theme?.btn ?? null) : null;
+        const phantomOverlay = isGuide
+          ? (theme?.chainGuide ?? theme?.chain ?? null)
+          : (isActive ? (theme?.chainSelected ?? theme?.chain ?? null) : (theme?.chain ?? null));
+        const backgroundBase = isLedMode ? (theme?.chainled ?? null) : null;
 
         return (
           <button
-            key={i}
+            key={slot}
             className="w-full flex items-center justify-center relative overflow-hidden"
             style={{
               height: `${heightPercent}%`,
               aspectRatio: '1 / 1',
             }}
-            aria-label={`Chain ${i + 1}`}
-            onPointerDown={(e) => { e.preventDefault(); onChainSelect(i); }}
+            aria-label={`Chain ${chainIdx + 1}`}
+            onPointerDown={(e) => { e.preventDefault(); onChainSelect(chainIdx); }}
           >
             {/* Layer 1: background */}
             {backgroundBase ? (
@@ -90,9 +104,9 @@ export function ChainBar({
             )}
 
             {/* Layer 3: phantom/state image */}
-            {stateOverlay && (
+            {phantomOverlay && (
               <img
-                src={stateOverlay}
+                src={phantomOverlay}
                 alt=""
                 className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
                 draggable={false}

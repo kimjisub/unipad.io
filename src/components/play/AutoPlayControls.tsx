@@ -81,17 +81,15 @@ export function AutoPlayControls({
         </button>
       </div>
 
-      {/* Practice mode toggle */}
+      {/* Practice mode toggle (Android: always shows dot + "Practice Mode" or "AutoPlay") */}
       <button
-        className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
+        className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg hover:bg-white/10 transition-colors bg-white/[0.08]"
         onClick={onTogglePractice}
         title="Practice Mode"
       >
-        {practiceMode && (
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-        )}
-        <span className={`text-[10px] font-medium ${practiceMode ? 'text-green-400' : 'text-white/50'}`}>
-          Practice
+        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: practiceMode ? '#66BB6A' : 'rgba(255,255,255,0.4)' }} />
+        <span className="text-[10px] font-medium" style={{ color: practiceMode ? '#66BB6A' : 'rgba(255,255,255,0.5)' }}>
+          {practiceMode ? 'Practice Mode' : 'AutoPlay'}
         </span>
       </button>
     </div>

@@ -246,10 +246,16 @@ export const HeroSection = () => {
 							<span className="text-xs md:text-sm font-medium">{t('platforms.android')}</span>
 							<span className="hidden md:block text-xs text-muted-foreground text-center">{t('platforms.androidDesc')}</span>
 						</a>
-						<div className="relative flex flex-col items-center gap-1.5 md:gap-2 p-3 md:p-5 rounded-xl bg-white/[0.02] border border-white/[0.05] opacity-50">
+						<div className="relative flex flex-col items-center gap-1.5 md:gap-2 p-3 md:p-5 rounded-xl bg-white/[0.02] border border-white/[0.05] opacity-50 cursor-default">
 							<AppleLogo className="w-5 h-5 md:w-6 md:h-6 text-muted-foreground" />
 							<span className="text-xs md:text-sm font-medium">{t('platforms.ios')}</span>
-							<span className="hidden md:block text-xs text-muted-foreground text-center">{t('platforms.comingSoon')}</span>
+							<span className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground text-center">
+								<span className="relative flex h-1.5 w-1.5">
+									<span className="absolute inline-flex h-full w-full rounded-full bg-muted-foreground/50 animate-ping" />
+									<span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+								</span>
+								{t('platforms.comingSoon')}
+							</span>
 							<span className="md:hidden text-[9px] text-muted-foreground/70">{t('platforms.comingSoon')}</span>
 						</div>
 					</motion.div>

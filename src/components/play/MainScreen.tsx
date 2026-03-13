@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
+import { getSetting, setSetting } from '@/lib/unipack/storage';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
   savedThemes: StoredTheme[];
+  activeThemeId?: string | null;
   lastPlayedPackId?: string | null;
   keyboardDisabled?: boolean;
   onPlay: (id: string) => void;
@@ -17,14 +19,17 @@ interface MainScreenProps {
   onImportTheme: () => void;
   onDeletePack: (id: string) => void;
   onDeleteTheme: (id: string) => void;
+  onApplyTheme: (id: string) => void;
+  onClearTheme: () => void;
+  onToggleBookmark: (id: string) => void;
 }
 
 type SortMethod = 'title' | 'producer' | 'date';
-const MAIN_UI_PREF_KEY = 'main_ui_pref_v1';
 
 export function MainScreen({
   savedPacks,
   savedThemes,
+  activeThemeId,
   lastPlayedPackId,
   keyboardDisabled = false,
   onPlay,
@@ -35,6 +40,9 @@ export function MainScreen({
   onImportTheme,
   onDeletePack,
   onDeleteTheme,
+  onApplyTheme,
+  onClearTheme,
+  onToggleBookmark,
 }: MainScreenProps) {
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -53,6 +61,11 @@ export function MainScreen({
       ))
       : savedPacks;
     return [...filtered].sort((a, b) => {
+      // Bookmarked packs always come first
+      const aBookmark = a.bookmark ? 1 : 0;
+      const bBookmark = b.bookmark ? 1 : 0;
+      if (aBookmark !== bBookmark) return bBookmark - aBookmark;
+
       let cmp = 0;
       switch (sortMethod) {
         case 'title':
@@ -70,38 +83,23 @@ export function MainScreen({
   }, [savedPacks, searchQuery, sortMethod, sortAsc]);
   const selectedPack = filteredAndSortedPacks.find((p) => p.id === selectedId) ?? null;
 
+  // Restore sort settings from IndexedDB (persists across sessions like Android SharedPreferences)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.sessionStorage.getItem(MAIN_UI_PREF_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { sortMethod?: string; sortAsc?: boolean; searchQuery?: string };
-      if (parsed.sortMethod === 'title' || parsed.sortMethod === 'producer' || parsed.sortMethod === 'date') {
-        setSortMethod(parsed.sortMethod);
+    Promise.all([getSetting('sortMethod'), getSetting('sortOrder')]).then(([method, order]) => {
+      if (method === 'title' || method === 'producer' || method === 'date') {
+        setSortMethod(method);
       }
-      if (typeof parsed.sortAsc === 'boolean') {
-        setSortAsc(parsed.sortAsc);
+      if (order === 'true' || order === 'false') {
+        setSortAsc(order === 'true');
       }
-      if (typeof parsed.searchQuery === 'string') {
-        setSearchQuery(parsed.searchQuery);
-      }
-    } catch {
-      // ignore
-    }
+    }).catch(() => {});
   }, []);
 
+  // Persist sort settings to IndexedDB
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.sessionStorage.setItem(MAIN_UI_PREF_KEY, JSON.stringify({
-        sortMethod,
-        sortAsc,
-        searchQuery,
-      }));
-    } catch {
-      // ignore
-    }
-  }, [sortMethod, sortAsc, searchQuery]);
+    setSetting('sortMethod', sortMethod).catch(() => {});
+    setSetting('sortOrder', String(sortAsc)).catch(() => {});
+  }, [sortMethod, sortAsc]);
 
   useEffect(() => {
     if (filteredAndSortedPacks.length === 0) {
@@ -215,12 +213,16 @@ export function MainScreen({
             pack={selectedPack}
             onPlay={() => onPlay(selectedPack.id)}
             onDelete={() => handleDelete(selectedPack.id)}
+            onToggleBookmark={() => onToggleBookmark(selectedPack.id)}
           />
         ) : (
           <TotalPanel
             packs={savedPacks}
             themes={savedThemes}
+            activeThemeId={activeThemeId}
             onDeleteTheme={onDeleteTheme}
+            onApplyTheme={onApplyTheme}
+            onClearTheme={onClearTheme}
           />
         )}
       </div>
@@ -386,14 +388,22 @@ export function MainScreen({
 function TotalPanel({
   packs,
   themes,
+  activeThemeId,
   onDeleteTheme,
+  onApplyTheme,
+  onClearTheme,
 }: {
   packs: StoredUniPack[];
   themes: StoredTheme[];
+  activeThemeId?: string | null;
   onDeleteTheme: (id: string) => void;
+  onApplyTheme: (id: string) => void;
+  onClearTheme: () => void;
 }) {
+  const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
   const ledCount = packs.filter((p) => p.keyLedExist).length;
   const apCount = packs.filter((p) => p.autoPlayExist).length;
+  const totalPlays = packs.reduce((sum, p) => sum + (p.openCount ?? 0), 0);
 
   return (
     <div className="w-full rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-5 relative overflow-y-auto transition-all hover:border-accent/20 hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
@@ -414,7 +424,7 @@ function TotalPanel({
 
       <div className="mt-4 w-full grid grid-cols-2 gap-2">
         <StatBlock label="UniPacks" value={packs.length.toString()} />
-        <StatBlock label="Themes" value={themes.length.toString()} />
+        <StatBlock label="Total Plays" value={totalPlays.toString()} />
         {packs.length > 0 && (
           <>
             <StatBlock label="LED" value={ledCount.toString()} accent="green" />
@@ -423,25 +433,85 @@ function TotalPanel({
         )}
       </div>
 
-      {themes.length > 0 && (
+      {(themes.length > 0 || activeThemeId) && (
         <div className="mt-4 w-full space-y-1.5">
-          <div className="text-[10px] text-white/30 uppercase tracking-wider px-1">Themes</div>
-          {themes.map((t) => (
-            <div key={t.id} className="flex items-center justify-between bg-white/[0.04] rounded-lg border border-white/[0.06] px-3 py-2 hover:border-accent/15 transition-colors">
-              <span className="text-xs text-white/70 truncate">{t.name || t.id}</span>
+          <div className="flex items-center justify-between px-1">
+            <div className="text-[10px] text-white/30 uppercase tracking-wider">Themes</div>
+            {activeThemeId && (
               <button
-                className="p-1 text-white/30 hover:text-red-400 transition-colors shrink-0"
-                onClick={() => onDeleteTheme(t.id)}
-                aria-label="Delete theme"
+                className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                onClick={onClearTheme}
               >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                Reset
               </button>
-            </div>
-          ))}
+            )}
+          </div>
+          {themes.map((t) => {
+            const isActive = t.id === activeThemeId;
+            return (
+              <div
+                key={t.id}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                  isActive
+                    ? 'bg-accent/10 border-accent/30'
+                    : 'bg-white/[0.04] border-white/[0.06] hover:border-accent/15'
+                }`}
+              >
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-white/70 truncate">{t.name || t.id}</div>
+                  {t.author && (
+                    <div className="text-[10px] text-white/30 truncate">{t.author}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!isActive && (
+                    <button
+                      className="px-2 py-0.5 text-[10px] text-accent/80 hover:text-accent bg-accent/10 hover:bg-accent/20 rounded transition-colors"
+                      onClick={() => onApplyTheme(t.id)}
+                    >
+                      Apply
+                    </button>
+                  )}
+                  <button
+                    className="p-1 text-white/30 hover:text-red-400 transition-colors"
+                    onClick={() => setDeleteThemeConfirmId(t.id)}
+                    aria-label="Delete theme"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {/* Community links */}
+      <div className="mt-4 pt-3 border-t border-white/[0.06] w-full flex items-center justify-center gap-3">
+        <a href="https://www.unipad.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-accent transition-colors">Website</a>
+        <span className="text-white/10">·</span>
+        <a href="https://discord.gg/unipad" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-[#5865F2] transition-colors">Discord</a>
+        <span className="text-white/10">·</span>
+        <a href="https://github.com/kimjisub/unipad-android" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">GitHub</a>
+      </div>
+
+      <AnimatePresence>
+        {deleteThemeConfirmId && (
+          <ConfirmDialog
+            message={`Delete theme "${themes.find((t) => t.id === deleteThemeConfirmId)?.name ?? 'this theme'}"?`}
+            onConfirm={() => {
+              onDeleteTheme(deleteThemeConfirmId);
+              setDeleteThemeConfirmId(null);
+            }}
+            onCancel={() => setDeleteThemeConfirmId(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -473,13 +543,16 @@ function PackDetailPanel({
   pack,
   onPlay,
   onDelete,
+  onToggleBookmark,
 }: {
   pack: StoredUniPack;
   onPlay: () => void;
   onDelete: () => void;
+  onToggleBookmark: () => void;
 }) {
   const addedDate = new Date(pack.addedAt).toLocaleDateString();
   const lastOpened = new Date(pack.lastOpenedAt).toLocaleDateString();
+  const openCount = pack.openCount ?? 0;
 
   return (
     <div className="w-full rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-5 text-white overflow-hidden relative transition-all hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
@@ -488,9 +561,28 @@ function PackDetailPanel({
           style={{ background: 'radial-gradient(circle, var(--accent), transparent)' }}
         />
 
-        {/* Title area */}
-        <h2 className="text-lg font-extrabold text-white text-center leading-tight relative tracking-tight">{pack.title}</h2>
-        <p className="text-xs text-white/45 mt-1">{pack.producerName}</p>
+        {/* Bookmark toggle */}
+        <div className="w-full flex justify-end mb-1">
+          <button
+            className="p-1.5 rounded-lg hover:bg-white/[0.08] transition-colors"
+            onClick={onToggleBookmark}
+            aria-label={pack.bookmark ? 'Remove bookmark' : 'Add bookmark'}
+          >
+            <svg className="w-5 h-5" fill={pack.bookmark ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
+              style={{ color: pack.bookmark ? 'var(--accent)' : 'rgba(255,255,255,0.25)' }}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Title area with marquee for long text */}
+        <MarqueeText className="text-lg font-extrabold text-white text-center leading-tight tracking-tight">
+          {pack.title}
+        </MarqueeText>
+        <MarqueeText className="text-xs text-white/45 mt-1 text-center">
+          {pack.producerName}
+        </MarqueeText>
 
         {/* Badges */}
         {(pack.keyLedExist || pack.autoPlayExist) && (
@@ -510,10 +602,24 @@ function PackDetailPanel({
           </div>
         )}
 
-        {/* Stats */}
+        {/* Stats - 2×2 grid matching Android */}
         <div className="mt-4 w-full grid grid-cols-2 gap-2">
           <PropertyBlock label="Pad Size" value={`${pack.buttonX} × ${pack.buttonY}`} />
           <PropertyBlock label={pack.chain === 1 ? 'Chain' : 'Chains'} value={pack.chain.toString()} />
+          <PropertyBlock label="Sounds" value={(pack.soundCount ?? 0).toString()} />
+          <PropertyBlock label="LEDs" value={(pack.ledCount ?? 0).toString()} />
+        </div>
+
+        {/* Play count & dates */}
+        <div className="mt-3 flex items-center justify-center gap-3 text-[10px] text-white/30">
+          <span className="flex items-center gap-1">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+            {openCount}
+          </span>
+          <span className="text-white/10">·</span>
+          <span>{addedDate}</span>
+          <span className="text-white/10">·</span>
+          <span>{lastOpened}</span>
         </div>
 
         {/* Play button */}
@@ -540,20 +646,29 @@ function PackDetailPanel({
         </button>
         </div>
 
-        {/* Meta */}
-        <div className="mt-4 pt-4 border-t border-white/[0.06]">
-          {pack.storeCode && (
-            <div className="text-[10px] text-white/30 text-center mb-2">
-              <span className="text-white/20">Code</span>{' '}
-              <span className="text-accent/60 font-mono">{pack.storeCode}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-center gap-1.5 text-[9px] text-white/20">
-            <span>{addedDate}</span>
-            <span className="text-white/10">·</span>
-            <span>{lastOpened}</span>
-          </div>
+        {/* Links */}
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <a
+            href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(pack.title)}+${encodeURIComponent(pack.producerName)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-lg bg-white/[0.04] hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"
+            aria-label="Search on YouTube"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+            </svg>
+          </a>
         </div>
+
+        {/* Store code */}
+        {pack.storeCode && (
+          <div className="mt-2 text-[10px] text-white/30 text-center">
+            <span className="text-white/20">Code</span>{' '}
+            <span className="text-accent/60 font-mono">{pack.storeCode}</span>
+          </div>
+        )}
+
     </div>
   );
 }
@@ -597,12 +712,7 @@ function UnipackListItem({
       tabIndex={0}
       aria-label={`${pack.title} by ${pack.producerName}`}
       aria-selected={isSelected}
-      className={`flex h-[72px] cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl ${
-        isSelected
-          ? 'bg-accent/[0.08] border border-accent/25'
-          : 'bg-white/[0.02] border border-transparent hover:bg-white/[0.04] hover:border-white/[0.08]'
-      }`}
-      style={isSelected ? { boxShadow: '0 0 25px -5px rgba(255,143,0,0.12)' } : undefined}
+      className="flex h-[72px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
@@ -613,11 +723,43 @@ function UnipackListItem({
         }
       }}
     >
-      {/* Accent bar */}
-      <div className={`w-[3px] shrink-0 transition-colors rounded-l-xl ${isSelected ? 'bg-accent shadow-[0_0_8px_rgba(255,143,0,0.4)]' : 'bg-transparent'}`} />
+      {/* Flag area - slides out from left (Android-style) */}
+      <motion.button
+        className="shrink-0 h-full flex items-center justify-center gap-1.5 rounded-l-xl overflow-hidden"
+        style={{ background: 'var(--accent)' }}
+        initial={false}
+        animate={{
+          width: isSelected ? 90 : 3,
+          opacity: 1,
+        }}
+        transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 30 }}
+        onClick={(e) => { e.stopPropagation(); if (isSelected) onPlay(); }}
+        aria-label={`Play ${pack.title}`}
+        tabIndex={-1}
+      >
+        {isSelected && (
+          <motion.span
+            className="flex items-center gap-1 text-white text-xs font-bold whitespace-nowrap"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Play
+          </motion.span>
+        )}
+      </motion.button>
 
-      {/* Content */}
-      <div className="flex-1 flex items-center px-4 min-w-0">
+      {/* Content area */}
+      <div className={`flex-1 flex items-center px-4 min-w-0 transition-colors rounded-r-xl ${
+        isSelected
+          ? 'bg-accent/[0.08] border-y border-r border-accent/25'
+          : 'bg-white/[0.02] border-y border-r border-transparent hover:bg-white/[0.04] hover:border-white/[0.08]'
+      }`}
+        style={isSelected ? { boxShadow: '0 0 25px -5px rgba(255,143,0,0.12)' } : undefined}
+      >
         {/* Pad icon */}
         <div className={`w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-[10px] font-bold transition-colors ${
           isSelected ? 'bg-accent/15 text-accent' : 'bg-white/[0.04] text-white/20'
@@ -632,6 +774,11 @@ function UnipackListItem({
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-[10px] text-white/25">{pack.chain}ch</span>
+            {pack.bookmark && (
+              <svg className="w-3 h-3 text-accent/60" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+              </svg>
+            )}
             {pack.keyLedExist && (
               <span className="flex items-center gap-0.5">
                 <span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_4px_rgba(74,222,128,0.4)]" />
@@ -646,22 +793,6 @@ function UnipackListItem({
             )}
           </div>
         </div>
-
-        {/* Play button on selected */}
-        {isSelected && (
-          <button
-            className="relative shrink-0 ml-2 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 group"
-            style={{ background: 'var(--accent)' }}
-            onClick={(e) => { e.stopPropagation(); onPlay(); }}
-            aria-label={`Play ${pack.title}`}
-            tabIndex={-1}
-          >
-            <span className="absolute -inset-[2px] rounded-full bg-accent opacity-30 blur-md -z-10 group-hover:opacity-50 transition-opacity" />
-            <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </button>
-        )}
       </div>
     </motion.div>
   );
@@ -738,6 +869,44 @@ function KeyHint({ keys, label }: { keys: string; label: string }) {
       <kbd className="px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.06] text-white/40 text-[9px] font-mono leading-tight shadow-sm">{keys}</kbd>
       <span className="text-white/25">{label}</span>
     </span>
+  );
+}
+
+function MarqueeText({ children, className }: { children: React.ReactNode; className?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [marqueeStyle, setMarqueeStyle] = useState<React.CSSProperties | undefined>(undefined);
+
+  useEffect(() => {
+    const check = () => {
+      if (containerRef.current && textRef.current) {
+        const overflow = textRef.current.scrollWidth - containerRef.current.clientWidth;
+        if (overflow > 0) {
+          setMarqueeStyle({
+            animation: 'marquee-scroll 6s linear infinite alternate',
+            ['--marquee-distance' as string]: `${-overflow}px`,
+          });
+        } else {
+          setMarqueeStyle(undefined);
+        }
+      }
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [children]);
+
+  return (
+    <div ref={containerRef} className="w-full overflow-hidden">
+      <span
+        ref={textRef}
+        className={`${className ?? ''} inline-block whitespace-nowrap`}
+        style={marqueeStyle}
+      >
+        {children}
+      </span>
+    </div>
   );
 }
 

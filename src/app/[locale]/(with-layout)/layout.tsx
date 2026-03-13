@@ -10,6 +10,7 @@ import '@radix-ui/themes/styles.css';
 import '../../globals.css';
 
 import Footer from '@/components/Footer';
+import { Analytics } from '@vercel/analytics/next';
 import { FirebaseAnalytics } from '@/components/FirebaseAnalytics';
 import GrainOverlay from '@/components/GrainOverlay';
 import ScrollProgressIndicator from '@/components/ScrollProgressIndicator';
@@ -99,6 +100,7 @@ export default async function RootLayout({
 				<NextIntlClientProvider locale={locale} messages={messages}>
 					<ThemeProvider>
 						<Suspense fallback={null}><FirebaseAnalytics /></Suspense>
+						<Analytics />
 						<SkipToContent />
 						<GrainOverlay />
 						<ScrollProgressIndicator />

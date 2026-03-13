@@ -29,15 +29,13 @@ export class LedRunner {
   private listener: LedRunnerListener;
   private chainValue: () => number;
   private setChain: (c: number) => void;
-  private loopDelay: number;
 
   private btnLed: (Led | null)[][];
   private cirLed: (Led | null)[];
   private ledAnimationStates: LedAnimationState[] = [];
   private ledAnimationStatesAdd: LedAnimationState[] = [];
 
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastTime = 0;
+  private rafId: number | null = null;
 
   active = false;
 
@@ -46,13 +44,11 @@ export class LedRunner {
     listener: LedRunnerListener,
     chainValue: () => number,
     setChain: (c: number) => void,
-    loopDelay = 4,
   ) {
     this.unipack = unipack;
     this.listener = listener;
     this.chainValue = chainValue;
     this.setChain = setChain;
-    this.loopDelay = loopDelay;
 
     this.btnLed = Array.from({ length: unipack.info.buttonX }, () =>
       Array.from({ length: unipack.info.buttonY }, () => null),
@@ -64,11 +60,6 @@ export class LedRunner {
     if (!this.active) return;
 
     const currTime = performance.now();
-    if (currTime - this.lastTime < this.loopDelay) {
-      this.timerId = setTimeout(this.loop, this.loopDelay);
-      return;
-    }
-    this.lastTime = currTime;
 
     for (const state of this.ledAnimationStates) {
       if (state.isPlaying && !state.isShutdown) {
@@ -114,7 +105,7 @@ export class LedRunner {
     this.ledAnimationStatesAdd.length = 0;
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
-    this.timerId = setTimeout(this.loop, this.loopDelay);
+    this.rafId = requestAnimationFrame(this.loop);
   };
 
   private processEvent(event: LedEvent, state: LedAnimationState): void {
@@ -178,17 +169,21 @@ export class LedRunner {
   launch(): void {
     if (!this.active) {
       this.active = true;
-      this.lastTime = performance.now();
-      this.timerId = setTimeout(this.loop, this.loopDelay);
+      this.rafId = requestAnimationFrame(this.loop);
     }
   }
 
   stop(): void {
     this.active = false;
-    if (this.timerId !== null) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
     }
+    for (const state of this.ledAnimationStates) {
+      this.cleanupState(state);
+    }
+    this.ledAnimationStates.length = 0;
+    this.ledAnimationStatesAdd.length = 0;
   }
 
   private ledGet(c: number, x: number, y: number): LedAnimation | null {

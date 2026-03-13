@@ -6,6 +6,7 @@ import { hasLocale } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 
 import '../../globals.css';
+import { Analytics } from '@vercel/analytics/next';
 import { FirebaseAnalytics } from '@/components/FirebaseAnalytics';
 import { routing } from '@/i18n/routing';
 
@@ -42,9 +43,14 @@ export default async function PlayLayout({
     <html lang={locale} className={`${inter.variable} dark`}>
       <head>
         <meta name="theme-color" content="#161e2b" />
+        <meta name="screen-orientation" content="landscape" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="font-sans bg-background text-foreground antialiased">
         <Suspense fallback={null}><FirebaseAnalytics /></Suspense>
+        <Analytics />
         {children}
       </body>
     </html>

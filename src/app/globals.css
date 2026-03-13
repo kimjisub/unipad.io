@@ -93,6 +93,11 @@
   animation: shimmer 3s linear infinite;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Animated Gradient Text */
 @keyframes gradient-flow {
   0%   { background-position: 0%   50%; }
@@ -179,6 +184,12 @@
 /* Override Radix Theme background */
 .radix-themes {
   --color-background: var(--background);
+}
+
+/* Marquee scroll for overflowing text */
+@keyframes marquee-scroll {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(var(--marquee-distance)); }
 }
 
 /* Prose styling for docs */

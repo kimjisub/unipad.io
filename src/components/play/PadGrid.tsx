@@ -162,7 +162,7 @@ export function PadGrid({
       style={{
         gridTemplateColumns: `repeat(${buttonY}, 1fr)`,
         gridTemplateRows: `repeat(${buttonX}, 1fr)`,
-        gap: hasThemeBtn ? '0px' : '1px',
+        gap: '0px',
       }}
     >
       {Array.from({ length: buttonX }, (_, x) =>
@@ -170,12 +170,14 @@ export function PadGrid({
           const pad = padStates[x]?.[y];
           const bgColor = pad?.color || 'transparent';
           const isPressed = pad?.pressed || false;
+          const pressedIsWinning = pad?.pressedIsWinning || false;
           const isGuide = pad?.guide || false;
           const guideTargetWallTimeMs = pad?.guideTargetWallTimeMs ?? null;
 
           let phantomImage: string | null = null;
           let phantomRotation = 0;
-          phantomImage = theme?.phantom ?? null;
+          // Android: phantom is only shown when grid is smaller than 16x16
+          phantomImage = (buttonX < 16 && buttonY < 16) ? (theme?.phantom ?? null) : null;
           // Android parity: phantom_ is only used for center 2x2 in even square grids.
           if (
             theme?.phantomVariant
@@ -201,11 +203,9 @@ export function PadGrid({
           // background(btn) -> led(color or btn_) -> phantom -> traceLog
           const hasLedColor = bgColor !== 'transparent';
           const buttonBase = theme?.btn;
-          const ledPressedOverlay = isPressed && theme?.btnPressed ? theme.btnPressed : null;
+          const ledPressedOverlay = pressedIsWinning && theme?.btnPressed ? theme.btnPressed : null;
           const guideRemaining = guideTargetWallTimeMs ? Math.max(0, guideTargetWallTimeMs - guideNowMs) : 0;
           const guideProgress = guideTargetWallTimeMs ? Math.min(1, Math.max(0, 1 - guideRemaining / 800)) : 0;
-          const guideScale = 1.2 - guideProgress * 0.28;
-          const guideOpacity = isGuide ? 0.75 - guideProgress * 0.35 : 0;
           const traceText = traceLogData?.[x]?.[y]?.join(' ') ?? '';
           const traceDensity = traceText.length > 0 ? Math.min(1, 18 / traceText.length) : 1;
           const traceFontSize = Math.max(7, Math.min(14, padCellMin * 0.18 * traceDensity + 4));
@@ -216,9 +216,9 @@ export function PadGrid({
               data-pad={`${x},${y}`}
               className={`
                 relative overflow-hidden
-                ${!hasThemeBtn ? 'rounded-[2px] sm:rounded-[3px] border border-white/[0.03] hover:brightness-150' : ''}
-                transition-[transform,filter] duration-75
-                ${isPressed && !hasThemeBtn ? 'scale-[0.95] brightness-125' : ''}
+                ${!hasThemeBtn ? 'rounded-[2px] sm:rounded-[3px]' : ''}
+                ${!hasThemeBtn ? 'transition-[filter] duration-75' : ''}
+                ${!hasThemeBtn && isPressed ? 'brightness-125' : ''}
               `}
               style={{
                 aspectRatio: squareButton ? '1' : undefined,
@@ -266,17 +266,22 @@ export function PadGrid({
                 />
               )}
 
-              {isGuide && (
-                <div
-                  className="absolute inset-[4%] rounded-[14%] pointer-events-none z-[25]"
-                  style={{
-                    border: `2px solid ${theme?.colors?.traceLog || '#ffffff'}`,
-                    opacity: guideOpacity,
-                    transform: `scale(${guideScale})`,
-                    boxShadow: `0 0 ${8 + guideProgress * 14}px ${bgColor !== 'transparent' ? bgColor : 'rgba(255,255,255,0.6)'}`,
-                  }}
-                />
-              )}
+              {/* GuideTimingView: dark rect that shrinks toward center (Android parity) */}
+              {isGuide && (() => {
+                const insetPct = guideProgress * 50;
+                return (
+                  <div
+                    className="absolute pointer-events-none z-[25]"
+                    style={{
+                      top: `${insetPct}%`,
+                      left: `${insetPct}%`,
+                      right: `${insetPct}%`,
+                      bottom: `${insetPct}%`,
+                      backgroundColor: 'rgba(0,0,0,0.87)',
+                    }}
+                  />
+                );
+              })()}
 
               {/* TraceLog number overlay (Android: shows all numbers space-separated) */}
               {traceLogData && (traceLogData[x]?.[y]?.length ?? 0) > 0 && (

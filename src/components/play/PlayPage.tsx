@@ -18,6 +18,7 @@ import {
   listUniPacks,
   deleteUniPack,
   updateUniPackLastOpened,
+  toggleUniPackBookmark,
   saveTheme,
   getTheme,
   listThemes,
@@ -39,6 +40,7 @@ import type { LaunchpadProfile } from '@/lib/unipack';
 import { initFirebaseServices } from '@/lib/firebase';
 
 const PACK_QUERY_KEY = 'pack';
+const CODE_QUERY_KEY = 'code';
 const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
 
 export function PlayPage() {
@@ -98,6 +100,7 @@ export function PlayPage() {
   const centerStageRef = useRef<HTMLDivElement | null>(null);
   const [centerStageSize, setCenterStageSize] = useState({ width: 0, height: 0 });
   const prevLoadedRef = useRef(false);
+  const prevRecordingRef = useRef(false);
   const currentPackIdRef = useRef<string | null>(null);
   const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -132,7 +135,7 @@ export function PlayPage() {
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
-    }, 2600);
+    }, 2000);
   }, []);
 
   const normalizeStoreError = useCallback((error: unknown): string => {
@@ -182,11 +185,15 @@ export function PlayPage() {
         ) {
           setMidiProfile(savedMidiProfile);
         }
-        const count = await fetchStoreCount();
+        const [savedLastPackId, countResult] = await Promise.all([
+          getSetting('lastUniPackId'),
+          fetchStoreCount(),
+        ]);
         const prev = Number(await getSetting('prevStoreCount') ?? '0');
         if (!cancelled) {
-          setStoreCount(count);
-          setHasStoreUpdate(count > prev);
+          if (savedLastPackId) setLastPlayedPackId(savedLastPackId);
+          setStoreCount(countResult);
+          setHasStoreUpdate(countResult > prev);
         }
       } catch {
         /* storage unavailable */
@@ -247,6 +254,40 @@ export function PlayPage() {
     prevLoadedRef.current = state.loaded;
   }, [state.loaded, state.errors]);
 
+  // 로딩 완료 시 저장된 설정 복원
+  const settingsRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!state.loaded || settingsRestoredRef.current) return;
+    settingsRestoredRef.current = true;
+    (async () => {
+      try {
+        const [vol, fb, wm] = await Promise.all([
+          getSetting('volumeLevel'),
+          getSetting('feedbackLight'),
+          getSetting('watermark'),
+        ]);
+        if (vol !== null) setVolumeLevel(Number(vol));
+        if (fb === 'false') toggleFeedbackLight();
+        if (wm === 'false') toggleWatermark();
+      } catch { /* storage unavailable */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.loaded]);
+
+  // 설정 변경 시 저장
+  useEffect(() => {
+    if (!state.loaded) return;
+    setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
+  }, [state.loaded, state.volumeLevel]);
+  useEffect(() => {
+    if (!state.loaded) return;
+    setSetting('feedbackLight', String(state.feedbackLight)).catch(() => {});
+  }, [state.loaded, state.feedbackLight]);
+  useEffect(() => {
+    if (!state.loaded) return;
+    setSetting('watermark', String(state.watermark)).catch(() => {});
+  }, [state.loaded, state.watermark]);
+
   const handleImportFile = useCallback(
     async (file: File) => {
       await resumeAudio();
@@ -259,6 +300,8 @@ export function PlayPage() {
           ...parsed.info,
           keyLedExist: parsed.keyLedExist,
           autoPlayExist: parsed.autoPlayExist,
+          soundCount: parsed.soundCount,
+          ledCount: parsed.ledCount,
         });
         currentPackIdRef.current = id;
         await setSetting('lastUniPackId', id);
@@ -271,25 +314,30 @@ export function PlayPage() {
           const theme = await getTheme(lastThemeId);
           if (theme) {
             currentThemeIdRef.current = lastThemeId;
-            await loadTheme(theme.zipData);
+            try {
+              await loadTheme(theme.zipData);
+            } catch {
+              showToast('Failed to apply skin. Reset skin.');
+              currentThemeIdRef.current = null;
+              await setSetting('lastThemeId', '');
+            }
           }
         }
       } catch {
         /* storage error */
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl],
+    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl, showToast],
   );
 
   const handleImportThemeFile = useCallback(
     async (file: File) => {
       const buffer = await file.arrayBuffer();
-      // 플레이 중이면 바로 적용
-      if (state.loaded) {
-        await loadTheme(buffer);
-      }
-
       try {
+        if (state.loaded) {
+          await loadTheme(buffer);
+        }
+
         const { loadThemeFromZip } = await import('@/lib/unipack');
         const parsed = await loadThemeFromZip(buffer.slice(0));
         const id = await saveTheme(buffer, parsed.metadata);
@@ -297,10 +345,12 @@ export function PlayPage() {
         await setSetting('lastThemeId', id);
         await refreshLists();
       } catch {
-        /* storage error */
+        showToast('Failed to apply skin. Reset skin.');
+        currentThemeIdRef.current = null;
+        await setSetting('lastThemeId', '').catch(() => {});
       }
     },
-    [loadTheme, refreshLists, state.loaded],
+    [loadTheme, refreshLists, state.loaded, showToast],
   );
 
   const handlePlay = useCallback(
@@ -321,7 +371,13 @@ export function PlayPage() {
           const theme = await getTheme(lastThemeId);
           if (theme) {
             currentThemeIdRef.current = lastThemeId;
-            await loadTheme(theme.zipData);
+            try {
+              await loadTheme(theme.zipData);
+            } catch {
+              showToast('Failed to apply skin. Reset skin.');
+              currentThemeIdRef.current = null;
+              await setSetting('lastThemeId', '');
+            }
           }
         }
         return true;
@@ -330,9 +386,15 @@ export function PlayPage() {
         return false;
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, syncPackUrl],
+    [loadUniPack, loadTheme, resumeAudio, syncPackUrl, showToast],
   );
 
+  const getCodeFromUrl = useCallback((): string | null => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get(CODE_QUERY_KEY)?.trim() || null;
+  }, []);
+
+  // Restore from ?pack=<localId> URL parameter
   useEffect(() => {
     if (restoringFromStorage || state.loaded || state.loading) return;
     if (triedUrlPackRestoreRef.current) return;
@@ -341,9 +403,7 @@ export function PlayPage() {
 
     triedUrlPackRestoreRef.current = true;
     handlePlay(packId).then((ok) => {
-      if (!ok) {
-        syncPackUrl(null);
-      }
+      if (!ok) syncPackUrl(null);
     }).catch(() => {
       syncPackUrl(null);
     });
@@ -365,8 +425,50 @@ export function PlayPage() {
     async (id: string) => {
       await deleteTheme(id);
       if (currentThemeIdRef.current === id) {
+        currentThemeIdRef.current = null;
         await setSetting('lastThemeId', '');
       }
+      await refreshLists();
+    },
+    [refreshLists],
+  );
+
+  const handleApplyTheme = useCallback(
+    async (id: string) => {
+      try {
+        const theme = await getTheme(id);
+        if (!theme) return;
+        currentThemeIdRef.current = id;
+        await setSetting('lastThemeId', id);
+        if (state.loaded) {
+          try {
+            await loadTheme(theme.zipData);
+          } catch {
+            showToast('Failed to apply skin. Reset skin.');
+            currentThemeIdRef.current = null;
+            await setSetting('lastThemeId', '');
+          }
+        }
+        await refreshLists();
+      } catch {
+        showToast('Failed to apply theme.');
+      }
+    },
+    [loadTheme, refreshLists, showToast, state.loaded],
+  );
+
+  const handleClearTheme = useCallback(
+    async () => {
+      currentThemeIdRef.current = null;
+      await setSetting('lastThemeId', '');
+      await refreshLists();
+    },
+    [refreshLists],
+  );
+
+  const handleToggleBookmark = useCallback(
+    async (id: string) => {
+      await toggleUniPackBookmark(id);
       await refreshLists();
     },
     [refreshLists],
@@ -432,7 +534,20 @@ export function PlayPage() {
     });
   }, [handleQuit, optionPanelOpen, setMidiUiContext]);
 
-  // Escape key = close topmost overlay, then toggle option panel
+  const handleClearTraceLog = useCallback(() => {
+    clearTraceLog();
+    showToast('Trace Log Cleared');
+  }, [clearTraceLog, showToast]);
+
+  // Android: show "Copied" toast when recording stops
+  useEffect(() => {
+    if (prevRecordingRef.current && !state.recording) {
+      showToast('Copied');
+    }
+    prevRecordingRef.current = state.recording;
+  }, [state.recording, showToast]);
+
+  // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
   useEffect(() => {
     if (!state.loaded) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -450,11 +565,31 @@ export function PlayPage() {
         } else {
           setOptionPanelOpen(true);
         }
+        return;
+      }
+
+      // Android function key equivalents (Backtick + number)
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        switch (e.key) {
+          case 'f': e.preventDefault(); toggleFeedbackLight(); break;
+          case 'l': e.preventDefault(); toggleLed(); break;
+          case 'a': e.preventDefault(); toggleAutoPlay(); break;
+          case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
+          case 'h': e.preventDefault(); toggleHideUI(); break;
+          case 'w': e.preventDefault(); toggleWatermark(); break;
+          case 'p': e.preventDefault(); toggleProLightMode(); break;
+          case 'r': e.preventDefault(); toggleRecording(); break;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.loaded, state.hideUI, state.criticalError, toggleHideUI, errorDialogShown, launchpadSettingsOpen, optionPanelOpen]);
+  }, [
+    state.loaded, state.hideUI, state.criticalError,
+    toggleHideUI, toggleFeedbackLight, toggleLed, toggleAutoPlay,
+    toggleWatermark, toggleProLightMode, toggleRecording,
+    errorDialogShown, launchpadSettingsOpen, optionPanelOpen,
+  ]);
 
   useEffect(() => {
     const base = 'UniPad Web Player';
@@ -462,6 +597,16 @@ export function PlayPage() {
     document.title = title ? `${title} | ${base}` : base;
     return () => { document.title = base; };
   }, [state.unipack?.info.title]);
+
+  // Android: sensorLandscape orientation lock
+  useEffect(() => {
+    if (!state.loaded) return;
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (type: string) => Promise<void>; unlock?: () => void };
+    if (orientation?.lock) {
+      orientation.lock('landscape').catch(() => {});
+      return () => { orientation.unlock?.(); };
+    }
+  }, [state.loaded]);
 
   const handleConnectMidi = useCallback(async () => {
     if (midiConnecting) return;
@@ -587,6 +732,8 @@ export function PlayPage() {
         ...parsed.info,
         keyLedExist: parsed.keyLedExist,
         autoPlayExist: parsed.autoPlayExist,
+        soundCount: parsed.soundCount,
+        ledCount: parsed.ledCount,
         storeCode: item.code,
       });
 
@@ -653,6 +800,47 @@ export function PlayPage() {
     [savedPacks],
   );
 
+  // Android-style deep link: ?code=<shareCode> auto-downloads from store and plays
+  const triedCodeRestoreRef = useRef(false);
+  useEffect(() => {
+    if (restoringFromStorage || state.loaded || state.loading) return;
+    if (triedCodeRestoreRef.current) return;
+    if (triedUrlPackRestoreRef.current) return;
+    const shareCode = getCodeFromUrl();
+    if (!shareCode) return;
+
+    triedCodeRestoreRef.current = true;
+    triedUrlPackRestoreRef.current = true;
+
+    // If already downloaded, just play it
+    const existingId = downloadedPackIdByCode.get(shareCode);
+    if (existingId) {
+      handlePlay(existingId);
+      return;
+    }
+
+    // Auto-download from store
+    (async () => {
+      try {
+        showToast('Downloading shared pack...');
+        const items = await fetchStoreItems();
+        const item = items.find((i) => i.code === shareCode);
+        if (!item) {
+          showToast('Shared pack not found in store.');
+          return;
+        }
+        await handleDownloadStoreItem(item);
+        const updatedPacks = await listUniPacks();
+        const newPack = updatedPacks.find((p) => p.storeCode === shareCode);
+        if (newPack) {
+          await handlePlay(newPack.id);
+        }
+      } catch {
+        showToast('Failed to load shared pack.');
+      }
+    })();
+  }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast]);
+
   useLayoutEffect(() => {
     const target = centerStageRef.current;
     if (!target) return undefined;
@@ -686,7 +874,7 @@ export function PlayPage() {
   // Loading spinner
   if (restoringFromStorage) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-[var(--background)] text-white">
+      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-black text-white">
         <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
         <p className="text-white/40 text-sm">Loading...</p>
       </div>
@@ -704,6 +892,7 @@ export function PlayPage() {
         <MainScreen
           savedPacks={savedPacks}
           savedThemes={savedThemes}
+          activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
           keyboardDisabled={storeOpen}
           onPlay={handlePlay}
@@ -714,6 +903,9 @@ export function PlayPage() {
           onImportTheme={() => themeInputRef.current?.click()}
           onDeletePack={handleDeletePack}
           onDeleteTheme={handleDeleteTheme}
+          onApplyTheme={handleApplyTheme}
+          onClearTheme={handleClearTheme}
+          onToggleBookmark={handleToggleBookmark}
         />
 
         <StoreModal
@@ -772,7 +964,7 @@ export function PlayPage() {
   // Loading screen (Android style: semi-transparent overlay with cyan progress)
   if (state.loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[var(--background)] text-white">
+      <div className="h-screen flex items-center justify-center bg-black text-white">
         <div className="bg-black/60 rounded-2xl px-6 py-5 w-[280px] flex flex-col items-center gap-3">
           {loadingPackTitle && (
             <p className="text-xs text-white/50 truncate max-w-full">{loadingPackTitle}</p>
@@ -795,18 +987,14 @@ export function PlayPage() {
 
   const { unipack, theme } = state;
   const actualChainCount = unipack?.info.chain ?? 0;
-  const showChainBar = state.proLightMode || actualChainCount > 1;
+  const showRightChainBar = state.proLightMode || actualChainCount > 1;
+  const showLeftChainBar = state.proLightMode || actualChainCount > 16;
   const chainSlots = actualChainCount;
-  const chainAreaSlots = showChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
-  const logoVisible = Boolean(theme.customLogo && state.watermark && !optionPanelOpen);
-  const optionPanelWidth = 280;
-  const topHudHeight = 52;
-  const overlayGap = 12;
-  const leftPanelWidth = unipack?.info.squareButton ? 120 : 100;
-  const rightOverlayWidth = optionPanelOpen ? optionPanelWidth : (logoVisible ? 102 : 0);
-  const stageInsetTop = topHudHeight + overlayGap;
-  const stageInsetLeft = leftPanelWidth + overlayGap * 2;
-  const stageInsetRight = rightOverlayWidth + overlayGap;
+  const chainAreaSlots = showRightChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
+  const overlayGap = 8;
+  const stageInsetTop = overlayGap;
+  const stageInsetLeft = overlayGap;
+  const stageInsetRight = overlayGap;
   const stageInsetBottom = overlayGap;
   const stageMetrics = (() => {
     if (!unipack) {
@@ -816,6 +1004,7 @@ export function PlayPage() {
         padWidth: 0,
         padHeight: 0,
         chainWidth: 0,
+        leftChainWidth: 0,
       };
     }
 
@@ -828,52 +1017,93 @@ export function PlayPage() {
         padWidth: 0,
         padHeight: 0,
         chainWidth: 0,
+        leftChainWidth: 0,
       };
     }
 
     // Use integer pixel units to avoid sub-pixel seams between pad and chain.
     const padCols = unipack.info.buttonY;
     const padRows = unipack.info.buttonX;
-    const chainCols = showChainBar ? 1 : 0;
-    const unit = Math.max(1, Math.floor(Math.min(cw / (padCols + chainCols), ch / padRows)));
+    const rightChainCols = showRightChainBar ? 1 : 0;
+    const leftChainCols = showLeftChainBar ? 1 : 0;
+    const unit = Math.max(1, Math.floor(Math.min(cw / (padCols + rightChainCols + leftChainCols), ch / padRows)));
     const padHeight = unit * padRows;
     const padWidth = unit * padCols;
-    const chainWidth = showChainBar ? unit : 0;
+    const rightChainWidth = showRightChainBar ? unit : 0;
+    const leftChainWidth = showLeftChainBar ? unit : 0;
     return {
-      totalWidth: padWidth + chainWidth,
+      totalWidth: padWidth + rightChainWidth + leftChainWidth,
       totalHeight: padHeight,
       padWidth,
       padHeight,
-      chainWidth,
+      chainWidth: rightChainWidth,
+      leftChainWidth,
     };
   })();
   if (!unipack) return null;
 
-  // Hide UI mode
+  // Hide UI mode: Android hides only control panels, keeps pad grid and chain bars
   if (state.hideUI) {
+    const hiddenTotalCols = unipack.info.buttonY + (showRightChainBar ? 1 : 0) + (showLeftChainBar ? 1 : 0);
     return (
       <div
         className="h-screen flex items-center justify-center overflow-hidden"
         style={{
-          backgroundColor: 'var(--background)',
+          backgroundColor: '#000000',
           backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
-          backgroundSize: 'cover',
+          backgroundSize: 'auto 100%',
           backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
         }}
         onClick={toggleHideUI}
       >
         <div className="w-full h-full flex items-center justify-center p-2">
-          <div className="h-full" style={{ aspectRatio: `${unipack.info.buttonY} / ${unipack.info.buttonX}`, maxWidth: '95vw' }}>
-            <PadGrid
-              buttonX={unipack.info.buttonX}
-              buttonY={unipack.info.buttonY}
-              padStates={state.padStates}
-              squareButton={unipack.info.squareButton}
-              theme={theme}
-              traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
-              onPadDown={padTouchOn}
-              onPadUp={padTouchOff}
-            />
+          <div className="h-full flex" style={{ aspectRatio: `${hiddenTotalCols} / ${unipack.info.buttonX}`, maxWidth: '95vw' }}>
+            {showLeftChainBar && (
+              <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
+                <ChainBar
+                  chainCount={chainSlots}
+                  slotCount={chainAreaSlots}
+                  chainStates={state.chainStates}
+                  currentChain={state.chain}
+                  showSelectedState={state.watermark}
+                  theme={theme}
+                  proLightMode={state.proLightMode}
+                  rangeStart={16}
+                  rangeEnd={24}
+                  reversed
+                  onChainSelect={setChain}
+                />
+              </div>
+            )}
+            <div className="h-full" style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%` }}>
+              <PadGrid
+                buttonX={unipack.info.buttonX}
+                buttonY={unipack.info.buttonY}
+                padStates={state.padStates}
+                squareButton={unipack.info.squareButton}
+                theme={theme}
+                traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                onPadDown={padTouchOn}
+                onPadUp={padTouchOff}
+              />
+            </div>
+            {showRightChainBar && (
+              <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
+                <ChainBar
+                  chainCount={chainSlots}
+                  slotCount={chainAreaSlots}
+                  chainStates={state.chainStates}
+                  currentChain={state.chain}
+                  showSelectedState={state.watermark}
+                  theme={theme}
+                  proLightMode={state.proLightMode}
+                  rangeStart={0}
+                  rangeEnd={8}
+                  onChainSelect={setChain}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -883,132 +1113,109 @@ export function PlayPage() {
   // Player screen: [Controls LEFT] [PAD GRID center] [CHAINS RIGHT]
   return (
     <div
-      className="relative h-screen text-white overflow-hidden"
+      className="relative h-screen text-white overflow-hidden animate-[fadeIn_300ms_ease-out]"
       style={{
-        backgroundColor: 'var(--background)',
+        backgroundColor: '#000000',
         backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
-        backgroundSize: 'cover',
+        backgroundSize: 'auto 100%',
         backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
       }}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* Top bar overlay - keeps stage truly centered like Android */}
-      <div
-        className="absolute inset-x-0 top-0 z-30 px-3 pt-2 pointer-events-none"
-        style={{ paddingRight: `${stageInsetRight}px` }}
-      >
-        <div className="flex items-start justify-between gap-3 pointer-events-auto">
-          <div className="max-w-[40vw] rounded-lg bg-black/30 px-2.5 py-1.5 backdrop-blur-md">
-            <h1 className="text-[11px] font-bold leading-tight truncate">{unipack.info.title}</h1>
-            <p className="text-[10px] leading-tight text-white/45 truncate">{unipack.info.producerName}</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-2.5 py-1.5 backdrop-blur-md">
+      {/* Top-left status indicators (minimal, Android-like) */}
+      <div className="absolute top-0 left-0 z-30 px-3 pt-2 pointer-events-none">
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {state.midiConnected && (
             <button
-              className={`px-2 py-1 rounded-md text-[10px] border transition-colors ${
-                state.midiConnected
-                  ? 'border-emerald-400/40 text-emerald-300 bg-emerald-500/10'
-                  : 'border-white/20 text-white/60 hover:bg-white/10'
-              }`}
+              className="px-2 py-1 rounded-md text-[10px] border border-emerald-400/40 text-emerald-300 bg-emerald-500/10 backdrop-blur-md"
               onClick={() => setLaunchpadSettingsOpen(true)}
-              disabled={midiConnecting}
               aria-label="Launchpad Settings"
             >
-              {midiConnecting ? 'MIDI...' : (state.midiConnected ? 'MIDI ON' : 'MIDI')}
+              MIDI ON
             </button>
-            {state.practiceMode && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-green-400 bg-green-500/15">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                Practice
-              </span>
-            )}
-            {state.recording && (
-              <span className="flex items-center gap-1 text-[10px] text-red-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                REC
-              </span>
-            )}
-            {state.errors.length > 0 && (
-              <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/25 transition-colors"
-                onClick={() => setErrorDialogShown(true)}
-                aria-label={`${state.errors.length} warnings`}
-              >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-                {state.errors.length}
-              </button>
-            )}
+          )}
+          {state.practiceMode && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-green-400 bg-green-500/15 backdrop-blur-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              Practice
+            </span>
+          )}
+          {state.recording && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-red-400 bg-red-500/15 backdrop-blur-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              REC
+            </span>
+          )}
+          {state.errors.length > 0 && (
             <button
-              className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
-              onClick={handleBack}
-              aria-label="Menu"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/25 transition-colors backdrop-blur-md"
+              onClick={() => setErrorDialogShown(true)}
+              aria-label={`${state.errors.length} warnings`}
             >
-              <svg className="w-4 h-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
+              {state.errors.length}
             </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Android-like left overlay controls: sits beside the stage safe area */}
-      <div
-        className="absolute left-0 z-20 pointer-events-none px-1.5"
-        style={{
-          top: `${stageInsetTop}px`,
-          bottom: `${stageInsetBottom}px`,
-          width: `${stageInsetLeft}px`,
-        }}
-      >
-        <div
-          className="h-full pointer-events-auto flex flex-col"
-          style={{ width: `${leftPanelWidth}px` }}
+      {/* Menu button (Android: bottom-right, white 70% opacity) */}
+      {!optionPanelOpen && (
+        <button
+          className="absolute z-30 p-4 pointer-events-auto"
+          style={{ bottom: '16px', right: '16px' }}
+          onClick={handleBack}
+          aria-label="Menu"
         >
-          <div
-            className="rounded-xl backdrop-blur-sm"
-            style={{
-              backgroundColor: theme.colors.optionWindow
-                ? `${theme.colors.optionWindow}40`
-                : 'rgba(0,0,0,0.3)',
-            }}
-          >
-            <ControlPanel
-              squareButton={unipack.info.squareButton}
-              keyLedExist={unipack.keyLedExist}
-              feedbackLight={state.feedbackLight}
-              ledEnabled={state.ledEnabled}
-              autoPlayEnabled={state.autoPlayEnabled}
-              autoPlayPlaying={state.autoPlayPlaying}
-              autoPlayControlsVisible={state.autoPlayControlsVisible}
-              autoPlayExist={unipack.autoPlayExist}
-              midiConnected={state.midiConnected}
-              recording={state.recording}
-              hideUI={state.hideUI}
-              traceLog={state.traceLog}
-              practiceMode={state.practiceMode}
-              autoPlayProgress={state.autoPlayProgress}
-              autoPlayTotal={state.autoPlayTotal}
-              themeColors={theme.colors}
-              onToggleFeedbackLight={toggleFeedbackLight}
-              onToggleLed={toggleLed}
-              onToggleAutoPlay={toggleAutoPlay}
-              onAutoPlayPlayPause={autoPlayPlayPause}
-              onAutoPlayPrev={autoPlayPrev}
-              onAutoPlayNext={autoPlayNext}
-              onTogglePracticeMode={togglePracticeMode}
-              onToggleRecording={toggleRecording}
-              onToggleHideUI={toggleHideUI}
-              onToggleTraceLog={toggleTraceLog}
-              onClearTraceLog={clearTraceLog}
-              onConnectMidi={handleConnectMidi}
-              midiConnecting={midiConnecting}
-            />
-          </div>
+          <svg className="w-8 h-8 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
+      {/* Android SideCheckPanel: overlay on left, vertically centered, doesn't push pad grid */}
+      {!optionPanelOpen && (
+        <div
+          className="absolute left-2 z-20 pointer-events-auto"
+          style={{
+            top: '50%',
+            transform: 'translateY(-50%)',
+          }}
+        >
+          <ControlPanel
+            panelBgColor="rgba(0,0,0,0.35)"
+            squareButton={unipack.info.squareButton}
+            keyLedExist={unipack.keyLedExist}
+            feedbackLight={state.feedbackLight}
+            ledEnabled={state.ledEnabled}
+            autoPlayEnabled={state.autoPlayEnabled}
+            autoPlayPlaying={state.autoPlayPlaying}
+            autoPlayControlsVisible={state.autoPlayControlsVisible}
+            autoPlayExist={unipack.autoPlayExist}
+            recording={state.recording}
+            traceLog={state.traceLog}
+            practiceMode={state.practiceMode}
+            autoPlayProgress={state.autoPlayProgress}
+            autoPlayTotal={state.autoPlayTotal}
+            themeColors={theme.colors}
+            onToggleFeedbackLight={toggleFeedbackLight}
+            onToggleLed={toggleLed}
+            onToggleAutoPlay={toggleAutoPlay}
+            onAutoPlayPlayPause={autoPlayPlayPause}
+            onAutoPlayPrev={autoPlayPrev}
+            onAutoPlayNext={autoPlayNext}
+            onTogglePracticeMode={togglePracticeMode}
+            onToggleRecording={toggleRecording}
+            onToggleTraceLog={toggleTraceLog}
+            onClearTraceLog={handleClearTraceLog}
+          />
         </div>
-      </div>
+      )}
 
       {/* Center safe area: [PAD GRID center] [CHAINS RIGHT] */}
       <div
@@ -1029,6 +1236,30 @@ export function PlayPage() {
               height: stageMetrics.totalHeight > 0 ? `${stageMetrics.totalHeight}px` : undefined,
             }}
           >
+            {/* Left chain bar: chains 16-23 reversed (Android: chainsLeftContainer) */}
+            {showLeftChainBar && (
+              <div
+                className="max-h-full overflow-hidden"
+                style={{
+                  width: stageMetrics.leftChainWidth > 0 ? `${stageMetrics.leftChainWidth}px` : undefined,
+                  height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
+                }}
+              >
+                <ChainBar
+                  chainCount={chainSlots}
+                  slotCount={chainAreaSlots}
+                  chainStates={state.chainStates}
+                  currentChain={state.chain}
+                  showSelectedState={!optionPanelOpen && state.watermark}
+                  theme={theme}
+                  proLightMode={state.proLightMode}
+                  rangeStart={16}
+                  rangeEnd={24}
+                  reversed
+                  onChainSelect={setChain}
+                />
+              </div>
+            )}
             <div
               className="max-h-full"
               style={{
@@ -1047,7 +1278,8 @@ export function PlayPage() {
                 onPadUp={padTouchOff}
               />
             </div>
-            {showChainBar && (
+            {/* Right chain bar: chains 0-7 (Android: chainsRightContainer) */}
+            {showRightChainBar && (
               <div
                 className="max-h-full overflow-hidden"
                 style={{
@@ -1063,6 +1295,8 @@ export function PlayPage() {
                   showSelectedState={!optionPanelOpen && state.watermark}
                   theme={theme}
                   proLightMode={state.proLightMode}
+                  rangeStart={0}
+                  rangeEnd={8}
                   onChainSelect={setChain}
                 />
               </div>
@@ -1076,10 +1310,10 @@ export function PlayPage() {
         <img
           src={theme.customLogo}
           alt=""
-          className="fixed z-30 pointer-events-none opacity-80"
+          className="fixed z-30 pointer-events-none"
           style={{
-            top: `${stageInsetTop}px`,
-            right: `${overlayGap}px`,
+            top: '16px',
+            right: '16px',
             width: '90px',
           }}
           draggable={false}
@@ -1096,7 +1330,6 @@ export function PlayPage() {
         feedbackLight={state.feedbackLight}
         ledEnabled={state.ledEnabled}
         autoPlayEnabled={state.autoPlayEnabled}
-        practiceMode={state.practiceMode}
         recording={state.recording}
         hideUI={state.hideUI}
         watermark={state.watermark}
@@ -1112,7 +1345,7 @@ export function PlayPage() {
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}
         onToggleTraceLog={toggleTraceLog}
-        onClearTraceLog={clearTraceLog}
+        onClearTraceLog={handleClearTraceLog}
         onToggleProLightMode={toggleProLightMode}
         volumeLevel={state.volumeLevel}
         onVolumeChange={setVolumeLevel}
@@ -1196,6 +1429,14 @@ export function PlayPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Portrait orientation hint (mobile only, hidden when landscape or wider screen) */}
+      <div className="fixed inset-0 z-[90] bg-black/90 flex-col items-center justify-center gap-4 text-white hidden portrait:flex landscape:hidden md:hidden">
+        <svg className="w-12 h-12 text-white/60 animate-[spin_2s_ease-in-out_infinite]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <p className="text-sm text-white/70">Rotate to landscape</p>
+      </div>
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />

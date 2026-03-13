@@ -30,6 +30,8 @@ import type {
 export interface PadState {
   color: string;
   pressed: boolean;
+  /** True when PRESSED channel is the winning (highest-priority) channel */
+  pressedIsWinning: boolean;
   guide: boolean;
   guideTargetWallTimeMs: number | null;
 }
@@ -244,6 +246,7 @@ export function useUniPadEngine() {
       padStatesRef.current[x][y] = {
         ...padStatesRef.current[x][y],
         color: item ? argbToRgba(item.color) : 'transparent',
+        pressedIsWinning: item?.channel === Channel.PRESSED,
       };
     }
   }, []);
@@ -398,7 +401,11 @@ export function useUniPadEngine() {
     }
 
     if (padStatesRef.current[x]?.[y]) {
-      padStatesRef.current[x][y] = { ...padStatesRef.current[x][y], pressed: false };
+      padStatesRef.current[x][y] = {
+        ...padStatesRef.current[x][y],
+        pressed: false,
+        pressedIsWinning: false,
+      };
     }
 
     scheduleFlush();
@@ -475,10 +482,11 @@ export function useUniPadEngine() {
         updatePadVisual(x, y);
       }
     }
-    for (let c = 0; c < unipack.info.chain; c++) {
+    const chainLedCount = Math.max(unipack.info.chain, 36);
+    for (let c = 0; c < chainLedCount; c++) {
       if (lr) lr.eventOff(-1, c);
       cm.remove(-1, c, Channel.LED);
-      updateChainVisual(c);
+      if (c < unipack.info.chain) updateChainVisual(c);
     }
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
@@ -502,14 +510,15 @@ export function useUniPadEngine() {
         }
       }
     }
-    for (let c = 0; c < unipack.info.chain; c++) {
+    const chainLedCount = Math.max(unipack.info.chain, 36);
+    for (let c = 0; c < chainLedCount; c++) {
       cm.remove(-1, c, Channel.GUIDE);
       const item = cm.get(-1, c);
       midiRef.current?.sendChainLed(c, item ? item.code : 0);
-      if (chainStatesRef.current[c]) {
+      if (c < unipack.info.chain && chainStatesRef.current[c]) {
         chainStatesRef.current[c] = { ...chainStatesRef.current[c], guide: false };
       }
-      updateChainVisual(c);
+      if (c < unipack.info.chain) updateChainVisual(c);
     }
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
@@ -537,7 +546,6 @@ export function useUniPadEngine() {
       ledInit();
       runner.playmode = true;
       runner.beforeStartPlaying = true;
-      runner.launch();
       setState((prev) => {
         if (unipack?.keyLedExist) {
           feedbackLightRef.current = false;
@@ -548,7 +556,7 @@ export function useUniPadEngine() {
             ...prev,
             autoPlayEnabled: true,
             autoPlayPlaying: true,
-            autoPlayControlsVisible: false,
+            autoPlayControlsVisible: unipack?.info.squareButton ?? false,
             ledEnabled: true,
             feedbackLight: false,
           };
@@ -558,10 +566,11 @@ export function useUniPadEngine() {
           ...prev,
           autoPlayEnabled: true,
           autoPlayPlaying: true,
-          autoPlayControlsVisible: false,
+          autoPlayControlsVisible: unipack?.info.squareButton ?? false,
           feedbackLight: true,
         };
       });
+      runner.launch();
     }
   }, [padInit, ledInit, autoPlayRemoveGuide]);
   toggleAutoPlayRef.current = toggleAutoPlay;
@@ -574,6 +583,7 @@ export function useUniPadEngine() {
       runner.pause();
       padInit();
       ledInit();
+      autoPlayRemoveGuide();
       setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
       padInit();
@@ -601,19 +611,21 @@ export function useUniPadEngine() {
         };
       });
     }
-  }, [padInit, ledInit]);
+  }, [padInit, ledInit, autoPlayRemoveGuide]);
 
   const autoPlayPrev = useCallback(() => {
     padInit();
     ledInit();
+    autoPlayRemoveGuide();
     autoPlayRunnerRef.current?.progressOffset(-40);
-  }, [padInit, ledInit]);
+  }, [padInit, ledInit, autoPlayRemoveGuide]);
 
   const autoPlayNext = useCallback(() => {
     padInit();
     ledInit();
+    autoPlayRemoveGuide();
     autoPlayRunnerRef.current?.progressOffset(40);
-  }, [padInit, ledInit]);
+  }, [padInit, ledInit, autoPlayRemoveGuide]);
 
   const togglePracticeMode = useCallback(() => {
     const runner = autoPlayRunnerRef.current;
@@ -626,7 +638,6 @@ export function useUniPadEngine() {
       runner.practiceGuide = true;
       runner.playmode = true;
       runner.beforeStartPlaying = true;
-      runner.launch();
       setState((prev) => {
         if (unipack?.keyLedExist) {
           feedbackLightRef.current = false;
@@ -637,7 +648,7 @@ export function useUniPadEngine() {
             ...prev,
             autoPlayEnabled: true,
             autoPlayPlaying: true,
-            autoPlayControlsVisible: false,
+            autoPlayControlsVisible: unipack?.info.squareButton ?? false,
             practiceMode: true,
             ledEnabled: true,
             feedbackLight: false,
@@ -648,11 +659,12 @@ export function useUniPadEngine() {
           ...prev,
           autoPlayEnabled: true,
           autoPlayPlaying: true,
-          autoPlayControlsVisible: false,
+          autoPlayControlsVisible: unipack?.info.squareButton ?? false,
           practiceMode: true,
           feedbackLight: true,
         };
       });
+      runner.launch();
       return;
     }
 
@@ -688,10 +700,12 @@ export function useUniPadEngine() {
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
-    setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Parsing...', errors: [] }));
+    setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
 
     try {
-      const unipack = await parseUniPack(zipData);
+      const unipack = await parseUniPack(zipData, (phase) => {
+        setState((prev) => ({ ...prev, loadPhase: phase }));
+      });
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -700,6 +714,7 @@ export function useUniPadEngine() {
         Array.from({ length: buttonY }, () => ({
           color: 'transparent',
           pressed: false,
+          pressedIsWinning: false,
           guide: false,
           guideTargetWallTimeMs: null,
         })),
@@ -722,6 +737,8 @@ export function useUniPadEngine() {
       channelManagerRef.current = cm;
       chainRef.current = 0;
       cm.add(-1, 0, Channel.CHAIN, -1, 3);
+      // Android: proLightMode defaults to false → LED channel ignored on chain buttons
+      cm.setCirIgnore(Channel.LED, true);
 
       setState((prev) => ({ ...prev, loadPhase: 'Loading audio...' }));
 
@@ -733,6 +750,7 @@ export function useUniPadEngine() {
           setState((prev) => ({
             ...prev,
             loadProgress: Math.round((loaded / total) * 100),
+            loadPhase: `Loading audio... (${loaded}/${total})`,
           }));
         },
       );
@@ -831,6 +849,9 @@ export function useUniPadEngine() {
             scheduleFlush();
           },
           onGuideLedUpdate: (x: number, y: number, velocity: number) => {
+            cm.add(x, y, Channel.GUIDE, -1, velocity);
+            updatePadVisual(x, y);
+            scheduleFlush();
             midiRef.current?.sendPadLed(x, y, velocity);
           },
           onGuideChainOn: (c: number) => {
@@ -1021,6 +1042,7 @@ export function useUniPadEngine() {
       setState((prev) => ({
         ...prev,
         loading: false,
+        criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
     }
@@ -1154,6 +1176,9 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current = null;
     channelManagerRef.current = null;
     unipackRef.current = null;
+    midiRef.current?.disconnect();
+    midiRef.current = null;
+    midiListenerRef.current = null;
     setState((prev) => {
       if (prev.theme) releaseThemeUrls(prev.theme);
       return {
@@ -1227,6 +1252,12 @@ export function useUniPadEngine() {
       });
     } catch (err) {
       console.error('Failed to load theme:', err);
+      const defaultTheme = getDefaultTheme();
+      setState((prev) => {
+        if (prev.theme) releaseThemeUrls(prev.theme);
+        return { ...prev, theme: defaultTheme };
+      });
+      throw err;
     }
   }, []);
 
@@ -1239,18 +1270,19 @@ export function useUniPadEngine() {
         wakeLockRef.current = null;
         midiRef.current?.clearAllLeds?.();
       } else {
-        // onResume: wake lock 재취득
+        // onResume: wake lock 재취득, MIDI LED 상태 복원
         if (soundEngineRef.current) {
           navigator.wakeLock?.request('screen').then((lock) => {
             wakeLockRef.current = lock;
           }).catch(() => {});
           soundEngineRef.current.resume();
+          syncMidiStateToDevice();
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [syncMidiStateToDevice]);
 
   useEffect(() => {
     return () => {

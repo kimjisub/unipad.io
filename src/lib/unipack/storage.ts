@@ -14,6 +14,10 @@ export interface StoredUniPack {
   chain: number;
   keyLedExist?: boolean;
   autoPlayExist?: boolean;
+  soundCount?: number;
+  ledCount?: number;
+  openCount?: number;
+  bookmark?: boolean;
   zipData: ArrayBuffer;
   addedAt: number;
   lastOpenedAt: number;
@@ -78,6 +82,8 @@ export async function saveUniPack(
     chain: number;
     keyLedExist?: boolean;
     autoPlayExist?: boolean;
+    soundCount?: number;
+    ledCount?: number;
     storeCode?: string;
   },
 ): Promise<string> {
@@ -92,6 +98,9 @@ export async function saveUniPack(
     chain: info.chain,
     keyLedExist: info.keyLedExist ?? false,
     autoPlayExist: info.autoPlayExist ?? false,
+    soundCount: info.soundCount ?? 0,
+    ledCount: info.ledCount ?? 0,
+    openCount: 0,
     zipData,
     addedAt: Date.now(),
     lastOpenedAt: Date.now(),
@@ -138,8 +147,17 @@ export async function updateUniPackLastOpened(id: string): Promise<void> {
   const record = await getUniPack(id);
   if (record) {
     record.lastOpenedAt = Date.now();
+    record.openCount = (record.openCount ?? 0) + 1;
     await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
   }
+}
+
+export async function toggleUniPackBookmark(id: string): Promise<boolean> {
+  const record = await getUniPack(id);
+  if (!record) return false;
+  record.bookmark = !(record.bookmark ?? false);
+  await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
+  return record.bookmark;
 }
 
 // Theme operations

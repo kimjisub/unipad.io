@@ -93,5 +93,7 @@ export interface UniPackData {
   soundFiles: Map<string, ArrayBuffer>;
   keyLedExist: boolean;
   autoPlayExist: boolean;
+  soundCount: number;
+  ledCount: number;
   errors: string[];
 }

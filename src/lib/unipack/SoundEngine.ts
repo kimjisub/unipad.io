@@ -116,9 +116,9 @@ export class SoundEngine {
       source.loop = true;
     } else if (sound.loop > 0) {
       source.loop = true;
-      // loop N times = play N+1 times total, approximate with duration
-      const duration = sound.audioBuffer.duration * (sound.loop + 1);
-      source.start(0, 0, duration);
+      source.start(0);
+      const stopTime = this.audioContext.currentTime + sound.audioBuffer.duration * (sound.loop + 1);
+      source.stop(stopTime);
       this.soundPush(chain, x, y);
       this.activeNodes.set(key, source);
       source.onended = () => this.activeNodes.delete(key);

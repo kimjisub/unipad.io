@@ -11,22 +11,30 @@ import {
 } from './types';
 import { LAUNCHPAD_ARGB } from './colors';
 
-export async function parseUniPack(zipData: ArrayBuffer): Promise<UniPackData> {
+export async function parseUniPack(
+  zipData: ArrayBuffer,
+  onPhase?: (phase: string) => void,
+): Promise<UniPackData> {
+  onPhase?.('Reading archive...');
   const zip = await JSZip.loadAsync(zipData);
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
 
+  onPhase?.('Loading info...');
   const info = await parseInfo(zip, rootPrefix, errors);
   if (!info) throw new Error('Invalid UniPack: missing info file');
 
+  onPhase?.('Loading sounds...');
   const { soundTable, soundFiles } = await parseKeySound(
     zip,
     rootPrefix,
     info,
     errors,
   );
+  onPhase?.('Loading LEDs...');
   const ledAnimationTable = await parseKeyLed(zip, rootPrefix, info, errors);
+  onPhase?.('Loading autoplay...');
   const autoPlay = await parseAutoPlay(
     zip,
     rootPrefix,
@@ -34,6 +42,26 @@ export async function parseUniPack(zipData: ArrayBuffer): Promise<UniPackData> {
     soundTable,
     errors,
   );
+
+  let soundCount = 0;
+  for (let c = 0; c < info.chain; c++) {
+    for (let x = 0; x < info.buttonX; x++) {
+      for (let y = 0; y < info.buttonY; y++) {
+        soundCount += soundTable[c][x][y]?.length ?? 0;
+      }
+    }
+  }
+
+  let ledCount = 0;
+  if (ledAnimationTable) {
+    for (let c = 0; c < info.chain; c++) {
+      for (let x = 0; x < info.buttonX; x++) {
+        for (let y = 0; y < info.buttonY; y++) {
+          ledCount += ledAnimationTable[c][x][y]?.length ?? 0;
+        }
+      }
+    }
+  }
 
   return {
     info,
@@ -43,6 +71,8 @@ export async function parseUniPack(zipData: ArrayBuffer): Promise<UniPackData> {
     soundFiles,
     keyLedExist: ledAnimationTable !== null,
     autoPlayExist: autoPlay !== null,
+    soundCount,
+    ledCount,
     errors,
   };
 }
@@ -305,7 +335,7 @@ async function parseKeyLed(
 
   const ledFiles = Object.entries(zip.files)
     .filter(([path, file]) => !file.dir && path.startsWith(keyLedDir) && path !== keyLedDir)
-    .sort(([a], [b]) => a.localeCompare(b));
+    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
   for (const [path, file] of ledFiles) {
     const fileName = path.substring(path.lastIndexOf('/') + 1).trim();
@@ -333,6 +363,10 @@ async function parseKeyLed(
     }
     if (isNaN(y) || y < 0 || y >= info.buttonY) {
       errors.push(`keyLed: [${fileName}] y is incorrect`);
+      continue;
+    }
+    if (isNaN(loop) || loop < 0) {
+      errors.push(`keyLed: [${fileName}] loop is incorrect`);
       continue;
     }
 

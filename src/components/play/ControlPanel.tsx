@@ -13,14 +13,13 @@ interface ControlPanelProps {
   autoPlayPlaying: boolean;
   autoPlayControlsVisible: boolean;
   autoPlayExist: boolean;
-  midiConnected: boolean;
   recording: boolean;
-  hideUI: boolean;
   traceLog: boolean;
   practiceMode: boolean;
   autoPlayProgress: number;
   autoPlayTotal: number;
   themeColors?: ThemeColors;
+  panelBgColor?: string;
   onToggleFeedbackLight: () => void;
   onToggleLed: () => void;
   onToggleAutoPlay: () => void;
@@ -29,11 +28,8 @@ interface ControlPanelProps {
   onAutoPlayNext: () => void;
   onTogglePracticeMode: () => void;
   onToggleRecording: () => void;
-  onToggleHideUI: () => void;
   onToggleTraceLog: () => void;
   onClearTraceLog: () => void;
-  onConnectMidi: () => void;
-  midiConnecting?: boolean;
 }
 
 export function ControlPanel({
@@ -45,14 +41,13 @@ export function ControlPanel({
   autoPlayPlaying,
   autoPlayControlsVisible,
   autoPlayExist,
-  midiConnected,
   recording,
-  hideUI,
   traceLog,
   practiceMode,
   autoPlayProgress,
   autoPlayTotal,
   themeColors,
+  panelBgColor = 'rgba(0,0,0,0.35)',
   onToggleFeedbackLight,
   onToggleLed,
   onToggleAutoPlay,
@@ -61,72 +56,79 @@ export function ControlPanel({
   onAutoPlayNext,
   onTogglePracticeMode,
   onToggleRecording,
-  onToggleHideUI,
   onToggleTraceLog,
   onClearTraceLog,
-  onConnectMidi,
-  midiConnecting = false,
 }: ControlPanelProps) {
   const cbColor = themeColors?.checkbox || '#a6b4c9';
-  const showPerformance = squareButton;
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;
   const showAutoPlay = squareButton && autoPlayExist;
   const showTools = squareButton;
 
-  return (
-    <div className="flex flex-col py-2.5 px-1">
-      {showPerformance && (
-        <>
-          {showFeedback && (
-            <CheckItem label="Feedback" checked={feedbackLight} color={cbColor} onClick={onToggleFeedbackLight} />
-          )}
-          {showLed && (
-            <CheckItem label="LED" checked={ledEnabled} color={cbColor} onClick={onToggleLed} />
-          )}
-          {showAutoPlay && (
-            <>
-              <CheckItem
-                label="AutoPlay"
-                checked={autoPlayEnabled}
-                color={cbColor}
-                onClick={onToggleAutoPlay}
-              />
-              {!autoPlayControlsVisible && (
-                <button
-                  className="flex items-center justify-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/10 transition-colors"
-                  onClick={onTogglePracticeMode}
-                  title="Practice Mode"
-                >
-                  {practiceMode && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
-                  <span className={`text-[11px] font-medium ${practiceMode ? 'text-green-400' : 'text-white/60'}`}>
-                    Practice
-                  </span>
-                </button>
-              )}
-              {autoPlayControlsVisible && (
-                <div className="mt-1 px-1">
-                  <AutoPlayControls
-                    playing={autoPlayPlaying}
-                    progress={autoPlayProgress}
-                    total={autoPlayTotal}
-                    practiceMode={practiceMode}
-                    themeColor={cbColor}
-                    onPlayPause={onAutoPlayPlayPause}
-                    onPrev={onAutoPlayPrev}
-                    onNext={onAutoPlayNext}
-                    onTogglePractice={onTogglePracticeMode}
-                  />
-                </div>
-              )}
-            </>
-          )}
-          <div className="my-1.5 mx-1 border-t border-white/[0.06]" />
-        </>
-      )}
+  const groupStyle = {
+    backgroundColor: panelBgColor,
+  };
 
+  return (
+    <div className="flex flex-col justify-between h-full py-1 gap-1.5">
+      {/* Top group: performance controls */}
+      <div
+        className="flex flex-col px-1.5 py-2 gap-0.5 rounded-xl backdrop-blur-sm"
+        style={groupStyle}
+      >
+        {showFeedback && (
+          <CheckItem label="Feedback" checked={feedbackLight} color={cbColor} onClick={onToggleFeedbackLight} />
+        )}
+        {showLed && (
+          <CheckItem label="LED" checked={ledEnabled} color={cbColor} onClick={onToggleLed} />
+        )}
+        {showAutoPlay && (
+          <>
+            <CheckItem
+              label="AutoPlay"
+              checked={autoPlayEnabled}
+              color={cbColor}
+              onClick={onToggleAutoPlay}
+            />
+            {autoPlayControlsVisible && (
+              <div className="mt-1 px-1">
+                <AutoPlayControls
+                  playing={autoPlayPlaying}
+                  progress={autoPlayProgress}
+                  total={autoPlayTotal}
+                  practiceMode={practiceMode}
+                  themeColor={cbColor}
+                  onPlayPause={onAutoPlayPlayPause}
+                  onPrev={onAutoPlayPrev}
+                  onNext={onAutoPlayNext}
+                  onTogglePractice={onTogglePracticeMode}
+                />
+              </div>
+            )}
+            {!autoPlayControlsVisible && (
+              <button
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.12] transition-colors origin-top-left scale-75"
+                onClick={onTogglePracticeMode}
+                title="Practice Mode"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24" style={{ color: cbColor }}>
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                <span className="text-[13px] font-medium whitespace-nowrap" style={{ color: cbColor }}>
+                  Practice Mode
+                </span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Bottom group: tools */}
       {showTools && (
-        <>
+        <div
+          className="flex flex-col px-1.5 py-2 gap-0.5 rounded-xl backdrop-blur-sm"
+          style={groupStyle}
+        >
           <CheckItem
             label="Trace"
             checked={traceLog}
@@ -135,18 +137,8 @@ export function ControlPanel({
             onLongPress={onClearTraceLog}
           />
           <CheckItem label="Rec" checked={recording} color="#ef4444" onClick={onToggleRecording} />
-        </>
+        </div>
       )}
-      <CheckItem label="Hide" checked={hideUI} color={cbColor} onClick={onToggleHideUI} />
-      <div className="my-1.5 mx-1 border-t border-white/[0.06]" />
-      <button
-        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors"
-        onClick={onConnectMidi}
-        disabled={midiConnecting}
-      >
-        <span className={`w-2 h-2 rounded-full shrink-0 ${midiConnected ? 'bg-green-500' : 'bg-white/20'}`} />
-        <span className="text-[11px] text-white/50 whitespace-nowrap">{midiConnecting ? 'MIDI...' : 'MIDI'}</span>
-      </button>
     </div>
   );
 }

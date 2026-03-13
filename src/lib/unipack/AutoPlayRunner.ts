@@ -37,7 +37,7 @@ export class AutoPlayRunner {
   practiceGuide = false;
   progress = 0;
 
-  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private rafId: number | null = null;
   active = false;
 
   private guideTimeline: GuideEvent[] = [];
@@ -243,22 +243,22 @@ export class AutoPlayRunner {
       }
 
       if (this.progress < autoPlay.elements.length) {
-        this.timerId = setTimeout(loop, 1);
+        this.rafId = requestAnimationFrame(loop);
       } else {
         this.active = false;
-        this.timerId = null;
+        this.rafId = null;
         this.listener.onEnd();
       }
     };
 
-    this.timerId = setTimeout(loop, 1);
+    this.rafId = requestAnimationFrame(loop);
   }
 
   stop(): void {
     this.active = false;
-    if (this.timerId !== null) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
     }
     this.activeGuides.clear();
   }
@@ -276,8 +276,10 @@ export class AutoPlayRunner {
   }
 
   progressOffset(offset: number): void {
+    const autoPlay = this.unipack.autoPlay;
+    const max = autoPlay ? autoPlay.elements.length : 0;
     const target = this.progress + offset;
-    this.progress = Math.max(0, target);
+    this.progress = Math.max(0, Math.min(max, target));
     this.listener.onProgressUpdate(this.progress);
   }
 

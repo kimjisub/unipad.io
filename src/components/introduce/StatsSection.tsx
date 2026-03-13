@@ -158,6 +158,8 @@ export const StatsSection = () => {
 					<div className="flex items-center gap-6">
 						<a href={GOOGLE_PLAY_URL} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">Google Play</a>
 						<span className="w-px h-3 bg-white/10" aria-hidden />
+						<a href={EXTERNAL_LINKS.youtube} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">YouTube</a>
+						<span className="w-px h-3 bg-white/10" aria-hidden />
 						<a href={EXTERNAL_LINKS.namuWiki} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">나무위키</a>
 					</div>
 				</motion.div>

@@ -19,6 +19,7 @@ export {
   listUniPacks,
   deleteUniPack,
   updateUniPackLastOpened,
+  toggleUniPackBookmark,
   saveTheme,
   getTheme,
   listThemes,
