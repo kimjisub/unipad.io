@@ -15,6 +15,8 @@ interface ChainBarProps {
   rangeEnd?: number;
   /** Reverse display order (Android: left chain bar is reversed) */
   reversed?: boolean;
+  /** Layout orientation (default: vertical for side bars, horizontal for top/bottom) */
+  orientation?: 'vertical' | 'horizontal';
   onChainSelect: (c: number) => void;
 }
 
@@ -31,13 +33,15 @@ export function ChainBar({
   rangeStart = 0,
   rangeEnd = CHAINS_PER_SIDE,
   reversed = false,
+  orientation = 'vertical',
   onChainSelect,
 }: ChainBarProps) {
   const isLedMode = theme?.isChainLed && theme?.chainled;
   const slotsInRange = rangeEnd - rangeStart;
   const desiredSlots = slotCount ?? slotsInRange;
   const visibleCount = Math.max(1, proLightMode ? Math.max(slotsInRange, desiredSlots) : desiredSlots);
-  const heightPercent = visibleCount > 0 ? 100 / visibleCount : 100;
+  const slotPercent = visibleCount > 0 ? 100 / visibleCount : 100;
+  const isHorizontal = orientation === 'horizontal';
 
   const indices = Array.from({ length: visibleCount }, (_, slot) => {
     const chainIdx = rangeStart + (reversed ? (visibleCount - 1 - slot) : slot);
@@ -45,17 +49,17 @@ export function ChainBar({
   });
 
   return (
-    <div className="h-full flex flex-col gap-0 items-center">
+    <div className={isHorizontal ? 'w-full flex flex-row gap-0 items-center' : 'h-full flex flex-col gap-0 items-center'}>
       {indices.map((chainIdx, slot) => {
         if (chainIdx >= chainCount || chainIdx < 0) {
           return (
             <div
               key={slot}
-              className="w-full"
-              style={{
-                height: `${heightPercent}%`,
-                aspectRatio: '1 / 1',
-              }}
+              className={isHorizontal ? 'h-full' : 'w-full'}
+              style={isHorizontal
+                ? { width: `${slotPercent}%`, aspectRatio: '1 / 1' }
+                : { height: `${slotPercent}%`, aspectRatio: '1 / 1' }
+              }
             />
           );
         }
@@ -72,11 +76,11 @@ export function ChainBar({
         return (
           <button
             key={slot}
-            className="w-full flex items-center justify-center relative overflow-hidden"
-            style={{
-              height: `${heightPercent}%`,
-              aspectRatio: '1 / 1',
-            }}
+            className={`${isHorizontal ? 'h-full' : 'w-full'} flex items-center justify-center relative overflow-hidden`}
+            style={isHorizontal
+              ? { width: `${slotPercent}%`, aspectRatio: '1 / 1' }
+              : { height: `${slotPercent}%`, aspectRatio: '1 / 1' }
+            }
             aria-label={`Chain ${chainIdx + 1}`}
             onPointerDown={(e) => { e.preventDefault(); onChainSelect(chainIdx); }}
           >

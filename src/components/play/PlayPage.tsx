@@ -42,6 +42,8 @@ import { initFirebaseServices } from '@/lib/firebase';
 const PACK_QUERY_KEY = 'pack';
 const CODE_QUERY_KEY = 'code';
 const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
+const CHAIN_INDEX_OFFSET = 8;
+const CIRCLE_ARRAY_SIZE = 32;
 
 export function PlayPage() {
   const {
@@ -871,6 +873,15 @@ export function PlayPage() {
     };
   }, [state.loaded, state.hideUI, state.unipack?.info.buttonX, state.unipack?.info.buttonY]);
 
+  // Engine now uses circle indices directly (chainStates is CIRCLE_ARRAY_SIZE=32)
+  const actualChainCount = state.unipack?.info.chain ?? 0;
+  const currentCircleChain = state.chain + CHAIN_INDEX_OFFSET;
+  const handleChainSelect = useCallback((circleIdx: number) => {
+    if (circleIdx >= CHAIN_INDEX_OFFSET && circleIdx < CHAIN_INDEX_OFFSET + actualChainCount) {
+      setChain(circleIdx - CHAIN_INDEX_OFFSET);
+    }
+  }, [setChain, actualChainCount]);
+
   // Loading spinner
   if (restoringFromStorage) {
     return (
@@ -986,11 +997,13 @@ export function PlayPage() {
   }
 
   const { unipack, theme } = state;
-  const actualChainCount = unipack?.info.chain ?? 0;
   const showRightChainBar = state.proLightMode || actualChainCount > 1;
   const showLeftChainBar = state.proLightMode || actualChainCount > 16;
-  const chainSlots = actualChainCount;
-  const chainAreaSlots = showRightChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
+  const showTopChainBar = state.proLightMode;
+  const showBottomChainBar = state.proLightMode;
+
+  const chainAreaSlotsV = showRightChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
+  const chainAreaSlotsH = Math.max(unipack?.info.buttonY ?? 1, 1);
   const overlayGap = 8;
   const stageInsetTop = overlayGap;
   const stageInsetLeft = overlayGap;
@@ -1005,6 +1018,8 @@ export function PlayPage() {
         padHeight: 0,
         chainWidth: 0,
         leftChainWidth: 0,
+        topChainHeight: 0,
+        bottomChainHeight: 0,
       };
     }
 
@@ -1018,6 +1033,8 @@ export function PlayPage() {
         padHeight: 0,
         chainWidth: 0,
         leftChainWidth: 0,
+        topChainHeight: 0,
+        bottomChainHeight: 0,
       };
     }
 
@@ -1026,25 +1043,35 @@ export function PlayPage() {
     const padRows = unipack.info.buttonX;
     const rightChainCols = showRightChainBar ? 1 : 0;
     const leftChainCols = showLeftChainBar ? 1 : 0;
-    const unit = Math.max(1, Math.floor(Math.min(cw / (padCols + rightChainCols + leftChainCols), ch / padRows)));
+    const topChainRows = showTopChainBar ? 1 : 0;
+    const bottomChainRows = showBottomChainBar ? 1 : 0;
+    const unit = Math.max(1, Math.floor(Math.min(
+      cw / (padCols + rightChainCols + leftChainCols),
+      ch / (padRows + topChainRows + bottomChainRows),
+    )));
     const padHeight = unit * padRows;
     const padWidth = unit * padCols;
     const rightChainWidth = showRightChainBar ? unit : 0;
     const leftChainWidth = showLeftChainBar ? unit : 0;
+    const topChainHeight = showTopChainBar ? unit : 0;
+    const bottomChainHeight = showBottomChainBar ? unit : 0;
     return {
       totalWidth: padWidth + rightChainWidth + leftChainWidth,
-      totalHeight: padHeight,
+      totalHeight: padHeight + topChainHeight + bottomChainHeight,
       padWidth,
       padHeight,
       chainWidth: rightChainWidth,
       leftChainWidth,
+      topChainHeight,
+      bottomChainHeight,
     };
   })();
   if (!unipack) return null;
 
-  // Hide UI mode: Android hides only control panels, keeps pad grid and chain bars
+  // Hide UI mode: hides control panels, keeps pad grid and chain bars
   if (state.hideUI) {
     const hiddenTotalCols = unipack.info.buttonY + (showRightChainBar ? 1 : 0) + (showLeftChainBar ? 1 : 0);
+    const hiddenTotalRows = unipack.info.buttonX + (showTopChainBar ? 1 : 0) + (showBottomChainBar ? 1 : 0);
     return (
       <div
         className="h-screen flex items-center justify-center overflow-hidden"
@@ -1057,51 +1084,107 @@ export function PlayPage() {
         }}
         onClick={toggleHideUI}
       >
+        {/* Menu button in hideUI mode */}
+        <button
+          className="absolute z-30 p-4 pointer-events-auto"
+          style={{ bottom: '16px', right: '16px' }}
+          onClick={(e) => { e.stopPropagation(); handleBack(); }}
+          aria-label="Menu"
+        >
+          <svg className="w-8 h-8 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
         <div className="w-full h-full flex items-center justify-center p-2">
-          <div className="h-full flex" style={{ aspectRatio: `${hiddenTotalCols} / ${unipack.info.buttonX}`, maxWidth: '95vw' }}>
-            {showLeftChainBar && (
-              <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
-                <ChainBar
-                  chainCount={chainSlots}
-                  slotCount={chainAreaSlots}
-                  chainStates={state.chainStates}
-                  currentChain={state.chain}
-                  showSelectedState={state.watermark}
-                  theme={theme}
-                  proLightMode={state.proLightMode}
-                  rangeStart={16}
-                  rangeEnd={24}
-                  reversed
-                  onChainSelect={setChain}
-                />
+          <div className="flex flex-col" style={{ aspectRatio: `${hiddenTotalCols} / ${hiddenTotalRows}`, maxWidth: '95vw', maxHeight: '95vh' }}>
+            {showTopChainBar && (
+              <div style={{ display: 'flex', flex: `0 0 ${(1 / hiddenTotalRows) * 100}%` }}>
+                <div style={{ flex: `0 0 ${((showLeftChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
+                <div style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%`, height: '100%' }}>
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsH}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    orientation="horizontal"
+                    rangeStart={0}
+                    rangeEnd={8}
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+                <div style={{ flex: `0 0 ${((showRightChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
               </div>
             )}
-            <div className="h-full" style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%` }}>
-              <PadGrid
-                buttonX={unipack.info.buttonX}
-                buttonY={unipack.info.buttonY}
-                padStates={state.padStates}
-                squareButton={unipack.info.squareButton}
-                theme={theme}
-                traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
-                onPadDown={padTouchOn}
-                onPadUp={padTouchOff}
-              />
-            </div>
-            {showRightChainBar && (
-              <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
-                <ChainBar
-                  chainCount={chainSlots}
-                  slotCount={chainAreaSlots}
-                  chainStates={state.chainStates}
-                  currentChain={state.chain}
-                  showSelectedState={state.watermark}
+            <div className="flex" style={{ flex: `0 0 ${(unipack.info.buttonX / hiddenTotalRows) * 100}%` }}>
+              {showLeftChainBar && (
+                <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsV}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    rangeStart={24}
+                    rangeEnd={32}
+                    reversed
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+              )}
+              <div className="h-full" style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%` }}>
+                <PadGrid
+                  buttonX={unipack.info.buttonX}
+                  buttonY={unipack.info.buttonY}
+                  padStates={state.padStates}
+                  squareButton={unipack.info.squareButton}
                   theme={theme}
-                  proLightMode={state.proLightMode}
-                  rangeStart={0}
-                  rangeEnd={8}
-                  onChainSelect={setChain}
+                  traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                  onPadDown={padTouchOn}
+                  onPadUp={padTouchOff}
                 />
+              </div>
+              {showRightChainBar && (
+                <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsV}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    rangeStart={8}
+                    rangeEnd={16}
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+              )}
+            </div>
+            {showBottomChainBar && (
+              <div style={{ display: 'flex', flex: `0 0 ${(1 / hiddenTotalRows) * 100}%` }}>
+                <div style={{ flex: `0 0 ${((showLeftChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
+                <div style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%`, height: '100%' }}>
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsH}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    orientation="horizontal"
+                    rangeStart={16}
+                    rangeEnd={24}
+                    reversed
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+                <div style={{ flex: `0 0 ${((showRightChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
               </div>
             )}
           </div>
@@ -1230,75 +1313,133 @@ export function PlayPage() {
       >
         <div className="flex h-full items-center justify-center min-w-0">
           <div
-            className="flex items-center min-w-0"
+            className="flex flex-col min-w-0"
             style={{
               width: stageMetrics.totalWidth > 0 ? `${stageMetrics.totalWidth}px` : undefined,
               height: stageMetrics.totalHeight > 0 ? `${stageMetrics.totalHeight}px` : undefined,
             }}
           >
-            {/* Left chain bar: chains 16-23 reversed (Android: chainsLeftContainer) */}
-            {showLeftChainBar && (
-              <div
-                className="max-h-full overflow-hidden"
-                style={{
-                  width: stageMetrics.leftChainWidth > 0 ? `${stageMetrics.leftChainWidth}px` : undefined,
-                  height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
-                }}
-              >
-                <ChainBar
-                  chainCount={chainSlots}
-                  slotCount={chainAreaSlots}
-                  chainStates={state.chainStates}
-                  currentChain={state.chain}
-                  showSelectedState={!optionPanelOpen && state.watermark}
-                  theme={theme}
-                  proLightMode={state.proLightMode}
-                  rangeStart={16}
-                  rangeEnd={24}
-                  reversed
-                  onChainSelect={setChain}
-                />
+            {/* Top chain bar: chains 0-7 (horizontal) */}
+            {showTopChainBar && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ width: stageMetrics.leftChainWidth > 0 ? `${stageMetrics.leftChainWidth}px` : undefined }} />
+                <div
+                  style={{
+                    width: stageMetrics.padWidth > 0 ? `${stageMetrics.padWidth}px` : undefined,
+                    height: stageMetrics.topChainHeight > 0 ? `${stageMetrics.topChainHeight}px` : undefined,
+                  }}
+                >
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsH}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={!optionPanelOpen && state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    orientation="horizontal"
+                    rangeStart={0}
+                    rangeEnd={8}
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+                <div style={{ width: stageMetrics.chainWidth > 0 ? `${stageMetrics.chainWidth}px` : undefined }} />
               </div>
             )}
-            <div
-              className="max-h-full"
-              style={{
-                width: stageMetrics.padWidth > 0 ? `${stageMetrics.padWidth}px` : undefined,
-                height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
-              }}
-            >
-              <PadGrid
-                buttonX={unipack.info.buttonX}
-                buttonY={unipack.info.buttonY}
-                padStates={state.padStates}
-                squareButton={unipack.info.squareButton}
-                theme={theme}
-                traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
-                onPadDown={padTouchOn}
-                onPadUp={padTouchOff}
-              />
-            </div>
-            {/* Right chain bar: chains 0-7 (Android: chainsRightContainer) */}
-            {showRightChainBar && (
+            {/* Middle row: left chain + pad grid + right chain */}
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {/* Left chain bar: chains 24-31 reversed */}
+              {showLeftChainBar && (
+                <div
+                  className="max-h-full overflow-hidden"
+                  style={{
+                    width: stageMetrics.leftChainWidth > 0 ? `${stageMetrics.leftChainWidth}px` : undefined,
+                    height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
+                  }}
+                >
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsV}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={!optionPanelOpen && state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    rangeStart={24}
+                    rangeEnd={32}
+                    reversed
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+              )}
               <div
-                className="max-h-full overflow-hidden"
+                className="max-h-full"
                 style={{
-                  width: stageMetrics.chainWidth > 0 ? `${stageMetrics.chainWidth}px` : undefined,
+                  width: stageMetrics.padWidth > 0 ? `${stageMetrics.padWidth}px` : undefined,
                   height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
                 }}
               >
-                <ChainBar
-                  chainCount={chainSlots}
-                  slotCount={chainAreaSlots}
-                  chainStates={state.chainStates}
-                  currentChain={state.chain}
-                  showSelectedState={!optionPanelOpen && state.watermark}
+                <PadGrid
+                  buttonX={unipack.info.buttonX}
+                  buttonY={unipack.info.buttonY}
+                  padStates={state.padStates}
+                  squareButton={unipack.info.squareButton}
                   theme={theme}
-                  proLightMode={state.proLightMode}
-                  rangeStart={0}
-                  rangeEnd={8}
-                  onChainSelect={setChain}
+                  traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                  onPadDown={padTouchOn}
+                  onPadUp={padTouchOff}
                 />
+              </div>
+              {/* Right chain bar: chains 8-15 */}
+              {showRightChainBar && (
+                <div
+                  className="max-h-full overflow-hidden"
+                  style={{
+                    width: stageMetrics.chainWidth > 0 ? `${stageMetrics.chainWidth}px` : undefined,
+                    height: stageMetrics.padHeight > 0 ? `${stageMetrics.padHeight}px` : undefined,
+                  }}
+                >
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsV}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={!optionPanelOpen && state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    rangeStart={8}
+                    rangeEnd={16}
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Bottom chain bar: chains 16-23 reversed (horizontal) */}
+            {showBottomChainBar && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ width: stageMetrics.leftChainWidth > 0 ? `${stageMetrics.leftChainWidth}px` : undefined }} />
+                <div
+                  style={{
+                    width: stageMetrics.padWidth > 0 ? `${stageMetrics.padWidth}px` : undefined,
+                    height: stageMetrics.bottomChainHeight > 0 ? `${stageMetrics.bottomChainHeight}px` : undefined,
+                  }}
+                >
+                  <ChainBar
+                    chainCount={CIRCLE_ARRAY_SIZE}
+                    slotCount={chainAreaSlotsH}
+                    chainStates={state.chainStates}
+                    currentChain={currentCircleChain}
+                    showSelectedState={!optionPanelOpen && state.watermark}
+                    theme={theme}
+                    proLightMode={state.proLightMode}
+                    orientation="horizontal"
+                    rangeStart={16}
+                    rangeEnd={24}
+                    reversed
+                    onChainSelect={handleChainSelect}
+                  />
+                </div>
+                <div style={{ width: stageMetrics.chainWidth > 0 ? `${stageMetrics.chainWidth}px` : undefined }} />
               </div>
             )}
           </div>

@@ -27,6 +27,9 @@ import type {
   ThemeAssets,
 } from '@/lib/unipack';
 
+const CHAIN_INDEX_OFFSET = 8;
+const CIRCLE_ARRAY_SIZE = 32;
+
 export interface PadState {
   color: string;
   pressed: boolean;
@@ -341,10 +344,10 @@ export function useUniPadEngine() {
 
     const cm = channelManagerRef.current;
     if (cm) {
-      cm.remove(-1, prevChain, Channel.CHAIN);
-      cm.add(-1, c, Channel.CHAIN, -1, 3);
-      updateChainVisual(prevChain);
-      updateChainVisual(c);
+      cm.remove(-1, prevChain + CHAIN_INDEX_OFFSET, Channel.CHAIN);
+      cm.add(-1, c + CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
+      updateChainVisual(prevChain + CHAIN_INDEX_OFFSET);
+      updateChainVisual(c + CHAIN_INDEX_OFFSET);
     }
 
     setState((prev) => ({ ...prev, chain: c }));
@@ -514,15 +517,16 @@ export function useUniPadEngine() {
         }
       }
     }
-    const chainLedCount = Math.max(unipack.info.chain, 36);
-    for (let c = 0; c < chainLedCount; c++) {
-      cm.remove(-1, c, Channel.GUIDE);
-      const item = cm.get(-1, c);
-      midiRef.current?.sendChainLed(c, item ? item.code : 0);
-      if (c < unipack.info.chain && chainStatesRef.current[c]) {
-        chainStatesRef.current[c] = { ...chainStatesRef.current[c], guide: false };
+    const cirLedCount = Math.max(unipack.info.chain + CHAIN_INDEX_OFFSET, 36);
+    for (let cirIdx = 0; cirIdx < cirLedCount; cirIdx++) {
+      cm.remove(-1, cirIdx, Channel.GUIDE);
+      const item = cm.get(-1, cirIdx);
+      const midiChain = cirIdx >= CHAIN_INDEX_OFFSET ? cirIdx - CHAIN_INDEX_OFFSET : cirIdx;
+      midiRef.current?.sendChainLed(midiChain, item ? item.code : 0);
+      if (chainStatesRef.current[cirIdx]) {
+        chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: false };
       }
-      if (c < unipack.info.chain) updateChainVisual(c);
+      updateChainVisual(cirIdx);
     }
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
@@ -738,9 +742,9 @@ export function useUniPadEngine() {
           guideTargetWallTimeMs: null,
         })),
       );
-      chainStatesRef.current = Array.from({ length: chainCount }, (_, i) => ({
+      chainStatesRef.current = Array.from({ length: CIRCLE_ARRAY_SIZE }, (_, i) => ({
         color: 'transparent',
-        active: i === 0,
+        active: i === CHAIN_INDEX_OFFSET,
         guide: false,
       }));
 
@@ -755,7 +759,7 @@ export function useUniPadEngine() {
       const cm = new ChannelManager(buttonX, buttonY);
       channelManagerRef.current = cm;
       chainRef.current = 0;
-      cm.add(-1, 0, Channel.CHAIN, -1, 3);
+      cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
@@ -874,12 +878,13 @@ export function useUniPadEngine() {
             midiRef.current?.sendPadLed(x, y, velocity);
           },
           onGuideChainOn: (c: number) => {
-            cm.add(-1, c, Channel.GUIDE, -1, 17);
-            if (chainStatesRef.current[c]) {
-              chainStatesRef.current[c] = { ...chainStatesRef.current[c], guide: true };
+            const cirIdx = c + CHAIN_INDEX_OFFSET;
+            cm.add(-1, cirIdx, Channel.GUIDE, -1, 17);
+            if (chainStatesRef.current[cirIdx]) {
+              chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: true };
             }
-            updateChainVisual(c);
-            const item = cm.get(-1, c);
+            updateChainVisual(cirIdx);
+            const item = cm.get(-1, cirIdx);
             midiRef.current?.sendChainLed(c, item ? item.code : 0);
             scheduleFlush();
           },
