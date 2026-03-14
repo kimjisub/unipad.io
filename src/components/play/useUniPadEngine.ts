@@ -74,6 +74,8 @@ export interface EngineState {
   theme: ThemeAssets;
 }
 
+export type PlayMode = 'none' | 'autoPlay' | 'guidePlay' | 'stepPractice';
+
 const LED_RED_DIM = 1;
 const LED_RED = 3;
 const LED_RED_BRIGHT = 5;
@@ -120,6 +122,11 @@ export function useUniPadEngine() {
     criticalError: false,
     theme: getDefaultTheme(),
   });
+
+  const playMode: PlayMode = !state.autoPlayEnabled ? 'none'
+    : !state.practiceMode ? 'autoPlay'
+    : state.autoPlayPlaying ? 'guidePlay'
+    : 'stepPractice';
 
   const soundEngineRef = useRef<SoundEngine | null>(null);
   const ledRunnerRef = useRef<LedRunner | null>(null);
@@ -531,57 +538,91 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
 
-  const toggleAutoPlay = useCallback(() => {
+  const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
+    if (targetMode === 'autoPlay') {
+      runner.practiceGuide = false;
+      runner.stepMode = false;
+      runner.resetStepState();
+      autoPlayRemoveGuide();
+      runner.playmode = true;
+      runner.beforeStartPlaying = true;
+    } else if (targetMode === 'guidePlay') {
+      runner.practiceGuide = true;
+      runner.stepMode = false;
+      runner.resetStepState();
+      autoPlayRemoveGuide();
+      runner.playmode = true;
+      runner.beforeStartPlaying = true;
+    } else if (targetMode === 'stepPractice') {
+      runner.practiceGuide = true;
+      runner.playmode = false;
+      runner.stepMode = true;
+    }
+  }, [autoPlayRemoveGuide]);
+
+  const switchPlayMode = useCallback((targetMode: PlayMode) => {
     const runner = autoPlayRunnerRef.current;
     if (!runner) return;
     const unipack = unipackRef.current;
-    if (runner.active) {
+    const prev = stateRef.current;
+
+    const currentMode: PlayMode = !prev.autoPlayEnabled ? 'none'
+      : !prev.practiceMode ? 'autoPlay'
+      : prev.autoPlayPlaying ? 'guidePlay'
+      : 'stepPractice';
+
+    const mode = targetMode === currentMode ? 'none' : targetMode;
+
+    if (mode === 'none') {
       runner.practiceGuide = false;
-      runner.stop();
+      runner.stepMode = false;
+      runner.resetStepState();
+      runner.pause();
+      if (runner.active) runner.stop();
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      setState((prev) => ({
-        ...prev,
-        autoPlayEnabled: false,
-        autoPlayPlaying: false,
-        autoPlayControlsVisible: false,
-        autoPlayProgress: 0,
-        practiceMode: false,
+      if (unipack?.keyLedExist) {
+        feedbackLightRef.current = false;
+      } else {
+        feedbackLightRef.current = true;
+      }
+      setState((s) => ({
+        ...s,
+        autoPlayEnabled: false, autoPlayPlaying: false, autoPlayControlsVisible: false,
+        autoPlayProgress: 0, practiceMode: false,
+        ledEnabled: unipack?.keyLedExist ? true : s.ledEnabled,
+        feedbackLight: !unipack?.keyLedExist,
+      }));
+      return;
+    }
+
+    const isPractice = mode === 'guidePlay' || mode === 'stepPractice';
+    const isPlaying = mode !== 'stepPractice';
+
+    if (currentMode === 'none') {
+      applyModeFlags(runner, mode);
+      runner.launch();
+      if (unipack?.keyLedExist) {
+        feedbackLightRef.current = false;
+        if (!prev.ledEnabled) ledRunnerRef.current?.launch();
+      } else {
+        feedbackLightRef.current = true;
+      }
+      setState((s) => ({
+        ...s,
+        autoPlayEnabled: true, autoPlayPlaying: isPlaying,
+        autoPlayControlsVisible: unipack?.info.squareButton ?? false,
+        practiceMode: isPractice,
+        ledEnabled: unipack?.keyLedExist ? true : s.ledEnabled,
+        feedbackLight: !unipack?.keyLedExist,
       }));
     } else {
-      padInit();
-      ledInit();
-      runner.playmode = true;
-      runner.beforeStartPlaying = true;
-      setState((prev) => {
-        if (unipack?.keyLedExist) {
-          feedbackLightRef.current = false;
-          if (!prev.ledEnabled) {
-            ledRunnerRef.current?.launch();
-          }
-          return {
-            ...prev,
-            autoPlayEnabled: true,
-            autoPlayPlaying: true,
-            autoPlayControlsVisible: unipack?.info.squareButton ?? false,
-            ledEnabled: true,
-            feedbackLight: false,
-          };
-        }
-        feedbackLightRef.current = true;
-        return {
-          ...prev,
-          autoPlayEnabled: true,
-          autoPlayPlaying: true,
-          autoPlayControlsVisible: unipack?.info.squareButton ?? false,
-          feedbackLight: true,
-        };
-      });
-      runner.launch();
+      applyModeFlags(runner, mode);
+      setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
     }
-  }, [padInit, ledInit, autoPlayRemoveGuide]);
-  toggleAutoPlayRef.current = toggleAutoPlay;
+  }, [padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);
+  toggleAutoPlayRef.current = () => switchPlayMode('autoPlay');
 
   const autoPlayPlayPause = useCallback(() => {
     const runner = autoPlayRunnerRef.current;
@@ -592,12 +633,10 @@ export function useUniPadEngine() {
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      setState((prev) => {
-        if (prev.practiceMode) {
-          runner.stepMode = true;
-        }
-        return { ...prev, autoPlayPlaying: false };
-      });
+      if (stateRef.current.practiceMode) {
+        runner.stepMode = true;
+      }
+      setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
       runner.stepMode = false;
       runner.resetStepState();
@@ -606,26 +645,18 @@ export function useUniPadEngine() {
       ledInit();
       runner.play();
       runner.beforeStartPlaying = true;
-      setState((prev) => {
-        if (unipack?.keyLedExist) {
-          feedbackLightRef.current = false;
-          if (!prev.ledEnabled) {
-            ledRunnerRef.current?.launch();
-          }
-          return {
-            ...prev,
-            autoPlayPlaying: true,
-            ledEnabled: true,
-            feedbackLight: false,
-          };
-        }
+      if (unipack?.keyLedExist) {
+        feedbackLightRef.current = false;
+        if (!stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
+      } else {
         feedbackLightRef.current = true;
-        return {
-          ...prev,
-          autoPlayPlaying: true,
-          feedbackLight: true,
-        };
-      });
+      }
+      setState((prev) => ({
+        ...prev,
+        autoPlayPlaying: true,
+        ledEnabled: unipack?.keyLedExist ? true : prev.ledEnabled,
+        feedbackLight: !unipack?.keyLedExist,
+      }));
     }
   }, [padInit, ledInit, autoPlayRemoveGuide]);
 
@@ -642,81 +673,6 @@ export function useUniPadEngine() {
     autoPlayRemoveGuide();
     autoPlayRunnerRef.current?.progressOffset(40);
   }, [padInit, ledInit, autoPlayRemoveGuide]);
-
-  const togglePracticeMode = useCallback(() => {
-    const runner = autoPlayRunnerRef.current;
-    const unipack = unipackRef.current;
-    if (!runner) return;
-
-    if (!runner.active) {
-      padInit();
-      ledInit();
-      runner.practiceGuide = true;
-      runner.playmode = true;
-      runner.beforeStartPlaying = true;
-      setState((prev) => {
-        if (unipack?.keyLedExist) {
-          feedbackLightRef.current = false;
-          if (!prev.ledEnabled) {
-            ledRunnerRef.current?.launch();
-          }
-          return {
-            ...prev,
-            autoPlayEnabled: true,
-            autoPlayPlaying: true,
-            autoPlayControlsVisible: unipack?.info.squareButton ?? false,
-            practiceMode: true,
-            ledEnabled: true,
-            feedbackLight: false,
-          };
-        }
-        feedbackLightRef.current = true;
-        return {
-          ...prev,
-          autoPlayEnabled: true,
-          autoPlayPlaying: true,
-          autoPlayControlsVisible: unipack?.info.squareButton ?? false,
-          practiceMode: true,
-          feedbackLight: true,
-        };
-      });
-      runner.launch();
-      return;
-    }
-
-    const newMode = !runner.practiceGuide;
-    runner.practiceGuide = newMode;
-    if (!newMode) {
-      runner.stepMode = false;
-      runner.resetStepState();
-      autoPlayRemoveGuide();
-    } else if (!runner.isPlaying) {
-      runner.stepMode = true;
-    }
-    setState((prev) => {
-      if (!newMode) {
-        if (unipack?.keyLedExist) {
-          feedbackLightRef.current = false;
-          if (!prev.ledEnabled) {
-            ledRunnerRef.current?.launch();
-          }
-          return {
-            ...prev,
-            practiceMode: false,
-            ledEnabled: true,
-            feedbackLight: false,
-          };
-        }
-        feedbackLightRef.current = true;
-        return {
-          ...prev,
-          practiceMode: false,
-          feedbackLight: true,
-        };
-      }
-      return { ...prev, practiceMode: true };
-    });
-  }, [autoPlayRemoveGuide]);
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
@@ -833,11 +789,25 @@ export function useUniPadEngine() {
       if (unipack.autoPlayExist && unipack.autoPlay) {
         const autoPlayListener: AutoPlayListener = {
           onStart: () => {
+            const current = stateRef.current;
+            const startingMode: PlayMode = !current.autoPlayEnabled ? 'none'
+              : !current.practiceMode ? 'autoPlay'
+              : current.autoPlayPlaying ? 'guidePlay'
+              : 'stepPractice';
+
+            if (startingMode === 'stepPractice') {
+              autoPlayRunnerRef.current?.pause();
+              if (autoPlayRunnerRef.current) {
+                autoPlayRunnerRef.current.stepMode = true;
+              }
+            }
+
             setState((prev) => ({
               ...prev,
               autoPlayControlsVisible: unipack.info.squareButton,
               autoPlayProgress: 0,
               autoPlayTotal: unipack.autoPlay?.elements.length ?? 0,
+              autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
           onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y); },
@@ -1019,7 +989,7 @@ export function useUniPadEngine() {
             switch (key) {
               case 0: toggleFeedbackLightRef.current(); break;
               case 1: toggleLedRef.current(); break;
-              case 2: toggleAutoPlay(); break;
+              case 2: toggleAutoPlayRef.current(); break;
               case 3: midiToggleOptionPanelRef.current?.(); break;
               case 4:
               case 5:
@@ -1034,7 +1004,7 @@ export function useUniPadEngine() {
           switch (key) {
             case 0: toggleFeedbackLightRef.current(); break;
             case 1: toggleLedRef.current(); break;
-            case 2: toggleAutoPlay(); break;
+            case 2: toggleAutoPlayRef.current(); break;
             case 3: midiToggleOptionPanelRef.current?.(); break;
             case 4: toggleHideUiRef.current(); break;
             case 5: toggleWatermarkRef.current(); break;
@@ -1077,7 +1047,6 @@ export function useUniPadEngine() {
     updatePadVisual,
     updateChainVisual,
     scheduleFlush,
-    toggleAutoPlay,
     padInit,
     ledInit,
     autoPlayRemoveGuide,
@@ -1328,11 +1297,11 @@ export function useUniPadEngine() {
     padTouchOn,
     padTouchOff,
     setChain,
-    toggleAutoPlay,
+    playMode,
+    switchPlayMode,
     autoPlayPlayPause,
     autoPlayPrev,
     autoPlayNext,
-    togglePracticeMode,
     toggleFeedbackLight,
     toggleLed,
     toggleRecording,

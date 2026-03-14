@@ -53,11 +53,11 @@ export function PlayPage() {
     padTouchOn,
     padTouchOff,
     setChain,
-    toggleAutoPlay,
+    playMode,
+    switchPlayMode,
     autoPlayPlayPause,
     autoPlayPrev,
     autoPlayNext,
-    togglePracticeMode,
     toggleFeedbackLight,
     toggleLed,
     toggleRecording,
@@ -524,9 +524,9 @@ export function PlayPage() {
   }, [unload, refreshLists, syncPackUrl]);
 
   const handleStartPracticeFromMenu = useCallback(() => {
-    togglePracticeMode();
+    switchPlayMode('guidePlay');
     setOptionPanelOpen(false);
-  }, [togglePracticeMode]);
+  }, [switchPlayMode]);
 
   useEffect(() => {
     setMidiUiContext({
@@ -575,7 +575,7 @@ export function PlayPage() {
         switch (e.key) {
           case 'f': e.preventDefault(); toggleFeedbackLight(); break;
           case 'l': e.preventDefault(); toggleLed(); break;
-          case 'a': e.preventDefault(); toggleAutoPlay(); break;
+          case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
           case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
           case 'h': e.preventDefault(); toggleHideUI(); break;
           case 'w': e.preventDefault(); toggleWatermark(); break;
@@ -588,7 +588,7 @@ export function PlayPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     state.loaded, state.hideUI, state.criticalError,
-    toggleHideUI, toggleFeedbackLight, toggleLed, toggleAutoPlay,
+    toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
     toggleWatermark, toggleProLightMode, toggleRecording,
     errorDialogShown, launchpadSettingsOpen, optionPanelOpen,
   ]);
@@ -1276,23 +1276,21 @@ export function PlayPage() {
             keyLedExist={unipack.keyLedExist}
             feedbackLight={state.feedbackLight}
             ledEnabled={state.ledEnabled}
-            autoPlayEnabled={state.autoPlayEnabled}
-            autoPlayPlaying={state.autoPlayPlaying}
             autoPlayControlsVisible={state.autoPlayControlsVisible}
             autoPlayExist={unipack.autoPlayExist}
             recording={state.recording}
             traceLog={state.traceLog}
-            practiceMode={state.practiceMode}
+            playMode={playMode}
+            autoPlayPlaying={state.autoPlayPlaying}
             autoPlayProgress={state.autoPlayProgress}
             autoPlayTotal={state.autoPlayTotal}
             themeColors={theme.colors}
             onToggleFeedbackLight={toggleFeedbackLight}
             onToggleLed={toggleLed}
-            onToggleAutoPlay={toggleAutoPlay}
+            onSwitchPlayMode={switchPlayMode}
             onAutoPlayPlayPause={autoPlayPlayPause}
             onAutoPlayPrev={autoPlayPrev}
             onAutoPlayNext={autoPlayNext}
-            onTogglePracticeMode={togglePracticeMode}
             onToggleRecording={toggleRecording}
             onToggleTraceLog={toggleTraceLog}
             onClearTraceLog={handleClearTraceLog}
@@ -1480,7 +1478,7 @@ export function PlayPage() {
         midiConnecting={midiConnecting}
         onToggleFeedbackLight={toggleFeedbackLight}
         onToggleLed={toggleLed}
-        onToggleAutoPlay={toggleAutoPlay}
+        onToggleAutoPlay={() => switchPlayMode('autoPlay')}
         onStartPractice={handleStartPracticeFromMenu}
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}

@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import type { ThemeColors } from '@/lib/unipack';
+import type { PlayMode } from './useUniPadEngine';
 import { AutoPlayControls } from './AutoPlayControls';
 
 interface ControlPanelProps {
@@ -9,24 +10,22 @@ interface ControlPanelProps {
   keyLedExist: boolean;
   feedbackLight: boolean;
   ledEnabled: boolean;
-  autoPlayEnabled: boolean;
-  autoPlayPlaying: boolean;
   autoPlayControlsVisible: boolean;
   autoPlayExist: boolean;
   recording: boolean;
   traceLog: boolean;
-  practiceMode: boolean;
+  playMode: PlayMode;
+  autoPlayPlaying: boolean;
   autoPlayProgress: number;
   autoPlayTotal: number;
   themeColors?: ThemeColors;
   panelBgColor?: string;
   onToggleFeedbackLight: () => void;
   onToggleLed: () => void;
-  onToggleAutoPlay: () => void;
+  onSwitchPlayMode: (mode: PlayMode) => void;
   onAutoPlayPlayPause: () => void;
   onAutoPlayPrev: () => void;
   onAutoPlayNext: () => void;
-  onTogglePracticeMode: () => void;
   onToggleRecording: () => void;
   onToggleTraceLog: () => void;
   onClearTraceLog: () => void;
@@ -37,24 +36,22 @@ export function ControlPanel({
   keyLedExist,
   feedbackLight,
   ledEnabled,
-  autoPlayEnabled,
-  autoPlayPlaying,
   autoPlayControlsVisible,
   autoPlayExist,
   recording,
   traceLog,
-  practiceMode,
+  playMode,
+  autoPlayPlaying,
   autoPlayProgress,
   autoPlayTotal,
   themeColors,
   panelBgColor = 'rgba(0,0,0,0.35)',
   onToggleFeedbackLight,
   onToggleLed,
-  onToggleAutoPlay,
+  onSwitchPlayMode,
   onAutoPlayPlayPause,
   onAutoPlayPrev,
   onAutoPlayNext,
-  onTogglePracticeMode,
   onToggleRecording,
   onToggleTraceLog,
   onClearTraceLog,
@@ -84,11 +81,10 @@ export function ControlPanel({
         )}
         {showAutoPlay && (
           <>
-            <CheckItem
-              label="AutoPlay"
-              checked={autoPlayEnabled}
+            <PlayModeSelector
+              playMode={playMode}
               color={cbColor}
-              onClick={onToggleAutoPlay}
+              onSwitchPlayMode={onSwitchPlayMode}
             />
             {autoPlayControlsVisible && (
               <div className="mt-1 px-1">
@@ -96,28 +92,12 @@ export function ControlPanel({
                   playing={autoPlayPlaying}
                   progress={autoPlayProgress}
                   total={autoPlayTotal}
-                  practiceMode={practiceMode}
                   themeColor={cbColor}
                   onPlayPause={onAutoPlayPlayPause}
                   onPrev={onAutoPlayPrev}
                   onNext={onAutoPlayNext}
-                  onTogglePractice={onTogglePracticeMode}
                 />
               </div>
-            )}
-            {!autoPlayControlsVisible && (
-              <button
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.12] transition-colors origin-top-left scale-75"
-                onClick={onTogglePracticeMode}
-                title="Practice Mode"
-              >
-                <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24" style={{ color: cbColor }}>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                <span className="text-[13px] font-medium whitespace-nowrap" style={{ color: cbColor }}>
-                  Practice Mode
-                </span>
-              </button>
             )}
           </>
         )}
@@ -139,6 +119,52 @@ export function ControlPanel({
           <CheckItem label="Rec" checked={recording} color="#ef4444" onClick={onToggleRecording} />
         </div>
       )}
+    </div>
+  );
+}
+
+const PLAY_MODES: { mode: PlayMode; label: string }[] = [
+  { mode: 'autoPlay', label: 'Auto' },
+  { mode: 'guidePlay', label: 'Guide' },
+  { mode: 'stepPractice', label: 'Step' },
+];
+
+function PlayModeSelector({
+  playMode,
+  color,
+  onSwitchPlayMode,
+}: {
+  playMode: PlayMode;
+  color: string;
+  onSwitchPlayMode: (mode: PlayMode) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      {PLAY_MODES.map(({ mode, label }) => {
+        const active = playMode === mode;
+        return (
+          <button
+            key={mode}
+            className="flex items-center gap-2 px-1.5 py-1.5 rounded-md hover:bg-white/5 transition-colors select-none"
+            onClick={() => onSwitchPlayMode(mode)}
+          >
+            <div
+              className="w-2 h-2 rounded-full shrink-0 transition-colors"
+              style={{
+                backgroundColor: active ? color : `${color}40`,
+              }}
+            />
+            <span
+              className="text-[11px] font-medium transition-colors whitespace-nowrap"
+              style={{
+                color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
+              }}
+            >
+              {label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

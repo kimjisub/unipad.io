@@ -68,10 +68,29 @@ export function ChainBar({
         const isActive = showSelectedState && chainIdx === currentChain;
         const isGuide = state?.guide || false;
         const bgColor = state?.color || 'transparent';
-        const phantomOverlay = isGuide
-          ? (theme?.chainGuide ?? theme?.chain ?? null)
-          : (isActive ? (theme?.chainSelected ?? theme?.chain ?? null) : (theme?.chain ?? null));
-        const backgroundBase = isLedMode ? (theme?.chainled ?? null) : null;
+
+        // Android ChainView layer structure (bottom to top): background → led → phantom
+        // isChainLed=true:  background=btn, led=dynamic color, phantom=chainled (fixed)
+        // isChainLed=false: background=chain/chainGuide/chainSelected (swapped), led=GONE, phantom=chain (fixed)
+        let backgroundImage: string | null;
+        let showLed: boolean;
+        let phantomImage: string | null;
+
+        if (isLedMode) {
+          backgroundImage = theme?.btn ?? null;
+          showLed = true;
+          phantomImage = theme?.chainled ?? null;
+        } else {
+          showLed = false;
+          phantomImage = theme?.chain ?? null;
+          if (isGuide) {
+            backgroundImage = theme?.chainGuide ?? theme?.chain ?? null;
+          } else if (isActive) {
+            backgroundImage = theme?.chainSelected ?? theme?.chain ?? null;
+          } else {
+            backgroundImage = theme?.chain ?? null;
+          }
+        }
 
         return (
           <button
@@ -84,10 +103,10 @@ export function ChainBar({
             aria-label={`Chain ${chainIdx + 1}`}
             onPointerDown={(e) => { e.preventDefault(); onChainSelect(chainIdx); }}
           >
-            {/* Layer 1: background */}
-            {backgroundBase ? (
+            {/* Layer 1: background (btn or state-based image) */}
+            {backgroundImage ? (
               <img
-                src={backgroundBase}
+                src={backgroundImage}
                 alt=""
                 className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
                 draggable={false}
@@ -100,17 +119,17 @@ export function ChainBar({
             )}
 
             {/* Layer 2: led color */}
-            {bgColor !== 'transparent' && (
+            {showLed && bgColor !== 'transparent' && (
               <div
                 className="absolute inset-0 pointer-events-none z-10"
                 style={{ backgroundColor: bgColor }}
               />
             )}
 
-            {/* Layer 3: phantom/state image */}
-            {phantomOverlay && (
+            {/* Layer 3: phantom (chainled or chain image on top) */}
+            {phantomImage && (
               <img
-                src={phantomOverlay}
+                src={phantomImage}
                 alt=""
                 className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
                 draggable={false}
