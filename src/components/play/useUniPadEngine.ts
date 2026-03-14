@@ -356,6 +356,10 @@ export function useUniPadEngine() {
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
+    if (autoPlayRunnerRef.current?.stepMode) {
+      autoPlayRunnerRef.current.stepPadPressed(x, y);
+    }
+
     se?.soundOn(x, y);
     lr?.eventOn(x, y);
     recorderRef.current.recordOn(x, y);
@@ -584,8 +588,16 @@ export function useUniPadEngine() {
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      setState((prev) => ({ ...prev, autoPlayPlaying: false }));
+      setState((prev) => {
+        if (prev.practiceMode) {
+          runner.stepMode = true;
+        }
+        return { ...prev, autoPlayPlaying: false };
+      });
     } else {
+      runner.stepMode = false;
+      runner.resetStepState();
+      autoPlayRemoveGuide();
       padInit();
       ledInit();
       runner.play();
@@ -670,6 +682,13 @@ export function useUniPadEngine() {
 
     const newMode = !runner.practiceGuide;
     runner.practiceGuide = newMode;
+    if (!newMode) {
+      runner.stepMode = false;
+      runner.resetStepState();
+      autoPlayRemoveGuide();
+    } else if (!runner.isPlaying) {
+      runner.stepMode = true;
+    }
     setState((prev) => {
       if (!newMode) {
         if (unipack?.keyLedExist) {
@@ -693,7 +712,7 @@ export function useUniPadEngine() {
       }
       return { ...prev, practiceMode: true };
     });
-  }, []);
+  }, [autoPlayRemoveGuide]);
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();

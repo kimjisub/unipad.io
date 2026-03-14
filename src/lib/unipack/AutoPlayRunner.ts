@@ -35,6 +35,7 @@ export class AutoPlayRunner {
   playmode = true;
   beforeStartPlaying = true;
   practiceGuide = false;
+  stepMode = false;
   progress = 0;
 
   private rafId: number | null = null;
@@ -49,6 +50,13 @@ export class AutoPlayRunner {
 
   private delayAccum = 0;
   private startTime = 0;
+
+  // Step mode state
+  private stepPendingPads = new Set<number>();
+  private pressedKeysQueue: number[] = [];
+  private stepScanned = false;
+  private stepStartProgress = 0;
+  private stepChainValue = -1;
 
   constructor(
     unipack: UniPackData,
@@ -237,6 +245,43 @@ export class AutoPlayRunner {
         }
       } else {
         this.beforeStartPlaying = true;
+
+        if (this.stepMode && this.practiceGuide) {
+          this.drainPressedKeys();
+
+          const currentChain = this.chainValue();
+
+          if (currentChain !== this.stepChainValue && this.stepChainValue >= 0) {
+            if (this.stepScanned) {
+              this.progress = this.stepStartProgress;
+              this.stepPendingPads.clear();
+              this.stepScanned = false;
+            }
+            this.waitingForChain = -1;
+          }
+          this.stepChainValue = currentChain;
+
+          let needsScan = false;
+
+          if (this.waitingForChain >= 0) {
+            if (currentChain === this.waitingForChain) {
+              this.waitingForChain = -1;
+              needsScan = true;
+            }
+          } else {
+            if (!this.stepScanned || this.stepPendingPads.size === 0) {
+              needsScan = true;
+            }
+          }
+
+          if (needsScan) {
+            this.listener.onRemoveGuide();
+            this.stepStartProgress = this.progress;
+            this.stepScanNext(autoPlay);
+            this.stepScanned = this.stepPendingPads.size > 0 || this.waitingForChain >= 0;
+          }
+        }
+
         if (this.delayAccum <= currTime - this.startTime) {
           this.delayAccum = currTime - this.startTime;
         }
@@ -261,6 +306,7 @@ export class AutoPlayRunner {
       this.rafId = null;
     }
     this.activeGuides.clear();
+    this.resetStepState();
   }
 
   play(): void {
@@ -281,6 +327,79 @@ export class AutoPlayRunner {
     const target = this.progress + offset;
     this.progress = Math.max(0, Math.min(max, target));
     this.listener.onProgressUpdate(this.progress);
+    if (this.stepMode) {
+      this.resetStepState();
+      this.listener.onRemoveGuide();
+    }
+  }
+
+  resetStepState(): void {
+    this.pressedKeysQueue.length = 0;
+    this.stepPendingPads.clear();
+    this.stepScanned = false;
+    this.stepStartProgress = 0;
+    this.stepChainValue = -1;
+  }
+
+  stepPadPressed(x: number, y: number): void {
+    this.pressedKeysQueue.push(this.guideKey(x, y));
+  }
+
+  private drainPressedKeys(): void {
+    const keys = this.pressedKeysQueue.splice(0);
+    const removedKeys: number[] = [];
+    for (const key of keys) {
+      if (this.stepPendingPads.delete(key)) {
+        removedKeys.push(key);
+      }
+    }
+    for (const key of removedKeys) {
+      this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
+      this.listener.onGuidePadOff(Math.floor(key / 256), key % 256);
+    }
+  }
+
+  private static readonly STEP_GROUP_THRESHOLD_MS = 50;
+
+  private stepScanNext(autoPlay: AutoPlay): void {
+    const newPending = new Set<number>();
+    let totalDelayMs = 0;
+
+    scanLoop: while (this.progress < autoPlay.elements.length) {
+      const element = autoPlay.elements[this.progress];
+      switch (element.type) {
+        case 'on': {
+          if (this.chainValue() !== element.currChain) {
+            if (newPending.size === 0) {
+              this.waitingForChain = element.currChain;
+              this.listener.onGuideChainOn(element.currChain);
+            }
+            break scanLoop;
+          }
+          const key = this.guideKey(element.x, element.y);
+          newPending.add(key);
+          this.listener.onGuidePadOn(element.x, element.y, 0);
+          this.listener.onGuideLedUpdate(element.x, element.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
+          this.progress++;
+          break;
+        }
+        case 'off':
+          this.progress++;
+          break;
+        case 'delay':
+          totalDelayMs += element.delay;
+          if (newPending.size > 0 && totalDelayMs >= AutoPlayRunner.STEP_GROUP_THRESHOLD_MS) {
+            break scanLoop;
+          }
+          this.progress++;
+          break;
+        case 'chain':
+          this.progress++;
+          break;
+      }
+    }
+
+    this.stepPendingPads = newPending;
   }
 
   private doBeforeStartPlaying(): void {
