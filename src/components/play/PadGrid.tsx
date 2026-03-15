@@ -10,7 +10,7 @@ interface PadGridProps {
   padStates: PadState[][];
   squareButton: boolean;
   theme: ThemeAssets | null;
-  traceLogData?: number[][][];
+  traceLogSequence?: { x: number; y: number }[];
   onPadDown: (x: number, y: number) => void;
   onPadUp: (x: number, y: number) => void;
 }
@@ -21,7 +21,7 @@ export function PadGrid({
   padStates,
   squareButton,
   theme,
-  traceLogData,
+  traceLogSequence,
   onPadDown,
   onPadUp,
 }: PadGridProps) {
@@ -155,16 +155,57 @@ export function PadGrid({
   const padCellHeight = buttonX > 0 ? gridSize.height / buttonX : 0;
   const padCellMin = Math.min(padCellWidth || 0, padCellHeight || 0);
 
+  const tracePoints = useMemo(() => {
+    if (!traceLogSequence || traceLogSequence.length === 0 || gridSize.width === 0 || gridSize.height === 0) return [];
+    const cellW = gridSize.width / buttonY;
+    const cellH = gridSize.height / buttonX;
+    const maxOffset = Math.min(cellW, cellH) * 0.3;
+    const padVisitTotal = new Map<string, number>();
+    for (const p of traceLogSequence) {
+      const key = `${p.x},${p.y}`;
+      padVisitTotal.set(key, (padVisitTotal.get(key) ?? 0) + 1);
+    }
+
+    const visitIndex = new Map<string, number>();
+    return traceLogSequence.map((p) => {
+      const key = `${p.x},${p.y}`;
+      const total = padVisitTotal.get(key) ?? 1;
+      const idx = visitIndex.get(key) ?? 0;
+      visitIndex.set(key, idx + 1);
+
+      let ox = 0;
+      let oy = 0;
+      if (total > 1) {
+        const t = total === 1 ? 0 : idx / (total - 1) - 0.5;
+        ox = t * maxOffset;
+        oy = t * maxOffset;
+      }
+
+      return {
+        cx: p.y * cellW + cellW / 2 + ox,
+        cy: p.x * cellH + cellH / 2 + oy,
+      };
+    });
+  }, [traceLogSequence, gridSize, buttonX, buttonY]);
+
+  const traceLinePath = useMemo(() => {
+    if (tracePoints.length < 2) return '';
+    return tracePoints
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.cx},${p.cy}`)
+      .join(' ');
+  }, [tracePoints]);
+
   return (
-    <div
-      ref={gridRef}
-      className="grid select-none touch-none w-full h-full"
-      style={{
-        gridTemplateColumns: `repeat(${buttonY}, 1fr)`,
-        gridTemplateRows: `repeat(${buttonX}, 1fr)`,
-        gap: '0px',
-      }}
-    >
+    <div className="relative w-full h-full">
+      <div
+        ref={gridRef}
+        className="grid select-none touch-none w-full h-full"
+        style={{
+          gridTemplateColumns: `repeat(${buttonY}, 1fr)`,
+          gridTemplateRows: `repeat(${buttonX}, 1fr)`,
+          gap: '0px',
+        }}
+      >
       {Array.from({ length: buttonX }, (_, x) =>
         Array.from({ length: buttonY }, (_, y) => {
           const pad = padStates[x]?.[y];
@@ -206,10 +247,6 @@ export function PadGrid({
           const ledPressedOverlay = pressedIsWinning && theme?.btnPressed ? theme.btnPressed : null;
           const guideRemaining = guideTargetWallTimeMs ? Math.max(0, guideTargetWallTimeMs - guideNowMs) : 0;
           const guideProgress = guideTargetWallTimeMs ? Math.min(1, Math.max(0, 1 - guideRemaining / 800)) : 0;
-          const traceText = traceLogData?.[x]?.[y]?.join(' ') ?? '';
-          const traceDensity = traceText.length > 0 ? Math.min(1, 18 / traceText.length) : 1;
-          const traceFontSize = Math.max(7, Math.min(14, padCellMin * 0.18 * traceDensity + 4));
-
           return (
             <div
               key={`${x}-${y}`}
@@ -283,23 +320,40 @@ export function PadGrid({
                 );
               })()}
 
-              {/* TraceLog number overlay (Android: shows all numbers space-separated) */}
-              {traceLogData && (traceLogData[x]?.[y]?.length ?? 0) > 0 && (
-                <div className="absolute inset-[6%] flex items-center justify-center pointer-events-none z-30">
-                  <span
-                    className="font-bold leading-[1.05] text-center whitespace-pre-wrap break-words drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-                    style={{
-                      color: theme?.colors?.traceLog || '#ffffff',
-                      fontSize: `${traceFontSize}px`,
-                    }}
-                  >
-                    {traceText}
-                  </span>
-                </div>
-              )}
             </div>
           );
         }),
+      )}
+      </div>
+      {/* TraceLog: SVG overlay with lines and dots */}
+      {tracePoints.length > 0 && (
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none z-40"
+          viewBox={`0 0 ${gridSize.width} ${gridSize.height}`}
+          preserveAspectRatio="none"
+        >
+          {traceLinePath && (
+            <path
+              d={traceLinePath}
+              fill="none"
+              stroke={theme?.colors?.traceLog || '#ffffff'}
+              strokeWidth={Math.max(1.5, padCellMin * 0.04)}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity={0.85}
+            />
+          )}
+          {tracePoints.map((p, i) => (
+            <circle
+              key={i}
+              cx={p.cx}
+              cy={p.cy}
+              r={Math.max(2.5, padCellMin * 0.06)}
+              fill={theme?.colors?.traceLog || '#ffffff'}
+              opacity={0.95}
+            />
+          ))}
+        </svg>
       )}
     </div>
   );

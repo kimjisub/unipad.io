@@ -68,7 +68,7 @@ export interface EngineState {
   hideUI: boolean;
   watermark: boolean;
   traceLog: boolean;
-  traceLogTable: number[][][][];
+  traceLogSequence: { x: number; y: number }[][];
   proLightMode: boolean;
   criticalError: boolean;
   theme: ThemeAssets;
@@ -117,7 +117,7 @@ export function useUniPadEngine() {
     hideUI: false,
     watermark: true,
     traceLog: false,
-    traceLogTable: [],
+    traceLogSequence: [],
     proLightMode: false,
     criticalError: false,
     theme: getDefaultTheme(),
@@ -141,8 +141,7 @@ export function useUniPadEngine() {
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
   const traceLogRef = useRef(false);
-  const traceLogTableRef = useRef<number[][][][]>([]);
-  const traceLogCounterRef = useRef<number[]>([]);
+  const traceLogSequenceRef = useRef<{ x: number; y: number }[][]>([]);
   const pressedKeysRef = useRef(new Set<string>());
   const toggleAutoPlayRef = useRef<() => void>(() => {});
   const toggleFeedbackLightRef = useRef<() => void>(() => {});
@@ -376,14 +375,12 @@ export function useUniPadEngine() {
 
     if (traceLogRef.current) {
       const chain = chainRef.current;
-      const padList = traceLogTableRef.current[chain]?.[x]?.[y];
-      if (padList) {
-        padList.push(traceLogCounterRef.current[chain]++);
+      const seq = traceLogSequenceRef.current[chain];
+      if (seq) {
+        seq.push({ x, y });
         setState((prev) => ({
           ...prev,
-          traceLogTable: traceLogTableRef.current.map((c) =>
-            c.map((row) => row.map((cell) => [...cell])),
-          ),
+          traceLogSequence: traceLogSequenceRef.current.map((s) => [...s]),
         }));
       }
     }
@@ -705,13 +702,7 @@ export function useUniPadEngine() {
         guide: false,
       }));
 
-      // TraceLog table 초기화 (Android: ArrayList<Int> per pad, counter per chain)
-      traceLogTableRef.current = Array.from({ length: chainCount }, () =>
-        Array.from({ length: buttonX }, () =>
-          Array.from({ length: buttonY }, (): number[] => []),
-        ),
-      );
-      traceLogCounterRef.current = Array.from({ length: chainCount }, () => 1);
+      traceLogSequenceRef.current = Array.from({ length: chainCount }, () => []);
 
       const cm = new ChannelManager(buttonX, buttonY);
       channelManagerRef.current = cm;
@@ -953,9 +944,7 @@ export function useUniPadEngine() {
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
           errors: unipack.errors,
           criticalError: false,
-          traceLogTable: traceLogTableRef.current.map((c) =>
-            c.map((row) => row.map((cell) => [...cell])),
-          ),
+          traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,
           ledEnabled: initLedEnabled,
           midiConnected: false,
@@ -1144,18 +1133,11 @@ export function useUniPadEngine() {
   const clearTraceLog = useCallback(() => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    const { buttonX, buttonY, chain: chainCount } = unipack.info;
-    traceLogTableRef.current = Array.from({ length: chainCount }, () =>
-      Array.from({ length: buttonX }, () =>
-        Array.from({ length: buttonY }, (): number[] => []),
-      ),
-    );
-    traceLogCounterRef.current = Array.from({ length: chainCount }, () => 1);
+    const { chain: chainCount } = unipack.info;
+    traceLogSequenceRef.current = Array.from({ length: chainCount }, () => []);
     setState((prev) => ({
       ...prev,
-      traceLogTable: traceLogTableRef.current.map((c) =>
-        c.map((row) => row.map((cell) => [...cell])),
-      ),
+      traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
     }));
   }, []);
 

@@ -1143,7 +1143,7 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1383,7 +1383,7 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogData={state.traceLog ? state.traceLogTable[state.chain] : undefined}
+                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
