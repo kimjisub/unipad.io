@@ -619,6 +619,7 @@ export function useUniPadEngine() {
       }));
     } else {
       applyModeFlags(runner, mode);
+      runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
     }
   }, [padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);

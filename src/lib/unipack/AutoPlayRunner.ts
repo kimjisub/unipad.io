@@ -321,6 +321,31 @@ export class AutoPlayRunner {
     return this.playmode;
   }
 
+  resyncToProgress(): void {
+    const autoPlay = this.unipack.autoPlay;
+    if (!autoPlay) return;
+
+    let songTimeMs = 0;
+    for (let i = 0; i < this.progress; i++) {
+      const el = autoPlay.elements[i];
+      if (el.type === 'delay') songTimeMs += el.delay;
+    }
+
+    this.startTime = performance.now() - songTimeMs;
+    this.delayAccum = songTimeMs;
+
+    if (this.practiceGuide) {
+      this.guideTimeline = this.buildGuideTimeline(autoPlay);
+      const idx = this.guideTimeline.findIndex((e) => e.timeMs > songTimeMs - GUIDE_LOOKAHEAD_MS);
+      this.guideIndex = idx < 0 ? this.guideTimeline.length : idx;
+      this.waitingForChain = -1;
+      this.activeGuides.forEach((_val, key) => {
+        this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
+      });
+      this.activeGuides.clear();
+    }
+  }
+
   progressOffset(offset: number): void {
     const autoPlay = this.unipack.autoPlay;
     const max = autoPlay ? autoPlay.elements.length : 0;
