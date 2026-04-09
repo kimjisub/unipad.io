@@ -68,36 +68,5 @@ export async function GET(request: NextRequest) {
     return new Response('Host not allowed', { status: 403 });
   }
 
-  try {
-    const upstream = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      cache: 'no-store',
-    });
-
-    if (!upstream.ok || !upstream.body) {
-      return new Response(`Upstream download failed: HTTP ${upstream.status}`, {
-        status: 502,
-      });
-    }
-
-    const headers = new Headers();
-    const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
-    const contentLength = upstream.headers.get('content-length');
-    const contentDisposition = upstream.headers.get('content-disposition') ?? 'attachment; filename="pack.zip"';
-    headers.set('content-type', contentType);
-    headers.set('content-disposition', contentDisposition);
-    if (contentLength) {
-      headers.set('content-length', contentLength);
-    }
-    headers.set('cache-control', 'no-store');
-
-    return new Response(upstream.body, {
-      status: 200,
-      headers,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Download proxy error: ${message}`, { status: 502 });
-  }
+  return Response.redirect(url, 302);
 }
