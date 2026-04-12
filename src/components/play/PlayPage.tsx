@@ -73,6 +73,7 @@ export function PlayPage() {
     setMidiUiContext,
     setVolumeLevel,
     resumeAudio,
+    startAutoMapping,
   } = useUniPadEngine();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1480,6 +1481,10 @@ export function PlayPage() {
         onToggleLed={toggleLed}
         onToggleAutoPlay={() => switchPlayMode('autoPlay')}
         onStartPractice={handleStartPracticeFromMenu}
+        onStartAutoMapping={startAutoMapping}
+        autoMappingActive={state.autoMappingActive}
+        autoMappingProgress={state.autoMappingProgress}
+        autoMappingTotal={state.autoMappingTotal}
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}

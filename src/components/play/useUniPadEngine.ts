@@ -17,6 +17,7 @@ import {
   getDefaultTheme,
   releaseThemeUrls,
 } from '@/lib/unipack';
+import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import type {
   UniPackData,
   LedRunnerListener,
@@ -72,6 +73,9 @@ export interface EngineState {
   proLightMode: boolean;
   criticalError: boolean;
   theme: ThemeAssets;
+  autoMappingActive: boolean;
+  autoMappingProgress: number;
+  autoMappingTotal: number;
 }
 
 export type PlayMode = 'none' | 'autoPlay' | 'guidePlay' | 'stepPractice';
@@ -121,6 +125,9 @@ export function useUniPadEngine() {
     proLightMode: false,
     criticalError: false,
     theme: getDefaultTheme(),
+    autoMappingActive: false,
+    autoMappingProgress: 0,
+    autoMappingTotal: 0,
   });
 
   const playMode: PlayMode = !state.autoPlayEnabled ? 'none'
@@ -153,6 +160,7 @@ export function useUniPadEngine() {
   const setVolumeLevelRef = useRef<(level: number) => void>(() => {});
   const midiProfileRef = useRef<LaunchpadProfile>('auto');
   const midiListenerRef = useRef<MidiControllerListener | null>(null);
+  const autoPlayListenerRef = useRef<AutoPlayListener | null>(null);
   const volumeLevelRef = useRef(7);
   const stateRef = useRef(state);
   const midiOptionPanelOpenRef = useRef(false);
@@ -910,6 +918,7 @@ export function useUniPadEngine() {
           }
         };
 
+        autoPlayListenerRef.current = autoPlayListener;
         const autoPlayRunner = new AutoPlayRunner(
           unipack,
           autoPlayListener,
@@ -1237,6 +1246,66 @@ export function useUniPadEngine() {
     }
   }, []);
 
+  const startAutoMapping = useCallback(() => {
+    const unipack = unipackRef.current;
+    if (!unipack || !unipack.autoPlay) return;
+
+    setState((prev) => ({ ...prev, autoMappingActive: true, autoMappingProgress: 0, autoMappingTotal: 0 }));
+
+    autoPlayMap(unipack.autoPlay, unipack.soundTable, {
+      onStart: () => {},
+      onGetWorkSize: (size) => {
+        setState((prev) => ({ ...prev, autoMappingTotal: size }));
+      },
+      onProgress: (progress) => {
+        setState((prev) => ({ ...prev, autoMappingProgress: progress }));
+      },
+      onDone: (mappedAutoPlay) => {
+        unipack.autoPlay = mappedAutoPlay;
+        unipackRef.current = unipack;
+
+        const runner = autoPlayRunnerRef.current;
+        const listener = autoPlayListenerRef.current;
+        if (runner && listener) {
+          runner.stop();
+          const soundEngine = soundEngineRef.current;
+          if (soundEngine) {
+            const soundPushToNum = (c: number, x: number, y: number, num: number) => {
+              soundEngine.soundPushToNum(c, x, y, num);
+            };
+            const ledPushToNum = (c: number, x: number, y: number, num: number) => {
+              const table = unipack.ledAnimationTable;
+              if (!table) return;
+              const anims = table[c]?.[x]?.[y];
+              if (!anims || anims.length === 0) return;
+              const targetNum = num % anims.length;
+              for (let i = 0; i < anims.length; i++) {
+                if (anims[0].num === targetNum) break;
+                const first = anims.shift()!;
+                anims.push(first);
+              }
+            };
+            const newRunner = new AutoPlayRunner(
+              unipack,
+              listener,
+              () => chainRef.current,
+              setChain,
+              soundPushToNum,
+              ledPushToNum,
+            );
+            autoPlayRunnerRef.current = newRunner;
+          }
+        }
+
+        setState((prev) => ({ ...prev, autoMappingActive: false, unipack }));
+      },
+      onError: (error) => {
+        console.error('Auto mapping failed:', error);
+        setState((prev) => ({ ...prev, autoMappingActive: false }));
+      },
+    });
+  }, [setChain]);
+
   // Android onPause/onResume: 탭 전환 시 wake lock 관리 및 MIDI LED 클리어
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1300,5 +1369,6 @@ export function useUniPadEngine() {
     setMidiUiContext,
     setVolumeLevel,
     resumeAudio: () => soundEngineRef.current?.resume(),
+    startAutoMapping,
   };
 }

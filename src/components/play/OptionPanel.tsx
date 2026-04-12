@@ -25,6 +25,10 @@ interface OptionPanelProps {
   onToggleLed: () => void;
   onToggleAutoPlay: () => void;
   onStartPractice: () => void;
+  onStartAutoMapping: () => void;
+  autoMappingActive: boolean;
+  autoMappingProgress: number;
+  autoMappingTotal: number;
   onToggleRecording: () => void;
   onToggleHideUI: () => void;
   onToggleWatermark: () => void;
@@ -60,6 +64,10 @@ export function OptionPanel({
   onToggleLed,
   onToggleAutoPlay,
   onStartPractice,
+  onStartAutoMapping,
+  autoMappingActive,
+  autoMappingProgress,
+  autoMappingTotal,
   onToggleRecording,
   onToggleHideUI,
   onToggleWatermark,
@@ -188,6 +196,27 @@ export function OptionPanel({
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" style={{ color: accentColor }}>
                   <path d="M8 5v14l11-7z" />
                 </svg>
+              </button>
+              <button
+                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+                onClick={onStartAutoMapping}
+                disabled={autoMappingActive}
+              >
+                <span className="text-sm text-white">
+                  {autoMappingActive
+                    ? `Auto Mapping... ${autoMappingTotal > 0 ? `${autoMappingProgress}/${autoMappingTotal}` : ''}`
+                    : 'Auto Mapping'}
+                </span>
+                {autoMappingActive ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" style={{ color: accentColor }}>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                )}
               </button>
             </>
           )}
