@@ -3,11 +3,13 @@ import { LedAnimation, LedEvent, UniPackData } from './types';
 interface Led {
   buttonX: number;
   buttonY: number;
+  chain: number;
 }
 
 interface LedAnimationState {
   buttonX: number;
   buttonY: number;
+  chainAtCreation: number;
   index: number;
   delay: number;
   isPlaying: boolean;
@@ -114,24 +116,24 @@ export class LedRunner {
         if (event.x !== -1) {
           this.listener.onPadLedTurnOn(event.x, event.y, event.color, event.velocity);
           if (this.btnLed[event.x]?.[event.y] !== undefined) {
-            this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY };
+            this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
           }
         } else {
           this.listener.onChainLedTurnOn(event.y, event.color, event.velocity);
-          this.cirLed[event.y] = { buttonX: state.buttonX, buttonY: state.buttonY };
+          this.cirLed[event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
         }
         break;
       }
       case 'off': {
         if (event.x !== -1) {
           const led = this.btnLed[event.x]?.[event.y];
-          if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY) {
+          if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
             this.listener.onPadLedTurnOff(event.x, event.y);
             this.btnLed[event.x][event.y] = null;
           }
         } else {
           const led = this.cirLed[event.y];
-          if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY) {
+          if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
             this.listener.onChainLedTurnOff(event.y);
             this.cirLed[event.y] = null;
           }
@@ -151,7 +153,7 @@ export class LedRunner {
     for (let x = 0; x < this.unipack.info.buttonX; x++) {
       for (let y = 0; y < this.unipack.info.buttonY; y++) {
         const led = this.btnLed[x][y];
-        if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY) {
+        if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
           this.listener.onPadLedTurnOff(x, y);
           this.btnLed[x][y] = null;
         }
@@ -159,7 +161,7 @@ export class LedRunner {
     }
     for (let y = 0; y < this.cirLed.length; y++) {
       const led = this.cirLed[y];
-      if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY) {
+      if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
         this.listener.onChainLedTurnOff(y);
         this.cirLed[y] = null;
       }
@@ -206,14 +208,14 @@ export class LedRunner {
   eventOn(x: number, y: number): void {
     if (!this.active) return;
 
-    // Shutdown existing animation for this pad
+    const chain = this.chainValue();
+
     for (const state of this.ledAnimationStates) {
-      if (state.buttonX === x && state.buttonY === y) {
+      if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === chain) {
         state.isShutdown = true;
       }
     }
 
-    const chain = this.chainValue();
     const animation = this.ledGet(chain, x, y);
     this.ledPush(chain, x, y);
 
@@ -221,6 +223,7 @@ export class LedRunner {
       this.ledAnimationStatesAdd.push({
         buttonX: x,
         buttonY: y,
+        chainAtCreation: chain,
         index: 0,
         delay: 0,
         isPlaying: true,
@@ -235,7 +238,7 @@ export class LedRunner {
   eventOff(x: number, y: number): void {
     if (!this.active) return;
     for (const state of this.ledAnimationStates) {
-      if (state.buttonX === x && state.buttonY === y && state.ledAnimation?.loop === 0) {
+      if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === this.chainValue() && state.ledAnimation?.loop === 0) {
         state.isShutdown = true;
       }
     }
