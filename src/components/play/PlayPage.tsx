@@ -44,6 +44,10 @@ const CODE_QUERY_KEY = 'code';
 const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
 const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
+// Reserve a left strip so the floating ControlPanel never overlaps the pad grid.
+// Mirrors the right-side chrome strip used on Android/iOS, just on the opposite edge
+// to preserve the existing web layout where the option panel slides in from the right.
+const CHROME_STRIP_WIDTH = 96;
 
 export function PlayPage() {
   const {
@@ -523,11 +527,6 @@ export function PlayPage() {
     syncPackUrl(null);
     refreshLists();
   }, [unload, refreshLists, syncPackUrl]);
-
-  const handleStartPracticeFromMenu = useCallback(() => {
-    switchPlayMode('guidePlay');
-    setOptionPanelOpen(false);
-  }, [switchPlayMode]);
 
   useEffect(() => {
     setMidiUiContext({
@@ -1248,27 +1247,17 @@ export function PlayPage() {
         </div>
       </div>
 
-      {/* Menu button (Android: bottom-right, white 70% opacity) */}
-      {!optionPanelOpen && (
-        <button
-          className="absolute z-30 p-4 pointer-events-auto"
-          style={{ bottom: '16px', right: '16px' }}
-          onClick={handleBack}
-          aria-label="Menu"
-        >
-          <svg className="w-8 h-8 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-      )}
-
-      {/* Android SideCheckPanel: overlay on left, vertically centered, doesn't push pad grid */}
+      {/* Chrome strip on the left: Menu + quick controls + transport.
+          Replaces the bottom-right Menu (which used to overlap the corner pad)
+          and consolidates the previously-floating ControlPanel into a reserved
+          left strip so it cannot underlap the pad grid. */}
       {!optionPanelOpen && (
         <div
-          className="absolute left-2 z-20 pointer-events-auto"
+          className="absolute left-0 z-20 pointer-events-auto flex items-center justify-center"
           style={{
             top: '50%',
             transform: 'translateY(-50%)',
+            width: `${CHROME_STRIP_WIDTH}px`,
           }}
         >
           <ControlPanel
@@ -1286,6 +1275,7 @@ export function PlayPage() {
             autoPlayProgress={state.autoPlayProgress}
             autoPlayTotal={state.autoPlayTotal}
             themeColors={theme.colors}
+            onOpenMenu={handleBack}
             onToggleFeedbackLight={toggleFeedbackLight}
             onToggleLed={toggleLed}
             onSwitchPlayMode={switchPlayMode}
@@ -1299,13 +1289,15 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Center safe area: [PAD GRID center] [CHAINS RIGHT] */}
+      {/* Center safe area: pads + chain bars centered within the area to the
+          right of the left chrome strip. Reserving CHROME_STRIP_WIDTH on the
+          left guarantees the floating ControlPanel never overlaps the pads. */}
       <div
         className="absolute z-10 min-w-0"
         ref={centerStageRef}
         style={{
           top: `${stageInsetTop}px`,
-          left: `${stageInsetLeft}px`,
+          left: `${stageInsetLeft + CHROME_STRIP_WIDTH}px`,
           right: `${stageInsetRight}px`,
           bottom: `${stageInsetBottom}px`,
         }}
@@ -1469,7 +1461,7 @@ export function PlayPage() {
         theme={theme}
         feedbackLight={state.feedbackLight}
         ledEnabled={state.ledEnabled}
-        autoPlayEnabled={state.autoPlayEnabled}
+        playMode={playMode}
         recording={state.recording}
         hideUI={state.hideUI}
         watermark={state.watermark}
@@ -1479,8 +1471,7 @@ export function PlayPage() {
         midiConnecting={midiConnecting}
         onToggleFeedbackLight={toggleFeedbackLight}
         onToggleLed={toggleLed}
-        onToggleAutoPlay={() => switchPlayMode('autoPlay')}
-        onStartPractice={handleStartPracticeFromMenu}
+        onSwitchPlayMode={switchPlayMode}
         onStartAutoMapping={startAutoMapping}
         autoMappingActive={state.autoMappingActive}
         autoMappingProgress={state.autoMappingProgress}

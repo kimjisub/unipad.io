@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
+import type { PlayMode } from './useUniPadEngine';
 
 interface OptionPanelProps {
   visible: boolean;
@@ -12,7 +13,8 @@ interface OptionPanelProps {
   theme: ThemeAssets;
   feedbackLight: boolean;
   ledEnabled: boolean;
-  autoPlayEnabled: boolean;
+  /** Currently active play mode (autoPlay / guidePlay / stepPractice). */
+  playMode: PlayMode;
 
   recording: boolean;
   hideUI: boolean;
@@ -23,8 +25,10 @@ interface OptionPanelProps {
   midiConnecting?: boolean;
   onToggleFeedbackLight: () => void;
   onToggleLed: () => void;
-  onToggleAutoPlay: () => void;
-  onStartPractice: () => void;
+  /** Switch play mode. Used to be onToggleAutoPlay + onStartPractice; the
+   *  segmented control unifies all three modes behind one callback to
+   *  match the ControlPanel and the mobile apps. */
+  onSwitchPlayMode: (mode: PlayMode) => void;
   onStartAutoMapping: () => void;
   autoMappingActive: boolean;
   autoMappingProgress: number;
@@ -51,7 +55,7 @@ export function OptionPanel({
   theme,
   feedbackLight,
   ledEnabled,
-  autoPlayEnabled,
+  playMode,
 
   recording,
   hideUI,
@@ -62,8 +66,7 @@ export function OptionPanel({
   midiConnecting = false,
   onToggleFeedbackLight,
   onToggleLed,
-  onToggleAutoPlay,
-  onStartPractice,
+  onSwitchPlayMode,
   onStartAutoMapping,
   autoMappingActive,
   autoMappingProgress,
@@ -83,6 +86,9 @@ export function OptionPanel({
 }: OptionPanelProps) {
   const [mounted, setMounted] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Collapse the UniPack info card by default so the primary controls
+  // (Performance section) sit closer to the top of the panel.
+  const [infoExpanded, setInfoExpanded] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -138,40 +144,62 @@ export function OptionPanel({
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto min-h-0">
-        {/* UniPack Info */}
-        <div className="mx-6 mt-2 mb-2 p-4 rounded-xl bg-white/[0.06]">
-          <div className="text-base font-semibold text-white truncate">{unipackInfo.title}</div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <div className="text-[13px] text-white/40 truncate flex-1">{unipackInfo.producerName}</div>
-            <a
-              href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-red-400 transition-colors"
-              aria-label="YouTube"
+        {/* UniPack Info — collapsed by default; expanded reveals producer, links, dimensions */}
+        <div className="mx-6 mt-2 mb-2 rounded-xl bg-white/[0.06]">
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 px-4 py-3 text-left"
+            onClick={() => setInfoExpanded((v) => !v)}
+            aria-expanded={infoExpanded}
+            aria-label="Toggle pack info"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white truncate">{unipackInfo.title}</div>
+            </div>
+            <svg
+              className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${infoExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-              </svg>
-            </a>
-            {unipackInfo.website && (
-              <a
-                href={unipackInfo.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"
-                aria-label="Website"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-                </svg>
-              </a>
-            )}
-          </div>
-          <div className="flex gap-3 mt-2 text-xs text-white/40">
-            <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
-            <span>{unipackInfo.chain} {unipackInfo.chain === 1 ? 'chain' : 'chains'}</span>
-          </div>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {infoExpanded && (
+            <div className="px-4 pb-3 pt-1">
+              <div className="flex items-center gap-2">
+                <div className="text-[13px] text-white/65 truncate flex-1">{unipackInfo.producerName}</div>
+                <a
+                  href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-red-400 transition-colors"
+                  aria-label="YouTube"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                </a>
+                {unipackInfo.website && (
+                  <a
+                    href={unipackInfo.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"
+                    aria-label="Website"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+                    </svg>
+                  </a>
+                )}
+              </div>
+              <div className="flex gap-3 mt-2 text-xs text-white/65">
+                <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
+                <span>{unipackInfo.chain} {unipackInfo.chain === 1 ? 'chain' : 'chains'}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Performance Section */}
@@ -184,19 +212,17 @@ export function OptionPanel({
           )}
           {showAutoPlay && (
             <>
-              <OptionSwitch label="AutoPlay" checked={autoPlayEnabled} color={accentColor} onChange={onToggleAutoPlay} />
-              <button
-                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
-                onClick={() => {
-                  onStartPractice();
+              {/* Play mode segmented — replaces previous AutoPlay toggle + Practice Mode button.
+                  Auto/Guide/Step are mutually exclusive, so a segmented control communicates
+                  the radio relationship and matches the ControlPanel + mobile apps. */}
+              <PlayModeSegmented
+                playMode={playMode}
+                color={accentColor}
+                onSwitch={(mode) => {
+                  onSwitchPlayMode(mode);
                   onClose();
                 }}
-              >
-                <span className="text-sm text-white">Practice Mode</span>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" style={{ color: accentColor }}>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
+              />
               <button
                 className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
                 onClick={onStartAutoMapping}
@@ -307,8 +333,55 @@ export function OptionPanel({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-1">
-      <div className="px-6 text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1 mt-4">{title}</div>
+      {/* Section labels: bumped from 0.4 to 0.65 alpha for better WCAG contrast */}
+      <div className="px-6 text-[11px] font-bold text-white/65 uppercase tracking-wider mb-1 mt-4">{title}</div>
       <div>{children}</div>
+    </div>
+  );
+}
+
+const PANEL_PLAY_MODES: { mode: PlayMode; label: string }[] = [
+  { mode: 'autoPlay', label: 'Auto' },
+  { mode: 'guidePlay', label: 'Guide' },
+  { mode: 'stepPractice', label: 'Step' },
+];
+
+/** Segmented control rendered inside the option panel, replacing the previous
+ *  separate AutoPlay toggle and Practice Mode button. Visually communicates
+ *  the radio relationship between the three play modes. */
+function PlayModeSegmented({
+  playMode,
+  color,
+  onSwitch,
+}: {
+  playMode: PlayMode;
+  color: string;
+  onSwitch: (mode: PlayMode) => void;
+}) {
+  return (
+    <div
+      className="mx-6 my-1 flex items-stretch gap-0.5 rounded-md p-0.5"
+      style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+    >
+      {PANEL_PLAY_MODES.map(({ mode, label }) => {
+        const active = playMode === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            className="flex-1 px-2 py-2 rounded text-xs font-semibold transition-colors select-none"
+            style={{
+              backgroundColor: active ? color : 'transparent',
+              color: active ? '#000000' : 'rgba(255,255,255,0.7)',
+            }}
+            onClick={() => onSwitch(mode)}
+            aria-pressed={active}
+            aria-label={`Play mode: ${label}`}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

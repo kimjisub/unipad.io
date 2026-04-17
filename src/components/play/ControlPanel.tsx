@@ -20,6 +20,9 @@ interface ControlPanelProps {
   autoPlayTotal: number;
   themeColors?: ThemeColors;
   panelBgColor?: string;
+  /** Opens the slide-in OptionPanel. Replaces the previous bottom-right Menu overlay
+   *  so the menu icon lives inside the chrome strip and never overlaps a corner pad. */
+  onOpenMenu: () => void;
   onToggleFeedbackLight: () => void;
   onToggleLed: () => void;
   onSwitchPlayMode: (mode: PlayMode) => void;
@@ -46,6 +49,7 @@ export function ControlPanel({
   autoPlayTotal,
   themeColors,
   panelBgColor = 'rgba(0,0,0,0.35)',
+  onOpenMenu,
   onToggleFeedbackLight,
   onToggleLed,
   onSwitchPlayMode,
@@ -68,11 +72,24 @@ export function ControlPanel({
 
   return (
     <div className="flex flex-col justify-between h-full py-1 gap-1.5">
-      {/* Top group: performance controls */}
+      {/* Top group: menu + performance controls */}
       <div
         className="flex flex-col px-1.5 py-2 gap-0.5 rounded-xl backdrop-blur-sm"
         style={groupStyle}
       >
+        {/* Menu — promoted into the chrome strip so the bottom-right overlay
+            (which used to overlap a pad) is no longer needed */}
+        <button
+          className="flex items-center justify-center p-1.5 rounded-md hover:bg-white/10 transition-colors"
+          onClick={onOpenMenu}
+          aria-label="Open menu"
+          title="Menu"
+        >
+          <svg className="w-5 h-5 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="h-px bg-white/15 mx-2 my-1" />
         {showFeedback && (
           <CheckItem label="Feedback" checked={feedbackLight} color={cbColor} onClick={onToggleFeedbackLight} />
         )}
@@ -81,7 +98,7 @@ export function ControlPanel({
         )}
         {showAutoPlay && (
           <>
-            <PlayModeSelector
+            <PlayModeSegmented
               playMode={playMode}
               color={cbColor}
               onSwitchPlayMode={onSwitchPlayMode}
@@ -129,7 +146,10 @@ const PLAY_MODES: { mode: PlayMode; label: string }[] = [
   { mode: 'stepPractice', label: 'Step' },
 ];
 
-function PlayModeSelector({
+/** Segmented control for play mode. Visualizes the radio relationship
+ *  (only one mode active at a time) which the previous list of buttons
+ *  did not communicate clearly. */
+function PlayModeSegmented({
   playMode,
   color,
   onSwitchPlayMode,
@@ -139,29 +159,25 @@ function PlayModeSelector({
   onSwitchPlayMode: (mode: PlayMode) => void;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div
+      className="flex items-stretch gap-0.5 mt-1 mx-0.5 rounded-md p-0.5"
+      style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+    >
       {PLAY_MODES.map(({ mode, label }) => {
         const active = playMode === mode;
         return (
           <button
             key={mode}
-            className="flex items-center gap-2 px-1.5 py-1.5 rounded-md hover:bg-white/5 transition-colors select-none"
+            className="flex-1 px-1 py-1.5 rounded text-[10px] font-semibold transition-colors select-none"
+            style={{
+              backgroundColor: active ? color : 'transparent',
+              color: active ? '#000000' : 'rgba(255,255,255,0.6)',
+            }}
             onClick={() => onSwitchPlayMode(mode)}
+            aria-pressed={active}
+            aria-label={`Play mode: ${label}`}
           >
-            <div
-              className="w-2 h-2 rounded-full shrink-0 transition-colors"
-              style={{
-                backgroundColor: active ? color : `${color}40`,
-              }}
-            />
-            <span
-              className="text-[11px] font-medium transition-colors whitespace-nowrap"
-              style={{
-                color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
-              }}
-            >
-              {label}
-            </span>
+            {label}
           </button>
         );
       })}

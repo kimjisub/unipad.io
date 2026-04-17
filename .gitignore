@@ -56,3 +56,6 @@ package-lock.json
 # Legacy (Docusaurus)
 /docusaurus/
 /docs/
+
+# OMC (oh-my-claudecode) local state
+.omc/
