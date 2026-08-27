@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
+// Store items are large (some UniPacks are ~45 MB), and the body is streamed
+// through this function, so the default limit is not enough.
+export const maxDuration = 300;
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -59,6 +62,26 @@ function isAllowedHost(value: string): boolean {
   }
 }
 
+function filenameFor(url: string): string {
+  try {
+    const last = new URL(url).pathname.split('/').pop();
+    if (last && /\.zip$/i.test(last)) return decodeURIComponent(last);
+  } catch {
+    /* fall through */
+  }
+  return 'unipack.zip';
+}
+
+/**
+ * Streams the upstream file back through this origin.
+ *
+ * This used to `Response.redirect(url)`, which broke the browser download:
+ * the client fetches this route from https://unipad.io, the 302 sends it to
+ * another origin (e.g. unipack.unipad.io), and CORS is then evaluated against
+ * that origin. The file host serves no Access-Control-Allow-Origin, so the
+ * fetch failed with "No 'Access-Control-Allow-Origin' header is present".
+ * Proxying keeps the whole exchange same-origin, so no CORS is involved.
+ */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
   if (!url || !isValidHttpUrl(url)) {
@@ -68,5 +91,39 @@ export async function GET(request: NextRequest) {
     return new Response('Host not allowed', { status: 403 });
   }
 
-  return Response.redirect(url, 302);
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, {
+      // Forward Range so the client can resume; the file hosts advertise
+      // accept-ranges: bytes.
+      headers: (() => {
+        const h = new Headers();
+        const range = request.headers.get('range');
+        if (range) h.set('range', range);
+        return h;
+      })(),
+      cache: 'no-store',
+      redirect: 'follow',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return new Response(`Upstream fetch failed: ${message}`, { status: 502 });
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    return new Response(`Upstream responded ${upstream.status}`, {
+      status: upstream.status === 404 ? 404 : 502,
+    });
+  }
+
+  const headers = new Headers();
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  if (!headers.has('content-type')) headers.set('content-type', 'application/zip');
+  headers.set('content-disposition', `attachment; filename="${filenameFor(url)}"`);
+  headers.set('cache-control', 'public, max-age=3600');
+
+  return new Response(upstream.body, { status: upstream.status, headers });
 }
