@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
+import { EXTERNAL_LINKS } from '@/lib/constants';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -495,9 +496,9 @@ function TotalPanel({
       <div className="mt-4 pt-3 border-t border-white/[0.06] w-full flex items-center justify-center gap-3">
         <a href="https://www.unipad.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-accent transition-colors">Website</a>
         <span className="text-white/10">·</span>
-        <a href="https://discord.gg/unipad" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-[#5865F2] transition-colors">Discord</a>
+        <a href={EXTERNAL_LINKS.discord} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-[#5865F2] transition-colors">Discord</a>
         <span className="text-white/10">·</span>
-        <a href="https://github.com/kimjisub/unipad-android" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">GitHub</a>
+        <a href={EXTERNAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">GitHub</a>
       </div>
 
       <AnimatePresence>
