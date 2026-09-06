@@ -44,5 +44,5 @@ src/
 ## Links
 
 - [Google Play](https://play.google.com/store/apps/details?id=com.kimjisub.launchpad)
-- [Discord](https://discord.gg/GGKwpgP)
+- [Discord](https://discord.gg/ESDgyNs)
 - [Facebook](https://www.facebook.com/playunipad)

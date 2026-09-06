@@ -9,7 +9,7 @@ export const GOOGLE_PLAY_URL =
 	'https://play.google.com/store/apps/details?id=com.kimjisub.launchpad';
 
 export const EXTERNAL_LINKS = {
-	discord: 'https://discord.gg/GGKwpgP',
+	discord: 'https://discord.gg/ESDgyNs',
 	facebook: 'https://www.facebook.com/playunipad',
 	youtube: 'https://www.youtube.com/results?search_query=UniPad+launchpad',
 	github: 'https://github.com/kimjisub/unipad-android',
