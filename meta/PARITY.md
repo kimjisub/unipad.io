@@ -4,7 +4,7 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-08-27
+Last verified: 2026-09-06
 
 ## Repos
 
@@ -43,7 +43,7 @@ Every Android screen has an iOS counterpart.
 | Launchpad X | `LaunchpadX` | `LaunchpadXDriver` |
 | Launchpad Mini MK3 | `LaunchpadMiniMK3` | `LaunchpadMiniMK3Driver` |
 | Launchpad Pro MK3 | `LaunchpadMK3` | `LaunchpadProMK3Driver` |
-| **Launchpad Pro MK2 (CFW)** | `LaunchpadPROCFW` | **missing** |
+| Launchpad Pro MK2 (CFW) | `LaunchpadPROCFW` | `LaunchpadProCFWDriver` |
 | Matrix | `Matrix` | `MatrixDriver` |
 | Midi Fighter | `MidiFighter` | `MidiFighterDriver` |
 | Master keyboard / fallback | `MasterKeyboard`, `Noting` | `MasterKeyboardDriver`, `GenericDriver` |
@@ -52,9 +52,10 @@ Note the Android class for the Pro MK3 is named `LaunchpadMK3`, not `LaunchpadPr
 
 ### Open gaps
 
-- **CFW driver, iOS.** Added to Android in #25 (2026-07-13). The note map is
-  verified; porting is mechanical, but confirming it needs a Pro MK2 running the
-  "Launchpad Open" firmware.
+- **CFW driver, iOS: ported, unverified on hardware.** `LaunchpadProCFWDriver`
+  (unipad-ios, 2026-09-06) mirrors the Android note map and has unit tests for it,
+  but nobody has plugged a Pro MK2 on the "Launchpad Open" firmware into an iPhone yet.
+  Auto-detect keys on a CoreMIDI source name starting with "Launchpad Open".
 - **Dual-launchpad support.** Android only, still in review (#27).
 
 ## Engine
