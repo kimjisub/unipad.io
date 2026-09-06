@@ -8,7 +8,8 @@ pick the work up cold, without the maintainer re-explaining anything.
 
 Inside a Claude Code session, on the maintainer's machine, when the maintainer
 starts it. There is no daemon, cron, or cloud runner. The `unipad-maintain` skill
-(private repo `unipad-ops`, `harness/skills/`) performs one pass: collect from
+(`.claude/skills/unipad-maintain/` in the private workspace repo `kimjisub/unipad`,
+which contains the three app checkouts) performs one pass: collect from
 every channel below, classify, present a digest, ask the maintainer the decisions
 only they can make, act on what was approved, record the watermarks. Store
 credentials come from 1Password with the desktop-app prompt; nothing is copied
@@ -26,7 +27,7 @@ for never leaving someone unanswered, not for throughput.
 | Channel | How to read it | Status |
 |---|---|---|
 | GitHub issues and PRs, all three repos | `gh` | working |
-| Play Store reviews | Play Developer API, `reviews.list` (`play.py reviews`), ~7-day window, archived in unipad-ops | verified working |
+| Play Store reviews | Play Developer API, `reviews.list` (`play.py reviews`), ~7-day window, archived in the workspace repo `state/reviews/` | verified working |
 | App Store reviews, TestFlight | App Store Connect API (`asc.py reviews`, `asc.py testflight`) | verified working; zero TestFlight groups as of 2026-09-06 |
 | Play crash and ANR clusters | Play Developer Reporting API (`play.py vitals`) | verified working since 2026-09-06 |
 | Firebase Crashlytics | no read API; only reachable via BigQuery export | not wired |
