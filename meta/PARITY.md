@@ -56,7 +56,7 @@ Note the Android class for the Pro MK3 is named `LaunchpadMK3`, not `LaunchpadPr
   (unipad-ios, 2026-09-06) mirrors the Android note map and has unit tests for it,
   but nobody has plugged a Pro MK2 on the "Launchpad Open" firmware into an iPhone yet.
   Auto-detect keys on a CoreMIDI source name starting with "Launchpad Open".
-- **Dual-launchpad support.** Android only, still in review (#27).
+- **Dual-launchpad support.** Android only, still in review (#27); needs the contributor's rebase over the `MidiConnection` changes from #41 and #51.
 
 ## Engine
 
@@ -67,8 +67,14 @@ recording, push, ZIP themes, autoplay auto-mapping.
 Platform-specific by design, not gaps: Oboe low-latency audio and the Storage
 Access Framework migration on Android; CoreMIDI on iOS.
 
-## Known behaviour gaps (all platforms)
+## Slide across pads
 
-- Dragging a finger across the pad grid only triggers the first pad touched.
-  Each pad installs its own touch listener handling press and release only, so
-  the view that captured the gesture keeps it. See unipad-android#26.
+Dragging a finger onto another pad plays it and releases the one it left.
+
+| Platform | Behaviour |
+|---|---|
+| Android | Opt-in: Settings > Play > "Slide across pads" (`PreferenceManager.slideMode`), off by default so a resting palm does not trigger runs. `SlideTouchOverlayView` over the grid, since 2026-09-06 (unipad-android#26). Ships after 4.1.5. |
+| iOS | Always on (`MultiTouchView.touchesMoved`). |
+| Web | Always on (`PadGrid` uses `elementFromPoint` with pointer capture). |
+
+The two always-on platforms have no palm-rejection complaint on record; revisit if one arrives.
