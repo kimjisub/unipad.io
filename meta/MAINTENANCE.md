@@ -4,6 +4,16 @@ UniPad is maintained by one person who cannot hold three platforms in their head
 at once. This file is the contract an agent works under so that a session can
 pick the work up cold, without the maintainer re-explaining anything.
 
+## How it runs
+
+Inside a Claude Code session, on the maintainer's machine, when the maintainer
+starts it. There is no daemon, cron, or cloud runner. The `unipad-maintain` skill
+(private repo `unipad-ops`, `harness/skills/`) performs one pass: collect from
+every channel below, classify, present a digest, ask the maintainer the decisions
+only they can make, act on what was approved, record the watermarks. Store
+credentials come from 1Password with the desktop-app prompt; nothing is copied
+to a keychain or a server. Releases go through `meta/store-deploy/`.
+
 ## What actually goes wrong
 
 Inbound is low — roughly four to six items a year — so the failure mode is not
@@ -16,9 +26,9 @@ for never leaving someone unanswered, not for throughput.
 | Channel | How to read it | Status |
 |---|---|---|
 | GitHub issues and PRs, all three repos | `gh` | working |
-| Play Store reviews | Play Developer API, `reviews.list`, service account | verified working |
-| App Store reviews | App Store Connect API, `customerReviews`, ES256 JWT | verified working |
-| Play crash and ANR clusters | Play Developer Reporting API | **needs the API enabled in GCP project 215327865638** |
+| Play Store reviews | Play Developer API, `reviews.list` (`play.py reviews`), ~7-day window, archived in unipad-ops | verified working |
+| App Store reviews, TestFlight | App Store Connect API (`asc.py reviews`, `asc.py testflight`) | verified working; zero TestFlight groups as of 2026-09-06 |
+| Play crash and ANR clusters | Play Developer Reporting API (`play.py vitals`) | verified working since 2026-09-06 |
 | Firebase Crashlytics | no read API; only reachable via BigQuery export | not wired |
 | Self-directed | parity check, build health, dependencies | manual |
 
@@ -46,10 +56,11 @@ licensing or copyright question.
 UniPack compatibility is the project's invariant. Contributors have said as much
 themselves. Never trade it away automatically.
 
-## Interrupt the maintainer immediately for
+## Put at the top of the digest, before anything else
 
-Security problems, store rejections, and any contributor blocked for more than a
-week. Everything else waits for a batch.
+Security problems, store rejections (`asc.py versions` flags them), any public
+probe that FAILs, and any contributor blocked for more than a week. Everything
+else is ordinary backlog.
 
 ## Releasing
 
