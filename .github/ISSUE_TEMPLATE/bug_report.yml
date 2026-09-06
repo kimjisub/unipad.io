@@ -1,0 +1,66 @@
+name: Bug report
+description: Something on unipad.io is broken (player, store, docs)
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. English or Korean is fine (한국어로 써도 됩니다).
+        Browser and page are what we need most; a report without them usually stalls on a follow-up question.
+  - type: input
+    id: url
+    attributes:
+      label: Page URL
+      placeholder: "https://unipad.io/play, https://unipad.io/store, ..."
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Chrome 148, Safari 18, Firefox 130"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, macOS 15, Android 14, iOS 18"
+    validations:
+      required: true
+  - type: dropdown
+    id: midi
+    attributes:
+      label: MIDI device (Web MIDI)
+      options:
+        - None (keyboard or touch only)
+        - Launchpad (say which model in the steps)
+        - Other MIDI device
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open unipad.io/store
+        2. Click download on ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: Press F12 (or Cmd+Option+I), open the Console tab, and paste the red lines.
+      render: text
+  - type: input
+    id: unipack
+    attributes:
+      label: UniPack (if it only happens with one)
