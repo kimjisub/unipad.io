@@ -30,7 +30,7 @@ for never leaving someone unanswered, not for throughput.
 | Play Store reviews | Play Developer API, `reviews.list` (`play.py reviews`), ~7-day window, archived in the workspace repo `state/reviews/` | verified working |
 | App Store reviews, TestFlight | App Store Connect API (`asc.py reviews`, `asc.py testflight`) | verified working; zero TestFlight groups as of 2026-09-06 |
 | Play crash and ANR clusters | Play Developer Reporting API (`play.py vitals`) | verified working since 2026-09-06 |
-| Firebase Crashlytics | no read API; only reachable via BigQuery export | not wired |
+| Firebase Crashlytics, Android and iOS | Firebase CLI MCP server (`firebase mcp --only crashlytics`), wrapped by `crashlytics.py top / versions / events / issue`; needs `firebase login` | verified working since 2026-09-06; the iOS app has recorded no events in the last 28 days |
 | Self-directed | parity check, build health, dependencies | manual |
 
 GitHub and the stores carry different populations. Contributors file issues;
