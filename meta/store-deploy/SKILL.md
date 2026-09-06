@@ -11,7 +11,7 @@ sensitive is written to a repo or a commit.
 
 ## Layout
 
-- `unipad-android/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy` lanes)
+- `unipad-android/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy`, `promote`, `rollout`, `halt` lanes)
 - `unipad-ios/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy` lanes)
 - `scripts/op-bootstrap.sh` — pulls upload creds from 1Password into `fastlane/.secrets/` (gitignored)
 - `scripts/preflight.sh` — read-only pre-release checks
@@ -63,9 +63,20 @@ cd unipad-android && "$FL" android deploy track:internal   # ask user for track 
 cd .. && scripts/op-bootstrap.sh android cleanup      # wipe fastlane/.secrets
 ```
 
-The `deploy` lane bumps `versionCode` (+1), builds a signed AAB, and uploads to the chosen
-track as a **draft** (a `production` upload is marked completed). Pass `no_bump:true` to skip
-the version bump.
+The `deploy` lane bumps `versionCode` to one past the higher of the local value and Play's
+highest, builds a signed AAB, uploads it with the R8 mapping and the changelogs under
+`fastlane/metadata/android/<locale>/changelogs/<versionCode>.txt`, and leaves it as a **draft**
+on internal/alpha/beta. Pass `no_bump:true` when the version was already bumped in a release
+commit. Production is staged, and the three lanes below are the whole release path:
+
+```bash
+"$FL" android promote version_code:111 fraction:0.1   # internal -> production, 10% of users
+"$FL" android rollout fraction:0.5 version_code:111   # widen (1 = everyone) after checking vitals
+"$FL" android halt version_code:111                   # stop the staged release
+```
+
+`deploy track:production rollout:0.1` uploads straight to production at 10% instead; use it only
+when skipping internal is intended. Check `play.py vitals` for the new versionCode before widening.
 
 ## Deploy — iOS
 
