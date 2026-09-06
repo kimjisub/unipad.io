@@ -1,6 +1,7 @@
 name: Feature request
 description: Propose something new, or a change to how unipad.io behaves
 title: "[Feature] "
+labels: ["enhancement", "platform:web", "waiting:agent"]
 body:
   - type: markdown
     attributes:
