@@ -12,7 +12,7 @@ sensitive is written to a repo or a commit.
 ## Layout
 
 - `unipad-android/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy`, `promote`, `rollout`, `halt` lanes)
-- `unipad-ios/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy` lanes)
+- `unipad-ios/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `verify_auth`, `deploy`, `submit` lanes)
 - `scripts/op-bootstrap.sh` — pulls upload creds from 1Password into `fastlane/.secrets/` (gitignored)
 - `scripts/preflight.sh` — read-only pre-release checks
 
@@ -94,8 +94,21 @@ cd unipad-ios
 # iOS writes no secret file (the key travels as base64 in env), so there is nothing to wipe.
 ```
 
-The `deploy` lane bumps the build number, archives with `-allowProvisioningUpdates` (the ASC
-key lets Xcode manage the distribution profile), and uploads to TestFlight or App Store.
+The `deploy` lane derives the next build number from TestFlight, archives with
+`-allowProvisioningUpdates` (the ASC key lets Xcode manage the distribution profile), uploads the
+dSYM to Crashlytics, and uploads to TestFlight. Then, once ASC shows the build as processed
+(`asc.py testflight`, usually a few minutes):
+
+```bash
+"$FL" ios submit build_number:N version:X.Y.Z   # run from unipad-ios/; attaches the TestFlight build
+```
+
+`submit` creates the App Store version if needed, uploads
+`fastlane/metadata/en-US/release_notes.txt` (the listing has one locale), and submits for review
+with automatic **phased release** on approval. Two quirks: fastlane 2.237 prints the TestFlight
+upload as failed on altool's "SPI file is empty" warning although the upload succeeded (check
+ASC before retrying), and `submit` must be run inside `unipad-ios/` or fastlane cannot find the
+Fastfile.
 
 ## Build-only verification (no upload creds needed)
 
