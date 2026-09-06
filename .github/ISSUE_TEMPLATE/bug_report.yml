@@ -1,0 +1,92 @@
+name: Bug report
+description: Something on unipad.io is broken (player, store, docs)
+title: "[Bug] "
+labels: ["bug", "platform:web", "waiting:agent"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. English or Korean is fine (한국어로 써도 됩니다).
+        Browser and page are what we need most; a report without them usually stalls on a follow-up question.
+  - type: input
+    id: url
+    attributes:
+      label: Page URL
+      placeholder: "https://unipad.io/play, https://unipad.io/docs/unipack, ..."
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Chrome 148, Safari 18, Firefox 130"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, macOS 15, Android 14, iOS 18"
+    validations:
+      required: true
+  - type: dropdown
+    id: midi
+    attributes:
+      label: MIDI device (Web MIDI)
+      description: The profile you picked in the player's Launchpad settings, or the device you plugged in.
+      options:
+        - None (keyboard or touch only)
+        - Launchpad S
+        - Launchpad MK2
+        - Launchpad Pro (Original)
+        - Launchpad X
+        - Launchpad Mini MK3
+        - Launchpad Pro MK3
+        - Midi Fighter
+        - Matrix
+        - Master Keyboard
+        - Other (name it in the steps)
+    validations:
+      required: true
+  - type: dropdown
+    id: without-hardware
+    attributes:
+      label: Does it also happen with no MIDI device connected?
+      description: This tells us whether we can reproduce it in a browser without hardware.
+      options:
+        - "Yes, it also happens with no MIDI device connected"
+        - "No, only when the MIDI device is connected"
+        - "Not applicable (I do not use a MIDI device)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open unipad.io/play
+        2. Open the Store from the main screen
+        3. Click download on ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: |
+        Chrome, Edge, Firefox: press F12 (macOS: Cmd+Option+J), open the Console tab, and paste the red lines.
+        Safari: enable Settings > Advanced > "Show features for web developers" first, then Develop > Show JavaScript Console.
+        On a phone, or if you cannot get a console: say so and describe exactly what you saw.
+      render: text
+  - type: input
+    id: unipack
+    attributes:
+      label: UniPack (if it only happens with one)
+      description: Its name and where you got it (store link or download URL). To share the file itself, zip it and drag it into the steps box above.
+      placeholder: "Faded (store), or https://..."
