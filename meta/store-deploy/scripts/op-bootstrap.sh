@@ -4,9 +4,12 @@
 # the repo tree except under fastlane/.secrets/ (gitignored), and `--cleanup` wipes it.
 #
 # Usage:
-#   eval "$(op-bootstrap.sh android deploy)"   # exports PLAY_JSON_KEY_FILE
-#   eval "$(op-bootstrap.sh ios deploy)"       # exports ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH
+#   eval "$(op-bootstrap.sh android deploy)"   # exports PLAY_JSON_KEY_FILE (a path)
+#   eval "$(op-bootstrap.sh ios deploy)"       # sources fastlane/.secrets/asc.env, which exports
+#                                              # ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_B64
 #   op-bootstrap.sh <platform> cleanup          # remove the temp secrets dir
+#
+# Only a path is ever printed; the secret values live in 600 files under fastlane/.secrets/.
 #
 # For build-only verification no upload creds are needed, so `build` mode is a no-op here.
 #
@@ -21,6 +24,11 @@ MODE="${2:-deploy}"
 case "$PLATFORM" in
   android) REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../unipad-android" && pwd)" ;;
   ios)     REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../unipad-ios" && pwd)" ;;
+  *) echo "usage: op-bootstrap.sh <android|ios> <build|deploy|cleanup>" >&2; exit 2 ;;
+esac
+# A typo such as `cleanp` used to fall through to the credential-materialising path.
+case "$MODE" in
+  build|deploy|cleanup) ;;
   *) echo "usage: op-bootstrap.sh <android|ios> <build|deploy|cleanup>" >&2; exit 2 ;;
 esac
 SECRETS_DIR="$REPO_DIR/fastlane/.secrets"
@@ -61,9 +69,12 @@ if [ "$PLATFORM" = "android" ]; then
     exit 1
   fi
   DEST="$SECRETS_DIR/play-sa.json"
-  op document get "$ITEM" --out-file "$DEST" >/dev/null
+  # Create the file with 600 before op writes into it, so the key is never world-readable.
+  (umask 077 && : > "$DEST")
+  op document get "$ITEM" --out-file "$DEST" --force >/dev/null
   chmod 600 "$DEST"
-  echo "export PLAY_JSON_KEY_FILE=$DEST"
+  # %q: the caller evals this line; a path with a space or a shell metacharacter must stay one word.
+  printf 'export PLAY_JSON_KEY_FILE=%q\n' "$DEST"
 
 elif [ "$PLATFORM" = "ios" ]; then
   ITEM="${OP_ASC_KEY_ITEM:-UniPad ASC API Key}"
@@ -77,14 +88,21 @@ elif [ "$PLATFORM" = "ios" ]; then
     echo "    key_p8_base64 (base64 of the .p8:  base64 -i AuthKey_XXXX.p8 | pbcopy)" >&2
     exit 1
   fi
-  # Read all three as values — the .p8 never touches disk, so there is nothing to clean up.
   KEY_ID="$(op item get "$ITEM" --fields label=key_id --reveal)"
   ISSUER_ID="$(op item get "$ITEM" --fields label=issuer_id --reveal)"
   KEY_B64="$(op item get "$ITEM" --fields label=key_p8_base64 --reveal)"
   for pair in "key_id:$KEY_ID" "issuer_id:$ISSUER_ID" "key_p8_base64:$KEY_B64"; do
     [ -n "${pair#*:}" ] || { echo "ERROR: field '${pair%%:*}' is empty on 1Password item '$ITEM'." >&2; exit 1; }
   done
-  echo "export ASC_KEY_ID=$KEY_ID"
-  echo "export ASC_ISSUER_ID=$ISSUER_ID"
-  echo "export ASC_KEY_B64=$KEY_B64"
+  # The private key is written to a 600 file and only its path is printed: echoing the base64 to
+  # stdout put the signing key into the shell history and the agent transcript that captured it.
+  ENV_FILE="$SECRETS_DIR/asc.env"
+  (umask 077 && : > "$ENV_FILE")
+  {
+    printf 'export ASC_KEY_ID=%q\n' "$KEY_ID"
+    printf 'export ASC_ISSUER_ID=%q\n' "$ISSUER_ID"
+    printf 'export ASC_KEY_B64=%q\n' "$KEY_B64"
+  } > "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  printf 'source %q\n' "$ENV_FILE"
 fi

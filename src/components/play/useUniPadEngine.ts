@@ -323,6 +323,8 @@ export function useUniPadEngine() {
   const setChain = useCallback((c: number) => {
     const unipack = unipackRef.current;
     if (!unipack) return;
+    // Math.min/max pass NaN through; a NaN chain made soundTable[NaN] undefined for every pad.
+    if (!Number.isInteger(c)) return;
     // Android: ChainObserver clamps to valid range instead of ignoring
     c = Math.max(0, Math.min(c, unipack.info.chain - 1));
 

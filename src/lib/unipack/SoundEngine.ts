@@ -10,6 +10,7 @@ export class SoundEngine {
   private unipack: UniPackData;
   private loaded = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
+  private gestureResume: (() => void) | null = null;
 
   constructor(
     unipack: UniPackData,
@@ -28,6 +29,34 @@ export class SoundEngine {
     });
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
+
+    // The context is created after several awaits (file read, zip parse), i.e. outside the
+    // user-gesture window, so Safari and autoplay-policy Chrome start it suspended and the
+    // first pack played silently. Resume on the next gesture until it is running.
+    void this.resume();
+    if (typeof document !== 'undefined') {
+      const resumeOnGesture = () => {
+        if (this.audioContext.state === 'running' || this.audioContext.state === 'closed') {
+          this.removeGestureResume();
+          return;
+        }
+        void this.audioContext.resume().then(() => {
+          if (this.audioContext.state === 'running') this.removeGestureResume();
+        });
+      };
+      this.gestureResume = resumeOnGesture;
+      for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+        document.addEventListener(type, resumeOnGesture, { capture: true, passive: true });
+      }
+    }
+  }
+
+  private removeGestureResume(): void {
+    if (!this.gestureResume || typeof document === 'undefined') return;
+    for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+      document.removeEventListener(type, this.gestureResume, { capture: true });
+    }
+    this.gestureResume = null;
   }
 
   setVolume(level: number, maxLevel: number = 7): void {
@@ -121,7 +150,7 @@ export class SoundEngine {
       source.stop(stopTime);
       this.soundPush(chain, x, y);
       this.activeNodes.set(key, source);
-      source.onended = () => this.activeNodes.delete(key);
+      source.onended = () => this.forgetNode(key, source);
 
       if (sound.wormhole !== NO_WORMHOLE) {
         setTimeout(() => this.setChain(sound.wormhole), 100);
@@ -132,7 +161,7 @@ export class SoundEngine {
     source.start(0);
     this.soundPush(chain, x, y);
     this.activeNodes.set(key, source);
-    source.onended = () => this.activeNodes.delete(key);
+    source.onended = () => this.forgetNode(key, source);
 
     if (sound.wormhole !== NO_WORMHOLE) {
       setTimeout(() => this.setChain(sound.wormhole), 100);
@@ -150,6 +179,12 @@ export class SoundEngine {
         this.activeNodes.delete(key);
       }
     }
+  }
+
+  /** onended of an older node must not drop the newer node registered under the same key;
+   *  it left an infinite-loop sample with nothing that could stop it. */
+  private forgetNode(key: string, source: AudioBufferSourceNode): void {
+    if (this.activeNodes.get(key) === source) this.activeNodes.delete(key);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {
@@ -183,6 +218,7 @@ export class SoundEngine {
   }
 
   destroy(): void {
+    this.removeGestureResume();
     this.activeNodes.forEach((node) => {
       try { node.stop(); } catch { /* already stopped */ }
     });
