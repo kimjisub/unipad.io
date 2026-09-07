@@ -27,6 +27,33 @@ const KEYBOARD_MAP_8x8: Record<string, [number, number]> = {
   'B': [7, 4], 'N': [7, 5], 'M': [7, 6], '<': [7, 7],
 };
 
+// The same layout by physical key (KeyboardEvent.code), rows 4-7 being the Shift variants of
+// rows 0-3. `e.key` changes with Shift/CapsLock/layout, so a pad pressed as Shift+Q ('Q') and
+// released after Shift went up ('q') never got its release and stayed lit.
+const KEYBOARD_ROWS_BY_CODE: string[][] = [
+  ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'],
+  ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI'],
+  ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK'],
+  ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma'],
+];
+
+/** Pad for a physical key, or null. Shift selects rows 4-7 when the grid has them. */
+export function getPadForKeyCode(
+  code: string,
+  shift: boolean,
+  buttonX: number,
+  buttonY: number,
+): [number, number] | null {
+  for (let row = 0; row < KEYBOARD_ROWS_BY_CODE.length; row++) {
+    const col = KEYBOARD_ROWS_BY_CODE[row].indexOf(code);
+    if (col === -1) continue;
+    const x = shift ? row + 4 : row;
+    if (x >= Math.min(buttonX, 8) || col >= Math.min(buttonY, 8)) return null;
+    return [x, col];
+  }
+  return null;
+}
+
 export function getKeyboardMapping(buttonX: number, buttonY: number): Record<string, [number, number]> {
   if (buttonX <= 8 && buttonY <= 8) {
     const filtered: Record<string, [number, number]> = {};

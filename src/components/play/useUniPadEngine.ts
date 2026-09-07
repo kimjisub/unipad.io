@@ -10,7 +10,7 @@ import {
   Channel,
   MidiConnection,
   Recorder,
-  getKeyboardMapping,
+  getPadForKeyCode,
   getChainKey,
   argbToRgba,
   loadThemeFromZip,
@@ -149,7 +149,9 @@ export function useUniPadEngine() {
   const feedbackLightRef = useRef(true);
   const traceLogRef = useRef(false);
   const traceLogSequenceRef = useRef<{ x: number; y: number }[][]>([]);
-  const pressedKeysRef = useRef(new Set<string>());
+  // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
+  // even if Shift changed in between
+  const pressedKeysRef = useRef(new Map<string, [number, number]>());
   const toggleAutoPlayRef = useRef<() => void>(() => {});
   const toggleFeedbackLightRef = useRef<() => void>(() => {});
   const toggleLedRef = useRef<() => void>(() => {});
@@ -439,10 +441,18 @@ export function useUniPadEngine() {
     const unipack = unipackRef.current;
     if (!unipack || !state.loaded) return;
 
-    const keyMap = getKeyboardMapping(unipack.info.buttonX, unipack.info.buttonY);
+    const { buttonX, buttonY } = unipack.info;
+
+    const releaseAllKeys = () => {
+      for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
+      pressedKeysRef.current.clear();
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      // Alt/Ctrl/Meta chords belong to PlayPage's shortcuts (alt+a = autoPlay); on Windows/Linux
+      // Alt+A still reports key 'a' and used to press pad [2,0] as well.
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
 
       // Chain switching
       const chainIdx = getChainKey(e.key);
@@ -459,27 +469,37 @@ export function useUniPadEngine() {
         return;
       }
 
-      const pad = keyMap[e.key];
-      if (pad && !pressedKeysRef.current.has(e.key)) {
+      const pad = getPadForKeyCode(e.code, e.shiftKey, buttonX, buttonY);
+      if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
-        pressedKeysRef.current.add(e.key);
+        pressedKeysRef.current.set(e.code, pad);
         padTouchOn(pad[0], pad[1]);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const pad = keyMap[e.key];
-      if (pad && pressedKeysRef.current.has(e.key)) {
-        pressedKeysRef.current.delete(e.key);
+      const pad = pressedKeysRef.current.get(e.code);
+      if (pad) {
+        pressedKeysRef.current.delete(e.code);
         padTouchOff(pad[0], pad[1]);
       }
     };
 
+    // Alt-Tab or a hidden tab swallows the keyup; without this the pad (and an infinite-loop
+    // sample) stayed on.
+    const handleBlur = () => releaseAllKeys();
+    const handleVisibility = () => { if (document.hidden) releaseAllKeys(); };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      releaseAllKeys();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [state.loaded, padTouchOn, padTouchOff, setChain]);
 
@@ -1104,8 +1124,14 @@ export function useUniPadEngine() {
       const a = document.createElement('a');
       a.href = url;
       a.download = 'autoPlay';
+      // Firefox needs the anchor in the document, and revoking synchronously after click() let
+      // Firefox/Safari abort the download before it started.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 0);
       setState((prev) => ({ ...prev, recording: false }));
     } else {
       recorder.start(chainRef.current);
