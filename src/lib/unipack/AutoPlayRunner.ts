@@ -21,6 +21,7 @@ interface GuideEvent {
   chain: number;
 }
 
+const LOOP_INTERVAL_MS = 1;
 const GUIDE_LOOKAHEAD_MS = 800;
 const GUIDE_LED_UPDATE_INTERVAL_MS = 50;
 const GUIDE_VELOCITIES = [1, 2, 3, 21];
@@ -93,8 +94,7 @@ export class AutoPlayRunner {
   launch(): void {
     if (this.active) return;
     this.active = true;
-    this.progress = 0;
-    this.listener.onProgressUpdate(this.progress);
+    this.setProgress(0);
     this.listener.onStart();
 
     const autoPlay = this.unipack.autoPlay;
@@ -239,7 +239,7 @@ export class AutoPlayRunner {
                 }
                 break;
             }
-            this.progress++;
+            this.setProgress(this.progress + 1);
             this.listener.onProgressUpdate(this.progress);
           }
         }
@@ -253,7 +253,7 @@ export class AutoPlayRunner {
 
           if (currentChain !== this.stepChainValue && this.stepChainValue >= 0) {
             if (this.stepScanned) {
-              this.progress = this.stepStartProgress;
+              this.setProgress(this.stepStartProgress);
               this.stepPendingPads.clear();
               this.stepScanned = false;
             }
@@ -288,7 +288,7 @@ export class AutoPlayRunner {
       }
 
       if (this.progress < autoPlay.elements.length) {
-        this.rafId = requestAnimationFrame(loop);
+        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
       } else {
         this.active = false;
         this.rafId = null;
@@ -296,13 +296,16 @@ export class AutoPlayRunner {
       }
     };
 
-    this.rafId = requestAnimationFrame(loop);
+    // A timer, not requestAnimationFrame: rAF quantised every note to a ~17 ms frame and stopped
+    // in a hidden tab, so returning to the tab fired the whole backlog in one frame. Android ticks
+    // at 1 ms on a background thread.
+    this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
+      window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     this.activeGuides.clear();
@@ -350,12 +353,18 @@ export class AutoPlayRunner {
     const autoPlay = this.unipack.autoPlay;
     const max = autoPlay ? autoPlay.elements.length : 0;
     const target = this.progress + offset;
-    this.progress = Math.max(0, Math.min(max, target));
-    this.listener.onProgressUpdate(this.progress);
+    this.setProgress(Math.max(0, Math.min(max, target)));
     if (this.stepMode) {
       this.resetStepState();
       this.listener.onRemoveGuide();
     }
+  }
+
+  /** Every progress write notifies: the seek bar froze during step practice because
+   *  stepScanNext advanced the field directly. */
+  private setProgress(value: number): void {
+    this.progress = value;
+    this.listener.onProgressUpdate(this.progress);
   }
 
   resetStepState(): void {
@@ -364,6 +373,10 @@ export class AutoPlayRunner {
     this.stepScanned = false;
     this.stepStartProgress = 0;
     this.stepChainValue = -1;
+    // Leaving step mode while the guide waited for a chain left waitingForChain >= 0 with
+    // waitStartTime 0; on resume startTime jumped far ahead and autoplay froze (Android fix).
+    this.waitingForChain = -1;
+    this.waitStartTime = performance.now();
   }
 
   stepPadPressed(x: number, y: number): void {
@@ -405,21 +418,21 @@ export class AutoPlayRunner {
           newPending.add(key);
           this.listener.onGuidePadOn(element.x, element.y, 0);
           this.listener.onGuideLedUpdate(element.x, element.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
-          this.progress++;
+          this.setProgress(this.progress + 1);
           break;
         }
         case 'off':
-          this.progress++;
+          this.setProgress(this.progress + 1);
           break;
         case 'delay':
           totalDelayMs += element.delay;
           if (newPending.size > 0 && totalDelayMs >= AutoPlayRunner.STEP_GROUP_THRESHOLD_MS) {
             break scanLoop;
           }
-          this.progress++;
+          this.setProgress(this.progress + 1);
           break;
         case 'chain':
-          this.progress++;
+          this.setProgress(this.progress + 1);
           break;
       }
     }

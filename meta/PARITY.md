@@ -4,7 +4,7 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-09-06
+Last verified: 2026-09-07
 
 ## Repos
 
@@ -52,6 +52,9 @@ Note the Android class for the Pro MK3 is named `LaunchpadMK3`, not `LaunchpadPr
 
 ### Open gaps
 
+- **Launchpad Pro MK2 (CFW), web: not supported.** The web `LaunchpadProfile` union has no
+  `launchpad_pro_cfw`, so a CFW Pro falls back to the generic mapping and every pad is wrong.
+  Android and iOS both have the driver.
 - **CFW driver, iOS: ported, unverified on hardware.** `LaunchpadProCFWDriver`
   (unipad-ios, 2026-09-06) mirrors the Android note map and has unit tests for it,
   but nobody has plugged a Pro MK2 on the "Launchpad Open" firmware into an iPhone yet.
@@ -66,6 +69,44 @@ recording, push, ZIP themes, autoplay auto-mapping.
 
 Platform-specific by design, not gaps: Oboe low-latency audio and the Storage
 Access Framework migration on Android; CoreMIDI on iOS.
+
+### Volume
+
+| Platform | Behaviour |
+|---|---|
+| Android | Sets the system media stream; a ContentObserver follows external changes. |
+| iOS | Sets the system volume through MPVolumeView; KVO follows external changes. |
+| Web | Sets the player's own gain node and persists the level. Browsers cannot touch the system volume, and the level survives a reload because nothing else remembers it. |
+
+The ring shows the level the same way on all three (8 - level lit, blue).
+
+### Sound decoding failures
+
+| Platform | Behaviour |
+|---|---|
+| Android, iOS | A pack whose sounds cannot be decoded shows "outOfCPU" and leaves the play screen. |
+| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. |
+
+Deliberate: on the web a single unsupported codec should not cost the whole session, and there is
+no memory pressure to escape from.
+
+### Web-only affordances
+
+Keyboard mapping (rows by physical key, F1-F12 for chains, Space for AutoPlay), Alt shortcuts, the
+MIDI panel inside the play screen, status badges, drag-and-drop import, `?pack=`/`?code=` deep
+links, a volume slider, and persistence of the volume, watermark and feedback-light toggles. These
+exist because the web player is a single page with a keyboard and no settings screen; the mobile
+apps keep those switches in the option panel and reset them per session.
+
+### Known remaining differences (2026-09-07 review, not yet closed)
+
+- **Android has no search on the pack list**; iOS and web do.
+- **Android sort options are three**; iOS offers five (play count, last opened).
+- **The web player UI is not localised** while the marketing site is.
+- **iOS `TransferView` is unreachable** (no navigation calls it), so the screen table above
+  overstates parity for that row.
+- **Deleting a pack leaves the database row on Android and iOS** and removes it on the web.
+- **Analytics events exist on the web only.**
 
 ## Slide across pads
 
