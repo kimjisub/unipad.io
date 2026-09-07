@@ -220,9 +220,11 @@ export function useUniPadEngine() {
         midi.sendPadLed(x, y, item ? item.code : 0);
       }
     }
-    for (let c = 0; c < unipack.info.chain; c++) {
-      const item = cm.get(-1, c);
-      midi.sendChainLed(c, item ? item.code : 0);
+    // The ring is addressed by circle index 0..31 (Android redrawAllLaunchpadLeds); the CHAIN
+    // channel writes at c + CHAIN_INDEX_OFFSET, so reading chain indices found nothing.
+    for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
+      const item = cm.get(-1, i);
+      midi.sendFunctionKeyLed(i, item ? item.code : 0);
     }
     syncMidiFunctionLeds();
   }, [syncMidiFunctionLeds]);
@@ -300,10 +302,10 @@ export function useUniPadEngine() {
   }, [flushVisualState]);
 
   const refreshChainVisuals = useCallback(() => {
-    const unipack = unipackRef.current;
-    if (!unipack) return;
-    for (let c = 0; c < unipack.info.chain; c++) {
-      updateChainVisual(c);
+    // chainStates holds circle indices (the selected chain sits at c + CHAIN_INDEX_OFFSET), so a
+    // loop over chain indices refreshed the top row and left the chain bar stale.
+    for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
+      updateChainVisual(i);
     }
     scheduleFlush();
   }, [scheduleFlush, updateChainVisual]);
@@ -507,7 +509,7 @@ export function useUniPadEngine() {
     for (let c = 0; c < chainLedCount; c++) {
       if (lr) lr.eventOff(-1, c);
       cm.remove(-1, c, Channel.LED);
-      if (c < unipack.info.chain) updateChainVisual(c);
+      if (c < CIRCLE_ARRAY_SIZE) updateChainVisual(c);
     }
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
@@ -535,8 +537,7 @@ export function useUniPadEngine() {
     for (let cirIdx = 0; cirIdx < cirLedCount; cirIdx++) {
       cm.remove(-1, cirIdx, Channel.GUIDE);
       const item = cm.get(-1, cirIdx);
-      const midiChain = cirIdx >= CHAIN_INDEX_OFFSET ? cirIdx - CHAIN_INDEX_OFFSET : cirIdx;
-      midiRef.current?.sendChainLed(midiChain, item ? item.code : 0);
+      midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
       if (chainStatesRef.current[cirIdx]) {
         chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: false };
       }
@@ -762,17 +763,19 @@ export function useUniPadEngine() {
           scheduleFlush();
           midiRef.current?.sendPadLed(x, y, 0);
         },
+        // `c` is a circle index (keyLed `o * n`), which Android sends with sendFunctionKeyLed;
+        // sendChainLed added 8 and dropped indices above 7.
         onChainLedTurnOn: (c: number, color: number, velocity: number) => {
           cm.add(-1, c, Channel.LED, color, velocity);
           updateChainVisual(c);
           scheduleFlush();
-          midiRef.current?.sendChainLed(c, velocity);
+          midiRef.current?.sendFunctionKeyLed(c, velocity);
         },
         onChainLedTurnOff: (c: number) => {
           cm.remove(-1, c, Channel.LED);
           updateChainVisual(c);
           scheduleFlush();
-          midiRef.current?.sendChainLed(c, 0);
+          midiRef.current?.sendFunctionKeyLed(c, 0);
         },
       };
 
@@ -857,7 +860,7 @@ export function useUniPadEngine() {
             }
             updateChainVisual(cirIdx);
             const item = cm.get(-1, cirIdx);
-            midiRef.current?.sendChainLed(c, item ? item.code : 0);
+            midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
             scheduleFlush();
           },
           onRemoveGuide: () => {
