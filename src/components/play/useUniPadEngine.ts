@@ -152,6 +152,7 @@ export function useUniPadEngine() {
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
+  const cyclePlayModeRef = useRef<(() => void) | null>(null);
   const toggleAutoPlayRef = useRef<() => void>(() => {});
   const toggleFeedbackLightRef = useRef<() => void>(() => {});
   const toggleLedRef = useRef<() => void>(() => {});
@@ -529,7 +530,12 @@ export function useUniPadEngine() {
     for (let c = 0; c < chainLedCount; c++) {
       if (lr) lr.eventOff(-1, c);
       cm.remove(-1, c, Channel.LED);
-      if (c < CIRCLE_ARRAY_SIZE) updateChainVisual(c);
+      if (c < CIRCLE_ARRAY_SIZE) {
+        updateChainVisual(c);
+      } else {
+        // Ring slots 32..35 have no on-screen circle; they were left lit on the device.
+        midiRef.current?.sendFunctionKeyLed(c, 0);
+      }
     }
     scheduleFlush();
   }, [updatePadVisual, updateChainVisual, scheduleFlush]);
@@ -652,6 +658,20 @@ export function useUniPadEngine() {
     }
   }, [padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);
   toggleAutoPlayRef.current = () => switchPlayMode('autoPlay');
+
+  /** none -> autoPlay -> guidePlay -> stepPractice -> none, as Android's cyclePlayMode. */
+  const cyclePlayMode = useCallback(() => {
+    const current: PlayMode = !stateRef.current.autoPlayEnabled ? 'none'
+      : !stateRef.current.practiceMode ? 'autoPlay'
+      : stateRef.current.autoPlayPlaying ? 'guidePlay'
+      : 'stepPractice';
+    const next: PlayMode = current === 'none' ? 'autoPlay'
+      : current === 'autoPlay' ? 'guidePlay'
+      : current === 'guidePlay' ? 'stepPractice'
+      : 'none';
+    switchPlayMode(next === 'none' ? current : next);
+  }, [switchPlayMode]);
+  cyclePlayModeRef.current = cyclePlayMode;
 
   const autoPlayPlayPause = useCallback(() => {
     const runner = autoPlayRunnerRef.current;
@@ -866,10 +886,9 @@ export function useUniPadEngine() {
             }
             scheduleFlush();
           },
+          // The countdown ramp goes to the launchpad only, as on Android; writing it into the
+          // GUIDE channel faded the on-screen guide pad from orange to white and green.
           onGuideLedUpdate: (x: number, y: number, velocity: number) => {
-            cm.add(x, y, Channel.GUIDE, -1, velocity);
-            updatePadVisual(x, y);
-            scheduleFlush();
             midiRef.current?.sendPadLed(x, y, velocity);
           },
           onGuideChainOn: (c: number) => {
@@ -892,6 +911,9 @@ export function useUniPadEngine() {
           onEnd: () => {
             if (autoPlayRunnerRef.current) {
               autoPlayRunnerRef.current.practiceGuide = false;
+              // stepMode stayed on, so pad presses were still consumed as step input.
+              autoPlayRunnerRef.current.stepMode = false;
+              autoPlayRunnerRef.current.resetStepState();
             }
             padInit();
             ledInit();
@@ -1013,7 +1035,9 @@ export function useUniPadEngine() {
             switch (key) {
               case 0: toggleFeedbackLightRef.current(); break;
               case 1: toggleLedRef.current(); break;
-              case 2: toggleAutoPlayRef.current(); break;
+              // Cycles none -> autoPlay -> guidePlay -> stepPractice like Android/iOS; it used to
+              // toggle autoPlay only, so the hardware could never reach guide or step practice.
+              case 2: cyclePlayModeRef.current?.(); break;
               case 3: midiToggleOptionPanelRef.current?.(); break;
               case 4:
               case 5:
@@ -1028,7 +1052,7 @@ export function useUniPadEngine() {
           switch (key) {
             case 0: toggleFeedbackLightRef.current(); break;
             case 1: toggleLedRef.current(); break;
-            case 2: toggleAutoPlayRef.current(); break;
+            case 2: cyclePlayModeRef.current?.(); break;
             case 3: midiToggleOptionPanelRef.current?.(); break;
             case 4: toggleHideUiRef.current(); break;
             case 5: toggleWatermarkRef.current(); break;
@@ -1217,6 +1241,9 @@ export function useUniPadEngine() {
 
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
+    // Android and iOS re-initialise the driver at once; here the choice only took effect on the
+    // next connect.
+    midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
       midiRequestedProfile: profile,

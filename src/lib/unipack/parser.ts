@@ -165,7 +165,7 @@ async function parseInfo(
     website: null,
   };
 
-  for (const line of text.split('\n')) {
+  for (const line of splitLines(text)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const eqIdx = trimmed.indexOf('=');
@@ -175,9 +175,9 @@ async function parseInfo(
     switch (key) {
       case 'title': info.title = value; break;
       case 'producerName': info.producerName = value; break;
-      case 'buttonX': info.buttonX = parseInt(value, 10); break;
-      case 'buttonY': info.buttonY = parseInt(value, 10); break;
-      case 'chain': info.chain = parseInt(value, 10); break;
+      case 'buttonX': info.buttonX = strictInt(value); break;
+      case 'buttonY': info.buttonY = strictInt(value); break;
+      case 'chain': info.chain = strictInt(value); break;
       case 'squareButton': info.squareButton = value === 'true'; break;
       case 'website': info.website = value; break;
     }
@@ -188,8 +188,15 @@ async function parseInfo(
   if (!info.buttonX) errors.push('info: buttonX was missing');
   if (!info.buttonY) errors.push('info: buttonY was missing');
   if (!info.chain) errors.push('info: chain was missing');
-  if (info.chain < 1 || info.chain > 24) {
+  // NaN passes every `<`/`>` comparison, so a chain of "abc" used to reach the table allocation.
+  if (!Number.isInteger(info.chain) || info.chain < 1 || info.chain > 24) {
     errors.push('info: chain out of range');
+    return null;
+  }
+  // Same bound as iOS: a negative value or a 100000-wide grid is rejected instead of allocating.
+  if (!Number.isInteger(info.buttonX) || !Number.isInteger(info.buttonY)
+    || info.buttonX < 0 || info.buttonX > 64 || info.buttonY < 0 || info.buttonY > 64) {
+    errors.push('info: buttonX/buttonY out of range');
     return null;
   }
 
@@ -213,8 +220,9 @@ async function parseKeySound(
   if (!keySoundFile) {
     const keySoundLower = getFile(zip, prefix, 'keysound');
     if (!keySoundLower) {
-      errors.push("keySound doesn't exist");
-      return { soundTable: table, soundFiles };
+      // Android and iOS treat a missing keySound as critical; here the pack opened with every
+      // pad silent and one warning.
+      throw new Error("Invalid UniPack: keySound doesn't exist");
     }
     return parseKeySoundFromFile(keySoundLower, zip, prefix, info, table, soundFiles, errors);
   }
@@ -232,7 +240,7 @@ async function parseKeySoundFromFile(
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const text = await file.async('text');
 
-  for (const line of text.split('\n')) {
+  for (const line of splitLines(text)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const parts = trimmed.split(/\s+/);
@@ -244,11 +252,11 @@ async function parseKeySoundFromFile(
     let wormhole = NO_WORMHOLE;
 
     try {
-      c = parseInt(parts[0], 10) - 1;
-      x = parseInt(parts[1], 10) - 1;
-      y = parseInt(parts[2], 10) - 1;
-      if (parts.length >= 5) loop = parseInt(parts[4], 10) - 1;
-      if (parts.length >= 6) wormhole = parseInt(parts[5], 10) - 1;
+      c = strictInt(parts[0]) - 1;
+      x = strictInt(parts[1]) - 1;
+      y = strictInt(parts[2]) - 1;
+      if (parts.length >= 5) loop = strictInt(parts[4]) - 1;
+      if (parts.length >= 6) wormhole = strictInt(parts[5]) - 1;
     } catch {
       errors.push(`keySound: [${trimmed}] format is incorrect`);
       continue;
@@ -303,6 +311,25 @@ async function parseKeySoundFromFile(
   return { soundTable: table, soundFiles };
 }
 
+/** \r\n, lone \r (classic Mac) and \n; splitting on '\n' alone made a CR-only file one line. */
+function splitLines(text: string): string[] {
+  return text.split(/\r\n|\r|\n/);
+}
+
+/** parseInt is lenient ("3abc" -> 3, "1 1 1.txt" -> 1), so a pack authored here had dead pads on
+ *  Android, which rejects those lines. Only a complete integer counts. */
+function strictInt(token: string | undefined): number {
+  if (token === undefined || !/^[+-]?\d+$/.test(token)) return NaN;
+  return Number(token);
+}
+
+/** Android parses the colour with a 32-bit toInt(16): more than six hex digits overflow and the
+ *  event is dropped. */
+function strictHex(token: string | undefined): number {
+  if (token === undefined || !/^[0-9a-fA-F]{1,6}$/.test(token)) return NaN;
+  return parseInt(token, 16);
+}
+
 function findSoundFile(zip: JSZip, prefix: string, soundURL: string): string | null {
   const candidates = [
     `${prefix}sounds/${soundURL}`,
@@ -312,12 +339,13 @@ function findSoundFile(zip: JSZip, prefix: string, soundURL: string): string | n
   for (const c of candidates) {
     if (zip.files[c] && !zip.files[c].dir) return c;
   }
-  // case-insensitive search within sounds directory
-  const targetLower = soundURL.toLowerCase();
+  // Case-insensitive match of the whole candidate path. The old `endsWith` fallback also matched
+  // "a.wav" against "sounds/beta.wav" and any nested folder, so a pack that played here had
+  // missing or wrong sounds on Android.
+  const wanted = candidates.map((c) => c.toLowerCase());
   for (const [path, file] of Object.entries(zip.files)) {
     if (file.dir) continue;
-    const lower = path.toLowerCase();
-    if (lower.includes('sounds/') && lower.endsWith(targetLower)) return path;
+    if (wanted.includes(path.toLowerCase())) return path;
   }
   return null;
 }
@@ -338,8 +366,18 @@ async function parseKeyLed(
   );
 
   const ledFiles = Object.entries(zip.files)
-    .filter(([path, file]) => !file.dir && path.startsWith(keyLedDir) && path !== keyLedDir)
-    .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    // Direct children only (Android/iOS list the directory), and sorted by file name in code-unit
+    // order: locale collation on the full path put multi-mapped files in a different order, so the
+    // pad's first animation differed from Android's.
+    .filter(([path, file]) => {
+      if (file.dir || !path.startsWith(keyLedDir) || path === keyLedDir) return false;
+      return !path.slice(keyLedDir.length).includes('/');
+    })
+    .sort(([a], [b]) => {
+      const na = a.substring(a.lastIndexOf('/') + 1).toLowerCase();
+      const nb = b.substring(b.lastIndexOf('/') + 1).toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
 
   for (const [path, file] of ledFiles) {
     const fileName = path.substring(path.lastIndexOf('/') + 1).trim();
@@ -348,10 +386,10 @@ async function parseKeyLed(
 
     let c: number, x: number, y: number, loop = 1;
     try {
-      c = parseInt(parts[0], 10) - 1;
-      x = parseInt(parts[1], 10) - 1;
-      y = parseInt(parts[2], 10) - 1;
-      if (parts.length >= 4) loop = parseInt(parts[3], 10);
+      c = strictInt(parts[0]) - 1;
+      x = strictInt(parts[1]) - 1;
+      y = strictInt(parts[2]) - 1;
+      if (parts.length >= 4) loop = strictInt(parts[3]);
     } catch {
       errors.push(`keyLed: [${fileName}] format is incorrect`);
       continue;
@@ -377,7 +415,7 @@ async function parseKeyLed(
     const text = await file.async('text');
     const ledEvents: LedEvent[] = [];
 
-    for (const line of text.split('\n')) {
+    for (const line of splitLines(text)) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       const split = trimmed.split(/\s+/);
@@ -394,23 +432,28 @@ async function parseKeyLed(
 
             if (xToken === '*' || xToken === 'mc') {
               ledX = -1;
-              ledY = parseInt(split[2], 10) - 1;
+              ledY = strictInt(split[2]) - 1;
             } else if (xToken === 'l') {
               continue;
             } else {
               ledX = parseInt(xToken, 10) - 1;
-              ledY = parseInt(split[2], 10) - 1;
+              ledY = strictInt(split[2]) - 1;
             }
 
             if (split.length === 4) {
-              ledColor = parseInt(split[3], 16) + 0xFF000000;
+              ledColor = strictHex(split[3]) + 0xFF000000;
             } else if (split.length === 5) {
               if (split[3] === 'auto' || split[3] === 'a') {
-                ledVelocity = parseInt(split[4], 10);
+                ledVelocity = strictInt(split[4]);
+                // Android throws on a palette index outside 0..127 and drops the event.
+                if (!(ledVelocity >= 0 && ledVelocity < LAUNCHPAD_ARGB.length)) {
+                  errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+                  continue;
+                }
                 ledColor = LAUNCHPAD_ARGB[ledVelocity] ?? 0;
               } else {
-                ledVelocity = parseInt(split[4], 10);
-                ledColor = parseInt(split[3], 16) + 0xFF000000;
+                ledVelocity = strictInt(split[4]);
+                ledColor = strictHex(split[3]) + 0xFF000000;
               }
             } else {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -430,12 +473,12 @@ async function parseKeyLed(
             let ledX: number, ledY: number;
             if (xToken === '*' || xToken === 'mc') {
               ledX = -1;
-              ledY = parseInt(split[2], 10) - 1;
+              ledY = strictInt(split[2]) - 1;
             } else if (xToken === 'l') {
               continue;
             } else {
               ledX = parseInt(xToken, 10) - 1;
-              ledY = parseInt(split[2], 10) - 1;
+              ledY = strictInt(split[2]) - 1;
             }
             if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -448,7 +491,7 @@ async function parseKeyLed(
           case 'd': {
             // A NaN delay froze the animation with its LEDs stuck on (state.delay += NaN never
             // becomes <= currTime again); Android drops the event.
-            const delay = parseInt(split[1], 10);
+            const delay = strictInt(split[1]);
             if (!Number.isFinite(delay)) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
               continue;
@@ -458,7 +501,7 @@ async function parseKeyLed(
           }
           case 'chain':
           case 'c': {
-            const chain = parseInt(split[1], 10) - 1;
+            const chain = strictInt(split[1]) - 1;
             if (!Number.isFinite(chain)) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
               continue;
@@ -504,7 +547,7 @@ async function parseAutoPlay(
     return sounds[num % sounds.length];
   }
 
-  for (const line of text.split('\n')) {
+  for (const line of splitLines(text)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const split = trimmed.split(/\s+/);
@@ -523,8 +566,8 @@ async function parseAutoPlay(
         case 'f':
         case 'touch':
         case 't':
-          x = parseInt(split[1], 10) - 1;
-          y = parseInt(split[2], 10) - 1;
+          x = strictInt(split[1]) - 1;
+          y = strictInt(split[2]) - 1;
           if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
             errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
             continue;
@@ -532,7 +575,7 @@ async function parseAutoPlay(
           break;
         case 'chain':
         case 'c':
-          chain = parseInt(split[1], 10) - 1;
+          chain = strictInt(split[1]) - 1;
           if (!Number.isFinite(chain) || chain < 0 || chain >= info.chain) {
             errors.push(`autoPlay: [${trimmed}] chain is incorrect`);
             continue;
@@ -540,7 +583,7 @@ async function parseAutoPlay(
           break;
         case 'delay':
         case 'd':
-          delay = parseInt(split[1], 10);
+          delay = strictInt(split[1]);
           if (!Number.isFinite(delay)) {
             errors.push(`autoPlay: [${trimmed}] delay is incorrect`);
             continue;
