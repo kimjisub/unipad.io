@@ -35,6 +35,15 @@ const X_STYLE_CIRCLE_NOTES = [
   10, 20, 30, 40, 50, 60, 70, 80,
 ] as const;
 
+// Launchpad MK2 (LaunchpadMK2.kt circleCode): top row is CC 104..111, right column is Note
+// 89, 79, ..., 19; it has no bottom row or left column.
+const MK2_CIRCLE_TARGETS: ReadonlyArray<{ kind: 'cc' | 'note'; value: number }> = [
+  { kind: 'cc', value: 104 }, { kind: 'cc', value: 105 }, { kind: 'cc', value: 106 }, { kind: 'cc', value: 107 },
+  { kind: 'cc', value: 108 }, { kind: 'cc', value: 109 }, { kind: 'cc', value: 110 }, { kind: 'cc', value: 111 },
+  { kind: 'note', value: 89 }, { kind: 'note', value: 79 }, { kind: 'note', value: 69 }, { kind: 'note', value: 59 },
+  { kind: 'note', value: 49 }, { kind: 'note', value: 39 }, { kind: 'note', value: 29 }, { kind: 'note', value: 19 },
+];
+
 const LAUNCHPAD_S_CIRCLE_NOTES = [
   { kind: 'cc', value: 104 },
   { kind: 'cc', value: 105 },
@@ -232,8 +241,12 @@ export class MidiConnection {
       case 'launchpad_mini_mk3':
       case 'launchpad_pro_mk3':
       case 'launchpad_pro':
+        // The top row and right column of these devices are Control Change (the Android drivers'
+        // circleCode entries are all 0xB0); with `kind === 'noteOn'` every CC button was dead.
+        this.handleXStyleNote(note, kind === 'noteOn' || (kind === 'cc' && velocity > 0));
+        break;
       case 'launchpad_mk2':
-        this.handleXStyleNote(note, kind === 'noteOn');
+        this.handleMk2Input(kind, note, velocity);
         break;
       case 'launchpad_s':
         this.handleLaunchpadSInput(kind, note, velocity);
@@ -303,6 +316,24 @@ export class MidiConnection {
         this.listener.onChainTouch(c);
         this.listener.onFunctionKey(Math.floor(note / 10) + 23);
       }
+    }
+  }
+
+  /** LaunchpadMK2.kt: pads and the right column are notes on the 10-based grid, the top row is CC 104..111. */
+  private handleMk2Input(kind: MidiEventKind, note: number, velocity: number): void {
+    if (!this.listener) return;
+    if (kind === 'cc') {
+      if (note >= 104 && note <= 111 && velocity > 0) this.listener.onFunctionKey(note - 104);
+      return;
+    }
+    const pressed = kind === 'noteOn';
+    const x = 9 - Math.floor(note / 10);
+    const y = note % 10;
+    if (x >= 1 && x <= 8 && y >= 1 && y <= 8) {
+      this.listener.onPadTouch(x - 1, y - 1, pressed);
+    } else if (y === 9 && x >= 1 && x <= 8 && pressed) {
+      this.listener.onChainTouch(x - 1);
+      this.listener.onFunctionKey(x - 1 + 8);
     }
   }
 
@@ -432,11 +463,19 @@ export class MidiConnection {
       profile === 'launchpad_x' ||
       profile === 'launchpad_mini_mk3' ||
       profile === 'launchpad_pro_mk3' ||
-      profile === 'launchpad_pro' ||
-      profile === 'launchpad_mk2'
+      profile === 'launchpad_pro'
     ) {
+      // The ring on these devices is addressed with Control Change (Android circleCode = 0xB0);
+      // sent as Note On, nothing lit.
       const note = X_STYLE_CIRCLE_NOTES[index];
-      return note === undefined ? null : { type: 'note', value: note, status: 0x90 };
+      return note === undefined ? null : { type: 'cc', value: note, status: 0xb0 };
+    }
+    if (profile === 'launchpad_mk2') {
+      const target = MK2_CIRCLE_TARGETS[index];
+      if (!target) return null;
+      return target.kind === 'cc'
+        ? { type: 'cc', value: target.value, status: 0xb0 }
+        : { type: 'note', value: target.value, status: 0x90 };
     }
     if (profile === 'launchpad_s') {
       const target = LAUNCHPAD_S_CIRCLE_NOTES[index];
@@ -473,7 +512,8 @@ export class MidiConnection {
   }
 
   private getChainFunctionIndex(c: number): number | null {
-    if (c < 0 || c > 7) return null;
+    // Chains 0..23 map onto ring indices 8..31 (right column, bottom row, left column)
+    if (c < 0 || c > 23) return null;
     const profile = this.getMappingProfile();
     if (
       profile === 'launchpad_x' ||
@@ -490,15 +530,24 @@ export class MidiConnection {
   }
 
   sendNote(note: number, velocity: number, channel = 0): void {
-    const status = velocity > 0 ? 0x90 | channel : 0x80 | channel;
-    for (const output of this.outputs) {
-      output.send([status, note, velocity]);
-    }
+    const v = clampData(velocity);
+    const status = v > 0 ? 0x90 | channel : 0x80 | channel;
+    this.sendToOutputs([status, clampData(note), v]);
   }
 
   sendCC(cc: number, value: number, channel = 0): void {
+    this.sendToOutputs([0xb0 | channel, clampData(cc), clampData(value)]);
+  }
+
+  /** MIDIOutput.send throws on a data byte outside 0..127 (a pack LED code of 200 is valid
+   *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
+  private sendToOutputs(message: number[]): void {
     for (const output of this.outputs) {
-      output.send([0xb0 | channel, cc, value]);
+      try {
+        output.send(message);
+      } catch (err) {
+        console.warn('MIDI send failed', err);
+      }
     }
   }
 
@@ -534,6 +583,9 @@ export class MidiConnection {
     for (const input of this.inputs) {
       input.onmidimessage = null;
     }
+    // Left attached, the statechange handler re-ran setupDevices on the next hot-plug and the
+    // connection came back by itself after the user disconnected.
+    if (this.midiAccess) this.midiAccess.onstatechange = null;
     this.inputs = [];
     this.outputs = [];
     this.connected = false;
@@ -541,4 +593,8 @@ export class MidiConnection {
     this.outputName = null;
     this.resolvedProfile = 'none';
   }
+}
+
+function clampData(value: number): number {
+  return Math.max(0, Math.min(127, Math.trunc(Number.isFinite(value) ? value : 0)));
 }
