@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 interface AutoPlayControlsProps {
   playing: boolean;
   progress: number;
@@ -19,6 +21,7 @@ export function AutoPlayControls({
   onPrev,
   onNext,
 }: AutoPlayControlsProps) {
+  const t = useTranslations('play.autoPlay');
   const percent = total > 0 ? (progress / total) * 100 : 0;
 
   return (
@@ -42,8 +45,8 @@ export function AutoPlayControls({
         <button
           className="p-1 rounded hover:bg-white/10 transition-colors"
           onClick={onPrev}
-          title="Skip Previous"
-          aria-label="Skip to previous"
+          title={t('skipPrevious')}
+          aria-label={t('skipToPrevious')}
         >
           <svg className="w-4 h-4 text-white/70" fill="currentColor" viewBox="0 0 24 24">
             <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
@@ -52,8 +55,8 @@ export function AutoPlayControls({
         <button
           className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
           onClick={onPlayPause}
-          title={playing ? 'Pause' : 'Play'}
-          aria-label={playing ? 'Pause' : 'Play'}
+          title={playing ? t('pause') : t('play')}
+          aria-label={playing ? t('pause') : t('play')}
         >
           {playing ? (
             <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -68,8 +71,8 @@ export function AutoPlayControls({
         <button
           className="p-1 rounded hover:bg-white/10 transition-colors"
           onClick={onNext}
-          title="Skip Next"
-          aria-label="Skip to next"
+          title={t('skipNext')}
+          aria-label={t('skipToNext')}
         >
           <svg className="w-4 h-4 text-white/70" fill="currentColor" viewBox="0 0 24 24">
             <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
