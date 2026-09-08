@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 import type { StoreItem } from '@/lib/store';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
@@ -49,6 +50,9 @@ export function StoreModal({
   onYoutube,
   onWebsite,
 }: StoreModalProps) {
+  const t = useTranslations('play.store');
+  const tCommon = useTranslations('play.common');
+  const tBadge = useTranslations('play.badge');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
@@ -214,7 +218,7 @@ export function StoreModal({
   return (
     <AnimatePresence>
       {visible && (
-        <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="Store">
+        <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label={t('ariaLabel')}>
           <motion.div
             className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -246,7 +250,7 @@ export function StoreModal({
 
             {/* Header */}
             <div className="px-5 py-3 border-b border-white/[0.08] flex items-center gap-2 relative z-10">
-              <h2 className="text-sm font-bold text-white">Store</h2>
+              <h2 className="text-sm font-bold text-white">{t('title')}</h2>
               <span className="text-xs text-white/40">{visibleItems.length}</span>
               <div className="flex-1" />
               <button
@@ -254,14 +258,14 @@ export function StoreModal({
                 onClick={onReload}
                 disabled={loading}
               >
-                Reload
+                {tCommon('reload')}
               </button>
               <button
                 className="px-3 py-1 rounded-lg text-xs text-white/60 bg-white/[0.06] hover:bg-white/10 disabled:opacity-50 transition-colors"
                 onClick={onClose}
                 disabled={Boolean(downloadingCode)}
               >
-                Close
+                {tCommon('close')}
               </button>
             </div>
 
@@ -289,7 +293,7 @@ export function StoreModal({
                       />
                     ))}
                   </div>
-                  <div className="text-white/35 text-xs">Loading store...</div>
+                  <div className="text-white/35 text-xs">{t('loading')}</div>
                 </motion.div>
               ) : error ? (
                 <motion.div
@@ -305,7 +309,7 @@ export function StoreModal({
                     className="px-4 py-1.5 rounded-lg text-xs text-white/70 bg-white/[0.06] hover:bg-white/10 transition-colors"
                     onClick={onReload}
                   >
-                    Retry
+                    {tCommon('retry')}
                   </button>
                 </motion.div>
               ) : (
@@ -326,7 +330,7 @@ export function StoreModal({
                     )}
                     <div className="space-y-2">
                 <input
-                  aria-label="Search store items"
+                  aria-label={t('searchAriaLabel')}
                   ref={searchInputRef}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -356,16 +360,16 @@ export function StoreModal({
                       else onDownload(selectedItem);
                     }
                   }}
-                  placeholder="Search title / producer / code"
+                  placeholder={t('searchPlaceholder')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
                 />
                 <div className="flex gap-1">
-                  <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>All</FilterChip>
-                  <FilterChip active={filter === 'led'} onClick={() => setFilter('led')} color="green">LED</FilterChip>
+                  <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>{t('filterAll')}</FilterChip>
+                  <FilterChip active={filter === 'led'} onClick={() => setFilter('led')} color="green">{tBadge('led')}</FilterChip>
                   <FilterChip active={filter === 'autoplay'} onClick={() => setFilter('autoplay')} color="secondary">AP</FilterChip>
                   <div className="flex-1" />
                   <FilterChip active={sort === 'downloads'} onClick={() => setSort('downloads')}>DL</FilterChip>
-                  <FilterChip active={sort === 'title'} onClick={() => setSort('title')}>A-Z</FilterChip>
+                  <FilterChip active={sort === 'title'} onClick={() => setSort('title')}>{t('sortAZ')}</FilterChip>
                 </div>
                     </div>
 
@@ -387,7 +391,7 @@ export function StoreModal({
                       onClick={() => onPlayDownloaded(selectedItem)}
                     >
                       <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
-                      Play Downloaded Pack
+                      {t('playDownloadedPack')}
                     </button>
                   )}
                   <div>
@@ -395,22 +399,22 @@ export function StoreModal({
                     <p className="text-xs text-white/45">{selectedItem.producerName}</p>
                   </div>
                   <div className="space-y-1.5">
-                    <div className="text-[11px] text-white/30">Code: <span className="text-accent/60 font-mono">{selectedItem.code}</span></div>
-                    <div className="text-[11px] text-white/30">Downloads: <span className="text-white/50">{selectedItem.downloadCount.toLocaleString()}</span></div>
+                    <div className="text-[11px] text-white/30">{t('code')} <span className="text-accent/60 font-mono">{selectedItem.code}</span></div>
+                    <div className="text-[11px] text-white/30">{t('downloads')} <span className="text-white/50">{selectedItem.downloadCount.toLocaleString()}</span></div>
                     <div className="flex gap-2 mt-2">
                       {selectedItem.isLED && (
                         <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-green-500/10 border border-green-500/15">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]" />
-                          <span className="text-[10px] font-semibold text-green-400/90">LED</span>
+                          <span className="text-[10px] font-semibold text-green-400/90">{tBadge('led')}</span>
                         </span>
                       )}
                       {selectedItem.isAutoPlay && (
                         <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[var(--secondary)]/10 border border-[var(--secondary)]/15">
                           <span className="w-1.5 h-1.5 rounded-full bg-[var(--secondary)] shadow-[0_0_6px_rgba(0,184,212,0.5)]" />
-                          <span className="text-[10px] font-semibold text-[var(--secondary)]">AutoPlay</span>
+                          <span className="text-[10px] font-semibold text-[var(--secondary)]">{tBadge('autoPlay')}</span>
                         </span>
                       )}
-                      {!selectedItem.isLED && !selectedItem.isAutoPlay && <span className="text-[10px] text-white/25">No LED / AutoPlay</span>}
+                      {!selectedItem.isLED && !selectedItem.isAutoPlay && <span className="text-[10px] text-white/25">{t('noLedOrAutoPlay')}</span>}
                     </div>
                   </div>
                   <div className="mt-4 flex gap-2">
@@ -420,7 +424,7 @@ export function StoreModal({
                         tabIndex={-1}
                         onClick={onCancelDownload}
                       >
-                        Cancel
+                        {tCommon('cancel')}
                       </button>
                     )}
                     <button
@@ -429,7 +433,7 @@ export function StoreModal({
                       onClick={() => onYoutube(selectedItem)}
                     >
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                      YouTube
+                      {t('youtube')}
                     </button>
                     <button
                       className={`flex-1 py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${
@@ -442,21 +446,21 @@ export function StoreModal({
                       disabled={!selectedItem.url}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                      Website
+                      {t('website')}
                     </button>
                   </div>
                         </motion.div>
                       </AnimatePresence>
                     ) : (
-                      <div className="text-sm text-white/35">No item selected</div>
+                      <div className="text-sm text-white/35">{t('noItemSelected')}</div>
                     )}
                   </div>
 
                   {/* Right Panel - Item List */}
-                  <div role="listbox" aria-label="Store items" className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                  <div role="listbox" aria-label={t('itemListAriaLabel')} className="flex-1 overflow-y-auto p-4 space-y-1.5">
                     {visibleItems.length === 0 ? (
                       <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-2 text-xs text-white/35">
-                        <div>No matching store items.</div>
+                        <div>{t('noMatchingItems')}</div>
                         <button
                           className="px-3 py-1 rounded-lg bg-white/[0.06] text-white/60 hover:bg-white/10 transition-colors"
                           onClick={() => {
@@ -464,7 +468,7 @@ export function StoreModal({
                             setFilter('all');
                           }}
                         >
-                          Clear filters
+                          {t('clearFilters')}
                         </button>
                       </div>
                     ) : visibleItems.map((item, index) => {
@@ -498,8 +502,8 @@ export function StoreModal({
                     <div className="mt-1 flex items-center gap-2 text-[10px] text-white/30">
                       <span className="text-accent/40 font-mono">#{item.code}</span>
                       <span>{item.downloadCount.toLocaleString()} downloads</span>
-                      {item.isLED && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_3px_rgba(74,222,128,0.3)]" /><span className="text-green-400/60">LED</span></span>}
-                      {item.isAutoPlay && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-[var(--secondary)] shadow-[0_0_3px_rgba(0,184,212,0.3)]" /><span className="text-[var(--secondary)]/60">AP</span></span>}
+                      {item.isLED && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_3px_rgba(74,222,128,0.3)]" /><span className="text-green-400/60">{tBadge('led')}</span></span>}
+                      {item.isAutoPlay && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-[var(--secondary)] shadow-[0_0_3px_rgba(0,184,212,0.3)]" /><span className="text-[var(--secondary)]/60">{tBadge('autoPlayShort')}</span></span>}
                     </div>
                   </div>
 
@@ -544,7 +548,7 @@ export function StoreModal({
                             onClick={() => onPlayDownloaded(item)}
                           >
                             <span className="absolute -inset-[1px] rounded-lg bg-accent opacity-25 blur-sm -z-10 group-hover:opacity-40 transition-opacity" />
-                            Play
+                            {tCommon('play')}
                           </button>
                         ) : failed ? (
                           <button
@@ -553,7 +557,7 @@ export function StoreModal({
                             disabled={Boolean(downloadingCode)}
                             onClick={() => onRetryFailed(item)}
                           >
-                            Retry
+                            {tCommon('retry')}
                           </button>
                         ) : (
                           <button
@@ -562,7 +566,7 @@ export function StoreModal({
                             disabled={Boolean(downloadingCode)}
                             onClick={() => onDownload(item)}
                           >
-                            Download
+                            {t('download')}
                           </button>
                         )}
                       </div>
@@ -576,10 +580,10 @@ export function StoreModal({
               )}
             </AnimatePresence>
             <div className="px-4 py-3 border-t border-white/[0.06] text-[10px] text-white/20 flex items-center justify-center gap-4">
-              <StoreKeyHint keys="↑↓" label="select" />
-              <StoreKeyHint keys="Enter" label="action" />
-              <StoreKeyHint keys="/" label="search" />
-              <StoreKeyHint keys="Esc" label="close" />
+              <StoreKeyHint keys="↑↓" label={t('keyHintSelect')} />
+              <StoreKeyHint keys="Enter" label={t('keyHintAction')} />
+              <StoreKeyHint keys="/" label={t('keyHintSearch')} />
+              <StoreKeyHint keys="Esc" label={t('keyHintClose')} />
             </div>
           </motion.div>
         </div>

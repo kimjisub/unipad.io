@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS } from '@/lib/constants';
@@ -45,6 +46,7 @@ export function MainScreen({
   onClearTheme,
   onToggleBookmark,
 }: MainScreenProps) {
+  const t = useTranslations('play.main');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
@@ -267,7 +269,7 @@ export function MainScreen({
               <button
                 className="px-2 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-xs text-white/50 transition-colors"
                 onClick={() => setSortAsc(!sortAsc)}
-                aria-label={sortAsc ? 'Sort ascending' : 'Sort descending'}
+                aria-label={sortAsc ? t('sortAscending') : t('sortDescending')}
               >
                 {sortAsc ? '↑' : '↓'}
               </button>
@@ -277,7 +279,7 @@ export function MainScreen({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
-                  aria-label="Search unipacks"
+                  aria-label={t('searchAriaLabel')}
                   ref={searchInputRef}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
@@ -288,7 +290,7 @@ export function MainScreen({
                       searchInputRef.current?.blur();
                     }
                   }}
-                  placeholder="Search..."
+                  placeholder={t('searchPlaceholder')}
                   className="w-full pl-7 pr-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
                 />
               </div>
@@ -303,13 +305,13 @@ export function MainScreen({
             className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-accent/20 text-xs text-white/50 transition-colors border border-transparent"
             onClick={onImportTheme}
           >
-            Theme
+            {t('theme')}
           </button>
           <button
             className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-secondary/20 text-xs text-white/50 transition-all border border-transparent relative group"
             onClick={onOpenStore}
           >
-            Store
+            {t('store')}
             {storeCount > 0 && (
               <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-medium ${hasStoreUpdate ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/[0.06] text-white/40'}`}>
                 {storeCount}
@@ -338,7 +340,7 @@ export function MainScreen({
         </div>
 
         {/* Pack List */}
-        <div role="listbox" aria-label="UniPack list" className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 rounded-xl">
+        <div role="listbox" aria-label={t('packListAriaLabel')} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 rounded-xl">
           {filteredAndSortedPacks.length === 0 ? (
             searchQuery.trim() ? (
               <NoResults query={searchQuery.trim()} onClear={() => setSearchQuery('')} />
@@ -365,10 +367,10 @@ export function MainScreen({
 
         {savedPacks.length > 0 && (
         <div className="shrink-0 px-4 py-3 text-[10px] text-white/20 flex items-center justify-center gap-4 border-t border-white/[0.04]">
-          <KeyHint keys="↑↓" label="select" />
-          <KeyHint keys="Enter" label="play" />
-          <KeyHint keys="Del" label="delete" />
-          <KeyHint keys="/" label="search" />
+          <KeyHint keys="↑↓" label={t('keyHintSelect')} />
+          <KeyHint keys="Enter" label={t('keyHintPlay')} />
+          <KeyHint keys="Del" label={t('keyHintDelete')} />
+          <KeyHint keys="/" label={t('keyHintSearch')} />
         </div>
         )}
       </div>
@@ -376,7 +378,9 @@ export function MainScreen({
       <AnimatePresence>
         {deleteConfirmId && (
           <ConfirmDialog
-            message={`Delete "${savedPacks.find((p) => p.id === deleteConfirmId)?.title ?? 'this UniPack'}"?`}
+            message={t('confirmDeletePack', {
+              title: savedPacks.find((p) => p.id === deleteConfirmId)?.title ?? t('confirmDeletePackFallback'),
+            })}
             onConfirm={confirmDelete}
             onCancel={() => setDeleteConfirmId(null)}
           />
@@ -401,6 +405,9 @@ function TotalPanel({
   onApplyTheme: (id: string) => void;
   onClearTheme: () => void;
 }) {
+  const t = useTranslations('play.main');
+  const tCommon = useTranslations('play.common');
+  const tBadge = useTranslations('play.badge');
   const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
   const ledCount = packs.filter((p) => p.keyLedExist).length;
   const apCount = packs.filter((p) => p.autoPlayExist).length;
@@ -416,20 +423,20 @@ function TotalPanel({
       <div className="flex flex-col items-center gap-1 relative">
         <img
           src="/theme/custom_logo.png"
-          alt="UniPad"
+          alt={t('logoAlt')}
           className="w-32 h-auto opacity-90"
           draggable={false}
         />
-        <span className="text-[10px] text-white/25 tracking-widest uppercase font-medium">Web Player</span>
+        <span className="text-[10px] text-white/25 tracking-widest uppercase font-medium">{t('webPlayer')}</span>
       </div>
 
       <div className="mt-4 w-full grid grid-cols-2 gap-2">
-        <StatBlock label="UniPacks" value={packs.length.toString()} />
-        <StatBlock label="Total Plays" value={totalPlays.toString()} />
+        <StatBlock label={t('statUniPacks')} value={packs.length.toString()} />
+        <StatBlock label={t('statTotalPlays')} value={totalPlays.toString()} />
         {packs.length > 0 && (
           <>
-            <StatBlock label="LED" value={ledCount.toString()} accent="green" />
-            <StatBlock label="AutoPlay" value={apCount.toString()} accent="secondary" />
+            <StatBlock label={tBadge('led')} value={ledCount.toString()} accent="green" />
+            <StatBlock label={tBadge('autoPlay')} value={apCount.toString()} accent="secondary" />
           </>
         )}
       </div>
@@ -437,21 +444,21 @@ function TotalPanel({
       {(themes.length > 0 || activeThemeId) && (
         <div className="mt-4 w-full space-y-1.5">
           <div className="flex items-center justify-between px-1">
-            <div className="text-[10px] text-white/30 uppercase tracking-wider">Themes</div>
+            <div className="text-[10px] text-white/30 uppercase tracking-wider">{t('themes')}</div>
             {activeThemeId && (
               <button
                 className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
                 onClick={onClearTheme}
               >
-                Reset
+                {tCommon('reset')}
               </button>
             )}
           </div>
-          {themes.map((t) => {
-            const isActive = t.id === activeThemeId;
+          {themes.map((theme) => {
+            const isActive = theme.id === activeThemeId;
             return (
               <div
-                key={t.id}
+                key={theme.id}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
                   isActive
                     ? 'bg-accent/10 border-accent/30'
@@ -462,24 +469,24 @@ function TotalPanel({
                   <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-white/70 truncate">{t.name || t.id}</div>
-                  {t.author && (
-                    <div className="text-[10px] text-white/30 truncate">{t.author}</div>
+                  <div className="text-xs text-white/70 truncate">{theme.name || theme.id}</div>
+                  {theme.author && (
+                    <div className="text-[10px] text-white/30 truncate">{theme.author}</div>
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {!isActive && (
                     <button
                       className="px-2 py-0.5 text-[10px] text-accent/80 hover:text-accent bg-accent/10 hover:bg-accent/20 rounded transition-colors"
-                      onClick={() => onApplyTheme(t.id)}
+                      onClick={() => onApplyTheme(theme.id)}
                     >
-                      Apply
+                      {tCommon('apply')}
                     </button>
                   )}
                   <button
                     className="p-1 text-white/30 hover:text-red-400 transition-colors"
-                    onClick={() => setDeleteThemeConfirmId(t.id)}
-                    aria-label="Delete theme"
+                    onClick={() => setDeleteThemeConfirmId(theme.id)}
+                    aria-label={t('deleteTheme')}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -494,17 +501,19 @@ function TotalPanel({
 
       {/* Community links */}
       <div className="mt-4 pt-3 border-t border-white/[0.06] w-full flex items-center justify-center gap-3">
-        <a href="https://www.unipad.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-accent transition-colors">Website</a>
+        <a href="https://www.unipad.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-accent transition-colors">{t('website')}</a>
         <span className="text-white/10">·</span>
-        <a href={EXTERNAL_LINKS.discord} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-[#5865F2] transition-colors">Discord</a>
+        <a href={EXTERNAL_LINKS.discord} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-[#5865F2] transition-colors">{t('discord')}</a>
         <span className="text-white/10">·</span>
-        <a href={EXTERNAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">GitHub</a>
+        <a href={EXTERNAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">{t('github')}</a>
       </div>
 
       <AnimatePresence>
         {deleteThemeConfirmId && (
           <ConfirmDialog
-            message={`Delete theme "${themes.find((t) => t.id === deleteThemeConfirmId)?.name ?? 'this theme'}"?`}
+            message={t('confirmDeleteTheme', {
+              name: themes.find((theme) => theme.id === deleteThemeConfirmId)?.name ?? t('confirmDeleteThemeFallback'),
+            })}
             onConfirm={() => {
               onDeleteTheme(deleteThemeConfirmId);
               setDeleteThemeConfirmId(null);
@@ -551,6 +560,9 @@ function PackDetailPanel({
   onDelete: () => void;
   onToggleBookmark: () => void;
 }) {
+  const t = useTranslations('play.main');
+  const tBadge = useTranslations('play.badge');
+  const tCommon = useTranslations('play.common');
   const addedDate = new Date(pack.addedAt).toLocaleDateString();
   const lastOpened = new Date(pack.lastOpenedAt).toLocaleDateString();
   const openCount = pack.openCount ?? 0;
@@ -591,13 +603,13 @@ function PackDetailPanel({
             {pack.keyLedExist && (
               <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-green-500/10 border border-green-500/15">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]" />
-                <span className="text-[10px] font-semibold text-green-400/90">LED</span>
+                <span className="text-[10px] font-semibold text-green-400/90">{tBadge('led')}</span>
               </span>
             )}
             {pack.autoPlayExist && (
               <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--secondary)]/10 border border-[var(--secondary)]/15">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--secondary)] shadow-[0_0_6px_rgba(0,184,212,0.5)]" />
-                <span className="text-[10px] font-semibold text-[var(--secondary)]">AutoPlay</span>
+                <span className="text-[10px] font-semibold text-[var(--secondary)]">{tBadge('autoPlay')}</span>
               </span>
             )}
           </div>
@@ -605,10 +617,10 @@ function PackDetailPanel({
 
         {/* Stats - 2×2 grid matching Android */}
         <div className="mt-4 w-full grid grid-cols-2 gap-2">
-          <PropertyBlock label="Pad Size" value={`${pack.buttonX} × ${pack.buttonY}`} />
-          <PropertyBlock label={pack.chain === 1 ? 'Chain' : 'Chains'} value={pack.chain.toString()} />
-          <PropertyBlock label="Sounds" value={(pack.soundCount ?? 0).toString()} />
-          <PropertyBlock label="LEDs" value={(pack.ledCount ?? 0).toString()} />
+          <PropertyBlock label={t('propPadSize')} value={`${pack.buttonX} × ${pack.buttonY}`} />
+          <PropertyBlock label={pack.chain === 1 ? t('propChain') : t('propChains')} value={pack.chain.toString()} />
+          <PropertyBlock label={t('propSounds')} value={(pack.soundCount ?? 0).toString()} />
+          <PropertyBlock label={t('propLeds')} value={(pack.ledCount ?? 0).toString()} />
         </div>
 
         {/* Play count & dates */}
@@ -634,12 +646,12 @@ function PackDetailPanel({
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
-          Play
+          {tCommon('play')}
         </button>
         <button
           className="w-14 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-red-500/10 hover:border-red-500/20 text-white/25 hover:text-red-400 transition-all flex items-center justify-center"
           onClick={onDelete}
-          aria-label="Delete UniPack"
+          aria-label={t('deleteUniPack')}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -654,7 +666,7 @@ function PackDetailPanel({
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-lg bg-white/[0.04] hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"
-            aria-label="Search on YouTube"
+            aria-label={t('searchOnYouTube')}
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
@@ -665,7 +677,7 @@ function PackDetailPanel({
         {/* Store code */}
         {pack.storeCode && (
           <div className="mt-2 text-[10px] text-white/30 text-center">
-            <span className="text-white/20">Code</span>{' '}
+            <span className="text-white/20">{t('code')}</span>{' '}
             <span className="text-accent/60 font-mono">{pack.storeCode}</span>
           </div>
         )}
@@ -702,6 +714,10 @@ function UnipackListItem({
   index: number;
   reduceMotion: boolean;
 }) {
+  const t = useTranslations('play.main');
+  const tBadge = useTranslations('play.badge');
+  const tCommon = useTranslations('play.common');
+
   return (
     <motion.div
       layout={!reduceMotion}
@@ -735,7 +751,7 @@ function UnipackListItem({
         }}
         transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 30 }}
         onClick={(e) => { e.stopPropagation(); if (isSelected) onPlay(); }}
-        aria-label={`Play ${pack.title}`}
+        aria-label={tCommon('play') + ' ' + pack.title}
         tabIndex={-1}
       >
         {isSelected && (
@@ -748,7 +764,7 @@ function UnipackListItem({
             <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
-            Play
+            {tCommon('play')}
           </motion.span>
         )}
       </motion.button>
@@ -774,7 +790,7 @@ function UnipackListItem({
             <span className={`text-xs truncate ${isSelected ? 'text-white/45' : 'text-white/35'}`}>{pack.producerName}</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] text-white/25">{pack.chain}ch</span>
+            <span className="text-[10px] text-white/25">{t('chainCountShort', { count: pack.chain })}</span>
             {pack.bookmark && (
               <svg className="w-3 h-3 text-accent/60" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
@@ -783,13 +799,13 @@ function UnipackListItem({
             {pack.keyLedExist && (
               <span className="flex items-center gap-0.5">
                 <span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_4px_rgba(74,222,128,0.4)]" />
-                <span className="text-[9px] font-medium text-green-400/60">LED</span>
+                <span className="text-[9px] font-medium text-green-400/60">{tBadge('led')}</span>
               </span>
             )}
             {pack.autoPlayExist && (
               <span className="flex items-center gap-0.5">
                 <span className="w-1 h-1 rounded-full bg-[var(--secondary)] shadow-[0_0_4px_rgba(0,184,212,0.4)]" />
-                <span className="text-[9px] font-medium text-[var(--secondary)]/60">AP</span>
+                <span className="text-[9px] font-medium text-[var(--secondary)]/60">{tBadge('autoPlayShort')}</span>
               </span>
             )}
           </div>
@@ -801,25 +817,32 @@ function UnipackListItem({
 
 
 function NoResults({ query, onClear }: { query: string; onClear: () => void }) {
+  const t = useTranslations('play.main');
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16">
       <svg className="w-10 h-10 text-white/15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
       <p className="text-white/30 text-sm text-center">
-        No results for &ldquo;<span className="text-accent/60">{query}</span>&rdquo;
+        {t.rich('noResults', {
+          query,
+          q: (chunks) => <span className="text-accent/60">{chunks}</span>,
+        })}
       </p>
       <button
         className="px-4 py-2.5 rounded-xl text-xs font-medium bg-white/[0.04] text-white/50 hover:bg-white/[0.08] border border-white/[0.06] hover:border-accent/15 transition-all"
         onClick={onClear}
       >
-        Clear search
+        {t('clearSearch')}
       </button>
     </div>
   );
 }
 
 function EmptyState({ onImport, onOpenStore }: { onImport: () => void; onOpenStore?: () => void }) {
+  const t = useTranslations('play.main');
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-5 py-16">
       {/* Pad grid icon */}
@@ -839,8 +862,8 @@ function EmptyState({ onImport, onOpenStore }: { onImport: () => void; onOpenSto
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="text-white/40 text-sm font-medium">No UniPacks installed</p>
-        <p className="text-white/25 text-xs">Import a .zip file or browse the store</p>
+        <p className="text-white/40 text-sm font-medium">{t('emptyTitle')}</p>
+        <p className="text-white/25 text-xs">{t('emptyHint')}</p>
       </div>
       <div className="flex gap-2">
         <button
@@ -849,14 +872,14 @@ function EmptyState({ onImport, onOpenStore }: { onImport: () => void; onOpenSto
           onClick={onImport}
         >
           <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
-          Import UniPack
+          {t('importUniPack')}
         </button>
         {onOpenStore && (
           <button
             className="px-5 py-2.5 rounded-xl text-xs font-medium bg-white/[0.03] text-white/50 hover:bg-white/[0.06] border border-white/[0.06] hover:border-secondary/20 backdrop-blur-md transition-all"
             onClick={onOpenStore}
           >
-            Browse Store
+            {t('browseStore')}
           </button>
         )}
       </div>
@@ -920,6 +943,9 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useTranslations('play.main');
+  const tCommon = useTranslations('play.common');
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -947,7 +973,7 @@ function ConfirmDialog({
       <motion.div
         role="alertdialog"
         aria-modal="true"
-        aria-label="Confirm deletion"
+        aria-label={t('confirmDeletionAriaLabel')}
         className="relative bg-[var(--card)] border border-white/[0.08] rounded-2xl p-6 max-w-sm w-full mx-4 shadow-[0_0_40px_rgba(0,0,0,0.4)]"
         initial={{ scale: 0.95, y: 8 }}
         animate={{ scale: 1, y: 0 }}
@@ -960,14 +986,14 @@ function ConfirmDialog({
             className="px-4 py-2.5 rounded-xl text-xs text-white/60 bg-white/[0.06] hover:bg-white/10 transition-colors"
             onClick={onCancel}
           >
-            Cancel
+            {tCommon('cancel')}
           </button>
           <button
             className="px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors"
             onClick={onConfirm}
             autoFocus
           >
-            Delete
+            {tCommon('delete')}
           </button>
         </div>
       </motion.div>

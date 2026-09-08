@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { logEvent } from 'firebase/analytics';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 import { useUniPadEngine } from './useUniPadEngine';
 import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
@@ -50,6 +51,9 @@ const CIRCLE_ARRAY_SIZE = 32;
 const CHROME_STRIP_WIDTH = 96;
 
 export function PlayPage() {
+  const t = useTranslations('play.player');
+  const tToast = useTranslations('play.toast');
+  const tCommon = useTranslations('play.common');
   const {
     state,
     loadUniPack,
@@ -324,7 +328,7 @@ export function PlayPage() {
             try {
               await loadTheme(theme.zipData);
             } catch {
-              showToast('Failed to apply skin. Reset skin.');
+              showToast(tToast('skinFailed'));
               currentThemeIdRef.current = null;
               await setSetting('lastThemeId', '');
             }
@@ -352,7 +356,7 @@ export function PlayPage() {
         await setSetting('lastThemeId', id);
         await refreshLists();
       } catch {
-        showToast('Failed to apply skin. Reset skin.');
+        showToast(tToast('skinFailed'));
         currentThemeIdRef.current = null;
         await setSetting('lastThemeId', '').catch(() => {});
       }
@@ -381,7 +385,7 @@ export function PlayPage() {
             try {
               await loadTheme(theme.zipData);
             } catch {
-              showToast('Failed to apply skin. Reset skin.');
+              showToast(tToast('skinFailed'));
               currentThemeIdRef.current = null;
               await setSetting('lastThemeId', '');
             }
@@ -451,14 +455,14 @@ export function PlayPage() {
           try {
             await loadTheme(theme.zipData);
           } catch {
-            showToast('Failed to apply skin. Reset skin.');
+            showToast(tToast('skinFailed'));
             currentThemeIdRef.current = null;
             await setSetting('lastThemeId', '');
           }
         }
         await refreshLists();
       } catch {
-        showToast('Failed to apply theme.');
+        showToast(tToast('themeFailed'));
       }
     },
     [loadTheme, refreshLists, showToast, state.loaded],
@@ -538,13 +542,13 @@ export function PlayPage() {
 
   const handleClearTraceLog = useCallback(() => {
     clearTraceLog();
-    showToast('Trace Log Cleared');
+    showToast(tToast('traceLogCleared'));
   }, [clearTraceLog, showToast]);
 
   // Android: show "Copied" toast when recording stops
   useEffect(() => {
     if (prevRecordingRef.current && !state.recording) {
-      showToast('Copied');
+      showToast(tToast('copied'));
     }
     prevRecordingRef.current = state.recording;
   }, [state.recording, showToast]);
@@ -616,12 +620,12 @@ export function PlayPage() {
     try {
       const ok = await connectMidi();
       if (!ok) {
-        showToast('No MIDI device found.');
+        showToast(tToast('midiNoDevice'));
       } else {
-        showToast('MIDI connected.');
+        showToast(tToast('midiConnected'));
       }
     } catch {
-      showToast('MIDI connection failed.');
+      showToast(tToast('midiFailed'));
     } finally {
       setMidiConnecting(false);
     }
@@ -629,7 +633,7 @@ export function PlayPage() {
 
   const handleDisconnectMidi = useCallback(() => {
     disconnectMidi();
-    showToast('MIDI disconnected.');
+    showToast(tToast('midiDisconnected'));
   }, [disconnectMidi, showToast]);
 
   const handleChangeMidiProfile = useCallback((profile: LaunchpadProfile) => {
@@ -744,7 +748,7 @@ export function PlayPage() {
       setStoreProgress(100);
       setPreferredStoreCode(item.code);
       trackStoreEvent('store_download_success', { code: item.code });
-      showToast(`Downloaded: ${item.title}`);
+      showToast(tToast('downloaded', { title: item.title }));
     } catch (error) {
       const message = normalizeStoreError(error);
       setStoreError(message);
@@ -780,7 +784,7 @@ export function PlayPage() {
   const handlePlayDownloadedStoreItem = useCallback((item: StoreItem) => {
     const pack = savedPacks.find((p) => p.storeCode === item.code);
     if (!pack) {
-      showToast('Downloaded pack not found. Please refresh.');
+      showToast(tToast('downloadedPackMissing'));
       return;
     }
     trackStoreEvent('store_play_downloaded', { code: item.code });
@@ -824,11 +828,11 @@ export function PlayPage() {
     // Auto-download from store
     (async () => {
       try {
-        showToast('Downloading shared pack...');
+        showToast(tToast('sharedPackDownloading'));
         const items = await fetchStoreItems();
         const item = items.find((i) => i.code === shareCode);
         if (!item) {
-          showToast('Shared pack not found in store.');
+          showToast(tToast('sharedPackMissing'));
           return;
         }
         await handleDownloadStoreItem(item);
@@ -838,7 +842,7 @@ export function PlayPage() {
           await handlePlay(newPack.id);
         }
       } catch {
-        showToast('Failed to load shared pack.');
+        showToast(tToast('sharedPackFailed'));
       }
     })();
   }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast]);
@@ -887,7 +891,7 @@ export function PlayPage() {
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-4 bg-black text-white">
         <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-        <p className="text-white/40 text-sm">Loading...</p>
+        <p className="text-white/40 text-sm">{tCommon('loading')}</p>
       </div>
     );
   }
@@ -962,7 +966,7 @@ export function PlayPage() {
 
         {dragOver && (
           <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500/30 flex items-center justify-center z-50 pointer-events-none">
-            <p className="text-white text-lg font-bold">Drop UniPack here</p>
+            <p className="text-white text-lg font-bold">{t('dropUniPack')}</p>
           </div>
         )}
 
@@ -1091,7 +1095,7 @@ export function PlayPage() {
           className="absolute z-30 p-4 pointer-events-auto"
           style={{ bottom: '16px', right: '16px' }}
           onClick={(e) => { e.stopPropagation(); handleBack(); }}
-          aria-label="Menu"
+          aria-label={t('menu')}
         >
           <svg className="w-8 h-8 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -1217,28 +1221,28 @@ export function PlayPage() {
             <button
               className="px-2 py-1 rounded-md text-[10px] border border-emerald-400/40 text-emerald-300 bg-emerald-500/10 backdrop-blur-md"
               onClick={() => setLaunchpadSettingsOpen(true)}
-              aria-label="Launchpad Settings"
+              aria-label={t('launchpadSettings')}
             >
-              MIDI ON
+              {t('midiOn')}
             </button>
           )}
           {state.practiceMode && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-green-400 bg-green-500/15 backdrop-blur-md">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              Practice
+              {t('practice')}
             </span>
           )}
           {state.recording && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-red-400 bg-red-500/15 backdrop-blur-md">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              REC
+              {t('rec')}
             </span>
           )}
           {state.errors.length > 0 && (
             <button
               className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/25 transition-colors backdrop-blur-md"
               onClick={() => setErrorDialogShown(true)}
-              aria-label={`${state.errors.length} warnings`}
+              aria-label={t('warnings', { count: state.errors.length })}
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -1510,7 +1514,7 @@ export function PlayPage() {
       {/* Drag overlay */}
       {dragOver && (
         <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500/30 flex items-center justify-center z-50 pointer-events-none">
-          <p className="text-white text-lg font-bold">Drop UniPack here</p>
+          <p className="text-white text-lg font-bold">{t('dropUniPack')}</p>
         </div>
       )}
 
@@ -1520,11 +1524,11 @@ export function PlayPage() {
           <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
             if (!state.criticalError) setErrorDialogShown(false);
           }} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? 'Error' : 'Warning'}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
             <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
               <div className="flex items-center justify-between mb-3">
                 <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {state.criticalError ? 'Error' : 'Warning'}
+                  {state.criticalError ? t('error') : t('warning')}
                 </h2>
                 <span className="text-[10px] text-white/40">
                   {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
@@ -1546,7 +1550,7 @@ export function PlayPage() {
                   if (state.criticalError) handleQuit();
                 }}
               >
-                {state.criticalError ? 'Quit' : 'OK'}
+                {state.criticalError ? t('quit') : t('ok')}
               </button>
             </div>
           </div>
@@ -1573,7 +1577,7 @@ export function PlayPage() {
         <svg className="w-12 h-12 text-white/60 animate-[spin_2s_ease-in-out_infinite]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
-        <p className="text-sm text-white/70">Rotate to landscape</p>
+        <p className="text-sm text-white/70">{t('rotateToLandscape')}</p>
       </div>
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
