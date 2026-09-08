@@ -4,7 +4,7 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-09-07
+Last verified: 2026-09-08
 
 ## Repos
 
@@ -102,7 +102,8 @@ apps keep those switches in the option panel and reset them per session.
 
 - **Android has no search on the pack list**; iOS and web do.
 - **Android sort options are three**; iOS offers five (play count, last opened).
-- **The web player UI is not localised** while the marketing site is.
+- **The web player UI localisation is open in a PR** (unipad.io#15, feat/play-i18n). `/play` now
+  renders ko/en like the rest of the site; the gap closes when that PR merges.
 - **iOS `TransferView` is unreachable** (no navigation calls it), so the screen table above
   overstates parity for that row.
 - **Deleting a pack leaves the database row on Android and iOS** and removes it on the web.
