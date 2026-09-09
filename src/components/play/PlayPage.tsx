@@ -8,7 +8,7 @@ import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
 import { ControlPanel } from './ControlPanel';
 import { OptionPanel } from './OptionPanel';
-import { MainScreen } from './MainScreen';
+import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import {
@@ -99,6 +99,16 @@ export function PlayPage() {
   const [storeCount, setStoreCount] = useState(0);
   const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  /**
+   * The store item a `?code=` link wants to install, held while the user decides.
+   *
+   * The link used to go straight from the store lookup into the download, so any
+   * page able to navigate here could make the app fetch and unpack a file with no
+   * say from the person at the keyboard. The lookup has already returned by the
+   * time this is set, which is why the question can name the pack.
+   */
+  const [pendingShareItem, setPendingShareItem] = useState<StoreItem | null>(null);
   const [errorDialogShown, setErrorDialogShown] = useState(false);
   const [midiConnecting, setMidiConnecting] = useState(false);
   const [launchpadSettingsOpen, setLaunchpadSettingsOpen] = useState(false);
@@ -757,6 +767,29 @@ export function PlayPage() {
     }
   }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, trackStoreEvent]);
 
+  /**
+   * Carry out an install the person approved from a shared link.
+   *
+   * Split out of the `?code=` effect so the download has an owner other than
+   * "whatever the URL said". The effect now only looks the pack up and asks.
+   */
+  const installSharedPack = useCallback(
+    async (item: StoreItem) => {
+      try {
+        showToast(`Downloading "${item.title}"`);
+        await handleDownloadStoreItem(item);
+        const updatedPacks = await listUniPacks();
+        const newPack = updatedPacks.find((pk) => pk.storeCode === item.code);
+        if (newPack) {
+          await handlePlay(newPack.id);
+        }
+      } catch {
+        showToast('Could not install that pack');
+      }
+    },
+    [handleDownloadStoreItem, handlePlay, showToast],
+  );
+
   const handleCancelStoreDownload = useCallback(() => {
     storeDownloadAbortRef.current?.abort();
     trackStoreEvent('store_download_cancel');
@@ -831,12 +864,8 @@ export function PlayPage() {
           showToast('Shared pack not found in store.');
           return;
         }
-        await handleDownloadStoreItem(item);
-        const updatedPacks = await listUniPacks();
-        const newPack = updatedPacks.find((p) => p.storeCode === shareCode);
-        if (newPack) {
-          await handlePlay(newPack.id);
-        }
+        // Ask first. installSharedPack runs from the dialog, not from here.
+        setPendingShareItem(item);
       } catch {
         showToast('Failed to load shared pack.');
       }
@@ -1549,6 +1578,29 @@ export function PlayPage() {
           </div>
         </>
       )}
+
+      {/* A shared link asked to install something; the person decides. */}
+      <AnimatePresence>
+        {pendingShareItem && (
+          <ConfirmDialog
+            label="Confirm install"
+            confirmText="Install"
+            tone="primary"
+            message={`Install "${pendingShareItem.title}"${
+              pendingShareItem.producerName ? ` by ${pendingShareItem.producerName}` : ''
+            }? It will be downloaded from unipad.io.`}
+            onConfirm={() => {
+              const item = pendingShareItem;
+              setPendingShareItem(null);
+              void installSharedPack(item);
+            }}
+            onCancel={() => {
+              setPendingShareItem(null);
+              showToast('Install cancelled');
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>
