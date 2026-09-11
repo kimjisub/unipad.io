@@ -176,7 +176,13 @@ export class MidiConnection {
     if (name.includes('launchpad s')) return 'launchpad_s';
     if (name.includes('launchpad pro')) return 'launchpad_pro';
     if (name.includes('midi fighter') || name.includes('midifighter')) return 'midifighter';
-    if (name.includes('matrix')) return 'matrix';
+    // The Mystrix announces a different name depending on its firmware: older
+    // builds report Matrix or Matrix Pro, newer ones Mystrix or Mystrix Pro.
+    // Matching only the old string meant anyone who updated had a device this
+    // player could not see, and the only symptom was failing to connect, which
+    // is indistinguishable from not owning one. `matrix` stays as the internal
+    // profile id because the driver tables are keyed on it.
+    if (name.includes('mystrix') || name.includes('matrix')) return 'matrix';
     if (name.includes('master keyboard')) return 'master_keyboard';
     return 'none';
   }
