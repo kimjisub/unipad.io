@@ -934,14 +934,22 @@ function MarqueeText({ children, className }: { children: React.ReactNode; class
   );
 }
 
-function ConfirmDialog({
+export function ConfirmDialog({
   message,
   onConfirm,
   onCancel,
+  label,
+  confirmText,
+  tone = 'danger',
 }: {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Accessible name. Defaults to the translated deletion wording this started as. */
+  label?: string;
+  confirmText?: string;
+  /** `danger` is red, `primary` is the ordinary accent. */
+  tone?: 'danger' | 'primary';
 }) {
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
@@ -973,7 +981,7 @@ function ConfirmDialog({
       <motion.div
         role="alertdialog"
         aria-modal="true"
-        aria-label={t('confirmDeletionAriaLabel')}
+        aria-label={label ?? t('confirmDeletionAriaLabel')}
         className="relative bg-[var(--card)] border border-white/[0.08] rounded-2xl p-6 max-w-sm w-full mx-4 shadow-[0_0_40px_rgba(0,0,0,0.4)]"
         initial={{ scale: 0.95, y: 8 }}
         animate={{ scale: 1, y: 0 }}
@@ -989,11 +997,15 @@ function ConfirmDialog({
             {tCommon('cancel')}
           </button>
           <button
-            className="px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors"
+            className={
+              tone === 'danger'
+                ? 'px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors'
+                : 'px-4 py-2.5 rounded-xl text-xs text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 transition-colors'
+            }
             onClick={onConfirm}
             autoFocus
           >
-            {tCommon('delete')}
+            {confirmText ?? tCommon('delete')}
           </button>
         </div>
       </motion.div>

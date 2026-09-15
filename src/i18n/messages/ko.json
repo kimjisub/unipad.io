@@ -201,7 +201,8 @@
       "retry": "다시 시도",
       "reload": "새로고침",
       "open": "열기",
-      "loading": "불러오는 중..."
+      "loading": "불러오는 중...",
+      "install": "설치"
     },
     "playMode": {
       "auto": "자동",
@@ -366,7 +367,10 @@
       "warning": "경고",
       "quit": "나가기",
       "ok": "확인",
-      "warnings": "경고 {count}개"
+      "warnings": "경고 {count}개",
+      "confirmInstall": "“{title}” 을 설치할까요? unipad.io 에서 받습니다.",
+      "confirmInstallByProducer": "{producer} 의 “{title}” 을 설치할까요? unipad.io 에서 받습니다.",
+      "confirmInstallAriaLabel": "설치 확인"
     },
     "toast": {
       "skinFailed": "스킨을 적용하지 못했습니다. 스킨을 초기화합니다.",
@@ -381,7 +385,10 @@
       "downloadedPackMissing": "받은 팩을 찾지 못했습니다. 새로고침해 주세요.",
       "sharedPackDownloading": "공유된 팩을 받는 중...",
       "sharedPackMissing": "공유된 팩이 스토어에 없습니다.",
-      "sharedPackFailed": "공유된 팩을 불러오지 못했습니다."
+      "sharedPackFailed": "공유된 팩을 불러오지 못했습니다.",
+      "downloadingPack": "“{title}” 을 받는 중...",
+      "installFailed": "팩을 설치하지 못했습니다.",
+      "installCancelled": "설치를 취소했습니다."
     }
   }
 }

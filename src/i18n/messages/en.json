@@ -201,7 +201,8 @@
       "retry": "Retry",
       "reload": "Reload",
       "open": "Open",
-      "loading": "Loading..."
+      "loading": "Loading...",
+      "install": "Install"
     },
     "playMode": {
       "auto": "Auto",
@@ -366,7 +367,10 @@
       "warning": "Warning",
       "quit": "Quit",
       "ok": "OK",
-      "warnings": "{count} warnings"
+      "warnings": "{count} warnings",
+      "confirmInstall": "Install “{title}”? It will be downloaded from unipad.io.",
+      "confirmInstallByProducer": "Install “{title}” by {producer}? It will be downloaded from unipad.io.",
+      "confirmInstallAriaLabel": "Confirm install"
     },
     "toast": {
       "skinFailed": "Failed to apply skin. Reset skin.",
@@ -381,7 +385,10 @@
       "downloadedPackMissing": "Downloaded pack not found. Please refresh.",
       "sharedPackDownloading": "Downloading shared pack...",
       "sharedPackMissing": "Shared pack not found in store.",
-      "sharedPackFailed": "Failed to load shared pack."
+      "sharedPackFailed": "Failed to load shared pack.",
+      "downloadingPack": "Downloading “{title}”",
+      "installFailed": "Could not install that pack",
+      "installCancelled": "Install cancelled"
     }
   }
 }
