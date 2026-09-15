@@ -238,7 +238,8 @@ async function parseKeySoundFromFile(
     const parts = trimmed.split(/\s+/);
     if (parts.length <= 2) continue;
 
-    let c: number, x: number, y: number, soundURL: string;
+    let c: number, x: number, y: number;
+    const soundURL: string | undefined = parts[3];
     let loop = 0;
     let wormhole = NO_WORMHOLE;
 
@@ -246,7 +247,6 @@ async function parseKeySoundFromFile(
       c = parseInt(parts[0], 10) - 1;
       x = parseInt(parts[1], 10) - 1;
       y = parseInt(parts[2], 10) - 1;
-      soundURL = parts[3];
       if (parts.length >= 5) loop = parseInt(parts[4], 10) - 1;
       if (parts.length >= 6) wormhole = parseInt(parts[5], 10) - 1;
     } catch {
@@ -254,7 +254,11 @@ async function parseKeySoundFromFile(
       continue;
     }
 
-    if (isNaN(c) || isNaN(x) || isNaN(y)) {
+    // Android records "format is incorrect" for a short or non-numeric line and keeps going;
+    // here a 3-token line reached findSoundFile with undefined and threw out of the whole parse,
+    // and a NaN loop/wormhole later set the chain to NaN and silenced every pad.
+    if (isNaN(c) || isNaN(x) || isNaN(y) || typeof soundURL !== 'string' || soundURL.length === 0
+      || !Number.isFinite(loop) || !Number.isFinite(wormhole)) {
       errors.push(`keySound: [${trimmed}] format is incorrect`);
       continue;
     }
@@ -412,6 +416,10 @@ async function parseKeyLed(
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
               continue;
             }
+            if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX)) || !Number.isFinite(ledColor) || !Number.isFinite(ledVelocity)) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
 
             ledEvents.push({ type: 'on', x: ledX, y: ledY, color: ledColor, velocity: ledVelocity });
             break;
@@ -429,17 +437,35 @@ async function parseKeyLed(
               ledX = parseInt(xToken, 10) - 1;
               ledY = parseInt(split[2], 10) - 1;
             }
+            if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
             ledEvents.push({ type: 'off', x: ledX, y: ledY });
             break;
           }
           case 'delay':
-          case 'd':
-            ledEvents.push({ type: 'delay', delay: parseInt(split[1], 10) });
+          case 'd': {
+            // A NaN delay froze the animation with its LEDs stuck on (state.delay += NaN never
+            // becomes <= currTime again); Android drops the event.
+            const delay = parseInt(split[1], 10);
+            if (!Number.isFinite(delay)) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
+            ledEvents.push({ type: 'delay', delay });
             break;
+          }
           case 'chain':
-          case 'c':
-            ledEvents.push({ type: 'chain', chain: parseInt(split[1], 10) - 1 });
+          case 'c': {
+            const chain = parseInt(split[1], 10) - 1;
+            if (!Number.isFinite(chain)) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
+            ledEvents.push({ type: 'chain', chain });
             break;
+          }
           default:
             errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
         }
@@ -489,29 +515,17 @@ async function parseAutoPlay(
     try {
       option = split[0];
       switch (option) {
+        // NaN passes every `< 0 || >= n` comparison, so `o x 3` used to reach map[NaN][y] and throw
+        // out of the whole parse, and a NaN delay stalled autoPlay forever. Android drops the line.
         case 'on':
         case 'o':
-          x = parseInt(split[1], 10) - 1;
-          y = parseInt(split[2], 10) - 1;
-          if (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
-            errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
-            continue;
-          }
-          break;
         case 'off':
         case 'f':
-          x = parseInt(split[1], 10) - 1;
-          y = parseInt(split[2], 10) - 1;
-          if (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
-            errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
-            continue;
-          }
-          break;
         case 'touch':
         case 't':
           x = parseInt(split[1], 10) - 1;
           y = parseInt(split[2], 10) - 1;
-          if (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
+          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
             errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
             continue;
           }
@@ -519,7 +533,7 @@ async function parseAutoPlay(
         case 'chain':
         case 'c':
           chain = parseInt(split[1], 10) - 1;
-          if (chain < 0 || chain >= info.chain) {
+          if (!Number.isFinite(chain) || chain < 0 || chain >= info.chain) {
             errors.push(`autoPlay: [${trimmed}] chain is incorrect`);
             continue;
           }
@@ -527,6 +541,10 @@ async function parseAutoPlay(
         case 'delay':
         case 'd':
           delay = parseInt(split[1], 10);
+          if (!Number.isFinite(delay)) {
+            errors.push(`autoPlay: [${trimmed}] delay is incorrect`);
+            continue;
+          }
           break;
         default:
           errors.push(`autoPlay: [${trimmed}] format is incorrect`);

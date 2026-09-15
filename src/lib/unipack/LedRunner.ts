@@ -67,16 +67,31 @@ export class LedRunner {
       if (state.isPlaying && !state.isShutdown) {
         if (state.delay === 0) state.delay = currTime;
 
-        while (true) {
-          const events = state.ledAnimation?.ledEvents;
-          if (!events) break;
+        // This runs on the rAF (UI) thread: an animation that never advances state.delay (no
+        // events, or loop 0 with no delay event) used to spin `while (true)` and freeze the tab.
+        // Android guards the empty case (Crashlytics a1376611) and survives the other on a worker
+        // thread; here both get a per-frame budget as well.
+        const events = state.ledAnimation?.ledEvents;
+        if (!events || events.length === 0) {
+          state.isPlaying = false;
+          continue;
+        }
+        const loopCount = Math.max(1, state.ledAnimation!.loop);
+        const budget = events.length * loopCount + 1;
+        let processed = 0;
 
+        while (true) {
           if (state.index >= events.length) {
             state.loopProgress++;
             state.index = 0;
           }
 
           if (state.ledAnimation!.loop !== 0 && state.ledAnimation!.loop <= state.loopProgress) {
+            state.isPlaying = false;
+            break;
+          }
+
+          if (++processed > budget) {
             state.isPlaying = false;
             break;
           }

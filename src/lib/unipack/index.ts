@@ -8,7 +8,7 @@ export { ChannelManager, Channel } from './ChannelManager';
 export { MidiConnection } from './MidiConnection';
 export type { MidiControllerListener, LaunchpadProfile, MidiConnectionStatus } from './MidiConnection';
 export { LAUNCHPAD_ARGB, argbToRgba, velocityToColor } from './colors';
-export { getKeyboardMapping, getChainKey } from './KeyboardMapping';
+export { getKeyboardMapping, getPadForKeyCode, getChainKey } from './KeyboardMapping';
 export { Recorder } from './Recorder';
 export { loadThemeFromZip, loadThemeFromJSZip, getDefaultTheme, releaseThemeUrls } from './ThemeManager';
 export type { ThemeAssets, ThemeMetadata, ThemeColors } from './ThemeManager';
