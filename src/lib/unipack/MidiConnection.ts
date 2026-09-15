@@ -153,6 +153,13 @@ export class MidiConnection {
     this.connected = this.inputs.length > 0;
   }
 
+  /** Applies a manual profile immediately (re-sends the init SysEx and re-resolves), instead of
+   *  waiting for the next connect as it used to. */
+  setProfile(profile: LaunchpadProfile): void {
+    this.requestedProfile = profile;
+    if (this.outputs.length > 0) this.sendInitSysExToAllOutputs();
+  }
+
   private sendInitSysExToAllOutputs(): void {
     this.resolvedProfile = 'none';
     for (const output of this.outputs) {
@@ -161,13 +168,16 @@ export class MidiConnection {
       if (profile !== 'none') {
         this.resolvedProfile = profile;
       }
-      for (const message of messages) {
-        try {
-          output.send(message);
-        } catch {
-          // ignore per-device SysEx failures
-        }
-      }
+      // 50 ms apart, as Android and iOS send them: the device needs the gap to switch mode.
+      messages.forEach((message, index) => {
+        window.setTimeout(() => {
+          try {
+            output.send(message);
+          } catch {
+            // ignore per-device SysEx failures
+          }
+        }, index * 50);
+      });
     }
     if (this.outputs.length === 0 && this.requestedProfile !== 'auto') {
       this.resolvedProfile = this.requestedProfile;
@@ -178,12 +188,15 @@ export class MidiConnection {
     if (requested !== 'auto') return requested;
 
     const name = outputName.toLowerCase();
-    if (name.includes('launchpad mini mk3')) return 'launchpad_mini_mk3';
-    if (name.includes('launchpad pro mk3')) return 'launchpad_pro_mk3';
-    if (name.includes('launchpad x')) return 'launchpad_x';
-    if (name.includes('launchpad mk2')) return 'launchpad_mk2';
-    if (name.includes('launchpad s')) return 'launchpad_s';
-    if (name.includes('launchpad pro')) return 'launchpad_pro';
+    // Web MIDI reports the short product names ("LPX MIDI Out", "LPMiniMK3 ...", "LPProMK3 ..."),
+    // so the long forms alone never matched and an X or a Mini MK3 fell through to 'none'.
+    // Same list and order as the iOS MidiManager.
+    if (name.includes('launchpad mini mk3') || name.includes('lpminimk3')) return 'launchpad_mini_mk3';
+    if (name.includes('launchpad pro mk3') || name.includes('lppromk3')) return 'launchpad_pro_mk3';
+    if (name.includes('launchpad x') || name.includes('lpx')) return 'launchpad_x';
+    if (name.includes('launchpad mk2') || name.includes('lpmk2')) return 'launchpad_mk2';
+    if (name.includes('launchpad s') || name.includes('launchpad mini')) return 'launchpad_s';
+    if (name.includes('launchpad pro') || name.includes('lppro')) return 'launchpad_pro';
     if (name.includes('midi fighter') || name.includes('midifighter')) return 'midifighter';
     if (name.includes('matrix')) return 'matrix';
     if (name.includes('master keyboard')) return 'master_keyboard';
@@ -374,14 +387,28 @@ export class MidiConnection {
     }
 
     if (!includeMatrixExtras || !pressed) return;
+    // Ring banks mirror the Android Matrix driver's circleCode: top 28..35 (f 0..7),
+    // right 100..107 (f 8..15), bottom 123..116 (f 16..23), left 115..108 (f 24..31).
+    // The top and bottom rows were dead here and the left column mapped to f 24..17.
+    if (note >= 28 && note <= 35) {
+      this.listener.onFunctionKey(note - 28);
+      return;
+    }
     if (note >= 100 && note <= 107) {
       const c = note - 100;
       this.listener.onChainTouch(c);
       this.listener.onFunctionKey(c + 8);
       return;
     }
+    if (note >= 116 && note <= 123) {
+      const f = 16 + (123 - note);
+      this.listener.onChainTouch(f - 8);
+      this.listener.onFunctionKey(f);
+      return;
+    }
     if (note >= 108 && note <= 115) {
-      const f = 24 - (note - 108);
+      const f = 24 + (115 - note);
+      this.listener.onChainTouch(f - 8);
       this.listener.onFunctionKey(f);
     }
   }
@@ -488,6 +515,9 @@ export class MidiConnection {
       const note = MATRIX_CIRCLE_CODES[index];
       return note === undefined ? null : { type: 'note', value: note, status: 0x91 };
     }
+    // Devices with no ring (Midi Fighter, a master keyboard) used to receive notes 91..98 here,
+    // which a keyboard plays as audible notes when the option panel opens.
+    if (profile === 'midifighter' || profile === 'master_keyboard') return null;
     if (index >= 0 && index < 8) return { type: 'note', value: 91 + index, status: 0x90 };
     return null;
   }
@@ -573,7 +603,13 @@ export class MidiConnection {
         this.sendPadLed(x, y, 0);
       }
     }
-    const functionKeyCount = profile === 'matrix' ? 32 : 16;
+    // The X/Pro/Pro MK3 ring has 32 buttons; clearing only 16 left the bottom row and the left
+    // column lit after leaving the pack.
+    const functionKeyCount =
+      profile === 'matrix' || profile === 'launchpad_x' || profile === 'launchpad_mini_mk3'
+        || profile === 'launchpad_pro_mk3' || profile === 'launchpad_pro'
+        ? 32
+        : profile === 'midifighter' ? 0 : 16;
     for (let i = 0; i < functionKeyCount; i++) {
       this.sendFunctionKeyLed(i, 0);
     }

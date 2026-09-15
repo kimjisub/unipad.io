@@ -334,7 +334,7 @@ export function PadGrid({
             <path
               d={traceLinePath}
               fill="none"
-              stroke={'#ffffff'}
+              stroke={theme?.colors?.traceLog ?? '#ffffff'}
               strokeWidth={Math.max(1.5, padCellMin * 0.04)}
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -347,7 +347,7 @@ export function PadGrid({
               cx={p.cx}
               cy={p.cy}
               r={Math.max(2.5, padCellMin * 0.06)}
-              fill={'#ffffff'}
+              fill={theme?.colors?.traceLog ?? '#ffffff'}
               opacity={0.95}
             />
           ))}

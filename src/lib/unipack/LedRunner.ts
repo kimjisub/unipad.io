@@ -26,6 +26,8 @@ export interface LedRunnerListener {
   onChainLedTurnOff(c: number): void;
 }
 
+const LOOP_INTERVAL_MS = 4;
+
 export class LedRunner {
   private unipack: UniPackData;
   private listener: LedRunnerListener;
@@ -122,7 +124,7 @@ export class LedRunner {
     this.ledAnimationStatesAdd.length = 0;
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
-    this.rafId = requestAnimationFrame(this.loop);
+    this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
   };
 
   private processEvent(event: LedEvent, state: LedAnimationState): void {
@@ -186,14 +188,16 @@ export class LedRunner {
   launch(): void {
     if (!this.active) {
       this.active = true;
-      this.rafId = requestAnimationFrame(this.loop);
+      // 4 ms timer, matching Android's LED tick. rAF ran at ~17 ms and froze in a hidden tab,
+      // where the returning frame's time jump killed every running animation.
+      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
     }
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
+      window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     for (const state of this.ledAnimationStates) {

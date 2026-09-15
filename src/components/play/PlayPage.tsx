@@ -182,15 +182,15 @@ export function PlayPage() {
       try {
         await refreshLists();
         const savedMidiProfile = await getSetting(MIDI_PROFILE_SETTING_KEY);
-        if (
-          savedMidiProfile === 'auto'
-          || savedMidiProfile === 'none'
-          || savedMidiProfile === 'launchpad_x'
-          || savedMidiProfile === 'launchpad_mini_mk3'
-          || savedMidiProfile === 'launchpad_pro_mk3'
-          || savedMidiProfile === 'launchpad_pro'
-        ) {
-          setMidiProfile(savedMidiProfile);
+        // Every profile the picker offers: launchpad_s, launchpad_mk2, midifighter, matrix and
+        // master_keyboard were missing, so those choices silently reset to Auto on reload.
+        const VALID_PROFILES = [
+          'auto', 'none', 'launchpad_s', 'launchpad_mk2', 'launchpad_pro', 'launchpad_x',
+          'launchpad_mini_mk3', 'launchpad_pro_mk3', 'midifighter', 'matrix', 'master_keyboard',
+        ] as const;
+        if (typeof savedMidiProfile === 'string'
+          && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {
+          setMidiProfile(savedMidiProfile as LaunchpadProfile);
         }
         const [savedLastPackId, countResult] = await Promise.all([
           getSetting('lastUniPackId'),
@@ -998,9 +998,11 @@ export function PlayPage() {
 
   const { unipack, theme } = state;
   const showRightChainBar = state.proLightMode || actualChainCount > 1;
+  // Android shows the bottom row and the left column as soon as the pack needs them; chains 9-24
+  // were unreachable on screen without pro light mode.
   const showLeftChainBar = state.proLightMode || actualChainCount > 16;
   const showTopChainBar = state.proLightMode;
-  const showBottomChainBar = state.proLightMode;
+  const showBottomChainBar = state.proLightMode || actualChainCount > 8;
 
   const chainAreaSlotsV = showRightChainBar ? Math.max(unipack?.info.buttonX ?? 1, 1) : 0;
   const chainAreaSlotsH = Math.max(unipack?.info.buttonY ?? 1, 1);
@@ -1438,7 +1440,8 @@ export function PlayPage() {
       </div>
 
       {/* Custom logo (Android: TopEnd, 16dp padding, 90dp width) */}
-      {theme.customLogo && state.watermark && !optionPanelOpen && (
+      {/* Android and iOS draw the skin's logo unconditionally; it used to disappear with the watermark. */}
+      {theme.customLogo && !optionPanelOpen && (
         <img
           src={theme.customLogo}
           alt=""
