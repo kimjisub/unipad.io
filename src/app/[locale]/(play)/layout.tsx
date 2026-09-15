@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
-import { hasLocale } from 'next-intl';
-import { setRequestLocale } from 'next-intl/server';
+import { NextIntlClientProvider, hasLocale } from 'next-intl';
+import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
 
 import '../../globals.css';
 import { Analytics } from '@vercel/analytics/next';
@@ -15,10 +15,19 @@ const inter = Inter({
   variable: '--font-sans',
 });
 
-export const metadata: Metadata = {
-  title: 'UniPad Web Player',
-  description: 'Play UniPack directly in your browser with Web Audio and Web MIDI support.',
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: 'play.meta' });
+
+  return {
+    title: t('title'),
+    description: t('description'),
+  };
+}
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -39,6 +48,8 @@ export default async function PlayLayout({
 
   setRequestLocale(locale);
 
+  const messages = await getMessages();
+
   return (
     <html lang={locale} className={`${inter.variable} dark`}>
       <head>
@@ -49,9 +60,11 @@ export default async function PlayLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="font-sans bg-background text-foreground antialiased">
-        <Suspense fallback={null}><FirebaseAnalytics /></Suspense>
-        <Analytics />
-        {children}
+        <NextIntlClientProvider locale={locale} messages={{ play: messages.play }}>
+          <Suspense fallback={null}><FirebaseAnalytics /></Suspense>
+          <Analytics />
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

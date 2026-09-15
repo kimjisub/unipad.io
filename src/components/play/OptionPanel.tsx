@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
 import type { PlayMode } from './useUniPadEngine';
@@ -118,6 +119,9 @@ export function OptionPanel({
   const showTrace = squareButton;
   const showRecord = squareButton;
 
+  const t = useTranslations('play.menu');
+  const tCommon = useTranslations('play.common');
+
   return (
     <>
       {/* Backdrop */}
@@ -127,14 +131,14 @@ export function OptionPanel({
       />
 
       {/* Panel */}
-      <div role="dialog" aria-modal="true" aria-label="Menu" className={`fixed right-0 top-0 bottom-0 w-[280px] backdrop-blur-md z-50 flex flex-col border-l border-white/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ backgroundColor: 'rgba(22,30,43,0.94)' }}>
+      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 w-[280px] backdrop-blur-md z-50 flex flex-col border-l border-white/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ backgroundColor: 'rgba(22,30,43,0.94)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0">
-          <span className="text-[22px] font-normal text-white">Menu</span>
+          <span className="text-[22px] font-normal text-white">{t('title')}</span>
           <button
             className="p-1.5 rounded-lg hover:bg-white/[0.08] transition-colors"
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label={t('close')}
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: '#FF6B6B' }}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -151,7 +155,7 @@ export function OptionPanel({
             className="w-full flex items-center gap-2 px-4 py-3 text-left"
             onClick={() => setInfoExpanded((v) => !v)}
             aria-expanded={infoExpanded}
-            aria-label="Toggle pack info"
+            aria-label={t('togglePackInfo')}
           >
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white truncate">{unipackInfo.title}</div>
@@ -174,7 +178,7 @@ export function OptionPanel({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-red-400 transition-colors"
-                  aria-label="YouTube"
+                  aria-label={t('youtube')}
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
@@ -186,7 +190,7 @@ export function OptionPanel({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"
-                    aria-label="Website"
+                    aria-label={t('website')}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
@@ -196,19 +200,19 @@ export function OptionPanel({
               </div>
               <div className="flex gap-3 mt-2 text-xs text-white/65">
                 <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
-                <span>{unipackInfo.chain} {unipackInfo.chain === 1 ? 'chain' : 'chains'}</span>
+                <span>{t('chainCount', { count: unipackInfo.chain })}</span>
               </div>
             </div>
           )}
         </div>
 
         {/* Performance Section */}
-        <Section title="Performance">
+        <Section title={t('sectionPerformance')}>
           {showFeedback && (
-            <OptionSwitch label="Feedback Light" checked={feedbackLight} color={accentColor} onChange={onToggleFeedbackLight} />
+            <OptionSwitch label={t('feedbackLight')} checked={feedbackLight} color={accentColor} onChange={onToggleFeedbackLight} />
           )}
           {showLed && (
-            <OptionSwitch label="LED" checked={ledEnabled} color={accentColor} onChange={onToggleLed} />
+            <OptionSwitch label={t('led')} checked={ledEnabled} color={accentColor} onChange={onToggleLed} />
           )}
           {showAutoPlay && (
             <>
@@ -230,8 +234,10 @@ export function OptionPanel({
               >
                 <span className="text-sm text-white">
                   {autoMappingActive
-                    ? `Auto Mapping... ${autoMappingTotal > 0 ? `${autoMappingProgress}/${autoMappingTotal}` : ''}`
-                    : 'Auto Mapping'}
+                    ? t('autoMappingActive', {
+                        progress: autoMappingTotal > 0 ? `${autoMappingProgress}/${autoMappingTotal}` : '',
+                      })
+                    : t('autoMapping')}
                 </span>
                 {autoMappingActive ? (
                   <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" style={{ color: accentColor }}>
@@ -249,7 +255,7 @@ export function OptionPanel({
         </Section>
 
         {/* Volume Section */}
-        <Section title="Volume">
+        <Section title={t('sectionVolume')}>
           <div className="flex items-center gap-2.5 px-6 py-2">
             <svg className="w-3.5 h-3.5 text-white/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6l-4 4H4v4h4l4 4V6z" />
@@ -268,34 +274,34 @@ export function OptionPanel({
         </Section>
 
         {/* Display Section */}
-        <Section title="Display">
-          <OptionSwitch label="Hide UI" checked={hideUI} color={accentColor} onChange={onToggleHideUI} />
-          <OptionSwitch label="Watermark" checked={watermark} color={accentColor} onChange={onToggleWatermark} />
-          <OptionSwitch label="Pro Light Mode" checked={proLightMode} color={accentColor} onChange={onToggleProLightMode} />
+        <Section title={t('sectionDisplay')}>
+          <OptionSwitch label={t('hideUI')} checked={hideUI} color={accentColor} onChange={onToggleHideUI} />
+          <OptionSwitch label={t('watermark')} checked={watermark} color={accentColor} onChange={onToggleWatermark} />
+          <OptionSwitch label={t('proLightMode')} checked={proLightMode} color={accentColor} onChange={onToggleProLightMode} />
         </Section>
 
         {/* Tools Section */}
-        <Section title="Tools">
+        <Section title={t('sectionTools')}>
           {showTrace && (
-            <OptionSwitch label="Trace Log" checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
+            <OptionSwitch label={t('traceLog')} checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
           )}
           {showRecord && (
-            <OptionSwitch label="Record" checked={recording} color="#ef4444" onChange={onToggleRecording} />
+            <OptionSwitch label={t('record')} checked={recording} color="#ef4444" onChange={onToggleRecording} />
           )}
           <button
             className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
             onClick={onConnectMidi}
             disabled={midiConnecting}
           >
-            <span className="text-sm text-white">{midiConnecting ? 'MIDI Connecting...' : (midiConnected ? 'MIDI Connected' : 'MIDI Connect')}</span>
+            <span className="text-sm text-white">{midiConnecting ? t('midiConnecting') : (midiConnected ? t('midiConnected') : t('midiConnect'))}</span>
             <span className={`w-2 h-2 rounded-full ${midiConnected ? 'bg-green-500' : 'bg-white/20'}`} />
           </button>
           <button
             className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
             onClick={onOpenLaunchpadSettings}
           >
-            <span className="text-sm text-white">Launchpad Settings</span>
-            <span className="text-xs text-white/35">Open</span>
+            <span className="text-sm text-white">{t('launchpadSettings')}</span>
+            <span className="text-xs text-white/35">{tCommon('open')}</span>
           </button>
         </Section>
 
@@ -311,7 +317,7 @@ export function OptionPanel({
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            <span className="text-[15px]">Quit</span>
+            <span className="text-[15px]">{t('quit')}</span>
           </button>
         </div>
       </div>
@@ -340,10 +346,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-const PANEL_PLAY_MODES: { mode: PlayMode; label: string }[] = [
-  { mode: 'autoPlay', label: 'Auto' },
-  { mode: 'guidePlay', label: 'Guide' },
-  { mode: 'stepPractice', label: 'Step' },
+const PANEL_PLAY_MODES: { mode: PlayMode; labelKey: 'auto' | 'guide' | 'step' }[] = [
+  { mode: 'autoPlay', labelKey: 'auto' },
+  { mode: 'guidePlay', labelKey: 'guide' },
+  { mode: 'stepPractice', labelKey: 'step' },
 ];
 
 /** Segmented control rendered inside the option panel, replacing the previous
@@ -358,13 +364,16 @@ function PlayModeSegmented({
   color: string;
   onSwitch: (mode: PlayMode) => void;
 }) {
+  const t = useTranslations('play.playMode');
+
   return (
     <div
       className="mx-6 my-1 flex items-stretch gap-0.5 rounded-md p-0.5"
       style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
     >
-      {PANEL_PLAY_MODES.map(({ mode, label }) => {
+      {PANEL_PLAY_MODES.map(({ mode, labelKey }) => {
         const active = playMode === mode;
+        const label = t(labelKey);
         return (
           <button
             key={mode}
@@ -376,7 +385,7 @@ function PlayModeSegmented({
             }}
             onClick={() => onSwitch(mode)}
             aria-pressed={active}
-            aria-label={`Play mode: ${label}`}
+            aria-label={t('ariaLabel', { mode: label })}
           >
             {label}
           </button>

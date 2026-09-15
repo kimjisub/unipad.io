@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import type { ThemeColors } from '@/lib/unipack';
 import type { PlayMode } from './useUniPadEngine';
 import { AutoPlayControls } from './AutoPlayControls';
@@ -60,6 +61,7 @@ export function ControlPanel({
   onToggleTraceLog,
   onClearTraceLog,
 }: ControlPanelProps) {
+  const t = useTranslations('play.control');
   const cbColor = themeColors?.checkbox || '#a6b4c9';
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;
@@ -82,8 +84,8 @@ export function ControlPanel({
         <button
           className="flex items-center justify-center p-1.5 rounded-md hover:bg-white/10 transition-colors"
           onClick={onOpenMenu}
-          aria-label="Open menu"
-          title="Menu"
+          aria-label={t('openMenu')}
+          title={t('menu')}
         >
           <svg className="w-5 h-5 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -91,10 +93,10 @@ export function ControlPanel({
         </button>
         <div className="h-px bg-white/15 mx-2 my-1" />
         {showFeedback && (
-          <CheckItem label="Feedback" checked={feedbackLight} color={cbColor} onClick={onToggleFeedbackLight} />
+          <CheckItem label={t('feedback')} checked={feedbackLight} color={cbColor} onClick={onToggleFeedbackLight} />
         )}
         {showLed && (
-          <CheckItem label="LED" checked={ledEnabled} color={cbColor} onClick={onToggleLed} />
+          <CheckItem label={t('led')} checked={ledEnabled} color={cbColor} onClick={onToggleLed} />
         )}
         {showAutoPlay && (
           <>
@@ -127,23 +129,23 @@ export function ControlPanel({
           style={groupStyle}
         >
           <CheckItem
-            label="Trace"
+            label={t('trace')}
             checked={traceLog}
             color={cbColor}
             onClick={onToggleTraceLog}
             onLongPress={onClearTraceLog}
           />
-          <CheckItem label="Rec" checked={recording} color="#ef4444" onClick={onToggleRecording} />
+          <CheckItem label={t('rec')} checked={recording} color="#ef4444" onClick={onToggleRecording} />
         </div>
       )}
     </div>
   );
 }
 
-const PLAY_MODES: { mode: PlayMode; label: string }[] = [
-  { mode: 'autoPlay', label: 'Auto' },
-  { mode: 'guidePlay', label: 'Guide' },
-  { mode: 'stepPractice', label: 'Step' },
+const PLAY_MODES: { mode: PlayMode; labelKey: 'auto' | 'guide' | 'step' }[] = [
+  { mode: 'autoPlay', labelKey: 'auto' },
+  { mode: 'guidePlay', labelKey: 'guide' },
+  { mode: 'stepPractice', labelKey: 'step' },
 ];
 
 /** Segmented control for play mode. Visualizes the radio relationship
@@ -158,13 +160,16 @@ function PlayModeSegmented({
   color: string;
   onSwitchPlayMode: (mode: PlayMode) => void;
 }) {
+  const t = useTranslations('play.playMode');
+
   return (
     <div
       className="flex items-stretch gap-0.5 mt-1 mx-0.5 rounded-md p-0.5"
       style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
     >
-      {PLAY_MODES.map(({ mode, label }) => {
+      {PLAY_MODES.map(({ mode, labelKey }) => {
         const active = playMode === mode;
+        const label = t(labelKey);
         return (
           <button
             key={mode}
@@ -175,7 +180,7 @@ function PlayModeSegmented({
             }}
             onClick={() => onSwitchPlayMode(mode)}
             aria-pressed={active}
-            aria-label={`Play mode: ${label}`}
+            aria-label={t('ariaLabel', { mode: label })}
           >
             {label}
           </button>

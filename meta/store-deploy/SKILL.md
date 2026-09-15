@@ -49,18 +49,22 @@ Override item names with `OP_PLAY_JSON_ITEM` / `OP_ASC_KEY_ITEM` env vars if nam
 
 ## Deploy — Android
 
+Run from the workspace root (`~/GitHub/unipad`); every path below is anchored on `SD`.
+
 ```bash
+SD="$PWD/unipad.io/meta/store-deploy"
 FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fastlane"
-op vault list >/dev/null || eval "$(op signin)"       # 1Password reachable (see note below)
-scripts/preflight.sh android                          # review version + git state
+op vault list >/dev/null || op signin                 # 1Password reachable (see note below)
+"$SD/scripts/preflight.sh" android                    # review version + git state
 
 # Assign first, then eval. `eval "$(...)"` on its own would eval the script's ERROR text
 # when 1Password needs re-auth, producing a confusing failure instead of stopping here.
-SECRETS="$(scripts/op-bootstrap.sh android deploy)" || exit 1
+# The script prints only a path; the credential itself is in a 600 file.
+SECRETS="$("$SD/scripts/op-bootstrap.sh" android deploy)" || exit 1
 eval "$SECRETS"                                       # exports PLAY_JSON_KEY_FILE
 
-cd unipad-android && "$FL" android deploy track:internal   # ask user for track first
-cd .. && scripts/op-bootstrap.sh android cleanup      # wipe fastlane/.secrets
+(cd unipad-android && "$FL" android deploy track:internal)   # ask user for track first
+"$SD/scripts/op-bootstrap.sh" android cleanup         # wipe fastlane/.secrets
 ```
 
 The `deploy` lane bumps `versionCode` to one past the higher of the local value and Play's
@@ -81,17 +85,19 @@ when skipping internal is intended. Check `play.py vitals` for the new versionCo
 ## Deploy — iOS
 
 ```bash
+SD="$PWD/unipad.io/meta/store-deploy"
 FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fastlane"
-op vault list >/dev/null || eval "$(op signin)"
-scripts/preflight.sh ios
+op vault list >/dev/null || op signin
+"$SD/scripts/preflight.sh" ios
 
-SECRETS="$(scripts/op-bootstrap.sh ios deploy)" || exit 1
-eval "$SECRETS"                                       # ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_B64
+# Prints `source .../fastlane/.secrets/asc.env`; that file exports ASC_KEY_ID / ASC_ISSUER_ID /
+# ASC_KEY_B64. The values never reach stdout or the session transcript.
+SECRETS="$("$SD/scripts/op-bootstrap.sh" ios deploy)" || exit 1
+eval "$SECRETS"
 
-cd unipad-ios
-"$FL" ios verify_auth                                 # cheap ASC auth check first
-"$FL" ios deploy target:testflight                    # ask user for target first
-# iOS writes no secret file (the key travels as base64 in env), so there is nothing to wipe.
+(cd unipad-ios && "$FL" ios verify_auth)              # cheap ASC auth check first
+(cd unipad-ios && "$FL" ios deploy target:testflight) # ask user for target first
+"$SD/scripts/op-bootstrap.sh" ios cleanup             # wipe fastlane/.secrets (holds the .p8)
 ```
 
 The `deploy` lane derives the next build number from TestFlight, archives with

@@ -26,7 +26,9 @@ export function PadGrid({
   onPadUp,
 }: PadGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const pointerPadMap = useRef(new Map<number, string>());
+  // pointer id -> pad currently held ("x,y"), or null while the finger is down but over a gap
+  // or the chain bar; it used to be dropped from the map there and the rest of the slide was dead.
+  const pointerPadMap = useRef(new Map<number, string | null>());
   const [guideNowMs, setGuideNowMs] = useState(0);
   const [gridSize, setGridSize] = useState({ width: 0, height: 0 });
 
@@ -48,54 +50,46 @@ export function PadGrid({
     const grid = gridRef.current;
     if (!grid) return;
 
+    const releasePointer = (pointerId: number) => {
+      const prevKey = pointerPadMap.current.get(pointerId);
+      if (prevKey) {
+        const [px, py] = prevKey.split(',').map(Number);
+        onPadUp(px, py);
+      }
+      pointerPadMap.current.delete(pointerId);
+    };
+
     const handlePointerDown = (e: PointerEvent) => {
       e.preventDefault();
       try { grid.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
       const pad = getPadFromPoint(e.clientX, e.clientY);
-      if (pad) {
-        const key = `${pad[0]},${pad[1]}`;
-        pointerPadMap.current.set(e.pointerId, key);
-        onPadDown(pad[0], pad[1]);
-      }
+      pointerPadMap.current.set(e.pointerId, pad ? `${pad[0]},${pad[1]}` : null);
+      if (pad) onPadDown(pad[0], pad[1]);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
       if (!pointerPadMap.current.has(e.pointerId)) return;
       const pad = getPadFromPoint(e.clientX, e.clientY);
-      const prevKey = pointerPadMap.current.get(e.pointerId)!;
+      const prevKey = pointerPadMap.current.get(e.pointerId) ?? null;
       const newKey = pad ? `${pad[0]},${pad[1]}` : null;
-      if (prevKey !== newKey) {
-        if (prevKey) {
-          const [px, py] = prevKey.split(',').map(Number);
-          onPadUp(px, py);
-        }
-        if (newKey && pad) {
-          pointerPadMap.current.set(e.pointerId, newKey);
-          onPadDown(pad[0], pad[1]);
-        } else {
-          pointerPadMap.current.delete(e.pointerId);
-        }
+      if (prevKey === newKey) return;
+      if (prevKey) {
+        const [px, py] = prevKey.split(',').map(Number);
+        onPadUp(px, py);
       }
+      pointerPadMap.current.set(e.pointerId, newKey);
+      if (pad) onPadDown(pad[0], pad[1]);
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      const prevKey = pointerPadMap.current.get(e.pointerId);
-      if (prevKey) {
-        const [px, py] = prevKey.split(',').map(Number);
-        onPadUp(px, py);
-        pointerPadMap.current.delete(e.pointerId);
-      }
+      releasePointer(e.pointerId);
       try { grid.releasePointerCapture(e.pointerId); } catch { /* */ }
     };
 
-    const handlePointerCancel = (e: PointerEvent) => {
-      const prevKey = pointerPadMap.current.get(e.pointerId);
-      if (prevKey) {
-        const [px, py] = prevKey.split(',').map(Number);
-        onPadUp(px, py);
-        pointerPadMap.current.delete(e.pointerId);
-      }
-    };
+    // pointercancel, and a capture lost to the browser (gesture, re-parenting), both end the
+    // press; otherwise the pad and an infinite-loop sample stayed on.
+    const handlePointerCancel = (e: PointerEvent) => releasePointer(e.pointerId);
+    const handleLostCapture = (e: PointerEvent) => releasePointer(e.pointerId);
 
     const handleContextMenu = (e: Event) => e.preventDefault();
 
@@ -103,13 +97,17 @@ export function PadGrid({
     grid.addEventListener('pointermove', handlePointerMove);
     grid.addEventListener('pointerup', handlePointerUp);
     grid.addEventListener('pointercancel', handlePointerCancel);
+    grid.addEventListener('lostpointercapture', handleLostCapture);
     grid.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
+      // The grid unmounts on hideUI toggles; pads still held here would never get their release.
+      for (const id of Array.from(pointerPadMap.current.keys())) releasePointer(id);
       grid.removeEventListener('pointerdown', handlePointerDown);
       grid.removeEventListener('pointermove', handlePointerMove);
       grid.removeEventListener('pointerup', handlePointerUp);
       grid.removeEventListener('pointercancel', handlePointerCancel);
+      grid.removeEventListener('lostpointercapture', handleLostCapture);
       grid.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [onPadDown, onPadUp, getPadFromPoint]);
@@ -336,7 +334,7 @@ export function PadGrid({
             <path
               d={traceLinePath}
               fill="none"
-              stroke={'#ffffff'}
+              stroke={theme?.colors?.traceLog ?? '#ffffff'}
               strokeWidth={Math.max(1.5, padCellMin * 0.04)}
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -349,7 +347,7 @@ export function PadGrid({
               cx={p.cx}
               cy={p.cy}
               r={Math.max(2.5, padCellMin * 0.06)}
-              fill={'#ffffff'}
+              fill={theme?.colors?.traceLog ?? '#ffffff'}
               opacity={0.95}
             />
           ))}

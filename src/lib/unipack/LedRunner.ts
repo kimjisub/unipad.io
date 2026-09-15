@@ -26,6 +26,8 @@ export interface LedRunnerListener {
   onChainLedTurnOff(c: number): void;
 }
 
+const LOOP_INTERVAL_MS = 4;
+
 export class LedRunner {
   private unipack: UniPackData;
   private listener: LedRunnerListener;
@@ -67,16 +69,31 @@ export class LedRunner {
       if (state.isPlaying && !state.isShutdown) {
         if (state.delay === 0) state.delay = currTime;
 
-        while (true) {
-          const events = state.ledAnimation?.ledEvents;
-          if (!events) break;
+        // This runs on the rAF (UI) thread: an animation that never advances state.delay (no
+        // events, or loop 0 with no delay event) used to spin `while (true)` and freeze the tab.
+        // Android guards the empty case (Crashlytics a1376611) and survives the other on a worker
+        // thread; here both get a per-frame budget as well.
+        const events = state.ledAnimation?.ledEvents;
+        if (!events || events.length === 0) {
+          state.isPlaying = false;
+          continue;
+        }
+        const loopCount = Math.max(1, state.ledAnimation!.loop);
+        const budget = events.length * loopCount + 1;
+        let processed = 0;
 
+        while (true) {
           if (state.index >= events.length) {
             state.loopProgress++;
             state.index = 0;
           }
 
           if (state.ledAnimation!.loop !== 0 && state.ledAnimation!.loop <= state.loopProgress) {
+            state.isPlaying = false;
+            break;
+          }
+
+          if (++processed > budget) {
             state.isPlaying = false;
             break;
           }
@@ -107,7 +124,7 @@ export class LedRunner {
     this.ledAnimationStatesAdd.length = 0;
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
-    this.rafId = requestAnimationFrame(this.loop);
+    this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
   };
 
   private processEvent(event: LedEvent, state: LedAnimationState): void {
@@ -171,14 +188,16 @@ export class LedRunner {
   launch(): void {
     if (!this.active) {
       this.active = true;
-      this.rafId = requestAnimationFrame(this.loop);
+      // 4 ms timer, matching Android's LED tick. rAF ran at ~17 ms and froze in a hidden tab,
+      // where the returning frame's time jump killed every running animation.
+      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
     }
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
+      window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     for (const state of this.ledAnimationStates) {
