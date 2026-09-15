@@ -89,16 +89,18 @@ function processChunked(
       if (element.type === 'delay') {
         pendingDelay += element.delay;
       } else if (element.type === 'on') {
-        // pending delay를 0ms offset으로 교체 (사운드 duration으로 대체)
+        // Android/iOS emit the note and then its own duration as the gap to the next note. Emitting
+        // the duration first produced a leading gap and gave every gap the *following* note's
+        // length, so an auto-mapped track played with the wrong rhythm.
         const durationMs = getSoundDurationMs(element, soundTable);
-        if (durationMs > 0) {
-          // delay 누적분은 버리고 실제 재생 시간으로 대체
-          result.push({ type: 'delay', delay: Math.round(durationMs) });
-        } else if (pendingDelay > 0) {
+        if (pendingDelay > 0) {
           result.push({ type: 'delay', delay: pendingDelay });
+          pendingDelay = 0;
         }
-        pendingDelay = 0;
         result.push({ ...element });
+        if (durationMs > 0) {
+          result.push({ type: 'delay', delay: Math.round(durationMs) });
+        }
         progress++;
         listener.onProgress(progress);
       } else {
