@@ -14,8 +14,7 @@
     "skipToNav": "내비게이션으로 이동",
     "community": "커뮤니티",
     "playOnWeb": "웹에서 바로 플레이",
-    "play": "플레이하기",
-    "comingSoon": "개발 중"
+    "play": "플레이하기"
   },
   "hero": {
     "badge": "무료 & 오픈소스",
@@ -31,8 +30,7 @@
       "android": "Android",
       "androidDesc": "Google Play에서 다운로드",
       "ios": "iOS",
-      "iosDesc": "개발 중",
-      "comingSoon": "개발 중"
+      "iosDesc": "App Store에서 다운로드"
     },
     "typewriter": {
       "0": "리듬을 연주하다",
@@ -100,7 +98,8 @@
       "title": "마스터 & 공유",
       "description": "연습 모드로 곡을 익히고, 녹음해서 공유하세요."
     },
-    "startNow": "지금 시작하기"
+    "startNow": "지금 시작하기",
+    "readGuide": "자세한 안내 보기"
   },
   "community": {
     "title": "커뮤니티에 참여하세요",
@@ -138,7 +137,7 @@
       },
       "4": {
         "q": "연주할 UniPack은 어디서 찾나요?",
-        "a": "Discord 커뮤니티나 Facebook 그룹에서 크리에이터들이 수천 개의 UniPack을 무료로 공유하고 있습니다."
+        "a": "앱이나 웹 플레이어의 스토어에서 팩을 무료로 받거나, 갖고 있는 .zip 파일을 가져오세요. Discord 커뮤니티와 Facebook 그룹에서도 크리에이터들이 UniPack을 공유하고 있습니다."
       },
       "5": {
         "q": "Web 버전과 Android 앱의 차이점은 무엇인가요?",
@@ -164,6 +163,10 @@
   "docs": {
     "title": "문서",
     "subtitle": "UniPad 관련 문서들을 확인할 수 있습니다.",
+    "getStarted": {
+      "title": "시작하기",
+      "description": "UniPad를 설치하고 첫 유니팩을 연주해 보세요."
+    },
     "unipack": {
       "title": "UniPack",
       "description": "UniPack 프로젝트 파일 포맷의 구조와 사용법을 알아보세요."
@@ -251,6 +254,8 @@
       "emptyHint": ".zip 파일을 가져오거나 스토어를 둘러보세요",
       "importUniPack": "유니팩 가져오기",
       "browseStore": "스토어 열기",
+      "emptyNoLaunchpad": "런치패드가 없어도 키보드나 화면의 패드를 눌러 연주할 수 있어요.",
+      "gettingStartedGuide": "시작 안내",
       "confirmDeletePack": "“{title}” 을 삭제할까요?",
       "confirmDeletePackFallback": "이 유니팩",
       "confirmDeleteTheme": "테마 “{name}” 을 삭제할까요?",

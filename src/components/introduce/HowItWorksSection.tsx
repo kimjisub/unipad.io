@@ -6,6 +6,7 @@ import { FolderOpen, Music, Share2, ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Link } from '@/i18n/navigation';
+import { GET_STARTED_PATH } from '@/lib/constants';
 
 type StepAccent = 'accent' | 'secondary' | 'purple';
 
@@ -118,7 +119,7 @@ export const HowItWorksSection = () => {
 				</motion.div>
 
 				<motion.div
-					className="flex justify-center mt-12"
+					className="flex flex-col items-center gap-4 mt-12"
 					initial={{ opacity: 0, y: 20 }}
 					animate={isInView ? { opacity: 1, y: 0 } : {}}
 					transition={{ duration: 0.5, delay: 0.6 }}
@@ -130,6 +131,12 @@ export const HowItWorksSection = () => {
 						<span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-0 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
 						{t('startNow')}
 						<ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+					</Link>
+					<Link
+						href={GET_STARTED_PATH}
+						className="text-sm text-muted-foreground underline underline-offset-4 hover:text-accent transition-colors"
+					>
+						{t('readGuide')}
 					</Link>
 				</motion.div>
 			</div>

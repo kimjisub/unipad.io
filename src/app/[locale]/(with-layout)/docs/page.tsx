@@ -1,8 +1,16 @@
 import { Link } from '@/i18n/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Music, Palette, Shield } from 'lucide-react';
+import { Music, Palette, Rocket, Shield } from 'lucide-react';
+
+import { GET_STARTED_PATH } from '@/lib/constants';
 
 const docSections = [
+  {
+    titleKey: 'getStarted.title' as const,
+    descriptionKey: 'getStarted.description' as const,
+    href: GET_STARTED_PATH,
+    icon: Rocket,
+  },
   {
     titleKey: 'unipack.title' as const,
     descriptionKey: 'unipack.description' as const,

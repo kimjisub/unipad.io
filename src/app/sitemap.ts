@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 
+import { GET_STARTED_PATH } from '@/lib/constants';
+
 const siteUrl = 'https://unipad.io';
 
 function entry(
@@ -25,6 +27,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 		entry('', { changeFrequency: 'monthly', priority: 1 }),
 		entry('/play', { changeFrequency: 'monthly', priority: 0.9 }),
 		entry('/docs', { changeFrequency: 'monthly', priority: 0.9 }),
+		entry(GET_STARTED_PATH, { changeFrequency: 'monthly', priority: 0.9 }),
 		entry('/docs/unipack', { changeFrequency: 'monthly', priority: 0.8 }),
 		entry('/docs/unipack/info', { changeFrequency: 'monthly', priority: 0.7 }),
 		entry('/docs/unipack/sounds', { changeFrequency: 'monthly', priority: 0.7 }),

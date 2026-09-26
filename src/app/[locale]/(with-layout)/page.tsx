@@ -62,7 +62,7 @@ export default async function Home({
       '@type': 'SoftwareApplication',
       name: 'UniPad',
       applicationCategory: 'MultimediaApplication',
-      operatingSystem: 'Android, Web',
+      operatingSystem: 'Android, iOS, Web',
       offers: {
         '@type': 'Offer',
         price: '0',

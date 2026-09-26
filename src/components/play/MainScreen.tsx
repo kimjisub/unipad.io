@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
-import { EXTERNAL_LINKS } from '@/lib/constants';
+import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -882,6 +882,17 @@ function EmptyState({ onImport, onOpenStore }: { onImport: () => void; onOpenSto
             {t('browseStore')}
           </button>
         )}
+      </div>
+      <div className="text-center space-y-1.5 max-w-xs px-4">
+        <p className="text-white/30 text-xs">{t('emptyNoLaunchpad')}</p>
+        <a
+          href={GET_STARTED_PATH}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-xs text-accent/70 hover:text-accent underline underline-offset-4 transition-colors"
+        >
+          {t('gettingStartedGuide')}
+        </a>
       </div>
     </div>
   );
