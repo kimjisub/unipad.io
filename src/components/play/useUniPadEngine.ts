@@ -18,6 +18,8 @@ import {
   releaseThemeUrls,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { PlayUsageTracker } from '@/lib/analytics/usageEvents';
+import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 import type {
   UniPackData,
   LedRunnerListener,
@@ -141,6 +143,7 @@ export function useUniPadEngine() {
   const channelManagerRef = useRef<ChannelManager | null>(null);
   const midiRef = useRef<MidiConnection | null>(null);
   const recorderRef = useRef<Recorder>(new Recorder());
+  const [usageTracker] = useState(() => new PlayUsageTracker(logAnalyticsEvent));
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const chainRef = useRef(0);
   const unipackRef = useRef<UniPackData | null>(null);
@@ -412,6 +415,12 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [updatePadVisual, scheduleFlush]);
 
+  /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
+  const userPadTouchOn = useCallback((x: number, y: number) => {
+    usageTracker.padPressed();
+    padTouchOn(x, y);
+  }, [usageTracker, padTouchOn]);
+
   const padTouchOff = useCallback((x: number, y: number) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
@@ -474,7 +483,7 @@ export function useUniPadEngine() {
       if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
         pressedKeysRef.current.set(e.code, pad);
-        padTouchOn(pad[0], pad[1]);
+        userPadTouchOn(pad[0], pad[1]);
       }
     };
 
@@ -502,7 +511,7 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, padTouchOn, padTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, padTouchOff, setChain]);
 
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
@@ -606,6 +615,7 @@ export function useUniPadEngine() {
       : 'stepPractice';
 
     const mode = targetMode === currentMode ? 'none' : targetMode;
+    if (mode === 'autoPlay') usageTracker.autoplayStarted();
 
     if (mode === 'none') {
       runner.practiceGuide = false;
@@ -656,7 +666,7 @@ export function useUniPadEngine() {
       runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
     }
-  }, [padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);
+  }, [usageTracker, padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);
   toggleAutoPlayRef.current = () => switchPlayMode('autoPlay');
 
   /** none -> autoPlay -> guidePlay -> stepPractice -> none, as Android's cyclePlayMode. */
@@ -1012,6 +1022,8 @@ export function useUniPadEngine() {
         };
       });
 
+      usageTracker.packLoadSucceeded();
+
       // 화면 꺼짐 방지 (Android: FLAG_KEEP_SCREEN_ON)
       navigator.wakeLock?.request('screen').then((lock) => {
         wakeLockRef.current = lock;
@@ -1023,7 +1035,7 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) padTouchOn(x, y);
+          if (pressed) userPadTouchOn(x, y);
           else padTouchOff(x, y);
         },
         onChainTouch: (c: number) => {
@@ -1081,6 +1093,7 @@ export function useUniPadEngine() {
       });
     } catch (err) {
       console.error('Failed to load UniPack:', err);
+      usageTracker.packLoadFailed();
       setState((prev) => ({
         ...prev,
         loading: false,
@@ -1090,7 +1103,9 @@ export function useUniPadEngine() {
     }
   }, [
     setChain,
+    usageTracker,
     padTouchOn,
+    userPadTouchOn,
     padTouchOff,
     updatePadVisual,
     updateChainVisual,
@@ -1206,6 +1221,7 @@ export function useUniPadEngine() {
   }, []);
 
   const unload = useCallback(() => {
+    usageTracker.unloaded();
     soundEngineRef.current?.destroy();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
@@ -1237,7 +1253,7 @@ export function useUniPadEngine() {
         theme: getDefaultTheme(),
       };
     });
-  }, []);
+  }, [usageTracker]);
 
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
@@ -1404,7 +1420,7 @@ export function useUniPadEngine() {
     state,
     loadUniPack,
     unload,
-    padTouchOn,
+    padTouchOn: userPadTouchOn,
     padTouchOff,
     setChain,
     playMode,
