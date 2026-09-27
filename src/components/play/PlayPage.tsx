@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { logEvent } from 'firebase/analytics';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useUniPadEngine } from './useUniPadEngine';
@@ -38,7 +37,7 @@ import {
 } from '@/lib/store';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import type { LaunchpadProfile } from '@/lib/unipack';
-import { initFirebaseServices } from '@/lib/firebase';
+import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
 const PACK_QUERY_KEY = 'pack';
 const CODE_QUERY_KEY = 'code';
@@ -171,12 +170,7 @@ export function PlayPage() {
   }, []);
 
   const trackStoreEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
-    initFirebaseServices().then((services) => {
-      if (!services?.analytics) return;
-      logEvent(services.analytics, name, params);
-    }).catch(() => {
-      // ignore analytics failures
-    });
+    logAnalyticsEvent(name, params);
   }, []);
 
   const refreshLists = useCallback(async () => {
