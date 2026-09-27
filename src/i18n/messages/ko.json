@@ -34,12 +34,9 @@
       "iosDesc": "개발 중",
       "comingSoon": "개발 중"
     },
-    "typewriter": {
-      "0": "리듬을 연주하다",
-      "1": "음악을 만들다",
-      "2": "UniPack을 공유하다",
-      "3": "어디서든 연습하다"
-    }
+    "headline1": "어디서든 켜지는",
+    "headline2": "나만의 Launchpad",
+    "tryPads": "패드를 눌러보세요"
   },
   "stats": {
     "title": "수백만 유저가 선택한 UniPad",
@@ -57,7 +54,8 @@
     "openSource": "오픈소스",
     "openSourceValue": "100%",
     "openSourceDesc": "광고·결제 없는 완전 무료",
-    "featuredOn": "소개된 곳"
+    "featuredOn": "소개된 곳",
+    "eyebrow": "숫자로 보는 UniPad"
   },
   "features": {
     "title": "필요한 모든 것",
@@ -83,7 +81,8 @@
       "title": "커스텀 스킨",
       "description": "나만의 테마로 연주 화면을 꾸미세요. 패드 버튼, 배경, 체인 비주얼, UI 색상까지 — ZIP 파일 하나로 간편하게 적용됩니다.",
       "tags": "패드 · 배경 · 체인"
-    }
+    },
+    "eyebrow": "기능"
   },
   "howItWorks": {
     "title": "몇 초 만에 시작하세요",
@@ -100,7 +99,8 @@
       "title": "마스터 & 공유",
       "description": "연습 모드로 곡을 익히고, 녹음해서 공유하세요."
     },
-    "startNow": "지금 시작하기"
+    "startNow": "지금 시작하기",
+    "eyebrow": "시작하기"
   },
   "community": {
     "title": "커뮤니티에 참여하세요",
@@ -112,7 +112,8 @@
     "youtube": "YouTube",
     "youtubeDesc": "퍼포먼스 영상과 튜토리얼",
     "github": "GitHub",
-    "githubDesc": "오픈소스 코드 기여하기"
+    "githubDesc": "오픈소스 코드 기여하기",
+    "eyebrow": "커뮤니티"
   },
   "faq": {
     "title": "자주 묻는 질문",
@@ -148,7 +149,8 @@
         "q": "나만의 UniPack을 만들 수 있나요?",
         "a": "네! 사운드 파일과 keySound, keyLed, autoPlay 텍스트 파일을 작성하여 ZIP으로 묶으면 됩니다. UniPack 문서에서 포맷 사양을 확인하세요."
       }
-    }
+    },
+    "eyebrow": "FAQ"
   },
   "cta": {
     "title": "지금 바로 시작하세요",

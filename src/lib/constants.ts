@@ -15,3 +15,5 @@ export const EXTERNAL_LINKS = {
 	github: 'https://github.com/kimjisub/unipad-android',
 	namuWiki: 'https://namu.wiki/w/%EC%9C%A0%EB%8B%88%ED%8C%A8%EB%93%9C',
 } as const;
+
+export const FAQ_KEYS = ['0', '1', '2', '3', '4', '5', '6'] as const;

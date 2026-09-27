@@ -34,12 +34,9 @@
       "iosDesc": "Coming soon",
       "comingSoon": "Coming Soon"
     },
-    "typewriter": {
-      "0": "Play Rhythm",
-      "1": "Create Music",
-      "2": "Share UniPacks",
-      "3": "Practice Anywhere"
-    }
+    "headline1": "Your Launchpad,",
+    "headline2": "anywhere.",
+    "tryPads": "Tap the pads"
   },
   "stats": {
     "title": "Trusted by Millions",
@@ -57,7 +54,8 @@
     "openSource": "Open Source",
     "openSourceValue": "100%",
     "openSourceDesc": "Completely free, no ads or payments",
-    "featuredOn": "Featured on"
+    "featuredOn": "Featured on",
+    "eyebrow": "UniPad in numbers"
   },
   "features": {
     "title": "Everything You Need",
@@ -83,7 +81,8 @@
       "title": "Custom Skins",
       "description": "Personalize your play screen with custom themes. Change pad buttons, backgrounds, chain visuals, and UI colors — all packaged in a simple ZIP.",
       "tags": "Pads · Background · Chain"
-    }
+    },
+    "eyebrow": "Features"
   },
   "howItWorks": {
     "title": "Get Playing in Seconds",
@@ -100,7 +99,8 @@
       "title": "Master & Share",
       "description": "Use practice mode to learn, then record and share your performance."
     },
-    "startNow": "Start Now"
+    "startNow": "Start Now",
+    "eyebrow": "Get started"
   },
   "community": {
     "title": "Join the Community",
@@ -112,7 +112,8 @@
     "youtube": "YouTube",
     "youtubeDesc": "Watch performances and tutorials",
     "github": "GitHub",
-    "githubDesc": "Contribute to open source"
+    "githubDesc": "Contribute to open source",
+    "eyebrow": "Community"
   },
   "faq": {
     "title": "Frequently Asked Questions",
@@ -148,7 +149,8 @@
         "q": "Can I create my own UniPack?",
         "a": "Yes! Write sound files along with keySound, keyLed, and autoPlay text files, then bundle them into a ZIP. Check the UniPack documentation for the full format specification."
       }
-    }
+    },
+    "eyebrow": "FAQ"
   },
   "cta": {
     "title": "Get Started Now",

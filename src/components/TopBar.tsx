@@ -81,7 +81,7 @@ const TopBar: React.FC = () => {
 				id="navigation"
 				aria-label={t('mainNav')}
 				tabIndex={-1}
-				className={`fixed top-0 w-full h-14 z-50 border-b border-border transition-transform duration-200 ${
+				className={`fixed top-0 w-full h-14 z-50 border-b border-border/60 transition-transform duration-200 ${
 					navBarHidden ? '-translate-y-full' : ''
 				}`}
 				style={{
@@ -90,7 +90,7 @@ const TopBar: React.FC = () => {
 					backgroundColor: `color-mix(in srgb, var(--background) ${Math.round(bgOpacity * 100)}%, transparent)`,
 				}}
 			>
-				<div className="h-14 max-w-5xl mx-auto px-6 flex items-center justify-between">
+				<div className="h-14 max-w-6xl mx-auto px-5 md:px-8 flex items-center justify-between">
 					<Link
 						href="/"
 						className="flex items-center gap-2 text-foreground hover:text-muted-foreground transition-colors"
@@ -119,7 +119,7 @@ const TopBar: React.FC = () => {
 						<div ref={downloadRef} className="relative">
 							<button
 								onClick={() => setIsDownloadOpen(!isDownloadOpen)}
-								className="px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90 transition-colors flex items-center gap-1"
+								className="h-8 px-3.5 rounded-lg bg-primary text-[#1b1103] text-sm font-semibold hover:bg-[#ffa426] transition-colors flex items-center gap-1"
 							>
 								{t('play')}
 								<ChevronDown className={`w-3.5 h-3.5 transition-transform ${isDownloadOpen ? 'rotate-180' : ''}`} />
@@ -209,7 +209,7 @@ const TopBar: React.FC = () => {
 					transition={{ duration: 0.2, ease: 'easeOut' }}
 					className="fixed inset-x-0 top-14 z-40 md:hidden border-b border-border bg-background/95 backdrop-blur-lg"
 				>
-					<div className="max-w-5xl mx-auto px-6 py-4 flex flex-col gap-3">
+					<div className="max-w-6xl mx-auto px-5 md:px-8 py-4 flex flex-col gap-3">
 						{links.map((link) => (
 							<Link
 								key={link.path}

@@ -25,11 +25,6 @@
 
     --border: #2a3650;
     --ring: #ff8f00;
-
-    --mesh-color-1: #ff8f00;
-    --mesh-color-2: #00b8d4;
-    --mesh-color-3: #009db5;
-    --mesh-color-4: #ffa726;
   }
 
   *:focus {
@@ -71,7 +66,7 @@
   }
 }
 
-/* Hero pad grid pulse */
+/* LED pad pulse (web player) */
 @keyframes pad-pulse {
   0%, 100% {
     opacity: 0.3;
@@ -83,52 +78,12 @@
   }
 }
 
-/* HowItWorks shimmer line */
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.animate-shimmer {
-  animation: shimmer 3s linear infinite;
-}
-
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-/* Animated Gradient Text */
-@keyframes gradient-flow {
-  0%   { background-position: 0%   50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0%   50%; }
-}
-
-.animated-gradient-text {
-  background: linear-gradient(
-    270deg,
-    var(--accent),
-    var(--mesh-color-2),
-    var(--mesh-color-4),
-    var(--mesh-color-2),
-    var(--accent)
-  );
-  background-size: 400% 400%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: gradient-flow 6s ease infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .animated-gradient-text {
-    animation: none;
-    background-size: 100% 100%;
-    background-position: 0% 50%;
-  }
-
   *,
   *::before,
   *::after {
@@ -181,9 +136,11 @@
   background: var(--muted-foreground);
 }
 
-/* Override Radix Theme background */
+/* Override Radix Theme background and font */
 .radix-themes {
   --color-background: var(--background);
+  --default-font-family: 'Pretendard Variable', Pretendard, var(--font-sans), system-ui, sans-serif;
+  --code-font-family: var(--font-mono), ui-monospace, monospace;
 }
 
 /* Marquee scroll for overflowing text */

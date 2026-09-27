@@ -50,16 +50,9 @@ export default function Footer() {
 	return (
 		<footer
 			ref={ref}
-			className="relative border-t border-white/[0.06] overflow-hidden bg-black/20"
+			className="relative border-t border-border/60 bg-black/20"
 		>
-			<div
-				className="pointer-events-none absolute inset-x-0 top-0 h-px"
-				aria-hidden
-			>
-				<div className="mx-auto h-px w-1/2 bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
-			</div>
-
-			<div className="max-w-5xl mx-auto px-6 py-14">
+			<div className="max-w-6xl mx-auto px-5 md:px-8 py-14">
 				<motion.div
 					variants={containerVariants}
 					initial="hidden"
@@ -152,7 +145,7 @@ export default function Footer() {
 								href={GOOGLE_PLAY_URL}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90 transition-colors"
+								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-[#1b1103] text-sm font-semibold hover:bg-[#ffa426] transition-colors"
 							>
 								<AndroidLogo className="w-3.5 h-3.5" />
 								Android

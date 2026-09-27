@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Inter } from 'next/font/google';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { hasLocale } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
@@ -12,8 +12,6 @@ import '../../globals.css';
 import Footer from '@/components/Footer';
 import { Analytics } from '@vercel/analytics/next';
 import { FirebaseAnalytics } from '@/components/FirebaseAnalytics';
-import GrainOverlay from '@/components/GrainOverlay';
-import ScrollProgressIndicator from '@/components/ScrollProgressIndicator';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { SkipToContent } from '@/components/SkipToContent';
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -24,6 +22,11 @@ import { routing } from '@/i18n/routing';
 const inter = Inter({
 	subsets: ['latin'],
 	variable: '--font-sans',
+});
+
+const mono = JetBrains_Mono({
+	subsets: ['latin'],
+	variable: '--font-mono',
 });
 
 const siteUrl = 'https://unipad.io';
@@ -85,7 +88,7 @@ export default async function RootLayout({
 	const messages = await getMessages();
 
 	return (
-		<html lang={locale} className={`${inter.variable} dark`}>
+		<html lang={locale} className={`${inter.variable} ${mono.variable} dark`}>
 			<head>
 				<meta name="theme-color" content="#161e2b" />
 				<meta name="apple-mobile-web-app-capable" content="yes" />
@@ -95,6 +98,11 @@ export default async function RootLayout({
 				<link rel="dns-prefetch" href="https://fonts.googleapis.com" />
 				<link rel="dns-prefetch" href="https://play.google.com" />
 				<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+				<link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+				<link
+					rel="stylesheet"
+					href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+				/>
 			</head>
 			<body className="font-sans bg-background text-foreground antialiased">
 				<NextIntlClientProvider locale={locale} messages={messages}>
@@ -102,8 +110,6 @@ export default async function RootLayout({
 						<Suspense fallback={null}><FirebaseAnalytics /></Suspense>
 						<Analytics />
 						<SkipToContent />
-						<GrainOverlay />
-						<ScrollProgressIndicator />
 						<div className="min-h-screen flex flex-col">
 							<TopBar />
 							<main id="main-content" className="flex-grow pt-14" tabIndex={-1}>

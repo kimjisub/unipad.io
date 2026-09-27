@@ -8,6 +8,7 @@ import { FeaturesSection } from '@/components/introduce/FeaturesSection';
 import { HeroSection } from '@/components/introduce/HeroSection';
 import { HowItWorksSection } from '@/components/introduce/HowItWorksSection';
 import { StatsSection } from '@/components/introduce/StatsSection';
+import { FAQ_KEYS } from '@/lib/constants';
 
 export async function generateMetadata({
   params,
@@ -47,7 +48,7 @@ export default async function Home({
   const tFaq = await getTranslations('faq');
   const tHero = await getTranslations('hero');
 
-  const faqItems = ['0', '1', '2', '3', '4', '5', '6'].map((key) => ({
+  const faqItems = FAQ_KEYS.map((key) => ({
     '@type': 'Question' as const,
     name: tFaq(`items.${key}.q`),
     acceptedAnswer: {
@@ -83,68 +84,18 @@ export default async function Home({
   ];
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <section id="hero">
-        <HeroSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/20" />
-        <div className="w-1 h-1 rounded-full bg-accent/30" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/20" />
-      </div>
-
-      <section id="stats">
-        <StatsSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-secondary/15" />
-        <div className="w-1 h-1 rounded-full bg-secondary/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-secondary/15" />
-      </div>
-
-      <section id="features">
-        <FeaturesSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/15" />
-        <div className="w-1 h-1 rounded-full bg-accent/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/15" />
-      </div>
-
-      <section id="how-it-works">
-        <HowItWorksSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-secondary/15" />
-        <div className="w-1 h-1 rounded-full bg-secondary/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-secondary/15" />
-      </div>
-
-      <section id="community">
-        <CommunitySection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/15" />
-        <div className="w-1 h-1 rounded-full bg-accent/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/15" />
-      </div>
-
-      <section id="faq">
-        <FaqSection />
-      </section>
-
-      <section id="cta">
-        <CtaSection />
-      </section>
+      <HeroSection />
+      <StatsSection />
+      <FeaturesSection />
+      <HowItWorksSection />
+      <CommunitySection />
+      <FaqSection />
+      <CtaSection />
     </div>
   );
 }
