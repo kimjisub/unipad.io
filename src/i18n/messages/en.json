@@ -14,8 +14,7 @@
     "skipToNav": "Go to navigation",
     "community": "Community",
     "playOnWeb": "Play on Web",
-    "play": "Play",
-    "comingSoon": "Coming Soon"
+    "play": "Play"
   },
   "hero": {
     "badge": "Free & Open Source",
@@ -31,8 +30,7 @@
       "android": "Android",
       "androidDesc": "Download on Google Play",
       "ios": "iOS",
-      "iosDesc": "Coming soon",
-      "comingSoon": "Coming Soon"
+      "iosDesc": "Download on the App Store"
     },
     "typewriter": {
       "0": "Play Rhythm",
@@ -100,7 +98,8 @@
       "title": "Master & Share",
       "description": "Use practice mode to learn, then record and share your performance."
     },
-    "startNow": "Start Now"
+    "startNow": "Start Now",
+    "readGuide": "Read the full guide"
   },
   "community": {
     "title": "Join the Community",
@@ -138,7 +137,7 @@
       },
       "4": {
         "q": "Where can I find UniPacks to play?",
-        "a": "Join our Discord community or browse Facebook groups where creators share thousands of UniPacks for free."
+        "a": "Open the Store in the app or the web player and download packs for free, or import a .zip you already have. Creators also share UniPacks on our Discord community and Facebook groups."
       },
       "5": {
         "q": "What's the difference between the Web and Android versions?",
@@ -164,6 +163,10 @@
   "docs": {
     "title": "Documentation",
     "subtitle": "Browse UniPad documentation.",
+    "getStarted": {
+      "title": "Get Started",
+      "description": "Install UniPad and play your first UniPack."
+    },
     "unipack": {
       "title": "UniPack",
       "description": "Learn the structure and usage of the UniPack project file format."
@@ -251,6 +254,8 @@
       "emptyHint": "Import a .zip file or browse the store",
       "importUniPack": "Import UniPack",
       "browseStore": "Browse Store",
+      "emptyNoLaunchpad": "No Launchpad? Play with your keyboard or click the pads.",
+      "gettingStartedGuide": "Getting started guide",
       "confirmDeletePack": "Delete “{title}”?",
       "confirmDeletePackFallback": "this UniPack",
       "confirmDeleteTheme": "Delete theme “{name}”?",

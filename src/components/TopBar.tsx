@@ -9,7 +9,7 @@ import { Menu, X, Globe, ChevronDown } from 'lucide-react';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import { GOOGLE_PLAY_URL } from '@/lib/constants';
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const TopBar: React.FC = () => {
 	const t = useTranslations('common');
@@ -157,13 +157,19 @@ const TopBar: React.FC = () => {
 											<div className="text-xs text-muted-foreground">Google Play</div>
 										</div>
 									</a>
-									<div className="flex items-center gap-3 px-4 py-2.5 text-sm opacity-50 cursor-default">
-										<AppleLogo className="w-4 h-4" />
+									<a
+										href={APP_STORE_URL}
+										target="_blank"
+										rel="noopener noreferrer"
+										onClick={() => setIsDownloadOpen(false)}
+										className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors"
+									>
+										<AppleLogo className="w-4 h-4 text-accent" />
 										<div>
 											<div className="font-medium">iOS</div>
-											<div className="text-xs">{t('comingSoon')}</div>
+											<div className="text-xs text-muted-foreground">App Store</div>
 										</div>
-									</div>
+									</a>
 								</motion.div>
 							)}
 							</AnimatePresence>
@@ -246,10 +252,16 @@ const TopBar: React.FC = () => {
 								<AndroidLogo className="w-4 h-4 text-accent" />
 								<span>Android — Google Play</span>
 							</a>
-							<div className="flex items-center gap-3 py-2 text-sm opacity-50">
-								<AppleLogo className="w-4 h-4" />
-								<span>iOS — {t('comingSoon')}</span>
-							</div>
+							<a
+								href={APP_STORE_URL}
+								target="_blank"
+								rel="noopener noreferrer"
+								onClick={() => setIsMenuOpen(false)}
+								className="flex items-center gap-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+							>
+								<AppleLogo className="w-4 h-4 text-accent" />
+								<span>iOS — App Store</span>
+							</a>
 						</div>
 					</div>
 				</motion.div>

@@ -8,6 +8,10 @@ export const APP_STATS = {
 export const GOOGLE_PLAY_URL =
 	'https://play.google.com/store/apps/details?id=com.kimjisub.launchpad';
 
+export const APP_STORE_URL = 'https://apps.apple.com/app/id6760479102';
+
+export const GET_STARTED_PATH = '/docs/get-started';
+
 export const EXTERNAL_LINKS = {
 	discord: 'https://discord.gg/ESDgyNs',
 	facebook: 'https://www.facebook.com/playunipad',

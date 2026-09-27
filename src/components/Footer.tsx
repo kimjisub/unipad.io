@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link } from '@/i18n/navigation';
-import { EXTERNAL_LINKS, GOOGLE_PLAY_URL } from '@/lib/constants';
+import { APP_STORE_URL, EXTERNAL_LINKS, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const communityLinks = [
 	{ name: 'Discord', url: EXTERNAL_LINKS.discord },
@@ -157,10 +157,15 @@ export default function Footer() {
 								<AndroidLogo className="w-3.5 h-3.5" />
 								Android
 							</a>
-							<span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.04] text-sm text-muted-foreground/40 cursor-default" title={t('common.comingSoon')}>
+							<a
+								href={APP_STORE_URL}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+							>
 								<AppleLogo className="w-3.5 h-3.5" />
 								iOS
-							</span>
+							</a>
 						</div>
 					</motion.div>
 				</motion.div>

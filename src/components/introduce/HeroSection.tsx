@@ -10,7 +10,7 @@ import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { TypewriterEffect } from '@/components/TypewriterEffect';
 import { Link } from '@/i18n/navigation';
-import { GOOGLE_PLAY_URL } from '@/lib/constants';
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const heroContainerVariants: Variants = {
 	hidden: {},
@@ -246,18 +246,16 @@ export const HeroSection = () => {
 							<span className="text-xs md:text-sm font-medium">{t('platforms.android')}</span>
 							<span className="hidden md:block text-xs text-muted-foreground text-center">{t('platforms.androidDesc')}</span>
 						</a>
-						<div className="relative flex flex-col items-center gap-1.5 md:gap-2 p-3 md:p-5 rounded-xl bg-white/[0.02] border border-white/[0.05] opacity-50 cursor-default">
-							<AppleLogo className="w-5 h-5 md:w-6 md:h-6 text-muted-foreground" />
+						<a
+							href={APP_STORE_URL}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="flex flex-col items-center gap-1.5 md:gap-2 p-3 md:p-5 rounded-xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] hover:border-accent/40 hover:bg-white/[0.06] hover:shadow-[0_0_30px_-5px_rgba(255,143,0,0.15)] active:scale-[0.97] transition-all duration-300 group"
+						>
+							<AppleLogo className="w-5 h-5 md:w-6 md:h-6 text-accent group-hover:scale-110 transition-transform" />
 							<span className="text-xs md:text-sm font-medium">{t('platforms.ios')}</span>
-							<span className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground text-center">
-								<span className="relative flex h-1.5 w-1.5">
-									<span className="absolute inline-flex h-full w-full rounded-full bg-muted-foreground/50 animate-ping" />
-									<span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-								</span>
-								{t('platforms.comingSoon')}
-							</span>
-							<span className="md:hidden text-[9px] text-muted-foreground/70">{t('platforms.comingSoon')}</span>
-						</div>
+							<span className="hidden md:block text-xs text-muted-foreground text-center">{t('platforms.iosDesc')}</span>
+						</a>
 					</motion.div>
 				</motion.div>
 			</div>
