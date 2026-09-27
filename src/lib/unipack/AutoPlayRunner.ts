@@ -240,7 +240,6 @@ export class AutoPlayRunner {
                 break;
             }
             this.setProgress(this.progress + 1);
-            this.listener.onProgressUpdate(this.progress);
           }
         }
       } else {
