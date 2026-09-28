@@ -49,16 +49,17 @@ export function LaunchpadSettingsModal({
   onDisconnect,
 }: LaunchpadSettingsModalProps) {
   const t = useTranslations('play.launchpad');
+  const tCommon = useTranslations('play.common');
 
   if (!visible) return null;
 
   return (
     <div className="fixed inset-0 z-[85]" role="dialog" aria-modal="true" aria-label={t('title')}>
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="absolute inset-x-4 top-12 mx-auto max-w-md rounded-xl border border-white/10 bg-[#151c28] p-4 shadow-2xl">
+      <div className="absolute inset-x-4 top-12 mx-auto max-h-[calc(100dvh-4rem)] max-w-md overflow-y-auto rounded-xl border border-white/10 bg-[#151c28] p-4 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-white">{t('title')}</h3>
-          <button className="text-xs text-white/60 hover:text-white/80" onClick={onClose}>{t('close')}</button>
+          <button className="text-xs text-white/60 hover:text-white/80" onClick={onClose}>{tCommon('close')}</button>
         </div>
 
         <div className="mt-3 space-y-3">
