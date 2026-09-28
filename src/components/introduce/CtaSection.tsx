@@ -16,7 +16,7 @@ export const CtaSection = () => {
 	const t = useTranslations('cta');
 
 	return (
-		<section className="py-28 relative" aria-label={t('title')} ref={ref}>
+		<section className="py-28 relative overflow-hidden" aria-label={t('title')} ref={ref}>
 			{/* Top fade: blend from FAQ bg-card/20 into this section */}
 			<div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[var(--card)]/20 to-transparent pointer-events-none" aria-hidden />
 
