@@ -3,6 +3,7 @@
 // without extensions and names interfaces in value imports, which node's type stripping cannot load.
 import JSZip from 'jszip';
 import { mock } from 'node:test';
+import { Worker } from 'node:worker_threads';
 import { parseUniPack } from './parser';
 import type { LedRunnerListener } from './LedRunner';
 import type { UniPackData } from './types';
@@ -82,4 +83,41 @@ export class ManualClock {
     this.pending = null;
     fn?.();
   }
+}
+
+const PLAY_IN_WORKER = `
+const { parentPort, workerData } = require('node:worker_threads');
+const { ManualClock, parseWithLeds, recordingListener } = require(workerData.testUtils);
+const { LedRunner } = require(workerData.ledRunner);
+(async () => {
+  const clock = new ManualClock();
+  clock.install();
+  const { listener, outputs } = recordingListener();
+  const runner = new LedRunner(await parseWithLeds(workerData.leds), listener, () => 0, () => {});
+  runner.launch();
+  runner.eventOn(0, 0);
+  for (let i = 0; i < 5; i++) clock.tick(4);
+  parentPort.postMessage(outputs);
+})();
+`;
+
+/**
+ * Presses pad (0, 0) of a pack with the given keyLed files and runs five ticks in a worker thread.
+ * Rejects when they do not finish before the deadline: a tick stuck in an endless loop blocks its
+ * thread, and only terminating the worker gets the test process back.
+ */
+export function playInWorker(leds: Record<string, string>, deadlineMs = 5000): Promise<LedOutput[]> {
+  const worker = new Worker(PLAY_IN_WORKER, {
+    eval: true,
+    workerData: { leds, testUtils: __filename, ledRunner: require.resolve('./LedRunner') },
+  });
+  let deadline: NodeJS.Timeout | undefined;
+  return new Promise<LedOutput[]>((resolve, reject) => {
+    deadline = setTimeout(() => reject(new Error(`ticks did not return within ${deadlineMs} ms`)), deadlineMs);
+    worker.once('message', resolve);
+    worker.once('error', reject);
+  }).finally(() => {
+    clearTimeout(deadline);
+    return worker.terminate();
+  });
 }

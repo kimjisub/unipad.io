@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import { LAUNCHPAD_ARGB } from './colors';
 import { LedRunner } from './LedRunner';
-import { ManualClock, parseWithLeds, recordingListener } from './testUtils';
+import { ManualClock, parseWithLeds, playInWorker, recordingListener } from './testUtils';
 
 const RED = LAUNCHPAD_ARGB[5];
 
@@ -67,19 +67,65 @@ describe('LedRunner', () => {
     assert.equal(outputs.length, 2);
   });
 
-  // Android resets state.delay when the per-tick budget runs out and keeps the loop playing; here
-  // the budget ends the animation, so a strobe faster than one tick stops and can stay lit.
-  test('a looping strobe faster than one tick goes dark on release', {
-    todo: 'LedRunner stops a loop-0 animation once the per-tick budget runs out',
-  }, async () => {
-    const { runner, outputs, press } = await startRunner({ '1 1 1 0': 'f 1 1\nd 1\no 1 1 a 5\nd 1' });
+  describe('an endless animation that outruns one tick', () => {
+    // Two passes of this strobe fit in one 4 ms tick, more than the per-tick budget allows.
+    const STROBE = { '1 1 1 0': 'f 1 1\nd 1\no 1 1 a 5\nd 1' };
+
+    test('keeps playing in order and goes dark on release', async () => {
+      const { runner, outputs, press } = await startRunner(STROBE);
+
+      press(0, 0);
+      for (let i = 0; i < 50; i++) clock.tick(4);
+      runner.eventOff(0, 0);
+      clock.tick(4);
+
+      assert.ok(outputs.length > 20, `strobe played ${outputs.length} changes in 200 ms`);
+      outputs.forEach((output, i) => assert.equal(output[0], i % 2 === 0 ? 'padOn' : 'padOff', `change ${i}`));
+      assert.equal(outputs.at(-1)?.[0], 'padOff');
+    });
+
+    test('goes dark on stop', async () => {
+      const { runner, outputs, press } = await startRunner(STROBE);
+
+      press(0, 0);
+      for (let i = 0; i < 50; i++) clock.tick(4);
+      runner.stop();
+
+      assert.equal(outputs.at(-1)?.[0], 'padOff');
+    });
+
+    test('keeps playing across a chain switch and goes dark on release back on its chain', async () => {
+      const { runner, outputs, press, setChain } = await startRunner(STROBE);
+
+      press(0, 0);
+      setChain(1);
+      for (let i = 0; i < 50; i++) clock.tick(4);
+      const played = outputs.length;
+      for (let i = 0; i < 10; i++) clock.tick(4);
+      setChain(0);
+      runner.eventOff(0, 0);
+      clock.tick(4);
+
+      assert.ok(outputs.length > played, 'strobe froze after the chain switch');
+      assert.equal(outputs.at(-1)?.[0], 'padOff');
+    });
+  });
+
+  // A background tab throttles setTimeout to about once a second, so one tick sees a long backlog.
+  test('a looping animation survives a late tick without replaying the backlog and goes dark on release', async () => {
+    const { runner, outputs, press } = await startRunner({ '1 1 1 0': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
 
     press(0, 0);
-    for (let i = 0; i < 50; i++) clock.tick(4);
+    const beforeStall = outputs.length;
+    clock.tick(1000);
+    assert.ok(outputs.length - beforeStall <= 5, `the late tick replayed ${outputs.length - beforeStall} changes`);
+
+    const afterStall = outputs.length;
+    for (let i = 0; i < 20; i++) clock.tick(4);
+    assert.ok(outputs.length > afterStall, 'the loop stopped after the late tick');
+
     runner.eventOff(0, 0);
     clock.tick(4);
-
-    assert.ok(outputs.length > 20, `strobe played ${outputs.length} changes in 200 ms`);
     assert.equal(outputs.at(-1)?.[0], 'padOff');
   });
 
@@ -96,8 +142,19 @@ describe('LedRunner', () => {
       ['chainOff', 1],
     ]);
     assert.equal(clock.scheduled, false);
+  });
+
+  test('a press while stopped is dropped, and a press after launch plays again', async () => {
+    const { runner, outputs, press } = await startRunner({ '1 1 1': 'o 1 1 a 5\nd 10\nf 1 1' });
+
+    runner.stop();
     runner.eventOn(0, 0);
-    assert.equal(outputs.length, 4);
+    runner.launch();
+    for (let i = 0; i < 5; i++) clock.tick(4);
+    assert.deepEqual(outputs, []);
+
+    press(0, 0);
+    assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5]]);
   });
 
   test('an empty keyLed file outputs nothing and does not stall the loop', async () => {
@@ -108,6 +165,19 @@ describe('LedRunner', () => {
 
     assert.deepEqual(outputs, []);
     assert.equal(clock.scheduled, true);
+  });
+
+  // A tick that never returns freezes the page and this process with it, so these run in a worker
+  // that is terminated after a deadline.
+  describe('endless animations that never push time forward', () => {
+    test('an empty endless keyLed file does not hang a tick', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 0': '' }), []);
+    });
+
+    test('an endless keyLed file without delays does not hang a tick', async () => {
+      const outputs = await playInWorker({ '1 1 1 0': 'o 1 1 a 5\nf 1 1' });
+      assert.ok(outputs.length > 0);
+    });
   });
 
   describe('chain switching', () => {
