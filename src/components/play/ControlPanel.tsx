@@ -173,7 +173,7 @@ function PlayModeSegmented({
         return (
           <button
             key={mode}
-            className="flex-1 px-1 py-1.5 rounded text-[10px] font-semibold transition-colors select-none"
+            className="flex-1 px-1 py-1.5 rounded text-[10px] font-semibold whitespace-nowrap transition-colors select-none"
             style={{
               backgroundColor: active ? color : 'transparent',
               color: active ? '#000000' : 'rgba(255,255,255,0.6)',

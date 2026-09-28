@@ -47,6 +47,7 @@ const CIRCLE_ARRAY_SIZE = 32;
 // Reserve a left strip so the floating ControlPanel never overlaps the pad grid.
 // Mirrors the right-side chrome strip used on Android/iOS, just on the opposite edge
 // to preserve the existing web layout where the option panel slides in from the right.
+// This is the minimum; the strip grows to the panel's rendered width (labels vary by locale).
 const CHROME_STRIP_WIDTH = 96;
 
 export function PlayPage() {
@@ -119,6 +120,15 @@ export function PlayPage() {
   const [loadingPackTitle, setLoadingPackTitle] = useState<string | null>(null);
   const centerStageRef = useRef<HTMLDivElement | null>(null);
   const [centerStageSize, setCenterStageSize] = useState({ width: 0, height: 0 });
+  const [chromeStripWidth, setChromeStripWidth] = useState(CHROME_STRIP_WIDTH);
+  const observeChromeStrip = useCallback((node: HTMLDivElement | null) => {
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      setChromeStripWidth(Math.max(CHROME_STRIP_WIDTH, Math.ceil(node.getBoundingClientRect().width)));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const prevLoadedRef = useRef(false);
   const prevRecordingRef = useRef(false);
   const currentPackIdRef = useRef<string | null>(null);
@@ -1283,10 +1293,11 @@ export function PlayPage() {
       {!optionPanelOpen && (
         <div
           className="absolute left-0 z-20 pointer-events-auto flex items-center justify-center"
+          ref={observeChromeStrip}
           style={{
             top: '50%',
             transform: 'translateY(-50%)',
-            width: `${CHROME_STRIP_WIDTH}px`,
+            minWidth: `${CHROME_STRIP_WIDTH}px`,
           }}
         >
           <ControlPanel
@@ -1319,14 +1330,14 @@ export function PlayPage() {
       )}
 
       {/* Center safe area: pads + chain bars centered within the area to the
-          right of the left chrome strip. Reserving CHROME_STRIP_WIDTH on the
-          left guarantees the floating ControlPanel never overlaps the pads. */}
+          right of the left chrome strip. Reserving the strip's measured width on
+          the left guarantees the floating ControlPanel never overlaps the pads. */}
       <div
         className="absolute z-10 min-w-0"
         ref={centerStageRef}
         style={{
           top: `${stageInsetTop}px`,
-          left: `${stageInsetLeft + CHROME_STRIP_WIDTH}px`,
+          left: `${stageInsetLeft + chromeStripWidth}px`,
           right: `${stageInsetRight}px`,
           bottom: `${stageInsetBottom}px`,
         }}
