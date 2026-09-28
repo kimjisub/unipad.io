@@ -85,6 +85,8 @@ export function OptionPanel({
   onClose,
   onQuit,
 }: OptionPanelProps) {
+  const t = useTranslations('play.menu');
+  const tCommon = useTranslations('play.common');
   const [mounted, setMounted] = useState(false);
   const [closing, setClosing] = useState(false);
   // Collapse the UniPack info card by default so the primary controls
@@ -118,9 +120,6 @@ export function OptionPanel({
   const showAutoPlay = squareButton && autoPlayExists;
   const showTrace = squareButton;
   const showRecord = squareButton;
-
-  const t = useTranslations('play.menu');
-  const tCommon = useTranslations('play.common');
 
   return (
     <>
