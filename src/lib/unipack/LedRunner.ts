@@ -93,8 +93,12 @@ export class LedRunner {
             break;
           }
 
+          // Only endless (loop 0) animations reach the budget. They yield to the next tick and keep
+          // playing, so eventOff and stop still find them and turn their LEDs off (Android
+          // LedRunner.kt). The backlog is dropped: a strobe shorter than a tick or a late tick in a
+          // background tab would otherwise fall further behind real time every tick.
           if (++processed > budget) {
-            state.isPlaying = false;
+            state.delay = currTime;
             break;
           }
 
