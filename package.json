@@ -6,7 +6,8 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:unipack": "rm -rf .next/cache/unipack-test && tsc -p src/lib/unipack/tsconfig.test.json && node --test \".next/cache/unipack-test/**/*.test.js\""
   },
   "dependencies": {
     "@radix-ui/themes": "^3.1.4",

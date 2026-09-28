@@ -18,6 +18,7 @@ import {
   releaseThemeUrls,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { PlayUsageTracker } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 import type {
@@ -32,6 +33,11 @@ import type {
 
 const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
+
+/** The logo is sent from its channel, so it stays dark outside Pro light mode as on Android and iOS. */
+function logoLedCode(cm: ChannelManager): number {
+  return cm.get(-1, LOGO_FUNCTION_KEY)?.code ?? 0;
+}
 
 export interface PadState {
   color: string;
@@ -232,6 +238,7 @@ export function useUniPadEngine() {
       const item = cm.get(-1, i);
       midi.sendFunctionKeyLed(i, item ? item.code : 0);
     }
+    midi.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
     syncMidiFunctionLeds();
   }, [syncMidiFunctionLeds]);
 
@@ -819,7 +826,7 @@ export function useUniPadEngine() {
           cm.add(-1, c, Channel.LED, color, velocity);
           updateChainVisual(c);
           scheduleFlush();
-          midiRef.current?.sendFunctionKeyLed(c, velocity);
+          midiRef.current?.sendFunctionKeyLed(c, c === LOGO_FUNCTION_KEY ? logoLedCode(cm) : velocity);
         },
         onChainLedTurnOff: (c: number) => {
           cm.remove(-1, c, Channel.LED);
@@ -1194,6 +1201,7 @@ export function useUniPadEngine() {
       const next = !prev.proLightMode;
       if (cm) {
         cm.setCirIgnore(Channel.LED, !next);
+        midiRef.current?.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
       }
       return { ...prev, proLightMode: next };
     });
@@ -1232,7 +1240,7 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current = null;
     channelManagerRef.current = null;
     unipackRef.current = null;
-    midiRef.current?.disconnect();
+    midiRef.current?.release();
     midiRef.current = null;
     midiListenerRef.current = null;
     setState((prev) => {
@@ -1408,7 +1416,7 @@ export function useUniPadEngine() {
       soundEngineRef.current?.destroy();
       ledRunnerRef.current?.stop();
       autoPlayRunnerRef.current?.stop();
-      midiRef.current?.disconnect();
+      midiRef.current?.release();
       wakeLockRef.current?.release().catch(() => {});
       if (visualTimerRef.current !== null) {
         cancelAnimationFrame(visualTimerRef.current);
