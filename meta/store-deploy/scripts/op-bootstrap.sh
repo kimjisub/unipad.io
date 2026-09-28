@@ -16,6 +16,8 @@
 # 1Password item names (override via env):
 #   OP_PLAY_JSON_ITEM  default: "UniPad Play Service Account"  (Document: play-sa.json attachment)
 #   OP_ASC_KEY_ITEM    default: "UniPad ASC API Key"            (fields: key_id, issuer_id; .p8 attachment)
+#   OP_VAULT           the vault holding them; a 1Password service account must name it
+#                      (CLI 2.33: "a vault query must be provided"), a signed-in person need not
 set -euo pipefail
 
 PLATFORM="${1:-}"
@@ -57,12 +59,15 @@ op vault list >/dev/null 2>&1 || {
   exit 1
 }
 
+VAULT_ARGS=""
+[ -n "${OP_VAULT:-}" ] && VAULT_ARGS="--vault=$OP_VAULT"
+
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
 if [ "$PLATFORM" = "android" ]; then
   ITEM="${OP_PLAY_JSON_ITEM:-UniPad Play Service Account}"
-  if ! op item get "$ITEM" >/dev/null 2>&1; then
+  if ! op item get $VAULT_ARGS "$ITEM" >/dev/null 2>&1; then
     echo "ERROR: 1Password item '$ITEM' not found." >&2
     echo "  Create the Play service account JSON (Play Console -> Setup -> API access)," >&2
     echo "  then store it in 1Password as a Document named '$ITEM'." >&2
@@ -71,14 +76,14 @@ if [ "$PLATFORM" = "android" ]; then
   DEST="$SECRETS_DIR/play-sa.json"
   # Create the file with 600 before op writes into it, so the key is never world-readable.
   (umask 077 && : > "$DEST")
-  op document get "$ITEM" --out-file "$DEST" --force >/dev/null
+  op document get $VAULT_ARGS "$ITEM" --out-file "$DEST" --force >/dev/null
   chmod 600 "$DEST"
   # %q: the caller evals this line; a path with a space or a shell metacharacter must stay one word.
   printf 'export PLAY_JSON_KEY_FILE=%q\n' "$DEST"
 
 elif [ "$PLATFORM" = "ios" ]; then
   ITEM="${OP_ASC_KEY_ITEM:-UniPad ASC API Key}"
-  if ! op item get "$ITEM" >/dev/null 2>&1; then
+  if ! op item get $VAULT_ARGS "$ITEM" >/dev/null 2>&1; then
     echo "ERROR: 1Password item '$ITEM' not found." >&2
     echo "  Create an App Store Connect API *Team* key:" >&2
     echo "    App Store Connect -> Users and Access -> Integrations -> App Store Connect API -> Team Keys" >&2
@@ -88,9 +93,9 @@ elif [ "$PLATFORM" = "ios" ]; then
     echo "    key_p8_base64 (base64 of the .p8:  base64 -i AuthKey_XXXX.p8 | pbcopy)" >&2
     exit 1
   fi
-  KEY_ID="$(op item get "$ITEM" --fields label=key_id --reveal)"
-  ISSUER_ID="$(op item get "$ITEM" --fields label=issuer_id --reveal)"
-  KEY_B64="$(op item get "$ITEM" --fields label=key_p8_base64 --reveal)"
+  KEY_ID="$(op item get $VAULT_ARGS "$ITEM" --fields label=key_id --reveal)"
+  ISSUER_ID="$(op item get $VAULT_ARGS "$ITEM" --fields label=issuer_id --reveal)"
+  KEY_B64="$(op item get $VAULT_ARGS "$ITEM" --fields label=key_p8_base64 --reveal)"
   for pair in "key_id:$KEY_ID" "issuer_id:$ISSUER_ID" "key_p8_base64:$KEY_B64"; do
     [ -n "${pair#*:}" ] || { echo "ERROR: field '${pair%%:*}' is empty on 1Password item '$ITEM'." >&2; exit 1; }
   done
