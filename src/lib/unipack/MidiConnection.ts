@@ -26,6 +26,12 @@ export interface MidiConnectionStatus {
 }
 
 type ResolvedProfile = Exclude<LaunchpadProfile, 'auto'>;
+
+/** Round buttons are function keys 0 until this: top, right, bottom and left rows of 8. */
+export const ROUND_BUTTON_COUNT = 32;
+
+/** The logo LED (keyLED `l`), just past the round buttons as on Android and iOS. */
+export const LOGO_FUNCTION_KEY = ROUND_BUTTON_COUNT;
 type MidiEventKind = 'noteOn' | 'noteOff' | 'cc';
 
 const X_STYLE_CIRCLE_NOTES = [
@@ -529,6 +535,10 @@ export class MidiConnection {
   }
 
   sendFunctionKeyLed(index: number, velocity: number): void {
+    if (index === LOGO_FUNCTION_KEY) {
+      this.sendLogoLed(velocity);
+      return;
+    }
     const target = this.getFunctionTargetForProfile(index);
     if (!target) return;
     const mappedVelocity = this.getFunctionVelocityForProfile(velocity);
@@ -537,6 +547,19 @@ export class MidiConnection {
       return;
     }
     this.sendNote(target.value, mappedVelocity, target.status & 0x0f);
+  }
+
+  /** Devices whose logo is not addressable (MK2, S, Matrix, ...) ignore it. */
+  private sendLogoLed(velocity: number): void {
+    const profile = this.getMappingProfile();
+    if (profile === 'launchpad_x' || profile === 'launchpad_mini_mk3' || profile === 'launchpad_pro_mk3') {
+      // Their programmer's references name the logo CC 99.
+      this.sendCC(99, velocity);
+    } else if (profile === 'launchpad_pro') {
+      // Launchpad Pro programmer's reference: the side LED is index 99 (63h), reachable only by the
+      // "light LED" SysEx.
+      this.sendToOutputs([0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
+    }
   }
 
   private getFunctionVelocityForProfile(velocity: number): number {
@@ -614,11 +637,19 @@ export class MidiConnection {
     const functionKeyCount =
       profile === 'matrix' || profile === 'launchpad_x' || profile === 'launchpad_mini_mk3'
         || profile === 'launchpad_pro_mk3' || profile === 'launchpad_pro'
-        ? 32
+        ? ROUND_BUTTON_COUNT
         : profile === 'midifighter' ? 0 : 16;
     for (let i = 0; i < functionKeyCount; i++) {
       this.sendFunctionKeyLed(i, 0);
     }
+    this.sendLogoLed(0);
+  }
+
+  /** Leaving the pack: LEDs lit by animations that already ended are no longer tracked by the runner,
+   *  so everything is turned off here before the ports are dropped. */
+  release(): void {
+    this.clearAllLeds();
+    this.disconnect();
   }
 
   disconnect(): void {

@@ -10,6 +10,34 @@ import {
   UniPackInfo,
 } from './types';
 import { LAUNCHPAD_ARGB } from './colors';
+import { LOGO_FUNCTION_KEY, ROUND_BUTTON_COUNT } from './MidiConnection';
+
+const ROUND_TOKENS = new Set(['*', 'mc']);
+const LOGO_TOKEN = 'l';
+const AUTO_TOKENS = new Set(['auto', 'a']);
+
+/**
+ * `mc 1`..`mc 32` as a round LED index, or null. Anything else is dropped without a warning, as Android's
+ * drivers dropped it before; index 32 would otherwise light the logo. A non-number is NaN and reported.
+ */
+function roundLedIndex(token: string | undefined): number | null {
+  const index = strictInt(token) - 1;
+  if (Number.isNaN(index)) return index;
+  return index >= 0 && index < ROUND_BUTTON_COUNT ? index : null;
+}
+
+/**
+ * The colour tokens of a logo line, read as iOS reads them: `o l color`, `o l auto velocity`, and the forms
+ * with a placeholder where other lines have y, `o l _ color` and `o l _ color|auto velocity`.
+ */
+function logoColorTokens(split: string[]): string[] {
+  switch (split.length) {
+    case 3: return [split[2]];
+    case 4: return AUTO_TOKENS.has(split[2]) ? [split[2], split[3]] : [split[3]];
+    case 5: return [split[3], split[4]];
+    default: return [];
+  }
+}
 
 export async function parseUniPack(
   zipData: ArrayBuffer,
@@ -429,22 +457,29 @@ async function parseKeyLed(
             let ledX: number, ledY: number;
             let ledColor = -1;
             let ledVelocity = 4;
+            let colorTokens: string[];
 
-            if (xToken === '*' || xToken === 'mc') {
+            if (ROUND_TOKENS.has(xToken)) {
               ledX = -1;
-              ledY = strictInt(split[2]) - 1;
-            } else if (xToken === 'l') {
-              continue;
+              const index = roundLedIndex(split[2]);
+              if (index === null) continue;
+              ledY = index;
+              colorTokens = split.slice(3);
+            } else if (xToken === LOGO_TOKEN) {
+              ledX = -1;
+              ledY = LOGO_FUNCTION_KEY;
+              colorTokens = logoColorTokens(split);
             } else {
               ledX = parseInt(xToken, 10) - 1;
               ledY = strictInt(split[2]) - 1;
+              colorTokens = split.slice(3);
             }
 
-            if (split.length === 4) {
-              ledColor = strictHex(split[3]) + 0xFF000000;
-            } else if (split.length === 5) {
-              if (split[3] === 'auto' || split[3] === 'a') {
-                ledVelocity = strictInt(split[4]);
+            if (colorTokens.length === 1) {
+              ledColor = strictHex(colorTokens[0]) + 0xFF000000;
+            } else if (colorTokens.length === 2) {
+              ledVelocity = strictInt(colorTokens[1]);
+              if (AUTO_TOKENS.has(colorTokens[0])) {
                 // Android throws on a palette index outside 0..127 and drops the event.
                 if (!(ledVelocity >= 0 && ledVelocity < LAUNCHPAD_ARGB.length)) {
                   errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -452,8 +487,7 @@ async function parseKeyLed(
                 }
                 ledColor = LAUNCHPAD_ARGB[ledVelocity] ?? 0;
               } else {
-                ledVelocity = strictInt(split[4]);
-                ledColor = strictHex(split[3]) + 0xFF000000;
+                ledColor = strictHex(colorTokens[0]) + 0xFF000000;
               }
             } else {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -471,11 +505,14 @@ async function parseKeyLed(
           case 'f': {
             const xToken = split[1];
             let ledX: number, ledY: number;
-            if (xToken === '*' || xToken === 'mc') {
+            if (ROUND_TOKENS.has(xToken)) {
               ledX = -1;
-              ledY = strictInt(split[2]) - 1;
-            } else if (xToken === 'l') {
-              continue;
+              const index = roundLedIndex(split[2]);
+              if (index === null) continue;
+              ledY = index;
+            } else if (xToken === LOGO_TOKEN) {
+              ledX = -1;
+              ledY = LOGO_FUNCTION_KEY;
             } else {
               ledX = parseInt(xToken, 10) - 1;
               ledY = strictInt(split[2]) - 1;
