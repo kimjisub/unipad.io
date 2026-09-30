@@ -64,7 +64,7 @@ export default function Footer() {
 				<div className="mx-auto h-px w-1/2 bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
 			</div>
 
-			<div className="max-w-5xl mx-auto px-6 py-14">
+			<div className="max-w-6xl mx-auto px-5 md:px-8 py-14">
 				<motion.div
 					variants={containerVariants}
 					initial="hidden"

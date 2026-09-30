@@ -101,7 +101,7 @@ const TopBar: React.FC = () => {
 					backgroundColor: `color-mix(in srgb, var(--background) ${Math.round(bgOpacity * 100)}%, transparent)`,
 				}}
 			>
-				<div className="h-14 max-w-5xl mx-auto px-6 flex items-center justify-between">
+				<div className="h-14 max-w-6xl mx-auto px-5 md:px-8 flex items-center justify-between">
 					<Link
 						href="/"
 						className="flex items-center gap-2 text-foreground hover:text-muted-foreground transition-colors"
@@ -233,7 +233,7 @@ const TopBar: React.FC = () => {
 					transition={{ duration: 0.2, ease: 'easeOut' }}
 					className="fixed inset-x-0 top-14 z-40 md:hidden border-b border-border bg-background"
 				>
-					<div className="max-w-5xl mx-auto px-6 py-4 flex flex-col gap-3">
+					<div className="max-w-6xl mx-auto px-5 md:px-8 py-4 flex flex-col gap-3">
 						{links.map((link) => (
 							<Link
 								key={link.path}
