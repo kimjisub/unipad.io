@@ -37,6 +37,20 @@ FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fa
 
 Then call `"$FL" <platform> <lane>`. `preflight.sh` prints which binary it resolved.
 
+## The 1Password account matters here
+
+**Export `OP_ACCOUNT=my.1password.com` before `op-bootstrap.sh`.** This Mac is signed in to
+three 1Password accounts (personal, alpaon, clozer), and `op` uses whichever is default at the
+moment. The UniPad upload credentials live in the personal account's `Agent` vault, so when the
+default is one of the others the bootstrap fails with
+
+```
+ERROR: 1Password item 'UniPad Play Service Account' not found.
+```
+
+which reads like a missing item and is not one. Measured 2026-09-16, between two deploys that
+worked earlier the same day.
+
 ## Required 1Password items
 
 | Item name | Type | Used for | Status |
@@ -55,6 +69,7 @@ Run from the workspace root (`~/GitHub/unipad`); every path below is anchored on
 SD="$PWD/unipad.io/meta/store-deploy"
 FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fastlane"
 op vault list >/dev/null || op signin                 # 1Password reachable (see note below)
+export OP_ACCOUNT=my.1password.com                    # see the account note below
 "$SD/scripts/preflight.sh" android                    # review version + git state
 
 # Assign first, then eval. `eval "$(...)"` on its own would eval the script's ERROR text
