@@ -11,6 +11,9 @@ import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
+const PLAY_MENU_ID = 'topbar-play-menu';
+const MOBILE_MENU_ID = 'topbar-mobile-menu';
+
 const TopBar: React.FC = () => {
 	const t = useTranslations('common');
 	const locale = useLocale();
@@ -22,6 +25,8 @@ const TopBar: React.FC = () => {
 	const [scrollProgress, setScrollProgress] = useState(0);
 	const lastScrollY = useRef(0);
 	const downloadRef = useRef<HTMLDivElement>(null);
+	const downloadButtonRef = useRef<HTMLButtonElement>(null);
+	const menuButtonRef = useRef<HTMLButtonElement>(null);
 
 	const links = [
 		{ path: '/docs' as const, label: t('docs') },
@@ -36,9 +41,14 @@ const TopBar: React.FC = () => {
 	useEffect(() => {
 		if (!isMenuOpen && !isDownloadOpen) return;
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				setIsMenuOpen(false);
+			if (e.key !== 'Escape') return;
+			if (isDownloadOpen) {
 				setIsDownloadOpen(false);
+				downloadButtonRef.current?.focus();
+			}
+			if (isMenuOpen) {
+				setIsMenuOpen(false);
+				menuButtonRef.current?.focus();
 			}
 		};
 		document.addEventListener('keydown', handleKeyDown);
@@ -81,6 +91,7 @@ const TopBar: React.FC = () => {
 				id="navigation"
 				aria-label={t('mainNav')}
 				tabIndex={-1}
+				onFocus={() => setNavBarHidden(false)}
 				className={`fixed top-0 w-full h-14 z-50 border-b border-border transition-transform duration-200 ${
 					navBarHidden ? '-translate-y-full' : ''
 				}`}
@@ -118,7 +129,10 @@ const TopBar: React.FC = () => {
 
 						<div ref={downloadRef} className="relative">
 							<button
+								ref={downloadButtonRef}
 								onClick={() => setIsDownloadOpen(!isDownloadOpen)}
+								aria-expanded={isDownloadOpen}
+								aria-controls={PLAY_MENU_ID}
 								className="px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90 transition-colors flex items-center gap-1"
 							>
 								{t('play')}
@@ -127,11 +141,12 @@ const TopBar: React.FC = () => {
 							<AnimatePresence>
 							{isDownloadOpen && (
 								<motion.div
+									id={PLAY_MENU_ID}
 									initial={{ opacity: 0, y: -4, scale: 0.97 }}
 									animate={{ opacity: 1, y: 0, scale: 1 }}
 									exit={{ opacity: 0, y: -4, scale: 0.97 }}
 									transition={{ duration: 0.15, ease: 'easeOut' }}
-									className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/[0.08] bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/30 py-1 z-50"
+									className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/[0.08] bg-card shadow-2xl shadow-black/30 py-1 z-50"
 								>
 									<Link
 										href="/play"
@@ -194,8 +209,10 @@ const TopBar: React.FC = () => {
 							<Globe className="w-4 h-4" />
 						</button>
 						<button
+							ref={menuButtonRef}
 							onClick={() => setIsMenuOpen(!isMenuOpen)}
 							aria-expanded={isMenuOpen}
+							aria-controls={MOBILE_MENU_ID}
 							aria-label={isMenuOpen ? t('closeMenu') : t('openMenu')}
 							className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
 						>
@@ -209,11 +226,12 @@ const TopBar: React.FC = () => {
 			<AnimatePresence>
 			{isMenuOpen && (
 				<motion.div
+					id={MOBILE_MENU_ID}
 					initial={{ opacity: 0, y: -8 }}
 					animate={{ opacity: 1, y: 0 }}
 					exit={{ opacity: 0, y: -8 }}
 					transition={{ duration: 0.2, ease: 'easeOut' }}
-					className="fixed inset-x-0 top-14 z-40 md:hidden border-b border-border bg-background/95 backdrop-blur-lg"
+					className="fixed inset-x-0 top-14 z-40 md:hidden border-b border-border bg-background"
 				>
 					<div className="max-w-5xl mx-auto px-6 py-4 flex flex-col gap-3">
 						{links.map((link) => (
@@ -231,7 +249,7 @@ const TopBar: React.FC = () => {
 							</Link>
 						))}
 						<div className="flex flex-col gap-2 pt-2 border-t border-border">
-							<p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+							<p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 								{t('play')}
 							</p>
 							<Link

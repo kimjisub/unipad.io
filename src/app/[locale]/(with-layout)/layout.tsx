@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { hasLocale } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
@@ -12,19 +11,12 @@ import '../../globals.css';
 import Footer from '@/components/Footer';
 import { Analytics } from '@vercel/analytics/next';
 import { FirebaseAnalytics } from '@/components/FirebaseAnalytics';
-import GrainOverlay from '@/components/GrainOverlay';
-import ScrollProgressIndicator from '@/components/ScrollProgressIndicator';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { SkipToContent } from '@/components/SkipToContent';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import TopBar from '@/components/TopBar';
 import { AnimatePresenceWrapper } from '@/components/motion/AnimatePresenceWrapper';
 import { routing } from '@/i18n/routing';
-
-const inter = Inter({
-	subsets: ['latin'],
-	variable: '--font-sans',
-});
 
 const siteUrl = 'https://unipad.io';
 
@@ -85,25 +77,21 @@ export default async function RootLayout({
 	const messages = await getMessages();
 
 	return (
-		<html lang={locale} className={`${inter.variable} dark`}>
+		<html lang={locale} className="dark">
 			<head>
 				<meta name="theme-color" content="#161e2b" />
 				<meta name="apple-mobile-web-app-capable" content="yes" />
 				<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 				<link rel="manifest" href="/manifest.json" />
 				<link rel="apple-touch-icon" href="/icon-192.png" />
-				<link rel="dns-prefetch" href="https://fonts.googleapis.com" />
 				<link rel="dns-prefetch" href="https://play.google.com" />
-				<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 			</head>
-			<body className="font-sans bg-background text-foreground antialiased">
+			<body className={`font-sans bg-background text-foreground antialiased${locale === 'ko' ? ' break-keep' : ''}`}>
 				<NextIntlClientProvider locale={locale} messages={messages}>
 					<ThemeProvider>
 						<Suspense fallback={null}><FirebaseAnalytics /></Suspense>
 						<Analytics />
 						<SkipToContent />
-						<GrainOverlay />
-						<ScrollProgressIndicator />
 						<div className="min-h-screen flex flex-col">
 							<TopBar />
 							<main id="main-content" className="flex-grow pt-14" tabIndex={-1}>
