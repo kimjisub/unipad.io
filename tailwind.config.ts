@@ -1,5 +1,9 @@
 import type { Config } from 'tailwindcss'
 
+// Theme colors are hex CSS variables, so opacity modifiers (e.g. `bg-card/50`) need color-mix.
+const withAlpha = (variable: string) =>
+  `color-mix(in srgb, var(${variable}) calc(<alpha-value> * 100%), transparent)`
+
 const config: Config = {
   darkMode: ['class'],
   content: [
@@ -10,37 +14,38 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        background: withAlpha('--background'),
+        foreground: withAlpha('--foreground'),
         primary: {
-          DEFAULT: 'var(--primary)',
-          foreground: 'var(--primary-foreground)',
+          DEFAULT: withAlpha('--primary'),
+          foreground: withAlpha('--primary-foreground'),
         },
         secondary: {
-          DEFAULT: 'var(--secondary)',
-          foreground: 'var(--secondary-foreground)',
+          DEFAULT: withAlpha('--secondary'),
+          foreground: withAlpha('--secondary-foreground'),
         },
         muted: {
-          DEFAULT: 'var(--muted)',
-          foreground: 'var(--muted-foreground)',
+          DEFAULT: withAlpha('--muted'),
+          foreground: withAlpha('--muted-foreground'),
         },
         accent: {
-          DEFAULT: 'var(--accent)',
-          foreground: 'var(--accent-foreground)',
+          DEFAULT: withAlpha('--accent'),
+          foreground: withAlpha('--accent-foreground'),
         },
         card: {
-          DEFAULT: 'var(--card)',
-          foreground: 'var(--card-foreground)',
+          DEFAULT: withAlpha('--card'),
+          foreground: withAlpha('--card-foreground'),
         },
-        border: 'var(--border)',
-        ring: 'var(--ring)',
+        border: withAlpha('--border'),
+        ring: withAlpha('--ring'),
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        // Only the web player defines --font-sans (`.font-inter` in globals.css); other pages fall back to the system font.
+        sans: ['var(--font-sans, system-ui)', 'system-ui', 'sans-serif'],
         serif: ['var(--font-serif)', 'Georgia', 'serif'],
       },
       keyframes: {

@@ -18,6 +18,11 @@ const communityLinks = [
 	{ name: 'GitHub', url: EXTERNAL_LINKS.github },
 ];
 
+const sectionHeadingClass = 'text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1';
+
+const platformLinkClass =
+	'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors';
+
 const containerVariants: Variants = {
 	hidden: { opacity: 0 },
 	visible: {
@@ -85,7 +90,7 @@ export default function Footer() {
 
 						<div className="flex flex-col sm:flex-row gap-8 sm:gap-16">
 							<div className="flex flex-col gap-2">
-								<p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-1">
+								<p className={sectionHeadingClass}>
 									{t('common.pages')}
 								</p>
 								{navLinks.map((link) => (
@@ -100,7 +105,7 @@ export default function Footer() {
 							</div>
 
 							<div className="flex flex-col gap-2">
-								<p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-1">
+								<p className={sectionHeadingClass}>
 									{t('common.community')}
 								</p>
 								{communityLinks.map((link) => (
@@ -134,16 +139,16 @@ export default function Footer() {
 								href={EXTERNAL_LINKS.github}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+								className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
 							>
 								Open Source on GitHub
-								<ExternalLink className="w-2.5 h-2.5" />
+								<ExternalLink className="w-3 h-3" />
 							</a>
 						</div>
 						<div className="flex items-center gap-3">
 							<Link
 								href="/play"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+								className={platformLinkClass}
 							>
 								<Globe className="w-3.5 h-3.5" />
 								Web
@@ -152,7 +157,7 @@ export default function Footer() {
 								href={GOOGLE_PLAY_URL}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90 transition-colors"
+								className={platformLinkClass}
 							>
 								<AndroidLogo className="w-3.5 h-3.5" />
 								Android
@@ -161,7 +166,7 @@ export default function Footer() {
 								href={APP_STORE_URL}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+								className={platformLinkClass}
 							>
 								<AppleLogo className="w-3.5 h-3.5" />
 								iOS
