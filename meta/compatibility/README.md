@@ -90,14 +90,14 @@ width, headless Chromium for Chrome, or one browser for an any-browser row canno
 Android phone install and sound and macOS external connection are therefore unverified; Android phone
 pack opening is partial only on the later, unsold phone-size emulator run.
 
-**Device class** (`form_factor` in the evidence): `phone` or `tablet` only where the source record says so in a word (iPhone, phone, iPad, tablet) or gives a smallest width in dp (under 600 dp is phone size); a device fingerprint or a pixel size alone is `unknown`, and `unknown` never carries a phone or tablet row. **Screenshots:** a run whose record saved none cannot carry a verified row; that is recorded as a capture problem, not as a product failure.
+**Device class** (`form_factor` in the evidence): `phone` or `tablet` only where the source record says so in a word (iPhone, phone, iPad, tablet) or gives a smallest width in dp (under 600 dp is phone size); a device fingerprint or a pixel size alone is `unknown`, and `unknown` never carries a phone or tablet row. **Screenshots:** a verified row needs a positive integer count in a device record, or a browser capture pattern that resolves to actual PNG files. A zero count (including `00`) or a pattern alone cannot carry a verified row; that is recorded as a capture problem, not as a product failure.
 
 **What a run was on** (`device_reality`, taken from the evidence): `physical`, `emulator`, `simulator`, `browser` (a real browser engine in
 a window on a computer), `viewport` (a mocked width), `none`.
 
 **Sold build** (`in_sold_app`): `yes` only when the tested commit is contained in the release commit of a build on sale and the tree had no
 uncommitted files; `no` when the commit is later or the tree was dirty; `unknown` when the record does not say. It is derived per evidence
-line from `in_release_commit` and `tree_state`, and per row from the evidence that carries the row.
+line from `in_release_commit` and `tree_state`, and per row from the evidence that carries the row. Device evidence must also agree with a known sold-build flag, recorded commit hashes (including short hashes or merge parents), and an explicit uncommitted-tree description in the device-record index. An unknown index flag adds no sold-build claim.
 
 ## Rules the checks enforce
 
@@ -174,6 +174,7 @@ From `meta/compatibility`, with Python 3.10 or later (run here with 3.14) and no
 ```
 python3 scripts/compute_coverage.py --check   # rules, derived files against raw snapshots, stored output; non-zero on any difference
 python3 -m unittest discover -s scripts       # the rules, including tampering with a copy of this directory
+node --test scripts/web_rules.test.mjs        # sound-state and request-origin rules, without a browser
 python3 scripts/build_tables.py               # raw snapshots -> sources/tables.csv, data/series_mapping.csv (refuses if a raw hash differs)
 python3 scripts/compute_coverage.py           # validates, then writes output/
 ```
@@ -209,3 +210,9 @@ are listed in the result). It exits 1 when a profile fails or throws and 2 on a 
 messages, so `ko` works as well as `en`. It can only drive Chromium: it sends held touches through the Chrome DevTools Protocol, so it does
 not run Firefox or WebKit. A pass is a pass for headless Chromium on that computer; it is not Chrome, not another operating system and not
 a phone or tablet.
+
+The browser check uses `web_rules.mjs` for its decisions. A sound start counts only with an audio context in
+`running` state; playback after rotation also needs a new start and the recorded state after rotation. The
+request guard compares parsed URL origins, including ports, rather than string prefixes. Data URLs and blob
+URLs from the local origin remain allowed. These checks can be tested without launching a browser. Existing
+saved browser results are historical evidence and are not rewritten by a change to the check script.

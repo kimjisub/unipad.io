@@ -17,6 +17,7 @@
  * Playwright is not a dependency of this repository; ../README.md says how to get one outside it.
  */
 import fs from 'node:fs';
+import { checksOf, isLocalRequest } from './web_rules.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -159,26 +160,6 @@ async function findSoundingPad(page, cdp, input) {
   return null;
 }
 
-/**
- * What the recorded steps amount to, per feature. `null` means the profile does not exercise the feature.
- * Rotation passes when the rotate hint shows in portrait only and the pad grid is still there afterwards.
- */
-function checksOf(profile, steps) {
-  const press = steps.padPress ?? {};
-  const rotate = steps.rotate;
-  const portraitFirst = profile.first[1] > profile.first[0];
-  return {
-    open_pack: steps.packOpened.pads > 0,
-    sound: (press.soundStarts ?? 0) > 0 || rotate?.pressedAfterRotate === true,
-    led: (press.litWhileHeld ?? 0) > 0 || (rotate?.litWhileHeldAfterRotate ?? 0) > 0,
-    rotation: rotate
-      ? rotate.portraitHintVisibleBefore === portraitFirst &&
-        rotate.portraitHintVisibleAfter === !portraitFirst &&
-        rotate.padsAfter.pads === steps.packOpened.pads
-      : null,
-  };
-}
-
 async function runProfile(browser, profile, blocked, requests, errors) {
   const [w, h] = profile.first;
   const touch = profile.input === 'touch';
@@ -195,7 +176,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
   await page.route('**/*', (route) => {
     const url = route.request().url();
     requests.push(url.slice(0, 160));
-    const local = url.startsWith(BASE) || url.startsWith('data:') || url.startsWith('blob:');
+    const local = isLocalRequest(url, BASE);
     if (local && !url.includes('/_vercel/insights') && !url.includes('/_vercel/speed-insights')) return route.continue();
     blocked.add(url.startsWith('http') ? new URL(url).host + (local ? new URL(url).pathname : '') : url.slice(0, 20));
     return route.abort();
@@ -238,7 +219,8 @@ async function runProfile(browser, profile, blocked, requests, errors) {
     const foundAfter = hintRotated ? null : (found
       ? { ...found, ...(await pressPad(page, cdp, profile.input, found.padId).then((held) => ({ held }), () => ({ held: null }))) }
       : await findSoundingPad(page, cdp, profile.input));
-    const startsAfter = (await readAudio(page)).starts;
+    const audioAfterRotate = await readAudio(page);
+    const startsAfter = audioAfterRotate.starts;
     const pressedAfterRotate = foundAfter ? startsAfter > startsBefore : null;
     result.steps.rotate = {
       from: profile.first,
@@ -251,6 +233,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
       litWhileHeldAfterRotate: foundAfter && foundAfter.held ? foundAfter.held.lit : null,
       soundStartsBefore: startsBefore,
       soundStartsAfter: startsAfter,
+      contextStateAfterRotate: audioAfterRotate.state,
     };
     await shot('03-rotated');
   }

@@ -713,6 +713,55 @@ class CorrectedStateTest(unittest.TestCase):
         self.assertEqual(find(data, "IOS-PH-26:open_pack")["verification_status"], "verified_run")
 
 
+class ReviewEvidenceTest(unittest.TestCase):
+    def test_sold_flag_cannot_override_the_device_index(self) -> None:
+        data = load_all()
+        eid = "EV-A35-81d4c0c2-0928"
+        evidence_of(data, eid).update(tree_state="clean", in_release_commit="yes", in_sold_app="yes")
+        for row in data["matrix"]:
+            if eid in split_ids(row["evidence_ids"]) and row["verification_status"] in {"verified_run", "partial_run"}:
+                row["in_sold_app"] = "yes"
+        errors, coverage = problems_of(data)
+        self.assertTrue(any("index" in p and "sold" in p for p in errors), errors)
+        self.assertIsNone(coverage)
+
+    def test_recorded_commit_and_dirty_tree_must_match(self) -> None:
+        for field, value, message in (("source_commit", "unipad-ios deadbeef", "commit"),
+                                      ("tree_state", "clean", "uncommitted")):
+            with self.subTest(field=field):
+                data = load_all()
+                eid = "EV-I263-9532e26d-0925" if field == "source_commit" else "EV-A35-81d4c0c2-0928"
+                evidence_of(data, eid)[field] = value
+                self.assertTrue(any("index" in p and message in p for p in validate(data)))
+
+    def test_zero_capture_counts_do_not_carry_verified_rows(self) -> None:
+        for count in ("0", "00", "000"):
+            with self.subTest(count=count):
+                data = load_all()
+                eid = "EV-I263-9532e26d-0925"
+                evidence_of(data, eid)["captures"] = count + " screenshots"
+                next(b for b in data["basis"] if b["evidence_id"] == eid)["captures"] = "0"
+                find(data, "IOS-PH-26:open_pack")["evidence_ids"] = eid
+                errors, coverage = problems_of(data)
+                self.assertTrue(any("verified_run needs a passing run" in p for p in errors), errors)
+                self.assertIsNone(coverage)
+
+    def test_capture_check_uses_counts_and_actual_files(self) -> None:
+        from rules import has_captures
+        for text in ("00 screenshots", "no screenshots", "unknown", "1 screenshotsMissing"):
+            with self.subTest(text=text):
+                self.assertFalse(has_captures({"kind": "device_run", "captures": text}))
+        self.assertTrue(has_captures({"kind": "device_run", "captures": "01 screenshots, saved"}))
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            run = {"kind": "web_run", "captures": "*.png"}
+            self.assertFalse(has_captures(run, root))
+            (root / "directory.png").mkdir()
+            self.assertFalse(has_captures(run, root))
+            (root / "capture.png").write_bytes(b"capture")
+            self.assertTrue(has_captures(run, root))
+
+
 class PublicBoundaryTest(unittest.TestCase):
     """What is published here carries no private path, address, tool name or working note."""
 
@@ -797,6 +846,29 @@ class TamperingTest(unittest.TestCase):
         for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
             self.assertEqual(result.returncode, 1, result.stdout)
             self.assertIn("IOS-PAD-26:external_connect: failed needs a cited failed run", result.stdout)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
+
+    def test_sold_promotion_is_rejected_before_output_write(self) -> None:
+        eid = "EV-A35-81d4c0c2-0928"
+        self.edit_csv("data/evidence.csv", lambda rows: next(e for e in rows if e["evidence_id"] == eid).update(
+            tree_state="clean", in_release_commit="yes", in_sold_app="yes"))
+        self.edit_csv("data/support_matrix.csv", lambda rows: [r.update(in_sold_app="yes") for r in rows
+            if eid in split_ids(r["evidence_ids"]) and r["verification_status"] in {"verified_run", "partial_run"}])
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("index", result.stdout)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
+
+    def test_zero_captures_are_rejected_before_output_write(self) -> None:
+        eid = "EV-I263-9532e26d-0925"
+        self.edit_csv("data/evidence.csv", lambda rows: next(e for e in rows if e["evidence_id"] == eid).update(captures="00 screenshots"))
+        self.edit_csv("data/evidence_basis.csv", lambda rows: next(e for e in rows if e["evidence_id"] == eid).update(captures="0"))
+        self.edit_csv("data/support_matrix.csv", lambda rows: next(r for r in rows if r["row_id"] == "IOS-PH-26:open_pack").update(evidence_ids=eid))
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("verified_run needs a passing run", result.stdout)
         self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
 
     def test_unknown_class_cannot_restore_partial_phone_rows(self) -> None:

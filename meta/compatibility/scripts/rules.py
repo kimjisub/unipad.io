@@ -19,7 +19,7 @@ import re
 from collections import defaultdict
 
 from compat import (
-    BASIS_FIELDS, BUCKETS, COMBO_FIELDS, COUNTED, EVIDENCE_FIELDS, FEATURES, INDEX_FIELDS, MAPPING_FIELDS, MATRIX_FIELDS,
+    BASIS_FIELDS, BUCKETS, COMBO_FIELDS, COUNTED, EVIDENCE_FIELDS, FEATURES, INDEX_FIELDS, MAPPING_FIELDS, MATRIX_FIELDS, ROOT,
     TABLE_FIELDS, sha256_of, split_ids,
 )
 from source_tables import declared_tables, decimals, source_cells
@@ -94,13 +94,21 @@ def evidence_matches_combo(evidence: dict[str, str], combo: dict[str, str], *, p
     return version_in_range(evidence["os_version"], combo["version_min"], combo["version_max"])
 
 
-def has_captures(evidence: dict[str, str]) -> bool:
-    """A run that saved no screenshot cannot be looked at afterwards, so it cannot carry a verified run."""
-    return not re.match(r"(no|0) screenshots", evidence["captures"])
+def capture_count(evidence: dict[str, str], root=ROOT) -> int:
+    """Device records state a count; browser patterns must resolve to actual screenshot files."""
+    if evidence.get("kind") == "web_run":
+        return sum(p.is_file() for p in root.glob(evidence["captures"]) if p.suffix.lower() == ".png")
+    counted = re.match(r"(\d+|no) screenshots\b", evidence["captures"])
+    return int(counted.group(1)) if counted and counted.group(1) != "no" else 0
 
 
-def is_passing_run(evidence: dict[str, str], feature: str) -> bool:
-    if evidence["kind"] not in RUN_KINDS or evidence["result"] != "pass" or not has_captures(evidence):
+def has_captures(evidence: dict[str, str], root=ROOT) -> bool:
+    """A verified run needs at least one saved screenshot, never just a nonempty pattern."""
+    return capture_count(evidence, root) > 0
+
+
+def is_passing_run(evidence: dict[str, str], feature: str, root=ROOT) -> bool:
+    if evidence["kind"] not in RUN_KINDS or evidence["result"] != "pass" or not has_captures(evidence, root):
         return False
     if feature not in split_ids(evidence["features_passed"]) or evidence["run_target"] not in REAL_TARGETS:
         return False
@@ -108,10 +116,10 @@ def is_passing_run(evidence: dict[str, str], feature: str) -> bool:
     return feature != "install" or evidence["install_method"] == "store"
 
 
-def qualifying_evidence(row: dict[str, str], combo: dict[str, str], evidence: dict[str, dict]) -> list[dict]:
+def qualifying_evidence(row: dict[str, str], combo: dict[str, str], evidence: dict[str, dict], root=ROOT) -> list[dict]:
     """Cited evidence that can carry a `verified_run` for this row."""
     cited = [evidence[i] for i in split_ids(row["evidence_ids"]) if i in evidence]
-    return [e for e in cited if is_passing_run(e, row["feature"]) and evidence_matches_combo(e, combo)]
+    return [e for e in cited if is_passing_run(e, row["feature"], root) and evidence_matches_combo(e, combo)]
 
 
 def supporting_evidence(row: dict[str, str], combo: dict[str, str], evidence: dict[str, dict]) -> list[dict]:
@@ -279,13 +287,13 @@ def _basis_problems(data: dict) -> list[str]:
             results = data["root"] / e["record_id"].split("#", 1)[0]
             if results.exists() and sha256_of(results) != b["source_sha256"]:
                 problems.append(f"{eid}: the results file differs from the one whose hash evidence_basis.csv stored")
-            shots = len(list(data["root"].glob(e["captures"])))
+            shots = capture_count(e, data["root"])
         else:
-            counted = re.match(r"(\d+|no) screenshots", e["captures"])
+            counted = re.match(r"(\d+|no) screenshots\b", e["captures"])
             if not counted or not re.fullmatch(r"L\d+(;L\d+)*", b["source_lines"]):
                 problems.append(f"{eid}: captures must start with the screenshot count of the record, and the basis lines must be L<number> lines")
                 continue
-            shots = 0 if counted.group(1) == "no" else int(counted.group(1))
+            shots = capture_count(e, data["root"])
         if shots != int(b["captures"]):
             problems.append(f"{eid}: {shots} screenshots, but the source record says {b['captures']}")
     return problems
@@ -332,6 +340,15 @@ def _index_problems(data: dict) -> list[str]:
                 problems.append(f"{e['evidence_id']}: device class {e['form_factor']!r}, but the index line of {record} says {entry['form_factor']!r}")
             if entry["platform"] in ("android", "ios") and _index_os_version(entry) != e["os_version"]:
                 problems.append(f"{e['evidence_id']}: OS version {e['os_version']!r}, but the index line of {record} says {entry['os_version']!r}")
+            if entry["in_sold_app"] in {"yes", "no"} and entry["in_sold_app"] != e["in_sold_app"]:
+                problems.append(f"{e['evidence_id']}: sold-build flag differs from the index line of {record}")
+            if "uncommitted" in entry["source_commit"] and e["tree_state"] != "dirty":
+                problems.append(f"{e['evidence_id']}: the index line of {record} records uncommitted changes, not tree state {e['tree_state']!r}")
+            # Index descriptions may name a short hash or a merge parent alongside the tested commit.
+            recorded_commits = re.findall(r"\b[0-9a-f]{7,40}\b", entry["source_commit"])
+            claimed_commits = re.findall(r"\b[0-9a-f]{7,40}\b", e["source_commit"])
+            if any(not any(a.startswith(b) or b.startswith(a) for b in claimed_commits) for a in recorded_commits):
+                problems.append(f"{e['evidence_id']}: source commit differs from the index line of {record}")
             checked |= {INDEX_FEATURE_OF_TOKEN[t] for t in (token.strip() for token in entry["features_checked"].split("|")) if t in INDEX_FEATURE_OF_TOKEN}
         # A developer-tool install is a precondition of a run, so the index need not list it; it never counts as a store install.
         unchecked = set(split_ids(e["features_passed"])) - checked - {"install"}
@@ -340,7 +357,7 @@ def _index_problems(data: dict) -> list[str]:
     return problems
 
 
-def _row_problems(row: dict[str, str], combos: dict[str, dict], evidence: dict[str, dict], all_evidence: list[dict]) -> list[str]:
+def _row_problems(row: dict[str, str], combos: dict[str, dict], evidence: dict[str, dict], all_evidence: list[dict], root=ROOT) -> list[str]:
     rid, status, feature = row["row_id"], row["verification_status"], row["feature"]
     problems = [f"{rid}: empty field {field}" for field in MATRIX_FIELDS if not (row.get(field) or "").strip()]
     for field, allowed in (("support_declaration", DECLARATIONS), ("verification_status", VERIFICATIONS),
@@ -361,7 +378,7 @@ def _row_problems(row: dict[str, str], combos: dict[str, dict], evidence: dict[s
 
     supporting = supporting_evidence(row, combo, evidence)
     if status == "verified_run":
-        qualifying = qualifying_evidence(row, combo, evidence)
+        qualifying = qualifying_evidence(row, combo, evidence, root)
         if not cited:
             problems.append(f"{rid}: verified_run without evidence")
         elif not qualifying:
@@ -422,7 +439,7 @@ def _matrix_problems(data: dict) -> list[str]:
             problems.append(f"{rid}: duplicate (combo, feature) {key}")
         seen_keys.add(key)
         cited_anywhere.update(split_ids(row["evidence_ids"]))
-        problems += _row_problems(row, combos, evidence, data["evidence"])
+        problems += _row_problems(row, combos, evidence, data["evidence"], data["root"])
     for combo_id in combos:
         have = {r["feature"] for r in data["matrix"] if r["combo_id"] == combo_id}
         missing = [f for f in FEATURES if f not in have]
