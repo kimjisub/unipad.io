@@ -1,0 +1,274 @@
+series_id,category,label,combo_id,note
+statcounter_android_version_mobile_ww,android_version,15.0,AND-PH-35,
+statcounter_android_version_mobile_ww,android_version,16.0,AND-PH-36,
+statcounter_android_version_mobile_ww,android_version,13.0,AND-PH-29-34,
+statcounter_android_version_mobile_ww,android_version,14.0,AND-PH-29-34,
+statcounter_android_version_mobile_ww,android_version,12.0,AND-PH-29-34,
+statcounter_android_version_mobile_ww,android_version,11.0,AND-PH-29-34,
+statcounter_android_version_mobile_ww,android_version,10.0,AND-PH-29-34,
+statcounter_android_version_mobile_ww,android_version,9.0 Pie,AND-PH-24-28,
+statcounter_android_version_mobile_ww,android_version,5.0 Lollipop,AND-PH-LE22,
+statcounter_android_version_mobile_ww,android_version,6.0 Marshmallow,AND-PH-23,
+statcounter_android_version_mobile_ww,android_version,8.0 Oreo,AND-PH-24-28,
+statcounter_android_version_mobile_ww,android_version,8.1 Oreo,AND-PH-24-28,
+statcounter_android_version_mobile_ww,android_version,7.0 Nougat,AND-PH-24-28,
+statcounter_android_version_mobile_ww,android_version,7.1 Nougat,AND-PH-24-28,
+statcounter_android_version_mobile_ww,android_version,17.0,AND-PH-37,
+statcounter_android_version_mobile_ww,android_version,5.1 Lollipop,AND-PH-LE22,
+statcounter_android_version_mobile_ww,android_version,4.4 KitKat,AND-PH-LE22,
+statcounter_android_version_mobile_ww,android_version,25.8,,not tied to a support combination
+statcounter_android_version_mobile_ww,android_version,25.1,,not tied to a support combination
+statcounter_android_version_mobile_ww,android_version,4.3 Jelly Bean,AND-PH-LE22,
+statcounter_android_version_mobile_ww,android_version,Other,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,14.0,AND-TB-29-34,
+statcounter_android_version_tablet_ww,android_version,11.0,AND-TB-29-34,
+statcounter_android_version_tablet_ww,android_version,9.0 Pie,AND-TB-24-28,
+statcounter_android_version_tablet_ww,android_version,13.0,AND-TB-29-34,
+statcounter_android_version_tablet_ww,android_version,16.0,AND-TB-36,
+statcounter_android_version_tablet_ww,android_version,12.0,AND-TB-29-34,
+statcounter_android_version_tablet_ww,android_version,15.0,AND-TB-35,
+statcounter_android_version_tablet_ww,android_version,8.1 Oreo,AND-TB-24-28,
+statcounter_android_version_tablet_ww,android_version,5.1 Lollipop,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,10.0,AND-TB-29-34,
+statcounter_android_version_tablet_ww,android_version,7.1 Nougat,AND-TB-24-28,
+statcounter_android_version_tablet_ww,android_version,8.0 Oreo,AND-TB-24-28,
+statcounter_android_version_tablet_ww,android_version,7.0 Nougat,AND-TB-24-28,
+statcounter_android_version_tablet_ww,android_version,4.4 KitKat,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,6.0 Marshmallow,AND-TB-23,
+statcounter_android_version_tablet_ww,android_version,5.0 Lollipop,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,4.2 Jelly Bean,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,4.0 Ice Cream Sandwich,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,4.1 Jelly Bean,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,25.1,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,25.8,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,11.1,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,4.3 Jelly Bean,AND-TB-LE22,
+statcounter_android_version_tablet_ww,android_version,25.6,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,7.5 Nougat,,not tied to a support combination
+statcounter_android_version_tablet_ww,android_version,Other,,not tied to a support combination
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.6,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.7,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.5,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.3,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.2,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.5,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.6,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.4,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.1,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.7,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 11.0,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.3,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.0,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.8,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.6,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.1,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.4,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.5,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.2,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 18.0,IOS-PH-18,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.6,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.4,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.1,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.7,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.3,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.0,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.1,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 27,IOS-PH-27,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.2,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.6,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.2,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 12.5,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.5,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 27.0,IOS-PH-27,
+statcounter_ios_version_mobile_ww,ios_version,iOS 17.0,IOS-PH-17,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.7,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.5,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.4,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 16.4,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.0,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 13.2,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.4,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.1,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 10.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 26.7,IOS-PH-26,
+statcounter_ios_version_mobile_ww,ios_version,iOS 19.0,,not tied to a support combination
+statcounter_ios_version_mobile_ww,ios_version,iOS 15.2,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.6,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.8,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.7,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 13.6,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 11.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.2,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 6.0,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 12.4,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 4.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 14.0,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 13.3,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 13.5,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,iOS 13.7,IOS-PH-LE16,
+statcounter_ios_version_mobile_ww,ios_version,Other,,not tied to a support combination
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.6,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.5,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.7,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.3,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.2,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.6,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.7,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.5,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.5,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.4,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.7,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.8,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 10.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.1,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.0,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.6,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.3,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 9.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.6,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.5,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.1,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.6,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 7.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.4,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.4,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 11.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.7,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.5,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.3,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.1,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.2,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 18.0,IOS-PAD-18,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.8,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.6,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.0,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.5,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.7,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 27.0,IOS-PAD-27,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.6,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 10.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 17.2,IOS-PAD-17,
+statcounter_ios_version_tablet_ww,ios_version,iOS 11.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26.7,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 11.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 11.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 6.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 15.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.3,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 5.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 27,IOS-PAD-27,
+statcounter_ios_version_tablet_ww,ios_version,iOS 26,IOS-PAD-26,
+statcounter_ios_version_tablet_ww,ios_version,iOS 9.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 5.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 12.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.7,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.5,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.5,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 10.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.2,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 11.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 13.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 8.4,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 16.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 14.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 8.1,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 10.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 9.0,IOS-PAD-LE16,
+statcounter_ios_version_tablet_ww,ios_version,iOS 19.0,,not tied to a support combination
+statcounter_ios_version_tablet_ww,ios_version,Other,,not tied to a support combination
+statcounter_os_desktop_ww,desktop_os,Windows,WEB-DT-WIN,
+statcounter_os_desktop_ww,desktop_os,OS X,WEB-DT-MAC,
+statcounter_os_desktop_ww,desktop_os,macOS,WEB-DT-MAC,
+statcounter_os_desktop_ww,desktop_os,Linux,WEB-DT-LINUX,
+statcounter_os_desktop_ww,desktop_os,Chrome OS,,not tied to a support combination
+statcounter_os_desktop_ww,desktop_os,Other,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Chrome,WEB-DT-CHROME,
+statcounter_browser_desktop_ww,browser,Edge,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Safari,WEB-DT-SAFARI,
+statcounter_browser_desktop_ww,browser,Firefox,WEB-DT-FIREFOX,
+statcounter_browser_desktop_ww,browser,Opera,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Brave,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,360 Safe Browser,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Samsung Internet,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Yandex Browser,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,QQ Browser,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,IE,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Mozilla,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Coc Coc,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Sogou Explorer,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Whale Browser,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Pale Moon,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Edge Legacy,,not tied to a support combination
+statcounter_browser_desktop_ww,browser,Other,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Chrome,WEB-PH-CHROME,
+statcounter_browser_mobile_ww,browser,Safari,WEB-PH-SAFARI,
+statcounter_browser_mobile_ww,browser,Samsung Internet,WEB-PH-SAMSUNG,
+statcounter_browser_mobile_ww,browser,Opera,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,UC Browser,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Android,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Firefox,WEB-PH-FIREFOX,
+statcounter_browser_mobile_ww,browser,Edge,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Brave,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,QQ Browser,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Yandex Browser,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Whale Browser,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Coc Coc,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Ecosia,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Unknown,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Instabridge,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,KaiOS,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Puffin,,not tied to a support combination
+statcounter_browser_mobile_ww,browser,Other,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Chrome,WEB-TB-CHROME,
+statcounter_browser_tablet_ww,browser,Safari,WEB-TB-SAFARI,
+statcounter_browser_tablet_ww,browser,Android,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Edge,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Opera,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Samsung Internet,WEB-TB-SAMSUNG,
+statcounter_browser_tablet_ww,browser,Yandex Browser,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,UC Browser,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Kindle,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Instabridge,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Puffin,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Ecosia,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Coc Coc,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Unknown,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,QQ Browser,,not tied to a support combination
+statcounter_browser_tablet_ww,browser,Firefox,WEB-TB-FIREFOX,
+statcounter_browser_tablet_ww,browser,Other,,not tied to a support combination
+apple_ios_ipados_usage_2026_06_07,iphone_last_four_years,iOS 26,IOS-PH-26,
+apple_ios_ipados_usage_2026_06_07,iphone_last_four_years,iOS 18,IOS-PH-18,
+apple_ios_ipados_usage_2026_06_07,iphone_last_four_years,Earlier,IOS-PH-EARLIER,
+apple_ios_ipados_usage_2026_06_07,iphone_all_devices,iOS 26,IOS-PH-26,
+apple_ios_ipados_usage_2026_06_07,iphone_all_devices,iOS 18,IOS-PH-18,
+apple_ios_ipados_usage_2026_06_07,iphone_all_devices,Earlier,IOS-PH-EARLIER,
+apple_ios_ipados_usage_2026_06_07,ipad_last_four_years,iPadOS 26,IOS-PAD-26,
+apple_ios_ipados_usage_2026_06_07,ipad_last_four_years,iPadOS 18,IOS-PAD-18,
+apple_ios_ipados_usage_2026_06_07,ipad_last_four_years,Earlier,IOS-PAD-EARLIER,
+apple_ios_ipados_usage_2026_06_07,ipad_all_devices,iPadOS 26,IOS-PAD-26,
+apple_ios_ipados_usage_2026_06_07,ipad_all_devices,iPadOS 18,IOS-PAD-18,
+apple_ios_ipados_usage_2026_06_07,ipad_all_devices,Earlier,IOS-PAD-EARLIER,
+steam_hwsurvey_os_2026_08,desktop_os,Windows,WEB-DT-WIN,
+steam_hwsurvey_os_2026_08,desktop_os,OSX,WEB-DT-MAC,
+steam_hwsurvey_os_2026_08,desktop_os,Linux,WEB-DT-LINUX,
