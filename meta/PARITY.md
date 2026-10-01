@@ -111,8 +111,8 @@ apps keep those switches in the option panel and reset them per session.
 
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Run of 2026-09-30, 124 cases: 78 pass on all three
-platforms; the rest are the differences below, 19 cases whose expected result no doc decides (observed
+covered and what is not; RESULTS.md: the numbers). Run of 2026-10-02 (Korea time), 124 cases: 76 pass on all three
+platforms; the rest are the differences below, 21 cases whose expected result no doc decides (observed
 only) and 4 cases the iOS harness cannot observe. This is a result for those cases, not a statement
 that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
 are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
@@ -141,6 +141,7 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 - `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
 - `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012).
 - Only iOS reads `info.json` (INF-015).
+- Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings. KL-003 and AP-004 are undetermined on the same basis as the unknown-command cases; agreement between parsers is not a warning expectation.
 - `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, undetermined).
 
 ## Slide across pads

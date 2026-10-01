@@ -55,6 +55,20 @@ test('corpus.json is what the sources build', () => {
   assert.equal(readFileSync(join(here, 'corpus.json'), 'utf8'), serialize(buildCorpus()));
 });
 
+test('ignored or skipped lines do not establish an undocumented warning expectation', () => {
+  const built = buildCorpus();
+  for (const id of ['KL-003', 'AP-004', 'KL-M07', 'AP-M10']) {
+    const c = built.cases.find((entry) => entry.id === id);
+    assert.equal(c.expectation, 'undetermined', id);
+    assert.equal(c.expected, undefined, id);
+    assert.match(c.question, /warn/, id);
+    for (const platform of PLATFORMS) {
+      const results = fullResults(platform, { [id]: { status: 'pass', actual: SOME_RESULT } });
+      assert.equal(judge(canonical, platform, results).get(id).status, 'unverified', `${id}/${platform}`);
+    }
+  }
+});
+
 test('sound assets regenerate to the same bytes', () => {
   assert.deepEqual(buildAssets(), corpus.assets);
 });

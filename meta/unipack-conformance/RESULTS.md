@@ -1,22 +1,23 @@
-# Results (2026-09-30)
+# Results (2026-10-02, Korea time)
 
-Corpus `b5cd0bda223c…` (sha256 of `corpus.json`), 124 cases, checked out at unipad-android 20207d89,
-unipad-ios 6244e49, unipad.io 8019666 plus the uncommitted conformance files. Regenerate this table with
+Corpus `30ad4442b7ab…` (sha256 of `corpus.json`), 124 cases, based on unipad-android 20207d89,
+unipad-ios 6244e49, unipad.io 8019666 plus the recovered conformance files and the expectation correction
+below. Regenerate this table with
 `report.mjs` (README, "Running it"). It describes these 124 cases only; it does not show that every
 UniPack is compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 104 | 1 | 0 | 0 | 19 | 2026-09-30 11:43:36 |
-| iOS | 95 | 6 | 0 | 0 | 23 | 2026-09-30 12:02:42 |
-| Web | 89 | 16 | 0 | 0 | 19 | 2026-09-30 12:00:03 |
+| Android | 102 | 1 | 0 | 0 | 21 | 2026-10-01 17:55:20 |
+| iOS | 93 | 6 | 0 | 0 | 25 | 2026-10-01 17:57:03 |
+| Web | 87 | 16 | 0 | 0 | 21 | 2026-10-01 17:52:42 |
 
-Pass on all three platforms: 78 of 124. Formats exercised: info, keySound, keyLED, autoPlay (both
+Pass on all three platforms: 76 of 124. Formats exercised: info, keySound, keyLED, autoPlay (both
 spellings of every command), the colour palette, and the sound, LED and autoPlay runners (see README for
 the list, and what was not exercised).
 
-- **Unverified, 19 on every platform:** cases where no doc or stated intent decides the expected result
-  (`undetermined`). Their observed results agree on all three platforms for 15 of them and differ for 4
+- **Unverified, 21 on every platform:** cases where no doc or stated intent decides the expected result
+  (`undetermined`). Their observed results agree on all three platforms for 17 of them and differ for 4
   (INF-007, INF-010, INF-015, KS-018).
 - **Unverified, iOS only (4):** RUN-A-001 and RUN-A-002 (the iOS `AutoPlayRunner` reads the wall clock and
   sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared by the main screen after the
@@ -30,7 +31,25 @@ the list, and what was not exercised).
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
 
-## Changes from the first run of the same day
+## Changes after the independent review
+
+The 2026-09-30 review left two documentation/expectation corrections. The previously checked tooling
+and harness code were preserved; no product parser or runner was changed.
+
+- KL-003 and AP-004 now use the same evidence rule as KL-M07 and AP-M10. The docs require out-of-range
+  files or lines to be ignored/skipped but do not say whether that produces a warning. Both cases are
+  `undetermined`, still run and record their full results, and never count as a pass. All three
+  currently agree, which does not establish an expected warning. This reduces the shared pass count
+  from 78 to 76 and increases every platform's undetermined count from 19 to 21.
+- The README now describes the 300 ms wait as avoiding a reproduced deadlock, matching this document
+  and the iOS harness comment. It is a test workaround and does not fix the app.
+- All 124 input fingerprints, synthesized assets and the 23 pinned divergent cases are unchanged.
+  The baseline's 20 sample packs and their expectations are unaffected. Its 60 real-app comparisons
+  remain unverified; unit tests do not demonstrate audible sound, device LEDs or actual user input.
+- The product hang remains assigned to JIS-42 in Paperclip. Do not count the blocked repeated-sound
+  scenario as a device pass.
+
+## Changes from the first run on 2026-09-30
 
 The first run (corpus `9958d0be7f15…`, 123 cases, 79 on all three) was re-checked by an independent
 review. What changed, and why:
@@ -50,14 +69,25 @@ review. What changed, and why:
 
 | Platform | Command | Result |
 |---|---|---|
-| Web | `pnpm test:unipack` | 175 tests pass (39 existing + 136 conformance, including the 19 tooling tests of `selftest.mjs`) |
+| Web | `pnpm test:unipack` | 175 tests pass; the tooling subprocess runs 20 tests, including the new warning-evidence regression |
 | Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` | 124 case tests + 8 checks that can fail, all pass |
-| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests` (iPhone 17 Pro simulator, iOS 27.0) | 12 tests pass, 1 skipped (the destroy reproduction below, off by default) |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests` (iPhone 17 Pro simulator, iOS 26.4) | 134 test invocations pass (124 corpus cases included), 1 skipped (the opt-in destroy reproduction below) |
 
-Android ran in a copy of the checkout with a placeholder `keystore.properties` (the build reads it
-unconditionally); `app/src` and `design/src` of the copy were compared equal to the checkout. iOS was run
-on the iOS 27.0 simulator only; iOS 17 and 18, the app's lowest supported versions, have no simulator on
-this machine and were not run.
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash.
+`build-corpus.mjs --check`, `sync.mjs --check`, the 20 tooling tests and targeted ESLint also passed.
+The new warning-evidence regression failed on the recovered source (`KL-003: determined`), then
+passed after the correction. The aggregate was produced from the three fresh JSON files, not logs.
+
+Android ran in its isolated issue worktree with an ignored, unused signing placeholder and a local
+SDK path, both removed afterwards. Its first configuration attempt lacked the SDK path; the rerun
+completed successfully (132 targeted tests, 60 tasks executed, no cached test result). iOS ran on
+26.4; iOS 17 and 18 have no simulator on this machine and were not run. Unit test hosts use local-only
+Firebase services, so these checks are not evidence of production event delivery.
+
+The prescribed device tool printed a simulator ID, but this Paperclip run did not have `HARNESS_WORKER`,
+so no lease was registered and `devices.py down` reported `nothing held by this worker`. A subsequent
+read-only device listing confirmed the used simulator was shut down. This integration gap was
+reported for repair before the real-app comparison stage; no device configuration was changed.
 
 ## iOS: destroy() while a repeated sound is cycling
 
@@ -78,6 +108,10 @@ hangs the main thread for good when a pad's sound is stopped while that sound is
   same day did not see a hang, because the harness then waited 300 ms before `destroy()`.
   Retried 2026-09-30 11:54-11:57 UTC on the iPhone 17 Pro simulator, iOS 27.0: **3 runs out of 3 hung on
   the first round** (press, then `destroy()` 0 ms later), each time ended by the 20 s limit.
+- **Independent review:** on 2026-09-30 12:17–12:18 UTC, iOS 26.4 also hung on immediate
+  `destroy()` in 3 of 3 runs. A temporary repeated-pad probe hung in 2 of 2 runs; a once-only sound
+  returned in 10.7 ms. These are preserved review findings, not new reproductions in the October 2
+  conformance run. The opt-in hang reproduction remained skipped in that run.
 - **Where it hangs** (crash reports of the three runs, all the same): the main thread is in
   `SoundEngine.destroy()` → `-[AVAudioPlayerNode stop]` → `AVAudioPlayerNodeImpl::StopImpl()`, waiting for
   the player's completion-handler queue. That queue is running the completion handler `SoundEngine.soundOn`

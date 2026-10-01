@@ -209,9 +209,12 @@ The reset of every pad's queue position when the chain changes is done by the pl
 attaches it. No case depends on it today; a case that presses a pad again after its chain changed would
 need it.
 
-The iOS harness waits 300 ms before it destroys the sound engine. That wait works around an observation
-made while the harness was written, not a verified fact about the product; see RESULTS.md, "iOS:
-destroy() while a repeated sound is cycling".
+The iOS harness waits 300 ms before it destroys the sound engine to let the short corpus sounds finish
+and avoid a reproduced deadlock when a repeated sound is stopped while cycling. This wait hides the
+hang from these conformance cases; it does not make the app safe. The independent review on 2026-09-30 reproduced
+exit hangs in 3 of 3 runs and immediate re-press hangs in 2 of 2 runs on iOS 26.4, in addition to the
+iOS 27.0 exit reproduction. See RESULTS.md, "iOS: destroy() while a repeated sound is cycling".
+The product fix is tracked separately as JIS-42 in Paperclip.
 
 `palette` layer: `{ "argb": [128 lowercase 8-digit hex strings] }` from the platform's colour table.
 

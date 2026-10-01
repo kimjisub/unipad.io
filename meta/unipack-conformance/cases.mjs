@@ -245,9 +245,9 @@ export function buildCases(palette) {
     basis: [doc('key-led.mdx', 'File Naming Convention: loop default 1, 0 = infinite loop')],
   });
   add({
-    id: 'KL-003', area: 'keyLed', title: 'file names one past each end of chain, x and y are ignored',
+    id: 'KL-003', area: 'keyLed', title: 'file names one past each end of chain, x and y are ignored', expectation: 'undetermined',
     ...led({ '0 1 1': 'f 1 1', '3 1 1': 'f 1 1', '1 5 1': 'f 1 1', '1 1 4': 'f 1 1' }),
-    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, errors: Array(4).fill('keyLed:range') }),
+    question: 'key-led.mdx says files with out-of-range coordinates in the file name are ignored; whether each ignored file records a warning is not stated. The same warning-evidence rule as KL-M07.',
     basis: [doc('key-led.mdx', 'Files with out-of-range coordinates in the file name are ignored')],
   });
   add({
@@ -419,9 +419,9 @@ export function buildCases(palette) {
     basis: [doc('auto-play.mdx', 'If a sound has a wormhole set, executing on will automatically switch to that chain')],
   });
   add({
-    id: 'AP-004', area: 'autoPlay', title: 'coordinates and chains outside the pack are skipped',
+    id: 'AP-004', area: 'autoPlay', title: 'coordinates and chains outside the pack are skipped', expectation: 'undetermined',
     ...play(lines('on 5 1', 'on 1 4', 'on 0 1', 'chain 3', 'chain 0', 'off 5 5', 'touch 9 9')),
-    expected: loaded(withSounds({ autoPlay: [], errors: Array(7).fill('autoPlay:range') })),
+    question: 'auto-play.mdx says lines with out-of-range coordinates are skipped; whether each skipped line records a warning is not stated. The same warning-evidence rule as AP-M10.',
     basis: [doc('auto-play.mdx', 'Lines with out-of-range coordinates are skipped')],
   });
   add({
