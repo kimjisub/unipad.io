@@ -41,7 +41,7 @@ binary itself; "in the build on sale" below always means "the tested commit is c
 | `data/combos.csv` | One line per platform / device category / OS or browser / version scope, with the machine-checkable range (`os_family`, `version_min`, `version_max`, `browser`). |
 | `data/support_matrix.csv` | One row per combination and feature: declaration, verification status, what the run was on, evidence, sold-build flag, date, confirmed scope, remaining limits. |
 | `data/evidence.csv` | Each piece of evidence: result, what it ran on, OS version or browser, how the build got onto the device, which features passed, partly passed or failed, commit and tree state, command, scope. |
-| `data/evidence_basis.csv` | For every run: what its source record confirms (OS, device class, browser, verdict, features, how the pack got into the app, screenshot count), the record lines that say so, and the SHA-256 of that record (for a browser run: of `results.json`). The evidence table may claim less than this, never more. |
+| `data/evidence_basis.csv` | For every run: what its source record confirms (OS, device class, browser, verdict, features, install method, how the pack got into the app, screenshot count), the record lines that say so, and the SHA-256 of that record (for a browser run: of `results.json`). The evidence table may claim less than this, never more. |
 | `data/device_report_index.csv` | Every device-check entry (140) with device, OS, commit and result, and the evidence id when a matrix row uses it. |
 | `data/series_mapping.csv` | How each label of a denominator table maps to combinations. Derived; do not edit. |
 | `sources/series.jsonl` | One line per distribution source: publisher, URL, fetch time, period, population, unit, region, method quote, licence, SHA-256 of the raw file; for a series that feeds tables also the tables it yields (`tables`: category and label count), their period and unit, the month read, and the decimals the source publishes. |
@@ -84,7 +84,10 @@ Partial app rows also require the named OS family and a version inside the row's
 recorded device class and host OS, except `viewport_only`: those rows explicitly record a mocked phone/tablet width on a desktop
 host, and prove neither the mobile OS nor a mobile device. A known Chromium engine can supply only partial evidence for Chrome;
 one known browser can supply only partial evidence for an any-browser row. Unknown device class never supplies partial evidence
-or a sold-build flag. Android phone install and sound and macOS external connection are therefore unverified; Android phone
+or a sold-build flag. Failed rows require a failed run of the named feature on the matching device class, OS/version,
+named browser and real execution target; their sold-build flag follows only those matching failures. A failure on a mocked
+width, headless Chromium for Chrome, or one browser for an any-browser row cannot settle a failed row.
+Android phone install and sound and macOS external connection are therefore unverified; Android phone
 pack opening is partial only on the later, unsold phone-size emulator run.
 
 **Device class** (`form_factor` in the evidence): `phone` or `tablet` only where the source record says so in a word (iPhone, phone, iPad, tablet) or gives a smallest width in dp (under 600 dp is phone size); a device fingerprint or a pixel size alone is `unknown`, and `unknown` never carries a phone or tablet row. **Screenshots:** a run whose record saved none cannot carry a verified row; that is recorded as a capture problem, not as a product failure.
@@ -110,8 +113,11 @@ line from `in_release_commit` and `tree_state`, and per row from the evidence th
   device-record index; browser-check evidence that claims more than the stored `results.json` recorded;
 - browser-check evidence without its `results.json` profile, or whose browser (headless Chromium is not Google Chrome) or host operating
   system differs from what the results file recorded; a device run whose OS version, device class, browser, verdict, features, pack entry or screenshot
-  count is more than its line in `evidence_basis.csv` confirms, or differs from the device-record index; a passed `open_pack` whose source record
+  count is more than its line in `evidence_basis.csv` confirms, or differs from the device-record index; an install method
+  that differs from its source basis; a passed `open_pack` whose source record
   does not show the pack entering through the app; a `verified_run` on a record with no screenshot;
+- a failed row supported by another device class, OS/version, browser, feature or execution target, or a sold-build flag
+  supplied by an unrelated failure;
 - a failed record that no row cites, a failed index entry without evidence, a `verified_run` with a later failure of the same feature;
 - duplicate combination/feature rows, duplicate mappings, unknown evidence ids, a row without `confirmed_scope`, an unrun row without `TODO:`;
 - a coverage block that is not exactly one table of one series: the block count must be the tables `series.jsonl` declares (13) x 6 features,
@@ -124,6 +130,12 @@ line from `in_release_commit` and `tree_state`, and per row from the evidence th
 - a table with two periods or units, and any world share that is not `null`;
 - a raw or facts file whose SHA-256 differs from the stored one, and a `tables.csv` or `series_mapping.csv` that differs from what the
   source files give when rebuilt. `build_tables.py` applies the table rules to its own result and refuses to write a table that breaks them.
+
+**Install provenance:** each run's `install_method` must equal the independently recorded field in
+`evidence_basis.csv`. `store` needs a source record of store delivery; `sideload` records a developer/test build
+installed or run by local tools; `none` means no app installation was recorded or installation does not apply
+(for example a browser run or a blocked runtime check). Source line references include the install/test command
+or description. The existing records contain no store installs, even when the tested code is in a sold build.
 
 What the checks cannot do: a coordinated edit of `evidence.csv`, the index and `evidence_basis.csv` (including its line numbers and record
 hash) reads as consistent. The record lines are there so that a reader with the maintainers' records can compare them; the index `form_factor`

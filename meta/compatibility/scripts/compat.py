@@ -39,7 +39,7 @@ EVIDENCE_FIELDS = (
 )
 BASIS_FIELDS = (
     "evidence_id", "record_id", "source_sha256", "source_lines", "os_family", "os_version", "device_category", "browser",
-    "run_verdict", "captures", "features_passed", "features_partial", "features_failed", "pack_entry", "basis_note",
+    "run_verdict", "captures", "features_passed", "features_partial", "features_failed", "pack_entry", "install_method", "basis_note",
 )
 INDEX_FIELDS = (
     "record_id", "report_utc", "platform", "device_kind", "device_name", "form_factor", "os_version",

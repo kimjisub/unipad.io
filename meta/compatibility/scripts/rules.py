@@ -247,6 +247,8 @@ def _basis_problems(data: dict) -> list[str]:
         basis[b["evidence_id"]] = b
         if b["pack_entry"] not in PACK_ENTRIES or b["run_verdict"] not in VERDICTS or not re.fullmatch(r"\d+", b["captures"]):
             problems.append(f"{b['evidence_id']}: bad pack_entry, run_verdict or captures in evidence_basis.csv")
+        if b.get("install_method") not in INSTALL_METHODS:
+            problems.append(f"{b['evidence_id']}: bad install_method in evidence_basis.csv")
         if not re.fullmatch(r"[0-9a-f]{64}", b["source_sha256"]) or not b["source_lines"].strip():
             problems.append(f"{b['evidence_id']}: evidence_basis.csv needs the hash of the source record and the lines that confirm the run")
     runs = [e for e in data["evidence"] if e["kind"] in RUN_KINDS]
@@ -260,9 +262,9 @@ def _basis_problems(data: dict) -> list[str]:
         where = f"{b['source_lines']} of {e['record_id']}"
         if b["record_id"] != e["record_id"]:
             problems.append(f"{eid}: evidence_basis.csv names record {b['record_id']}, the evidence names {e['record_id']}")
-        for field, basis_field in (("os_family", "os_family"), ("os_version", "os_version"), ("form_factor", "device_category"), ("browser", "browser"), ("result", "run_verdict")):
-            if e[field] != b[basis_field]:
-                problems.append(f"{eid}: {field} {e[field]!r} is not what the source record confirms ({b[basis_field]!r}; {where})")
+        for field, basis_field in (("os_family", "os_family"), ("os_version", "os_version"), ("form_factor", "device_category"), ("browser", "browser"), ("result", "run_verdict"), ("install_method", "install_method")):
+            if e[field] != b.get(basis_field):
+                problems.append(f"{eid}: {field} {e[field]!r} is not what the source record confirms ({b.get(basis_field)!r}; {where})")
         passed, partial, failed = (set(split_ids(e[f])) for f in ("features_passed", "features_partial", "features_failed"))
         confirmed = {f: set(split_ids(b[f])) for f in ("features_passed", "features_partial", "features_failed")}
         if not passed <= confirmed["features_passed"]:
@@ -384,8 +386,15 @@ def _row_problems(row: dict[str, str], combos: dict[str, dict], evidence: dict[s
         elif row["in_sold_app"] != _sold_of([e for e in supporting if e["run_target"] == row["device_reality"]]):
             problems.append(f"{rid}: in_sold_app does not follow from the cited runs")
     elif status == "failed":
-        if not any(feature in split_ids(e["features_failed"]) for e in cited):
-            problems.append(f"{rid}: failed needs cited evidence that failed {feature}")
+        failures = [e for e in cited if e["kind"] in RUN_KINDS and e["result"] == "fail"
+                    and e["run_target"] in REAL_TARGETS and feature in split_ids(e["features_failed"])
+                    and evidence_matches_combo(e, combo)]
+        matching_target = [e for e in failures if e["run_target"] == row["device_reality"]]
+        if not matching_target:
+            problems.append(f"{rid}: failed needs a cited failed run of {feature} on this device class, OS version or browser "
+                            f"whose target is {row['device_reality']}")
+        elif row["in_sold_app"] != _sold_of(matching_target):
+            problems.append(f"{rid}: in_sold_app does not follow from the cited failed runs")
     else:
         if row["in_sold_app"] != "unknown":
             problems.append(f"{rid}: in_sold_app requires matching run evidence; status {status} must leave it unknown")

@@ -440,7 +440,7 @@ class BasisRuleTest(unittest.TestCase):
     def test_a_device_class_the_record_does_not_state_cannot_be_written_in(self) -> None:
         data = load_all()
         evidence_of(data, "EV-A35-9f4173ac-0925")["form_factor"] = "phone"
-        self.assert_rejected(data, "form_factor 'phone' is not what the source record confirms ('unknown'; L1;L2;L16;L21 of device-log:9f4173ac/20260925T053540Z)")
+        self.assert_rejected(data, "form_factor 'phone' is not what the source record confirms ('unknown'; L1;L2;L16;L21;L63 of device-log:9f4173ac/20260925T053540Z)")
         self.assert_rejected(data, "device class 'phone', but the index line of 9f4173ac/20260925T053540Z says 'unknown'")
 
     def test_other_os_version_device_class_or_features_than_the_record_are_rejected(self) -> None:
@@ -499,7 +499,7 @@ class BasisRuleTest(unittest.TestCase):
 
 
 class RemainingEvidenceRuleTest(unittest.TestCase):
-    """The two remaining source-evidence gaps, independently of other validation errors."""
+    """Source-evidence gaps and review regressions, independently of other validation errors."""
 
     def row_problems(self, data: dict, row_id: str) -> list[str]:
         from rules import _row_problems
@@ -567,6 +567,92 @@ class RemainingEvidenceRuleTest(unittest.TestCase):
             with self.subTest(row=row_id):
                 self.assertEqual(self.row_problems(data, row_id), [])
                 self.assertFalse(row_bucket(find(data, row_id)).startswith("verified_"))
+
+    def test_store_install_promotion_needs_source_install_method(self) -> None:
+        data = load_all()
+        run = evidence_of(data, "EV-I263-9532e26d-0925")
+        run["install_method"] = "store"
+        find(data, "IOS-PH-26:install").update(verification_status="verified_run", evidence_ids=run["evidence_id"],
+                                                device_reality="simulator", in_sold_app=run["in_sold_app"])
+        problems, coverage = problems_of(data)
+        self.assertTrue(any("install_method 'store' is not what the source record confirms ('sideload'" in p for p in problems), problems)
+        self.assertIsNone(coverage)
+
+    def test_install_method_cannot_be_invented_for_any_run_kind(self) -> None:
+        for eid in ("EV-I263-9532e26d-0925", "EV-WEB-a11a6324-0928-fail", "EV-WEB-20260930-desktop-1280x800"):
+            with self.subTest(evidence=eid):
+                data = load_all()
+                evidence_of(data, eid)["install_method"] = "store"
+                self.assertTrue(any(f"{eid}: install_method 'store' is not what the source record confirms" in p
+                                    for p in validate(data)))
+
+    def test_desktop_failure_cannot_mark_an_ipad_as_failed(self) -> None:
+        data = load_all()
+        find(data, "IOS-PAD-26:external_connect").update(verification_status="failed", device_reality="browser",
+                                                       evidence_ids="EV-WEB-a11a6324-0928-fail", in_sold_app="no")
+        problems, coverage = problems_of(data)
+        self.assertTrue(any("IOS-PAD-26:external_connect: failed needs a cited failed run" in p for p in problems), problems)
+        self.assertIsNone(coverage)
+
+    def test_failed_app_row_needs_matching_device_os_version_and_target(self) -> None:
+        variants = ({"form_factor": "unknown"}, {"form_factor": "tablet"}, {"os_family": "ipados"},
+                    {"os_version": "27"}, {"os_version": ""}, {"run_target": "unknown"},
+                    {"run_target": "viewport"}, {"result": "pass"}, {"kind": "source_read"},
+                    {"features_failed": "sound"})
+        for changes in variants:
+            with self.subTest(changes=changes):
+                data = load_all()
+                run = evidence_of(data, "EV-I263-9532e26d-0925")
+                run.update(result="fail", features_passed="none", features_failed="external_connect")
+                row = find(data, "IOS-PH-26:external_connect")
+                row.update(verification_status="failed", device_reality="simulator", evidence_ids=run["evidence_id"],
+                           in_sold_app="yes")
+                self.assertEqual(self.row_problems(data, row["row_id"]), [])
+                run.update(changes)
+                self.assertTrue(self.row_problems(data, row["row_id"]))
+
+    def test_failed_web_row_needs_named_browser_and_host_os(self) -> None:
+        for cid in ("WEB-DT-CHROME", "WEB-DT-MAC"):
+            variants = ({"form_factor": "phone"}, {"form_factor": "unknown"}, {"browser": "unknown"}) + (
+                ({"browser": "firefox"}, {"browser": "chromium_headless"}) if cid == "WEB-DT-CHROME"
+                else ({"os_family": "windows"}, {"os_family": "unknown"}))
+            for changes in variants:
+                with self.subTest(combo=cid, changes=changes):
+                    data = load_all()
+                    run = evidence_of(data, "EV-WEB-a11a6324-0928-fail")
+                    run.update(browser="chrome", os_family="macos")
+                    row = find(data, cid + ":external_connect")
+                    row.update(verification_status="failed", device_reality="browser", evidence_ids=run["evidence_id"],
+                               in_sold_app="no")
+                    # Name the browser to isolate the host-OS rule; an any-browser row is not settled by one run.
+                    next(c for c in data["combos"] if c["combo_id"] == cid)["browser"] = "chrome"
+                    self.assertEqual(self.row_problems(data, row["row_id"]), [])
+                    run.update(changes)
+                    self.assertTrue(self.row_problems(data, row["row_id"]))
+
+    def test_one_browser_failure_cannot_settle_an_any_browser_row(self) -> None:
+        data = load_all()
+        run = evidence_of(data, "EV-WEB-a11a6324-0928-fail")
+        run.update(browser="chrome", os_family="macos")
+        row = find(data, "WEB-DT-MAC:external_connect")
+        row.update(verification_status="failed", device_reality="browser", evidence_ids=run["evidence_id"],
+                   in_sold_app="no")
+        self.assertTrue(self.row_problems(data, row["row_id"]))
+
+    def test_failed_row_target_and_sold_flag_follow_matching_failure(self) -> None:
+        data = load_all()
+        run = evidence_of(data, "EV-I263-9532e26d-0925")
+        run.update(result="fail", features_passed="none", features_failed="external_connect")
+        row = find(data, "IOS-PH-26:external_connect")
+        row.update(verification_status="failed", device_reality="simulator", evidence_ids=run["evidence_id"],
+                   in_sold_app="yes")
+        self.assertEqual(self.row_problems(data, row["row_id"]), [])
+        for changes in ({"device_reality": "browser"}, {"in_sold_app": "no"}):
+            with self.subTest(changes=changes):
+                original = dict(row)
+                row.update(changes)
+                self.assertTrue(self.row_problems(data, row["row_id"]))
+                row.update(original)
 
 
 class CorrectedStateTest(unittest.TestCase):
@@ -693,6 +779,25 @@ class TamperingTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout)
             self.assertIn("browser 'chrome' is not what the source record confirms", result.stdout)
         self.assertEqual((self.root / "output/coverage.json").read_bytes(), before)
+
+    def test_sideload_promotion_is_rejected_before_output_write(self) -> None:
+        self.edit_csv("data/evidence.csv", lambda rows: next(e for e in rows if e["evidence_id"] == "EV-I263-9532e26d-0925").update(install_method="store"))
+        self.edit_csv("data/support_matrix.csv", lambda rows: next(r for r in rows if r["row_id"] == "IOS-PH-26:install").update(
+            verification_status="verified_run", device_reality="simulator", evidence_ids="EV-I263-9532e26d-0925", in_sold_app="yes"))
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("install_method 'store' is not what the source record confirms ('sideload'", result.stdout)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
+
+    def test_unrelated_failure_is_rejected_before_output_write(self) -> None:
+        self.edit_csv("data/support_matrix.csv", lambda rows: next(r for r in rows if r["row_id"] == "IOS-PAD-26:external_connect").update(
+            verification_status="failed", device_reality="browser", evidence_ids="EV-WEB-a11a6324-0928-fail", in_sold_app="no"))
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("IOS-PAD-26:external_connect: failed needs a cited failed run", result.stdout)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
 
     def test_unknown_class_cannot_restore_partial_phone_rows(self) -> None:
         for row_id in ("AND-PH-35:install", "AND-PH-35:sound"):
