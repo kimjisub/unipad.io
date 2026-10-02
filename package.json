@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test:unipack": "rm -rf .next/cache/unipack-test && tsc -p src/lib/unipack/tsconfig.test.json && node --test \".next/cache/unipack-test/**/*.test.js\"",
-    "test": "rm -rf .next/cache/unit-test && tsc -p tsconfig.test.json && node --import tsx --test \".next/cache/unit-test/**/*.test.js\" \"src/**/*.test.mjs\" \"scripts/*.test.mjs\""
+    "test": "rm -rf .next/cache/unit-test && tsc -p tsconfig.test.json && node --import tsx --test \".next/cache/unit-test/**/*.test.js\" \"src/**/*.test.mjs\" \"scripts/*.test.mjs\"",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@radix-ui/themes": "^3.1.4",
@@ -28,6 +29,7 @@
     "tailwind-merge": "^3.4.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@testing-library/react": "^16.3.3",
     "@types/mdx": "^2.0.13",
     "@types/node": "^20",
