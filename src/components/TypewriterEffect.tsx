@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef,useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 
 interface TypewriterEffectProps {
@@ -11,7 +11,7 @@ interface TypewriterEffectProps {
   pauseTime?: number;
 }
 
-type Phase = 'typing' | 'pausing' | 'deleting' | 'switching';
+type Phase = 'typing' | 'pausing' | 'deleting';
 
 export const TypewriterEffect = ({
   texts,
@@ -41,9 +41,10 @@ export const TypewriterEffect = ({
       if (displayed.length < currentText.length) {
         schedule(() => {
           setDisplayed(currentText.slice(0, displayed.length + 1));
+          if (displayed.length + 1 === currentText.length) setPhase('pausing');
         }, typingSpeed);
       } else {
-        setPhase('pausing');
+        schedule(() => setPhase('pausing'), 0);
       }
     } else if (phase === 'pausing') {
       schedule(() => setPhase('deleting'), pauseTime);
@@ -51,13 +52,17 @@ export const TypewriterEffect = ({
       if (displayed.length > 0) {
         schedule(() => {
           setDisplayed(prev => prev.slice(0, -1));
+          if (displayed.length === 1) {
+            setCurrentIndex(prev => (prev + 1) % texts.length);
+            setPhase('typing');
+          }
         }, deletingSpeed);
       } else {
-        setPhase('switching');
+        schedule(() => {
+          setCurrentIndex(prev => (prev + 1) % texts.length);
+          setPhase('typing');
+        }, 0);
       }
-    } else if (phase === 'switching') {
-      setCurrentIndex(prev => (prev + 1) % texts.length);
-      setPhase('typing');
     }
 
     return () => {

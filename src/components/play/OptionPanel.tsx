@@ -88,21 +88,15 @@ export function OptionPanel({
   const t = useTranslations('play.menu');
   const tCommon = useTranslations('play.common');
   const [mounted, setMounted] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const closing = !visible;
+  if (visible && !mounted) setMounted(true);
   // Collapse the UniPack info card by default so the primary controls
   // (Performance section) sit closer to the top of the panel.
   const [infoExpanded, setInfoExpanded] = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      setMounted(true);
-      setClosing(false);
-    } else if (mounted) {
-      setClosing(true);
-      const timer = setTimeout(() => {
-        setMounted(false);
-        setClosing(false);
-      }, 250);
+    if (!visible && mounted) {
+      const timer = setTimeout(() => setMounted(false), 250);
       return () => clearTimeout(timer);
     }
   }, [visible, mounted]);

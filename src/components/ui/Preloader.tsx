@@ -2,21 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useClientReady } from '@/hooks/useClientReady';
 
 const PRELOADER_KEY = 'unipad_preloader_shown';
 
 export default function Preloader() {
-	const [visible, setVisible] = useState(false);
+	const clientReady = useClientReady();
+	const [shown] = useState(() => typeof window !== 'undefined' && Boolean(sessionStorage.getItem(PRELOADER_KEY)));
+	const [dismissed, setDismissed] = useState(false);
+	const visible = clientReady && !shown && !dismissed;
 
 	useEffect(() => {
-		const shown = sessionStorage.getItem(PRELOADER_KEY);
-		if (!shown) {
-			setVisible(true);
+		if (clientReady && !shown) {
 			sessionStorage.setItem(PRELOADER_KEY, '1');
-			const timer = setTimeout(() => setVisible(false), 1600);
+			const timer = setTimeout(() => setDismissed(true), 1600);
 			return () => clearTimeout(timer);
 		}
-	}, []);
+	}, [clientReady, shown]);
 
 	return (
 		<AnimatePresence>

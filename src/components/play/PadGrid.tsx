@@ -50,34 +50,35 @@ export function PadGrid({
     const grid = gridRef.current;
     if (!grid) return;
 
+    const pointers = pointerPadMap.current;
     const releasePointer = (pointerId: number) => {
-      const prevKey = pointerPadMap.current.get(pointerId);
+      const prevKey = pointers.get(pointerId);
       if (prevKey) {
         const [px, py] = prevKey.split(',').map(Number);
         onPadUp(px, py);
       }
-      pointerPadMap.current.delete(pointerId);
+      pointers.delete(pointerId);
     };
 
     const handlePointerDown = (e: PointerEvent) => {
       e.preventDefault();
       try { grid.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
       const pad = getPadFromPoint(e.clientX, e.clientY);
-      pointerPadMap.current.set(e.pointerId, pad ? `${pad[0]},${pad[1]}` : null);
+      pointers.set(e.pointerId, pad ? `${pad[0]},${pad[1]}` : null);
       if (pad) onPadDown(pad[0], pad[1]);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (!pointerPadMap.current.has(e.pointerId)) return;
+      if (!pointers.has(e.pointerId)) return;
       const pad = getPadFromPoint(e.clientX, e.clientY);
-      const prevKey = pointerPadMap.current.get(e.pointerId) ?? null;
+      const prevKey = pointers.get(e.pointerId) ?? null;
       const newKey = pad ? `${pad[0]},${pad[1]}` : null;
       if (prevKey === newKey) return;
       if (prevKey) {
         const [px, py] = prevKey.split(',').map(Number);
         onPadUp(px, py);
       }
-      pointerPadMap.current.set(e.pointerId, newKey);
+      pointers.set(e.pointerId, newKey);
       if (pad) onPadDown(pad[0], pad[1]);
     };
 
@@ -102,7 +103,7 @@ export function PadGrid({
 
     return () => {
       // The grid unmounts on hideUI toggles; pads still held here would never get their release.
-      for (const id of Array.from(pointerPadMap.current.keys())) releasePointer(id);
+      for (const id of Array.from(pointers.keys())) releasePointer(id);
       grid.removeEventListener('pointerdown', handlePointerDown);
       grid.removeEventListener('pointermove', handlePointerMove);
       grid.removeEventListener('pointerup', handlePointerUp);
