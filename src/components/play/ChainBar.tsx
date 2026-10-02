@@ -29,7 +29,6 @@ export function ChainBar({
   currentChain,
   showSelectedState = true,
   theme,
-  proLightMode = false,
   rangeStart = 0,
   rangeEnd = CHAINS_PER_SIDE,
   reversed = false,
@@ -39,7 +38,8 @@ export function ChainBar({
   const isLedMode = theme?.isChainLed && theme?.chainled;
   const slotsInRange = rangeEnd - rangeStart;
   const desiredSlots = slotCount ?? slotsInRange;
-  const visibleCount = Math.max(1, proLightMode ? Math.max(slotsInRange, desiredSlots) : desiredSlots);
+  // Circle positions are independent of pad dimensions, including in normal mode.
+  const visibleCount = Math.max(1, slotsInRange, desiredSlots);
   const slotPercent = visibleCount > 0 ? 100 / visibleCount : 100;
   const isHorizontal = orientation === 'horizontal';
 
