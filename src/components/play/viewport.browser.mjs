@@ -147,6 +147,9 @@ try {
         await until(`!!document.querySelector('button[aria-label="${transport}"]')`);
         console.log('Mode confirmed:', label, transport);
       }
+      const progress = `Number(document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'))`;
+      // A selected mode can render before its timer processes the first note.
+      await until(`${progress} > 0`);
       await tap(`document.querySelector('button[aria-label="Pause"]')`);
       await until(`!!document.querySelector('button[aria-label="Play"]')`);
       await tap(`document.querySelector('button[aria-label="Play"]')`);
@@ -154,7 +157,6 @@ try {
       // Pause before seeking so progress assertions cannot race playback ticks.
       await tap(`document.querySelector('button[aria-label="Pause"]')`);
       await until(`!!document.querySelector('button[aria-label="Play"]')`);
-      const progress = `Number(document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'))`;
       const beforePrevious = await run(progress);
       assert.ok(beforePrevious > 0, 'Playback has advanced before seeking');
       await tap(`document.querySelector('button[aria-label="Skip to previous"]')`);
