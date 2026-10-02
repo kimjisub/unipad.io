@@ -393,8 +393,9 @@ def _row_problems(row: dict[str, str], combos: dict[str, dict], evidence: dict[s
             best = "physical" if "physical" in targets else row["device_reality"]
             if row["device_reality"] not in targets or row["device_reality"] != best:
                 problems.append(f"{rid}: device_reality {row['device_reality']} is not what the evidence ran on ({sorted(targets)})")
-            if row["in_sold_app"] != _sold_of(qualifying):
-                problems.append(f"{rid}: in_sold_app should be {_sold_of(qualifying)} according to the evidence")
+            matching_target = [e for e in qualifying if e["run_target"] == row["device_reality"]]
+            if row["in_sold_app"] != _sold_of(matching_target):
+                problems.append(f"{rid}: in_sold_app should be {_sold_of(matching_target)} according to the evidence")
             last_pass = max(e["recorded_utc"] for e in qualifying)
             for e in all_evidence:
                 if feature in split_ids(e["features_failed"]) and e["recorded_utc"] > last_pass \

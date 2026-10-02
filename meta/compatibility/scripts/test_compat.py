@@ -7,6 +7,7 @@ whole directory followed by the documented commands.
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 import shutil
 import subprocess
@@ -49,6 +50,32 @@ def find(data: dict, row_id: str) -> dict:
 
 def evidence_of(data: dict, evidence_id: str) -> dict:
     return next(e for e in data["evidence"] if e["evidence_id"] == evidence_id)
+
+
+def mixed_target_data(physical_sold: str, simulator_sold: str, root=ROOT) -> dict:
+    """Synthetic runs exist only in memory or a test copy, with matching basis and index entries."""
+    data = load_all(root)
+    original = evidence_of(data, "EV-I263-9532e26d-0925")
+    basis = next(b for b in data["basis"] if b["evidence_id"] == original["evidence_id"])
+    entry = next(i for i in data["index"] if original["evidence_id"] in split_ids(i["linked_evidence_ids"]))
+    ids = []
+    for target, sold in (("physical", physical_sold), ("simulator", simulator_sold)):
+        eid, record = f"TEST-{target}", f"test-only/{target}"
+        source = f"Synthetic {target} phone run: iOS 26.3.1, open-in passed, 9 screenshots; commit {entry['source_commit']}; sold {sold}."
+        data["evidence"].append(dict(original, evidence_id=eid, record_id="device-log:" + record,
+                                     run_target=target, device=f"Synthetic {target} phone", scope=source,
+                                     command="synthetic test fixture; no device executed",
+                                     tree_state="unknown" if sold == "unknown" else "clean",
+                                     in_release_commit=sold, in_sold_app=sold))
+        data["basis"].append(dict(basis, evidence_id=eid, record_id="device-log:" + record,
+                                  source_sha256=hashlib.sha256(source.encode()).hexdigest(),
+                                  source_lines="L1", basis_note=source))
+        data["index"].append(dict(entry, record_id=record, linked_evidence_ids=eid,
+                                  device_kind=target, device_name=f"Synthetic {target} phone", in_sold_app=sold))
+        ids.append(eid)
+    find(data, "IOS-PH-26:open_pack").update(device_reality="physical", evidence_ids=";".join(ids),
+                                            in_sold_app=physical_sold)
+    return data
 
 
 def block(cov: dict, feature: str) -> dict:
@@ -714,6 +741,33 @@ class CorrectedStateTest(unittest.TestCase):
 
 
 class ReviewEvidenceTest(unittest.TestCase):
+    def test_mixed_targets_accept_the_selected_target_sold_flag(self) -> None:
+        for physical, simulator in (("no", "yes"), ("yes", "no")):
+            with self.subTest(physical=physical, simulator=simulator):
+                problems, coverage = problems_of(mixed_target_data(physical, simulator))
+                self.assertEqual(problems, [])
+                self.assertIsNotNone(coverage)
+
+    def test_mixed_targets_reject_the_other_target_sold_flag(self) -> None:
+        for physical, simulator in (("no", "yes"), ("yes", "no")):
+            with self.subTest(physical=physical, simulator=simulator):
+                data = mixed_target_data(physical, simulator)
+                find(data, "IOS-PH-26:open_pack")["in_sold_app"] = simulator
+                problems, coverage = problems_of(data)
+                self.assertEqual(problems, [f"IOS-PH-26:open_pack: in_sold_app should be {physical} according to the evidence"])
+                self.assertIsNone(coverage)
+
+    def test_mixed_targets_preserve_unknown_on_the_selected_target(self) -> None:
+        for simulator in ("yes", "no"):
+            with self.subTest(simulator=simulator):
+                data = mixed_target_data("unknown", simulator)
+                self.assertEqual(problems_of(data)[0], [])
+                for claim in ("yes", "no"):
+                    find(data, "IOS-PH-26:open_pack")["in_sold_app"] = claim
+                    problems, coverage = problems_of(data)
+                    self.assertEqual(problems, ["IOS-PH-26:open_pack: in_sold_app should be unknown according to the evidence"])
+                    self.assertIsNone(coverage)
+
     def test_sold_confirmation_needs_recorded_commit_and_index_membership(self) -> None:
         eid = "EV-I27-0f9b87b2-0928"
         for recorded, membership in (("not recorded", "unknown"), ("not recorded", "yes"), ("abcdef1", "unknown")):
@@ -842,6 +896,40 @@ class TamperingTest(unittest.TestCase):
         rows = read_csv(path)
         edit(rows)
         write_csv(path, tuple(rows[0].keys()), rows)
+
+    def write_mixed_targets(self, physical: str, simulator: str, claim: str) -> None:
+        data = mixed_target_data(physical, simulator, self.root)
+        find(data, "IOS-PH-26:open_pack")["in_sold_app"] = claim
+        for table, path in (("evidence", "evidence.csv"), ("basis", "evidence_basis.csv"),
+                            ("index", "device_report_index.csv"), ("matrix", "support_matrix.csv")):
+            write_csv(self.root / "data" / path, tuple(data[table][0].keys()), data[table])
+
+    def test_other_target_sold_claim_is_rejected_before_output_write(self) -> None:
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        original = {p.name: p.read_bytes() for p in (self.root / "data").iterdir() if p.is_file()}
+        for physical, simulator in (("no", "yes"), ("yes", "no"), ("unknown", "yes"), ("unknown", "no")):
+            with self.subTest(physical=physical, simulator=simulator):
+                for name, content in original.items():
+                    (self.root / "data" / name).write_bytes(content)
+                for name, content in before.items():
+                    (self.root / "output" / name).write_bytes(content)
+                self.write_mixed_targets(physical, simulator, simulator)
+                for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertEqual(result.stdout.strip(), f"IOS-PH-26:open_pack: in_sold_app should be {physical} according to the evidence")
+                self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
+
+    def test_selected_target_sold_claim_can_generate_and_check(self) -> None:
+        original = {p.name: p.read_bytes() for p in (self.root / "data").iterdir() if p.is_file()}
+        for physical, simulator in (("no", "yes"), ("yes", "no"), ("unknown", "yes"), ("unknown", "no")):
+            with self.subTest(physical=physical, simulator=simulator):
+                for name, content in original.items():
+                    (self.root / "data" / name).write_bytes(content)
+                self.write_mixed_targets(physical, simulator, physical)
+                for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"| `IOS-PH-26:open_pack` | run | physical | {physical} |",
+                              (self.root / "output/SUPPORT_MATRIX.md").read_text())
 
     def test_untouched_copy_passes(self) -> None:
         result = self.check()
