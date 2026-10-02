@@ -81,6 +81,44 @@ describe('parseUniPack', () => {
     assert.deepEqual(pack.ledAnimationTable![0][0][0], [{ ledEvents: [], loop: 1, num: 0 }]);
   });
 
+  describe('keyLed pad coordinates', () => {
+    const validLines = 'o 1 1 FF0000\nf 1 1\non 2 2 a 5\noff 2 2';
+    const validEvents = [
+      { type: 'on', x: 0, y: 0, color: 0xFFFF0000, velocity: 4 },
+      { type: 'off', x: 0, y: 0 },
+      { type: 'on', x: 1, y: 1, color: LAUNCHPAD_ARGB[5], velocity: 5 },
+      { type: 'off', x: 1, y: 1 },
+    ];
+
+    test('KL-M05 drops a suffixed x coordinate and keeps the next valid line', async () => {
+      const pack = await parseWithLeds({ '1 1 1': `o 1b 1 FF0000\n${validLines}` });
+
+      assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
+      assert.deepEqual(pack.errors, ['keyLed: [1 1 1].[o 1b 1 FF0000] format is incorrect']);
+    });
+
+    for (const command of ['o', 'on', 'f', 'off']) {
+      for (const token of ['1b', '1.5', '1e0', '0x1', 'NaN', 'Infinity', '0', '-1', '3', '9'.repeat(400)]) {
+        for (const axis of ['x', 'y']) {
+          test(`${command} drops invalid ${axis}=${token.slice(0, 20)} and keeps valid boundary lines`, async () => {
+            const coordinate = axis === 'x' ? `${token} 1` : `1 ${token}`;
+            const line = `${command} ${coordinate}${command === 'o' || command === 'on' ? ' FF0000' : ''}`;
+            const pack = await parseWithLeds({ '1 1 1': `${line}\n${validLines}` });
+
+            assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
+          });
+        }
+      }
+    }
+
+    test('preserves signed and zero-padded complete integers', async () => {
+      const pack = await parseWithLeds({ '1 1 1': 'o +1 01 FF0000\nf 01 +1\non 02 +2 a 5\noff +2 02' });
+
+      assert.deepEqual(pack.errors, []);
+      assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
+    });
+  });
+
   describe('chain switching', () => {
     test('files a keyLed animation under the chain in its file name', async () => {
       const pack = await parseWithLeds({ '2 1 1': 'o 1 1 a 5' });
