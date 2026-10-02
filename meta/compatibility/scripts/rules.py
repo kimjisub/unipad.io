@@ -186,6 +186,8 @@ def _evidence_problems(data: dict) -> list[str]:
                     else "yes" if e["in_release_commit"] == "yes" and e["tree_state"] == "clean"
                     else "no" if e["in_release_commit"] == "no" or e["tree_state"] == "dirty"
                     else "unknown")
+        if e["in_sold_app"] == "yes" and not re.search(r"\b[0-9a-f]{7,40}\b", e["source_commit"]):
+            problems.append(f"{eid}: sold-build confirmation requires a recorded tested commit")
         if e["in_sold_app"] != expected:
             problems.append(f"{eid}: in_sold_app {e['in_sold_app']!r} does not follow from commit and tree state ({expected})")
     return problems
@@ -347,6 +349,8 @@ def _index_problems(data: dict) -> list[str]:
             # Index descriptions may name a short hash or a merge parent alongside the tested commit.
             recorded_commits = re.findall(r"\b[0-9a-f]{7,40}\b", entry["source_commit"])
             claimed_commits = re.findall(r"\b[0-9a-f]{7,40}\b", e["source_commit"])
+            if e["in_sold_app"] == "yes" and (not recorded_commits or entry["in_sold_app"] != "yes"):
+                problems.append(f"{e['evidence_id']}: sold-build confirmation requires a recorded tested commit and confirmed release membership in the index line of {record}")
             if any(not any(a.startswith(b) or b.startswith(a) for b in claimed_commits) for a in recorded_commits):
                 problems.append(f"{e['evidence_id']}: source commit differs from the index line of {record}")
             checked |= {INDEX_FEATURE_OF_TOKEN[t] for t in (token.strip() for token in entry["features_checked"].split("|")) if t in INDEX_FEATURE_OF_TOKEN}

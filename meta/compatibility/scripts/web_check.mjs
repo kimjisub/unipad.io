@@ -146,18 +146,33 @@ async function pressPad(page, cdp, input, padId, holdMs = 180) {
   return held;
 }
 
-/** Sweeps the grid until a pad starts a sound; a pack can have silent pads. */
+/** Sweeps the actual grid, keeping sound starts and held lights independently. */
 async function findSoundingPad(page, cdp, input) {
-  for (let y = 0; y < 8; y += 1) {
-    for (let x = 0; x < 8; x += 1) {
-      const padId = `${x},${y}`;
-      const before = (await readAudio(page)).starts;
-      const held = await pressPad(page, cdp, input, padId);
-      const after = await readAudio(page);
-      if (after.starts > before) return { padId, tried: y * 8 + x + 1, held, audio: after };
-    }
+  const padIds = await page.locator('[data-pad]').evaluateAll((pads) => pads.map((p) => p.getAttribute('data-pad')));
+  if (!padIds.length) return null;
+  const initial = await readAudio(page);
+  let audio = initial;
+  let sounding = null;
+  let lights = null;
+  let held = null;
+  let tried = 0;
+  for (const padId of padIds) {
+    const before = (await readAudio(page)).starts;
+    held = await pressPad(page, cdp, input, padId);
+    audio = await readAudio(page);
+    tried += 1;
+    if (held.lit > (lights?.held.lit ?? 0)) lights = { padId, held };
+    if (!sounding && audio.starts > before) sounding = padId;
+    if (sounding && lights) break;
   }
-  return null;
+  return {
+    padId: sounding ?? lights?.padId ?? padIds[0],
+    tried,
+    held: lights?.held ?? held,
+    ledPadId: lights?.padId ?? null,
+    audio,
+    soundStarts: audio.starts - initial.starts,
+  };
 }
 
 async function runProfile(browser, profile, blocked, requests, errors) {
@@ -200,10 +215,11 @@ async function runProfile(browser, profile, blocked, requests, errors) {
         input: profile.input,
         padId: found.padId,
         padsTried: found.tried,
-        soundStarts: found.audio.starts,
+        soundStarts: found.soundStarts,
         contextState: found.audio.state,
         litIdle,
         litWhileHeld: found.held.lit,
+        ledPadId: found.ledPadId,
       }
     : { input: profile.input, padId: null, portraitHintVisible: await hintVisible(page), note: 'no pad produced a sound start in the first layout' };
   await shot('02-press');
@@ -214,11 +230,9 @@ async function runProfile(browser, profile, blocked, requests, errors) {
     await page.waitForTimeout(800);
     const hintRotated = await hintVisible(page);
     const padsRotated = await readPads(page);
-    // In portrait the rotate hint covers the pads and the first sweep fails; sweep again after rotating.
+    // The portrait hint covers the pads; after rotating, observe sound and lights independently again.
     const startsBefore = (await readAudio(page)).starts;
-    const foundAfter = hintRotated ? null : (found
-      ? { ...found, ...(await pressPad(page, cdp, profile.input, found.padId).then((held) => ({ held }), () => ({ held: null }))) }
-      : await findSoundingPad(page, cdp, profile.input));
+    const foundAfter = hintRotated ? null : await findSoundingPad(page, cdp, profile.input);
     const audioAfterRotate = await readAudio(page);
     const startsAfter = audioAfterRotate.starts;
     const pressedAfterRotate = foundAfter ? startsAfter > startsBefore : null;
@@ -231,6 +245,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
       pressedAfterRotate,
       padIdAfterRotate: foundAfter ? foundAfter.padId : null,
       litWhileHeldAfterRotate: foundAfter && foundAfter.held ? foundAfter.held.lit : null,
+      ledPadIdAfterRotate: foundAfter ? foundAfter.ledPadId : null,
       soundStartsBefore: startsBefore,
       soundStartsAfter: startsAfter,
       contextStateAfterRotate: audioAfterRotate.state,

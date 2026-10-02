@@ -714,6 +714,34 @@ class CorrectedStateTest(unittest.TestCase):
 
 
 class ReviewEvidenceTest(unittest.TestCase):
+    def test_sold_confirmation_needs_recorded_commit_and_index_membership(self) -> None:
+        eid = "EV-I27-0f9b87b2-0928"
+        for recorded, membership in (("not recorded", "unknown"), ("not recorded", "yes"), ("abcdef1", "unknown")):
+            with self.subTest(recorded=recorded, membership=membership):
+                data = load_all()
+                run = evidence_of(data, eid)
+                run.update(source_commit="unipad-ios " + recorded, tree_state="clean", in_release_commit="yes", in_sold_app="yes")
+                for entry in data["index"]:
+                    if eid in split_ids(entry["linked_evidence_ids"]):
+                        entry.update(source_commit=recorded, in_sold_app=membership)
+                for row in data["matrix"]:
+                    if eid in split_ids(row["evidence_ids"]) and row["verification_status"] in {"verified_run", "partial_run"}:
+                        row["in_sold_app"] = "yes"
+                problems, coverage = problems_of(data)
+                self.assertTrue(any("sold-build confirmation requires" in p for p in problems), problems)
+                self.assertIsNone(coverage)
+
+    def test_supported_sold_confirmation_preserves_short_and_full_commits(self) -> None:
+        data = load_all()
+        self.assertEqual(problems_of(data)[0], [])
+        for eid in ("EV-A35-9f4173ac-0926", "EV-I263-9532e26d-0925"):
+            run = evidence_of(data, eid)
+            self.assertEqual(run["in_sold_app"], "yes")
+            entries = [i for i in data["index"] if eid in split_ids(i["linked_evidence_ids"])]
+            self.assertTrue(entries)
+            self.assertTrue(all(i["in_sold_app"] == "yes" and re.search(r"\b[0-9a-f]{7,40}\b", i["source_commit"]) for i in entries))
+        self.assertEqual(row_bucket(find(data, "IOS-PH-26:open_pack")), "verified_emulated_sold")
+
     def test_sold_flag_cannot_override_the_device_index(self) -> None:
         data = load_all()
         eid = "EV-A35-81d4c0c2-0928"
@@ -846,6 +874,18 @@ class TamperingTest(unittest.TestCase):
         for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
             self.assertEqual(result.returncode, 1, result.stdout)
             self.assertIn("IOS-PAD-26:external_connect: failed needs a cited failed run", result.stdout)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
+
+    def test_unknown_release_provenance_is_rejected_before_output_write(self) -> None:
+        eid = "EV-I27-0f9b87b2-0928"
+        self.edit_csv("data/evidence.csv", lambda rows: next(e for e in rows if e["evidence_id"] == eid).update(
+            tree_state="clean", in_release_commit="yes", in_sold_app="yes"))
+        self.edit_csv("data/support_matrix.csv", lambda rows: [r.update(in_sold_app="yes") for r in rows
+            if eid in split_ids(r["evidence_ids"]) and r["verification_status"] in {"verified_run", "partial_run"}])
+        before = {p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}
+        for result in (self.run_script("scripts/compute_coverage.py"), self.check()):
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("sold-build confirmation requires", result.stdout)
         self.assertEqual({p.name: p.read_bytes() for p in (self.root / "output").iterdir() if p.is_file()}, before)
 
     def test_sold_promotion_is_rejected_before_output_write(self) -> None:

@@ -131,6 +131,11 @@ line from `in_release_commit` and `tree_state`, and per row from the evidence th
 - a raw or facts file whose SHA-256 differs from the stored one, and a `tables.csv` or `series_mapping.csv` that differs from what the
   source files give when rebuilt. `build_tables.py` applies the table rules to its own result and refuses to write a table that breaks them.
 
+A sold-build confirmation also requires a recorded tested commit. For device runs, the independently recorded
+index must name that commit and confirm release membership (`in_sold_app=yes`); an unknown index value or
+an unrecorded commit cannot be promoted by changing the run or its linked rows. Existing short and full
+commit hashes are compared as prefixes.
+
 **Install provenance:** each run's `install_method` must equal the independently recorded field in
 `evidence_basis.csv`. `store` needs a source record of store delivery; `sideload` records a developer/test build
 installed or run by local tools; `none` means no app installation was recorded or installation does not apply
@@ -174,7 +179,7 @@ From `meta/compatibility`, with Python 3.10 or later (run here with 3.14) and no
 ```
 python3 scripts/compute_coverage.py --check   # rules, derived files against raw snapshots, stored output; non-zero on any difference
 python3 -m unittest discover -s scripts       # the rules, including tampering with a copy of this directory
-node --test scripts/web_rules.test.mjs        # sound-state and request-origin rules, without a browser
+node --test scripts/web_rules.test.mjs scripts/web_check.test.mjs  # decisions and observation flow, without a browser
 python3 scripts/build_tables.py               # raw snapshots -> sources/tables.csv, data/series_mapping.csv (refuses if a raw hash differs)
 python3 scripts/compute_coverage.py           # validates, then writes output/
 ```
@@ -204,12 +209,17 @@ pnpm exec next start --port 3688 &
 node meta/compatibility/scripts/web_check.mjs http://localhost:3688 <pack.zip> meta/compatibility/evidence/<new-folder> en
 ```
 
-It opens the pack at a desktop size and at two tablet and one phone window size, presses the first pad that starts a sound, counts sound
-starts and lit pads, flips the window, and aborts every request that leaves the local server and the analytics script (the aborted targets
+It opens the pack at a desktop size and at two tablet and one phone window size, sweeps the pad identifiers actually present on screen until both sound and held lights have been observed
+(or all pads have been tried), counts new sound starts and lit pads independently, flips the window, and aborts every request that leaves the local server and the analytics script (the aborted targets
 are listed in the result). It exits 1 when a profile fails or throws and 2 on a setup error. The rotate hint is looked up in the site's own
 messages, so `ko` works as well as `en`. It can only drive Chromium: it sends held touches through the Chrome DevTools Protocol, so it does
 not run Firefox or WebKit. A pass is a pass for headless Chromium on that computer; it is not Chrome, not another operating system and not
 a phone or tablet.
+
+Light-only observations survive even when no pad starts a sound, including after rotation. The recorded
+`ledPadId` fields identify the pad used for the strongest held-light observation separately from the
+sounding pad; a new sweep after rotation repeats both checks using the current grid. Mouse and held touch
+input use the same sweep.
 
 The browser check uses `web_rules.mjs` for its decisions. A sound start counts only with an audio context in
 `running` state; playback after rotation also needs a new start and the recorded state after rotation. The
