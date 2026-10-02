@@ -1,0 +1,43 @@
+combo_id,surface,platform,device_category,os_or_browser,version_scope,os_family,version_min,version_max,browser,notes
+AND-PH-LE22,app_android,android,phone,Android,Android 5.1 and lower (API <=22),android,,22,none,
+AND-PH-23,app_android,android,phone,Android,Android 6.0 (API 23),android,23,23,none,
+AND-PH-24-28,app_android,android,phone,Android,Android 7.0-9 (API 24-28),android,24,28,none,
+AND-PH-29-34,app_android,android,phone,Android,Android 10-14 (API 29-34),android,29,34,none,
+AND-PH-35,app_android,android,phone,Android,Android 15 (API 35),android,35,35,none,
+AND-PH-36,app_android,android,phone,Android,Android 16 (API 36),android,36,36,none,
+AND-PH-37,app_android,android,phone,Android,Android 17 (API 37),android,37,37,none,
+AND-TB-LE22,app_android,android,tablet,Android,Android 5.1 and lower (API <=22),android,,22,none,
+AND-TB-23,app_android,android,tablet,Android,Android 6.0 (API 23),android,23,23,none,
+AND-TB-24-28,app_android,android,tablet,Android,Android 7.0-9 (API 24-28),android,24,28,none,
+AND-TB-29-34,app_android,android,tablet,Android,Android 10-14 (API 29-34),android,29,34,none,
+AND-TB-35,app_android,android,tablet,Android,Android 15 (API 35),android,35,35,none,
+AND-TB-36,app_android,android,tablet,Android,Android 16 (API 36),android,36,36,none,
+AND-TB-37,app_android,android,tablet,Android,Android 17 (API 37),android,37,37,none,
+IOS-PH-LE16,app_ios,ios,phone,iOS,iOS/iPadOS 16 and lower,ios,,16,none,
+IOS-PH-17,app_ios,ios,phone,iOS,17.x,ios,17,17,none,
+IOS-PH-18,app_ios,ios,phone,iOS,18.x,ios,18,18,none,
+IOS-PH-26,app_ios,ios,phone,iOS,26.x,ios,26,26,none,
+IOS-PH-27,app_ios,ios,phone,iOS,27.x,ios,27,27,none,
+IOS-PH-EARLIER,app_ios,ios,phone,iOS,"Apple ""Earlier"" bucket (mixes 17 and <=16; cannot be split)",ios,,17,none,
+IOS-PAD-LE16,app_ios,ios,tablet,iPadOS,iOS/iPadOS 16 and lower,ipados,,16,none,
+IOS-PAD-17,app_ios,ios,tablet,iPadOS,17.x,ipados,17,17,none,
+IOS-PAD-18,app_ios,ios,tablet,iPadOS,18.x,ipados,18,18,none,
+IOS-PAD-26,app_ios,ios,tablet,iPadOS,26.x,ipados,26,26,none,
+IOS-PAD-27,app_ios,ios,tablet,iPadOS,27.x,ipados,27,27,none,
+IOS-PAD-EARLIER,app_ios,ios,tablet,iPadOS,"Apple ""Earlier"" bucket (mixes 17 and <=16; cannot be split)",ipados,,17,none,
+IOS-MAC-26.2,app_ios,macos,desktop,macOS (iOS app on Mac / macosx platform),26.2 and later,macos,26.2,,none,project lists macosx in SUPPORTED_PLATFORMS with MACOSX_DEPLOYMENT_TARGET 26.2; whether a Mac build is distributed is not known
+IOS-VISION-26.2,app_ios,visionos,other,visionOS,26.2 and later,visionos,26.2,,none,TARGETED_DEVICE_FAMILY includes 7 and XROS_DEPLOYMENT_TARGET is 26.2; distribution unknown
+WEB-DT-CHROME,web,web,desktop,Chrome (desktop),current releases,any,,,chrome,"the consumer browser; a headless Chromium engine build is recorded as a partial run, not as Chrome"
+WEB-DT-FIREFOX,web,web,desktop,Firefox,current releases,any,,,firefox,
+WEB-DT-SAFARI,web,web,desktop,Safari (macOS),current releases,macos,,,safari,
+WEB-DT-WIN,web,web,desktop,"Windows, any browser",all Windows versions,windows,,,any,an any-browser row is settled only browser by browser; one browser's run is recorded as partial
+WEB-DT-MAC,web,web,desktop,"macOS, any browser",all macOS versions,macos,,,any,an any-browser row is settled only browser by browser; one browser's run is recorded as partial
+WEB-DT-LINUX,web,web,desktop,"Linux, any browser",all Linux distributions,linux,,,any,an any-browser row is settled only browser by browser; one browser's run is recorded as partial
+WEB-PH-CHROME,web,web,phone,Chrome (Android Chrome; Chrome on iOS uses WebKit and cannot be separated in the denominator),current releases,android,,,chrome,
+WEB-PH-SAFARI,web,web,phone,Safari on iOS,current releases,ios,,,safari,
+WEB-PH-SAMSUNG,web,web,phone,Samsung Internet,current releases,android,,,samsung,
+WEB-PH-FIREFOX,web,web,phone,"Firefox (Android, iOS)",current releases,any,,,firefox,
+WEB-TB-CHROME,web,web,tablet,Chrome (Android tablet; Chrome on iPad uses WebKit),current releases,android,,,chrome,
+WEB-TB-SAFARI,web,web,tablet,Safari on iPadOS,current releases,ipados,,,safari,
+WEB-TB-SAMSUNG,web,web,tablet,Samsung Internet,current releases,android,,,samsung,
+WEB-TB-FIREFOX,web,web,tablet,"Firefox (Android, iPadOS)",current releases,any,,,firefox,
