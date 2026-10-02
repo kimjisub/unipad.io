@@ -31,7 +31,11 @@ const lineOf = (needle) => {
   assert(index >= 0, `경고 경로가 없음: ${needle}`);
   return parser.slice(0, index).split('\n').length;
 };
-const withoutErrors = ({ errors, ...value }) => value;
+const withoutErrors = (value) => {
+  const result = { ...value };
+  delete result.errors;
+  return result;
+};
 const byId = new Map(corpus.cases.map((c) => [c.id, c]));
 const ids = [...[1, 2, 3, 4, 5, 6, 7, 8, 9, 11].map((n) => `AP-M${String(n).padStart(2, '0')}`),
   ...[1, 2, 3, 4, 5].map((n) => `KL-N${String(n).padStart(2, '0')}`)];

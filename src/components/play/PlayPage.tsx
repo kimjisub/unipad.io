@@ -352,7 +352,7 @@ export function PlayPage() {
         /* storage error */
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl, showToast],
+    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl, showToast, tToast],
   );
 
   const handleImportThemeFile = useCallback(
@@ -375,7 +375,7 @@ export function PlayPage() {
         await setSetting('lastThemeId', '').catch(() => {});
       }
     },
-    [loadTheme, refreshLists, state.loaded, showToast],
+    [loadTheme, refreshLists, state.loaded, showToast, tToast],
   );
 
   const handlePlay = useCallback(
@@ -411,7 +411,7 @@ export function PlayPage() {
         return false;
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, syncPackUrl, showToast],
+    [loadUniPack, loadTheme, resumeAudio, syncPackUrl, showToast, tToast],
   );
 
   const getCodeFromUrl = useCallback((): string | null => {
@@ -479,7 +479,7 @@ export function PlayPage() {
         showToast(tToast('themeFailed'));
       }
     },
-    [loadTheme, refreshLists, showToast, state.loaded],
+    [loadTheme, refreshLists, showToast, tToast, state.loaded],
   );
 
   const handleClearTheme = useCallback(
@@ -557,7 +557,7 @@ export function PlayPage() {
   const handleClearTraceLog = useCallback(() => {
     clearTraceLog();
     showToast(tToast('traceLogCleared'));
-  }, [clearTraceLog, showToast]);
+  }, [clearTraceLog, showToast, tToast]);
 
   // Android: show "Copied" toast when recording stops
   useEffect(() => {
@@ -565,7 +565,7 @@ export function PlayPage() {
       showToast(tToast('copied'));
     }
     prevRecordingRef.current = state.recording;
-  }, [state.recording, showToast]);
+  }, [state.recording, showToast, tToast]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
   useEffect(() => {
@@ -643,12 +643,12 @@ export function PlayPage() {
     } finally {
       setMidiConnecting(false);
     }
-  }, [connectMidi, midiConnecting, showToast]);
+  }, [connectMidi, midiConnecting, showToast, tToast]);
 
   const handleDisconnectMidi = useCallback(() => {
     disconnectMidi();
     showToast(tToast('midiDisconnected'));
-  }, [disconnectMidi, showToast]);
+  }, [disconnectMidi, showToast, tToast]);
 
   const handleChangeMidiProfile = useCallback((profile: LaunchpadProfile) => {
     setMidiProfile(profile);
@@ -773,7 +773,7 @@ export function PlayPage() {
       storeDownloadAbortRef.current = null;
       setDownloadingStoreCode(null);
     }
-  }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, trackStoreEvent]);
+  }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, tToast, trackStoreEvent]);
 
   /**
    * Carry out an install the person approved from a shared link.
@@ -795,7 +795,7 @@ export function PlayPage() {
         showToast(tToast('installFailed'));
       }
     },
-    [handleDownloadStoreItem, handlePlay, showToast],
+    [handleDownloadStoreItem, handlePlay, showToast, tToast],
   );
 
   const handleCancelStoreDownload = useCallback(() => {
@@ -827,7 +827,7 @@ export function PlayPage() {
     trackStoreEvent('store_play_downloaded', { code: item.code });
     setStoreOpen(false);
     handlePlay(pack.id);
-  }, [savedPacks, showToast, trackStoreEvent, handlePlay]);
+  }, [savedPacks, showToast, tToast, trackStoreEvent, handlePlay]);
 
   const downloadedStoreCodes = useMemo(
     () => new Set(savedPacks.map((p) => p.storeCode).filter((code): code is string => Boolean(code))),
@@ -878,7 +878,7 @@ export function PlayPage() {
         showToast(tToast('sharedPackFailed'));
       }
     })();
-  }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast]);
+  }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast, tToast]);
 
   useLayoutEffect(() => {
     const target = centerStageRef.current;

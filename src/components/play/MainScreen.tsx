@@ -49,6 +49,7 @@ export function MainScreen({
   const t = useTranslations('play.main');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
@@ -104,15 +105,10 @@ export function MainScreen({
     setSetting('sortOrder', String(sortAsc)).catch(() => {});
   }, [sortMethod, sortAsc]);
 
-  useEffect(() => {
-    if (filteredAndSortedPacks.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (selectedId && !filteredAndSortedPacks.some((pack) => pack.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [filteredAndSortedPacks, selectedId]);
+  // Reconcile selection before rendering when a pack disappears from the list.
+  if (selectedId && !filteredAndSortedPacks.some((pack) => pack.id === selectedId)) {
+    setSelectedId(null);
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -171,8 +167,6 @@ export function MainScreen({
   const handleItemDoubleClick = useCallback((id: string) => {
     onPlay(id);
   }, [onPlay]);
-
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleDelete = useCallback((id: string) => {
     setDeleteConfirmId(id);

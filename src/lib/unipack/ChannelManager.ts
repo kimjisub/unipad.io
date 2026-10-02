@@ -5,7 +5,8 @@ export enum Channel {
   UI_UNIPAD = 1,
   GUIDE = 2,
   PRESSED = 3,
-  CHAIN = 3,
+  // Chain lights and held pads deliberately share the same priority.
+  CHAIN = PRESSED,
   LED = 4,
 }
 

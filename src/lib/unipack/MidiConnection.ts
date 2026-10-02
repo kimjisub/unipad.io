@@ -283,7 +283,7 @@ export class MidiConnection {
         this.handleMatrixInput(kind, note, velocity);
         break;
       case 'master_keyboard':
-        this.handleMasterKeyboardInput(kind, note, velocity);
+        this.handleMasterKeyboardInput(kind, note);
         break;
       case 'none':
       default:
@@ -430,7 +430,7 @@ export class MidiConnection {
     this.handleFourByFourBlockInput(kind, note, true);
   }
 
-  private handleMasterKeyboardInput(kind: MidiEventKind, note: number, _velocity: number): void {
+  private handleMasterKeyboardInput(kind: MidiEventKind, note: number): void {
     this.handleFourByFourBlockInput(kind, note, false);
   }
 

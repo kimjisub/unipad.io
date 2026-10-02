@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { useClientReady } from '@/hooks/useClientReady';
 import type { StoreItem } from '@/lib/store';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
@@ -55,17 +56,19 @@ export function StoreModal({
   const tBadge = useTranslations('play.badge');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [selectedCode, setSelectedCode] = useState<string | null>(() => (visible ? items[0]?.code ?? null : null));
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'led' | 'autoplay'>('all');
   const [sort, setSort] = useState<'downloads' | 'title'>('downloads');
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  const clientReady = useClientReady();
+  const [preferencesRestored, setPreferencesRestored] = useState(false);
+  if (clientReady && !preferencesRestored) {
+    setPreferencesRestored(true);
     try {
       const raw = window.sessionStorage.getItem(STORE_UI_PREF_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { filter?: string; sort?: string };
+      const parsed = raw ? JSON.parse(raw) as { filter?: string; sort?: string } : {};
+
       if (parsed.filter === 'all' || parsed.filter === 'led' || parsed.filter === 'autoplay') {
         setFilter(parsed.filter);
       }
@@ -75,23 +78,28 @@ export function StoreModal({
     } catch {
       // ignore
     }
-  }, []);
+  }
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!preferencesRestored) return;
     try {
       window.sessionStorage.setItem(STORE_UI_PREF_KEY, JSON.stringify({ filter, sort }));
     } catch {
       // ignore
     }
-  }, [filter, sort]);
+  }, [filter, sort, preferencesRestored]);
 
-  useEffect(() => {
-    if (!visible || !preferredCode) return;
-    if (items.some((it) => it.code === preferredCode)) {
-      setSelectedCode(preferredCode);
+  const [selectionInputs, setSelectionInputs] = useState({ visible, preferredCode, items });
+  if (selectionInputs.visible !== visible || selectionInputs.preferredCode !== preferredCode || selectionInputs.items !== items) {
+    setSelectionInputs({ visible, preferredCode, items });
+    if (visible) {
+      if (!selectedCode || !items.some((it) => it.code === selectedCode)) {
+        setSelectedCode(items[0]?.code ?? null);
+      } else if (preferredCode && items.some((it) => it.code === preferredCode)) {
+        setSelectedCode(preferredCode);
+      }
     }
-  }, [visible, preferredCode, items]);
+  }
 
   useEffect(() => {
     if (!visible) return;
@@ -100,17 +108,6 @@ export function StoreModal({
     }, 80);
     return () => window.clearTimeout(timer);
   }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    if (items.length === 0) {
-      setSelectedCode(null);
-      return;
-    }
-    if (!selectedCode || !items.some((it) => it.code === selectedCode)) {
-      setSelectedCode(items[0].code);
-    }
-  }, [visible, items, selectedCode]);
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
