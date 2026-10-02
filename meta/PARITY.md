@@ -4,7 +4,7 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-09-08
+Last verified: 2026-09-08 (the "Parser and runner conformance" section: 2026-09-30)
 
 ## Repos
 
@@ -106,6 +106,43 @@ apps keep those switches in the option panel and reset them per session.
   overstates parity for that row.
 - **Deleting a pack leaves the database row on Android and iOS** and removes it on the web.
 - **Analytics events exist on the web only.**
+
+## Parser and runner conformance
+
+`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
+the expected result of each case (README there: how to run it, what each harness measures, what is
+covered and what is not; RESULTS.md: the numbers). Run of 2026-10-02 (Korea time), 124 cases: 76 pass on all three
+platforms; the rest are the differences below, 21 cases whose expected result no doc decides (observed
+only) and 4 cases the iOS harness cannot observe. This is a result for those cases, not a statement
+that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
+are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
+
+### Open differences found by the corpus
+
+- **iOS keeps invalid round LED lines.** `o mc 33`, `o * 0`, `f mc 33`, `f mc 0` are not dropped, so number 33 reaches the logo (index 32) and 0 addresses index -1. Android and web drop them (KL-012).
+- **iOS accepts extra or unparsable trailing tokens on LED lines.** `o 1 1 FF0000 x`, `o 1 1 FF0000 5 6` and `o l 0 a 5 9` light instead of being reported (KL-M11, KL-M12, KL-014).
+- **iOS reads an out-of-range auto velocity as a hex colour.** `o 1 1 a 200` and `o 1 1 a -1` light `ff00000a` (KL-M17, KL-M18).
+- **Android accepts a 7-digit hex colour** (alpha 00); web and iOS reject it (KL-M13).
+- **Web reads the x column of `on`/`off` lines with `parseInt`,** so `o 1b 1 FF0000` lights pad (0,0); Android and iOS reject it (KL-M05).
+- **Web names non-numeric values differently.** Non-numeric autoPlay values and keyLED file-name fields are reported as `range` instead of `format` (AP-M01..M09, AP-M11, KL-N01..N05). The line or file is dropped by all three; only the message differs.
+
+### Not observed, so not known
+
+- **Lights after leaving the play screen on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32); both are measured and pass. On iOS the Launchpad is cleared by the main screen when it takes the MIDI controller back (`MainMidiControllerAdapter.onAttach`), which the unit-level harness does not drive, so the two cases are unverified there. They are not an iOS failure: an earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test. Nobody has checked it on a Launchpad.
+- **autoPlay timing on iOS** (RUN-A-001, RUN-A-002). `AutoPlayRunner` reads the wall clock and sleeps in real time, so it cannot be driven on a virtual clock.
+- **Round and logo lights on Android with Pro light mode off**, which is how the play screen starts. The corpus measures Android with it on.
+
+### Found while building the corpus (iOS, not fixed here)
+
+- **Stopping a repeated sound while it cycles hangs the iOS main thread** (simulator, iOS 27.0, 3 runs of 3). A keySound loop of 2 or more, then `SoundEngine.destroy()` (leaving the play screen) or the same pad pressed again: `AVAudioPlayerNode.stop()` waits for the completion handler `SoundEngine.soundOn` scheduled, which waits for the engine lock `stop()` holds. Input, command and stacks in `meta/unipack-conformance/RESULTS.md`. Not checked on a device. Android and web are not affected by this code path; whether they have their own problem there is not known.
+
+### Documentation that disagrees with the code
+
+- `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
+- `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012).
+- Only iOS reads `info.json` (INF-015).
+- Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings. KL-003 and AP-004 are undetermined on the same basis as the unknown-command cases; agreement between parsers is not a warning expectation.
+- `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, undetermined).
 
 ## Slide across pads
 
