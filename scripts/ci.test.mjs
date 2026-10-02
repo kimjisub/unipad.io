@@ -31,3 +31,15 @@ test('the aggregate test command includes all existing test formats and tooling 
     assert.ok(scripts.test.includes(pattern), `missing ${pattern}`);
   }
 });
+
+test('CI runs browser checks and retains failure evidence', () => {
+  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  const readme = readFileSync(new URL('README.md', root), 'utf8');
+  assert.match(workflow, /run: pnpm exec playwright install --with-deps chromium/);
+  assert.ok(workflow.indexOf('run: pnpm test:e2e') > workflow.indexOf('run: pnpm build'));
+  assert.match(workflow, /if: failure\(\)/);
+  assert.match(workflow, /uses: actions\/upload-artifact@v4/);
+  assert.match(workflow, /test-results\//);
+  assert.match(workflow, /playwright-report\//);
+  assert.ok(readme.includes('pnpm test:e2e'));
+});
