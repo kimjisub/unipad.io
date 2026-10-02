@@ -23,7 +23,12 @@ const zip = new JSZip();
 zip.file('info', 'title=Viewport test\nproducerName=CI\nbuttonX=8\nbuttonY=8\nchain=1\nsquareButton=true\n');
 zip.file('keySound', '');
 zip.file('keyLED/1 1 1 1', 'on 1 1 5\ndelay 30\noff 1 1');
-zip.file('autoPlay', 'o 1 1\nd 60000\nf 1 1');
+// Mode changes resync at the current event, so a single note followed by one
+// delay can reach the end as soon as Step scans for its next note. Keep many
+// pending notes (and more than the transport's 40-event skip) in this fixture.
+zip.file('autoPlay', Array.from({length:64}, (_,i) =>
+  `o ${i%8+1} ${Math.floor(i/8)+1}\nd 60000\nf ${i%8+1} ${Math.floor(i/8)+1}\nd 60000`
+).join('\n'));
 const pack = await zip.generateAsync({ type: 'base64' });
 const command = (method, params = {}) => new Promise((resolve, reject) => {
   const id = ++sequence;
@@ -135,10 +140,29 @@ try {
       for (const label of ['Feedback', 'LED', 'Trace', 'Rec']) {
         await tap(button(label)); await tap(button(label));
       }
-      for (const label of ['Guide', 'Step', 'Auto']) await tap(button(label));
-      for (const label of ['Pause', 'Play', 'Skip to previous', 'Skip to next']) {
-        await tap(`document.querySelector('button[aria-label="${label}"]')`);
+      for (const label of ['Guide', 'Step', 'Auto']) {
+        await tap(button(label));
+        await until(`${button(label)}?.getAttribute('aria-pressed')==='true'`);
+        const transport = label === 'Step' ? 'Play' : 'Pause';
+        await until(`!!document.querySelector('button[aria-label="${transport}"]')`);
+        console.log('Mode confirmed:', label, transport);
       }
+      await tap(`document.querySelector('button[aria-label="Pause"]')`);
+      await until(`!!document.querySelector('button[aria-label="Play"]')`);
+      await tap(`document.querySelector('button[aria-label="Play"]')`);
+      await until(`!!document.querySelector('button[aria-label="Pause"]')`);
+      // Pause before seeking so progress assertions cannot race playback ticks.
+      await tap(`document.querySelector('button[aria-label="Pause"]')`);
+      await until(`!!document.querySelector('button[aria-label="Play"]')`);
+      const progress = `Number(document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'))`;
+      const beforePrevious = await run(progress);
+      assert.ok(beforePrevious > 0, 'Playback has advanced before seeking');
+      await tap(`document.querySelector('button[aria-label="Skip to previous"]')`);
+      await until(`${progress} < ${beforePrevious}`);
+      const beforeNext = await run(progress);
+      await tap(`document.querySelector('button[aria-label="Skip to next"]')`);
+      await until(`${progress} > ${beforeNext}`);
+      console.log('Transport confirmed: pause, resume, previous and next');
       await wait(300);
       await tap(`document.querySelector('button[aria-label="Open menu"]')`);
       await until(`!!document.querySelector('[role="dialog"]')`);
