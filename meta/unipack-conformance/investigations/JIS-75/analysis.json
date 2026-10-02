@@ -1,0 +1,3399 @@
+{
+  "조사종류": "보존 출력과 지정 소스의 읽기 전용 대조",
+  "새기기실행": false,
+  "실제사용자영향인원": null,
+  "기준": {
+    "evidence": "3e47691ee671f2794e8e644e662389bcf413379b",
+    "remoteMain": "3760b3c5e255e3307bf2f04012094b4623645cd9",
+    "parserIdentical": true,
+    "harnessOnMain": false
+  },
+  "파일지문": {
+    "corpus.json": "30ad4442b7abf40ee0cbfcc97976999fbde4571b30f1d39590425620e4c465eb",
+    "divergences-original.json": "145f0b60eff09e290e07945b12cc21dc0cfb011eb7b0623fa0f460af0e0a1ca5",
+    "parser.ts": "43b0423e78fde25f90d153337ca99e411a1df7b52f013185f855f817ad82bf0a",
+    "conformanceHarness.ts": "01f719ae32ca02330095a5867f32d122798b6d2233abe212111e9f2c9e509950",
+    "web.json": "c80710f0ecf6aa8eff44bb7bc58fffec2f0aee17ed30faa19b91ad848e01a604",
+    "android.json": "db5d61fbef33a08f675d63c11280c906df762b7daa4cbac9d4e77e141ed3e690",
+    "ios.json": "d9050777c728939be10ee8b9fc723f71b5d37633659fd58d2466140c8a6f8950"
+  },
+  "보존시각": {
+    "web": "2026-10-01T19:40:06.342Z",
+    "android": "2026-10-01T19:41:58.715792Z",
+    "ios": "2026-10-01T19:43:15Z"
+  },
+  "검사결과": {
+    "사례수": 15,
+    "경고외동일": 15,
+    "원문입력에서형식실패확인": 15,
+    "범위경고대조수": 5,
+    "경고미결정유지": [
+      "KL-003",
+      "AP-004"
+    ]
+  },
+  "실제범위오류문장대조": [
+    "autoPlay: [on 5 1] coordinate is incorrect",
+    "autoPlay: [chain 3] chain is incorrect",
+    "keyLed: [3 1 1] chain is incorrect",
+    "keyLed: [1 5 1] x is incorrect",
+    "keyLed: [1 1 1 -1] loop is incorrect"
+  ],
+  "사례": [
+    {
+      "사례": "AP-M01",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "on a 1\non 1 1"
+      },
+      "입력지문": "98deb21079a5d4a22b5cb8d36a477656c05fe15a862cce3c63c2eaf345edace4",
+      "원문경고": "autoPlay: [on a 1] coordinate is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "coordinate",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "a",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 609,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M01",
+          "fingerprint": "98deb21079a5d4a22b5cb8d36a477656c05fe15a862cce3c63c2eaf345edace4",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M01",
+          "fingerprint": "98deb21079a5d4a22b5cb8d36a477656c05fe15a862cce3c63c2eaf345edace4",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "98deb21079a5d4a22b5cb8d36a477656c05fe15a862cce3c63c2eaf345edace4",
+          "id": "AP-M01",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M02",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "on 1\non 1 1"
+      },
+      "입력지문": "7958d0489bf37ce2e3d88ce7073ee6e16fe60e88f39e74f3ad6178dd235bc369",
+      "원문경고": "autoPlay: [on 1] coordinate is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "coordinate",
+        "실패토큰": [
+          {
+            "위치": 2,
+            "값": null,
+            "이유": "값 누락"
+          }
+        ],
+        "파서줄": 609,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M02",
+          "fingerprint": "7958d0489bf37ce2e3d88ce7073ee6e16fe60e88f39e74f3ad6178dd235bc369",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M02",
+          "fingerprint": "7958d0489bf37ce2e3d88ce7073ee6e16fe60e88f39e74f3ad6178dd235bc369",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "7958d0489bf37ce2e3d88ce7073ee6e16fe60e88f39e74f3ad6178dd235bc369",
+          "id": "AP-M02",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M03",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "off x y\non 1 1"
+      },
+      "입력지문": "de61c976b2e1c0af74bed1f968cf1ccb36c96b2f45f01f93f59642cc152366b4",
+      "원문경고": "autoPlay: [off x y] coordinate is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "coordinate",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "x",
+            "이유": "완전한 정수가 아님"
+          },
+          {
+            "위치": 2,
+            "값": "y",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 609,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M03",
+          "fingerprint": "de61c976b2e1c0af74bed1f968cf1ccb36c96b2f45f01f93f59642cc152366b4",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M03",
+          "fingerprint": "de61c976b2e1c0af74bed1f968cf1ccb36c96b2f45f01f93f59642cc152366b4",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "de61c976b2e1c0af74bed1f968cf1ccb36c96b2f45f01f93f59642cc152366b4",
+          "id": "AP-M03",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M04",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "touch 1\non 1 1"
+      },
+      "입력지문": "ff47a57c0970f2b682fa92ed11db7c709e47690af5cbb779a5807b77a64ad09d",
+      "원문경고": "autoPlay: [touch 1] coordinate is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "coordinate",
+        "실패토큰": [
+          {
+            "위치": 2,
+            "값": null,
+            "이유": "값 누락"
+          }
+        ],
+        "파서줄": 609,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M04",
+          "fingerprint": "ff47a57c0970f2b682fa92ed11db7c709e47690af5cbb779a5807b77a64ad09d",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M04",
+          "fingerprint": "ff47a57c0970f2b682fa92ed11db7c709e47690af5cbb779a5807b77a64ad09d",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "ff47a57c0970f2b682fa92ed11db7c709e47690af5cbb779a5807b77a64ad09d",
+          "id": "AP-M04",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M05",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "chain z\non 1 1"
+      },
+      "입력지문": "b9f14ecab73747a31617de6439a161e557d03d7e579aabac5b3c328d11485e22",
+      "원문경고": "autoPlay: [chain z] chain is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "chain",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "z",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 617,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M05",
+          "fingerprint": "b9f14ecab73747a31617de6439a161e557d03d7e579aabac5b3c328d11485e22",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M05",
+          "fingerprint": "b9f14ecab73747a31617de6439a161e557d03d7e579aabac5b3c328d11485e22",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "b9f14ecab73747a31617de6439a161e557d03d7e579aabac5b3c328d11485e22",
+          "id": "AP-M05",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M06",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "chain\non 1 1"
+      },
+      "입력지문": "1e5aca19d212256f46d7afa4dcaf961fc8c0d9d96f3fd14e9b72b380bd956aa6",
+      "원문경고": "autoPlay: [chain] chain is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "chain",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": null,
+            "이유": "값 누락"
+          }
+        ],
+        "파서줄": 617,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M06",
+          "fingerprint": "1e5aca19d212256f46d7afa4dcaf961fc8c0d9d96f3fd14e9b72b380bd956aa6",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M06",
+          "fingerprint": "1e5aca19d212256f46d7afa4dcaf961fc8c0d9d96f3fd14e9b72b380bd956aa6",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "1e5aca19d212256f46d7afa4dcaf961fc8c0d9d96f3fd14e9b72b380bd956aa6",
+          "id": "AP-M06",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M07",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "delay x\non 1 1"
+      },
+      "입력지문": "1f1db6e1203308b8525c8ea5b50197f2ab094cdd50ae9b47860fc1e142526dd6",
+      "원문경고": "autoPlay: [delay x] delay is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "delay",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "x",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 625,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M07",
+          "fingerprint": "1f1db6e1203308b8525c8ea5b50197f2ab094cdd50ae9b47860fc1e142526dd6",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M07",
+          "fingerprint": "1f1db6e1203308b8525c8ea5b50197f2ab094cdd50ae9b47860fc1e142526dd6",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "1f1db6e1203308b8525c8ea5b50197f2ab094cdd50ae9b47860fc1e142526dd6",
+          "id": "AP-M07",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M08",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "delay\non 1 1"
+      },
+      "입력지문": "22b8c01c6c2f94a453644fa6dcba8371334765fdc6d8a9e2583d746bca847e7d",
+      "원문경고": "autoPlay: [delay] delay is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "delay",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": null,
+            "이유": "값 누락"
+          }
+        ],
+        "파서줄": 625,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M08",
+          "fingerprint": "22b8c01c6c2f94a453644fa6dcba8371334765fdc6d8a9e2583d746bca847e7d",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M08",
+          "fingerprint": "22b8c01c6c2f94a453644fa6dcba8371334765fdc6d8a9e2583d746bca847e7d",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "22b8c01c6c2f94a453644fa6dcba8371334765fdc6d8a9e2583d746bca847e7d",
+          "id": "AP-M08",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M09",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "delay 1.5\non 1 1"
+      },
+      "입력지문": "26f04761729d30bf2e4dc675cc157cb9511af44418d0033e89c43fc89f9f5a71",
+      "원문경고": "autoPlay: [delay 1.5] delay is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "delay",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "1.5",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 625,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M09",
+          "fingerprint": "26f04761729d30bf2e4dc675cc157cb9511af44418d0033e89c43fc89f9f5a71",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M09",
+          "fingerprint": "26f04761729d30bf2e4dc675cc157cb9511af44418d0033e89c43fc89f9f5a71",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "26f04761729d30bf2e4dc675cc157cb9511af44418d0033e89c43fc89f9f5a71",
+          "id": "AP-M09",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "AP-M11",
+      "입력파일": {
+        "path": "autoPlay",
+        "text": "on 1 1b\non 1 1"
+      },
+      "입력지문": "d7e3dae48fb21f6e663990d55ad41e6f179e653309a2ede696d90aa81ace693e",
+      "원문경고": "autoPlay: [on 1 1b] coordinate is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseAutoPlay",
+        "필드": "coordinate",
+        "실패토큰": [
+          {
+            "위치": 2,
+            "값": "1b",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 609,
+        "검사도구줄": 106,
+        "보존분류": "autoPlay:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          },
+          {
+            "c": 1,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "b.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": [
+          [
+            "on",
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "AP-M11",
+          "fingerprint": "d7e3dae48fb21f6e663990d55ad41e6f179e653309a2ede696d90aa81ace693e",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "AP-M11",
+          "fingerprint": "d7e3dae48fb21f6e663990d55ad41e6f179e653309a2ede696d90aa81ace693e",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              },
+              {
+                "c": 1,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": [
+              [
+                "on",
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "errors": [
+              "autoPlay:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": false,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "a.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              },
+              {
+                "c": 1,
+                "queue": [
+                  {
+                    "file": "b.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 0,
+                "y": 0
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "d7e3dae48fb21f6e663990d55ad41e6f179e653309a2ede696d90aa81ace693e",
+          "id": "AP-M11",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 첫 줄이 빠지고 on 1 1만 남음. 소리 두 개와 빈 불빛 목록이 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "KL-N01",
+      "입력파일": {
+        "path": "keyLed/a 1 1",
+        "text": "f 1 1"
+      },
+      "입력지문": "3e1eed2576625464b1c3bf02a8ce8c23b854d2051dfce07361cfdc9fd21a4e17",
+      "원문경고": "keyLed: [a 1 1] chain is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseKeyLed",
+        "필드": "chain",
+        "실패토큰": [
+          {
+            "위치": 0,
+            "값": "a",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 427,
+        "검사도구줄": 106,
+        "보존분류": "keyLed:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [],
+        "autoPlay": null
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "KL-N01",
+          "fingerprint": "3e1eed2576625464b1c3bf02a8ce8c23b854d2051dfce07361cfdc9fd21a4e17",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "KL-N01",
+          "fingerprint": "3e1eed2576625464b1c3bf02a8ce8c23b854d2051dfce07361cfdc9fd21a4e17",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": true,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 3,
+                "y": 2
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "3e1eed2576625464b1c3bf02a8ce8c23b854d2051dfce07361cfdc9fd21a4e17",
+          "id": "KL-N01",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 이름의 파일 전체가 빠짐. 소리 하나는 남고 불빛 목록은 비며 자동 연주는 없음. 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "KL-N02",
+      "입력파일": {
+        "path": "keyLed/1 b 1",
+        "text": "f 1 1"
+      },
+      "입력지문": "7ab9dc3c47a096a8a70178a6feab1b794a1b8ce61cdfb7ce953cf8c858c79e5f",
+      "원문경고": "keyLed: [1 b 1] x is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseKeyLed",
+        "필드": "x",
+        "실패토큰": [
+          {
+            "위치": 1,
+            "값": "b",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 431,
+        "검사도구줄": 106,
+        "보존분류": "keyLed:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [],
+        "autoPlay": null
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "KL-N02",
+          "fingerprint": "7ab9dc3c47a096a8a70178a6feab1b794a1b8ce61cdfb7ce953cf8c858c79e5f",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "KL-N02",
+          "fingerprint": "7ab9dc3c47a096a8a70178a6feab1b794a1b8ce61cdfb7ce953cf8c858c79e5f",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": true,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 3,
+                "y": 2
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "7ab9dc3c47a096a8a70178a6feab1b794a1b8ce61cdfb7ce953cf8c858c79e5f",
+          "id": "KL-N02",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 이름의 파일 전체가 빠짐. 소리 하나는 남고 불빛 목록은 비며 자동 연주는 없음. 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "KL-N03",
+      "입력파일": {
+        "path": "keyLed/1 1 c",
+        "text": "f 1 1"
+      },
+      "입력지문": "19b9691c4f73ab3e19ae271084edfd95a87ce2ceb390cd372ca03466baf63e7a",
+      "원문경고": "keyLed: [1 1 c] y is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseKeyLed",
+        "필드": "y",
+        "실패토큰": [
+          {
+            "위치": 2,
+            "값": "c",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 435,
+        "검사도구줄": 106,
+        "보존분류": "keyLed:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [],
+        "autoPlay": null
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "KL-N03",
+          "fingerprint": "19b9691c4f73ab3e19ae271084edfd95a87ce2ceb390cd372ca03466baf63e7a",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "KL-N03",
+          "fingerprint": "19b9691c4f73ab3e19ae271084edfd95a87ce2ceb390cd372ca03466baf63e7a",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": true,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 3,
+                "y": 2
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "19b9691c4f73ab3e19ae271084edfd95a87ce2ceb390cd372ca03466baf63e7a",
+          "id": "KL-N03",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 이름의 파일 전체가 빠짐. 소리 하나는 남고 불빛 목록은 비며 자동 연주는 없음. 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "KL-N04",
+      "입력파일": {
+        "path": "keyLed/1 1 1 d",
+        "text": "f 1 1"
+      },
+      "입력지문": "ca7abebf113bd82067e41acb8ff70e3c691852c9d3cc99fef5a9c4790062e59a",
+      "원문경고": "keyLed: [1 1 1 d] loop is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseKeyLed",
+        "필드": "loop",
+        "실패토큰": [
+          {
+            "위치": 3,
+            "값": "d",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 439,
+        "검사도구줄": 106,
+        "보존분류": "keyLed:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [],
+        "autoPlay": null
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "KL-N04",
+          "fingerprint": "ca7abebf113bd82067e41acb8ff70e3c691852c9d3cc99fef5a9c4790062e59a",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "KL-N04",
+          "fingerprint": "ca7abebf113bd82067e41acb8ff70e3c691852c9d3cc99fef5a9c4790062e59a",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": true,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 3,
+                "y": 2
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "ca7abebf113bd82067e41acb8ff70e3c691852c9d3cc99fef5a9c4790062e59a",
+          "id": "KL-N04",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 이름의 파일 전체가 빠짐. 소리 하나는 남고 불빛 목록은 비며 자동 연주는 없음. 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    },
+    {
+      "사례": "KL-N05",
+      "입력파일": {
+        "path": "keyLed/1 1 1 1.5",
+        "text": "f 1 1"
+      },
+      "입력지문": "69235aa67a04ff8630099693319ca9f5f9158042ffa3fb6f4c10dc321b4cf12e",
+      "원문경고": "keyLed: [1 1 1 1.5] loop is incorrect",
+      "원문경고근거": "보존 출력에는 분류만 있음. 지정 소스의 문장에서 복원함. 새 파서 실행 결과가 아님.",
+      "분류경로": {
+        "함수": "parseKeyLed",
+        "필드": "loop",
+        "실패토큰": [
+          {
+            "위치": 3,
+            "값": "1.5",
+            "이유": "완전한 정수가 아님"
+          }
+        ],
+        "파서줄": 439,
+        "검사도구줄": 106,
+        "보존분류": "keyLed:range"
+      },
+      "경고외동일": true,
+      "경고외출력": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [],
+        "autoPlay": null
+      },
+      "플랫폼별보존출력": {
+        "web": {
+          "id": "KL-N05",
+          "fingerprint": "69235aa67a04ff8630099693319ca9f5f9158042ffa3fb6f4c10dc321b4cf12e",
+          "status": "fail",
+          "detail": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed).",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:range"
+            ]
+          }
+        },
+        "android": {
+          "id": "KL-N05",
+          "fingerprint": "69235aa67a04ff8630099693319ca9f5f9158042ffa3fb6f4c10dc321b4cf12e",
+          "status": "pass",
+          "detail": "",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 3,
+                "y": 2,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": true,
+            "leds": [],
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ]
+          }
+        },
+        "ios": {
+          "actual": {
+            "autoPlay": null,
+            "errors": [
+              "keyLed:format"
+            ],
+            "info": {
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "producerName": "UniPad Conformance",
+              "squareButton": true,
+              "title": "Conformance"
+            },
+            "keyLedExist": true,
+            "leds": [],
+            "loaded": true,
+            "sounds": [
+              {
+                "c": 0,
+                "queue": [
+                  {
+                    "file": "c.wav",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ],
+                "x": 3,
+                "y": 2
+              }
+            ]
+          },
+          "detail": "",
+          "fingerprint": "69235aa67a04ff8630099693319ca9f5f9158042ffa3fb6f4c10dc321b4cf12e",
+          "id": "KL-N05",
+          "status": "pass"
+        }
+      },
+      "연주영향": "잘못된 이름의 파일 전체가 빠짐. 소리 하나는 남고 불빛 목록은 비며 자동 연주는 없음. 세 플랫폼에서 같음. 실제 재생·청취는 미확인.",
+      "원문으로구분": "이 15종은 대괄호 안 입력과 필드·명령을 같이 읽으면 숫자 형식 실패를 확인할 수 있음. 문장 끝만으로는 정보 부족.",
+      "수정범위": "검사 도구에 입력·필드 근거를 보존하는 좁은 분류 보완 검토. 제품 진단 변경은 이 15종의 분류에 필수 아님.",
+      "보류이유": "이번은 조사만 수행. 연주 변경 근거 없음. 문장 끝 전체를 형식으로 바꾸면 실제 범위 오류도 바뀜. 불명확한 입력은 정보 부족으로 남겨야 함."
+    }
+  ]
+}
