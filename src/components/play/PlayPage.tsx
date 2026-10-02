@@ -922,7 +922,7 @@ export function PlayPage() {
   // Loading spinner
   if (restoringFromStorage) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-black text-white">
+      <div className="h-dvh flex flex-col items-center justify-center gap-4 bg-black text-white">
         <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
         <p className="text-white/40 text-sm">{tCommon('loading')}</p>
       </div>
@@ -1012,7 +1012,7 @@ export function PlayPage() {
   // Loading screen (Android style: semi-transparent overlay with cyan progress)
   if (state.loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-black text-white">
+      <div className="h-dvh flex items-center justify-center bg-black text-white">
         <div className="bg-black/60 rounded-2xl px-6 py-5 w-[280px] flex flex-col items-center gap-3">
           {loadingPackTitle && (
             <p className="text-xs text-white/50 truncate max-w-full">{loadingPackTitle}</p>
@@ -1113,7 +1113,7 @@ export function PlayPage() {
     const hiddenTotalRows = unipack.info.buttonX + (showTopChainBar ? 1 : 0) + (showBottomChainBar ? 1 : 0);
     return (
       <div
-        className="h-screen flex items-center justify-center overflow-hidden"
+        className="h-dvh flex items-center justify-center overflow-hidden"
         style={{
           backgroundColor: '#000000',
           backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
@@ -1135,7 +1135,7 @@ export function PlayPage() {
           </svg>
         </button>
         <div className="w-full h-full flex items-center justify-center p-2">
-          <div className="flex flex-col" style={{ aspectRatio: `${hiddenTotalCols} / ${hiddenTotalRows}`, maxWidth: '95vw', maxHeight: '95vh' }}>
+          <div className="flex flex-col" style={{ aspectRatio: `${hiddenTotalCols} / ${hiddenTotalRows}`, maxWidth: '95vw', maxHeight: '95dvh' }}>
             {showTopChainBar && (
               <div style={{ display: 'flex', flex: `0 0 ${(1 / hiddenTotalRows) * 100}%` }}>
                 <div style={{ flex: `0 0 ${((showLeftChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
@@ -1235,7 +1235,7 @@ export function PlayPage() {
   // Player screen: [Controls LEFT] [PAD GRID center] [CHAINS RIGHT]
   return (
     <div
-      className="relative h-screen text-white overflow-hidden animate-[fadeIn_300ms_ease-out]"
+      className="relative h-dvh text-white overflow-hidden animate-[fadeIn_300ms_ease-out]"
       style={{
         backgroundColor: '#000000',
         backgroundImage: theme.playbg ? `url(${theme.playbg})` : undefined,
@@ -1292,12 +1292,13 @@ export function PlayPage() {
           left strip so it cannot underlap the pad grid. */}
       {!optionPanelOpen && (
         <div
-          className="absolute left-0 z-20 pointer-events-auto flex items-center justify-center"
+          className="absolute left-0 z-20 pointer-events-auto flex items-start justify-center overflow-y-auto"
           ref={observeChromeStrip}
           style={{
             top: '50%',
             transform: 'translateY(-50%)',
             minWidth: `${CHROME_STRIP_WIDTH}px`,
+            maxHeight: 'calc(100% - 16px)',
           }}
         >
           <ControlPanel

@@ -56,7 +56,9 @@ export function StoreModal({
   const tBadge = useTranslations('play.badge');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [selectedCode, setSelectedCode] = useState<string | null>(() => (visible ? items[0]?.code ?? null : null));
+  const [selectedCode, setSelectedCode] = useState<string | null>(() => (
+    visible ? items.find((item) => item.code === preferredCode)?.code ?? items[0]?.code ?? null : null
+  ));
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'led' | 'autoplay'>('all');
   const [sort, setSort] = useState<'downloads' | 'title'>('downloads');
@@ -93,10 +95,10 @@ export function StoreModal({
   if (selectionInputs.visible !== visible || selectionInputs.preferredCode !== preferredCode || selectionInputs.items !== items) {
     setSelectionInputs({ visible, preferredCode, items });
     if (visible) {
-      if (!selectedCode || !items.some((it) => it.code === selectedCode)) {
-        setSelectedCode(items[0]?.code ?? null);
-      } else if (preferredCode && items.some((it) => it.code === preferredCode)) {
+      if (preferredCode && items.some((it) => it.code === preferredCode)) {
         setSelectedCode(preferredCode);
+      } else if (!selectedCode || !items.some((it) => it.code === selectedCode)) {
+        setSelectedCode(items[0]?.code ?? null);
       }
     }
   }
@@ -246,7 +248,7 @@ export function StoreModal({
             </div>
 
             {/* Header */}
-            <div className="px-5 py-3 border-b border-white/[0.08] flex items-center gap-2 relative z-10">
+            <div className="shrink-0 px-5 py-3 border-b border-white/[0.08] flex items-center gap-2 relative z-10">
               <h2 className="text-sm font-bold text-white">{t('title')}</h2>
               <span className="text-xs text-white/40">{visibleItems.length}</span>
               <div className="flex-1" />
@@ -312,14 +314,14 @@ export function StoreModal({
               ) : (
                 <motion.div
                   key="store-content"
-                  className="flex-1 overflow-hidden flex flex-col lg:flex-row relative z-10"
+                  className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row relative z-10"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
                   {/* Left Panel - Detail & Filters */}
-                  <div className="lg:w-[42%] border-b lg:border-b-0 lg:border-r border-white/[0.06] p-4 flex flex-col gap-3 bg-gradient-to-b from-white/[0.02] to-transparent">
+                  <div className="shrink-0 lg:shrink min-h-0 lg:overflow-y-auto lg:w-[42%] border-b lg:border-b-0 lg:border-r border-white/[0.06] p-4 flex flex-col gap-3 bg-gradient-to-b from-white/[0.02] to-transparent">
                     {warning && (
                       <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-400/15 text-[10px] text-yellow-200">
                         {warning}
@@ -454,7 +456,7 @@ export function StoreModal({
                   </div>
 
                   {/* Right Panel - Item List */}
-                  <div role="listbox" aria-label={t('itemListAriaLabel')} className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                  <div role="listbox" aria-label={t('itemListAriaLabel')} className="shrink-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto p-4 space-y-1.5">
                     {visibleItems.length === 0 ? (
                       <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-2 text-xs text-white/35">
                         <div>{t('noMatchingItems')}</div>
@@ -576,7 +578,7 @@ export function StoreModal({
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="px-4 py-3 border-t border-white/[0.06] text-[10px] text-white/20 flex items-center justify-center gap-4">
+            <div className="shrink-0 px-4 py-3 border-t border-white/[0.06] text-[10px] text-white/20 flex items-center justify-center gap-4">
               <StoreKeyHint keys="↑↓" label={t('keyHintSelect')} />
               <StoreKeyHint keys="Enter" label={t('keyHintAction')} />
               <StoreKeyHint keys="/" label={t('keyHintSearch')} />
