@@ -50,10 +50,10 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
         const last = targets.at(-1);
         if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
           event.preventDefault();
-          last?.focus({ preventScroll: true });
+          last?.focus();
         } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
           event.preventDefault();
-          first?.focus({ preventScroll: true });
+          first?.focus();
         }
       }
     };

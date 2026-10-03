@@ -175,3 +175,19 @@ test('help keyboard input does not reach the background player shortcuts', () =>
   window.removeEventListener('keydown', background);
   assert.equal(backgroundKeys, 0, 'reading/activating help must not play pads or toggle auto-play');
 });
+
+
+test('help entry keyboard activation preserves the native button action and stops player shortcuts', () => {
+  const view = render(wrapped());
+  const entry = view.getByRole('button', { name: 'Connection and light help' });
+  let backgroundKeys = 0;
+  const background = () => { backgroundKeys++; };
+  window.addEventListener('keydown', background);
+  try {
+    const nativeActionAllowed = fireEvent.keyDown(entry, { key: ' ', code: 'Space' });
+    assert.equal(backgroundKeys, 0, 'Space on the help entry must not toggle auto-play');
+    assert.equal(nativeActionAllowed, true, 'the browser must still activate the button');
+  } finally {
+    window.removeEventListener('keydown', background);
+  }
+});

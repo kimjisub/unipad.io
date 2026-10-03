@@ -10,6 +10,7 @@ if (captures) await mkdir(captures, { recursive: true });
 const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   for (const locale of ['en', 'ko']) for (const [width, height] of [[1440, 900], [844, 390]]) {
+    if (process.env.REGRESSION_CASE && (locale !== 'en' || width !== 844)) continue;
     const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
     const page = await context.newPage();
     const errors = [];
@@ -44,8 +45,21 @@ try {
       const scroll = await settings.locator('div.overflow-y-auto').evaluate(e => e.scrollTop);
       const storage = await page.evaluate(() => ({ ...localStorage }));
       const writes = await page.evaluate(() => window.helpWrites.length);
-      await entry.click();
       const help = page.getByRole('dialog', { name: helpName, exact: true });
+      if (process.env.REGRESSION_CASE !== 'reverse-tab') {
+        await entry.focus();
+        await page.keyboard.press('Space');
+        if (captures) await page.screenshot({ path: join(captures, `entry-space-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
+        await expect(help).toBeVisible();
+        await expect(page.getByRole('button', { name: locale === 'en' ? 'Play mode: Auto' : '연주 모드: 자동', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        if (process.env.REGRESSION_CASE === 'entry-space') {
+          console.log('PASS help entry opens with Space without starting auto-play');
+          await context.close();
+          continue;
+        }
+      } else {
+        await entry.click();
+      }
       const close = help.getByRole('button', { name: locale === 'en' ? 'Close help' : '도움말 닫기', exact: true });
       await expect(close).toBeFocused();
       await expect(help).toContainText(locale === 'en' ? 'Selected model: Auto Detect' : '선택한 기종: 자동 감지');
@@ -74,8 +88,22 @@ try {
       await settings.getByRole('combobox').selectOption('launchpad_mini_mk3');
       await entry.click();
       const guide = help.getByRole('button', { name: locale === 'en' ? "Read the manufacturer's guide" : '제조사 설명 보기', exact: true });
-      await guide.scrollIntoViewIfNeeded();
-      await guide.focus();
+      await expect(close).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(guide).toBeFocused();
+      if (captures) await page.screenshot({ path: join(captures, `reverse-tab-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
+      const guideVisible = await guide.evaluate(button => {
+        const bounds = button.getBoundingClientRect();
+        const body = button.closest('[role=region]').getBoundingClientRect();
+        return bounds.top >= body.top && bounds.bottom <= body.bottom && bounds.left >= body.left && bounds.right <= body.right;
+      });
+      expect(guideVisible, 'Shift+Tab must scroll the manufacturer button inside the help body').toBe(true);
+      await expect(guide).toBeInViewport({ ratio: 1 });
+      if (process.env.REGRESSION_CASE === 'reverse-tab') {
+        console.log('PASS immediate Shift+Tab reveals the manufacturer button');
+        await context.close();
+        continue;
+      }
       await page.keyboard.press('Tab');
       await expect(close).toBeFocused();
       await page.keyboard.press('Shift+Tab');
@@ -86,11 +114,15 @@ try {
       await expect(page.locator('select')).toHaveValue('launchpad_mini_mk3');
       // Large text still leaves the selected model, close and body accessible.
       await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
-      await body.evaluate(e => {
-        const guide = e.querySelector('button');
-        const button = guide.getBoundingClientRect(), bounds = e.getBoundingClientRect();
-        e.scrollTop += button.top - bounds.top - Math.max(4, (bounds.height - button.height) / 2);
-      });
+      await body.evaluate(e => { e.scrollTop = 0; });
+      await close.focus();
+      await page.keyboard.press('Shift+Tab');
+      await expect(guide).toBeFocused();
+      expect(await guide.evaluate(button => {
+        const bounds = button.getBoundingClientRect();
+        const body = button.closest('[role=region]').getBoundingClientRect();
+        return bounds.top >= body.top && bounds.bottom <= body.bottom;
+      }), 'large-text keyboard focus must reveal the full button').toBe(true);
       await expect(guide).toBeInViewport({ ratio: 1 });
       await expect(close).toBeInViewport({ ratio: 1 });
       await expect(help.getByRole('heading').first()).toBeInViewport({ ratio: 1 });
