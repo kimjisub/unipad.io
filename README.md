@@ -92,8 +92,8 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on `localhost:3184`, runs five
-headless Chromium tests, then stops its server. Build first with the fake
+`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
+headless browser tests, then stops its server. Build first with the fake
 Firebase configuration above. The suite supplies inert responses for Firebase analytics configuration and
 installation, blocks all other non-local HTTP requests and WebSocket
 connections, and never needs the store or analytics servers.
@@ -106,7 +106,7 @@ a short auto-play sequence. Regenerate it with
 | Feature | Coverage | What is checked |
 | --- | --- | --- |
 | Import and local persistence | Automatic | File input, 64 pads, successful real WAV decoding, local pack URL and reload restore, no warnings or automatic sound |
-| Pointer input | Automatic | Press/release state, one looping playback start and stop |
+| Basic feature 3: pointer input and multiple contacts | Automatic | Press/release; two simultaneous screen contacts; second-finger chain selection; partial release; delayed chain move; cancellation, late duplicate release and repress |
 | Keyboard input | Automatic | Physical Q key mapping, release and repeat suppression |
 | keyLed | Automatic | Red/green overlays on a different pad and timed removal |
 | Auto-play | Automatic | Start, pause with frozen progress/no new notes, resume, stop and loop-source cleanup |
@@ -125,3 +125,34 @@ On failure, traces and screenshots remain in `test-results/` and the HTML
 report is in `playwright-report/`. GitHub uploads both as
 `browser-failure-<run id>` for 14 days. Open a trace with
 `pnpm exec playwright show-trace <trace.zip>`.
+
+### Chain-release regression checks (basic feature 3)
+
+`src/lib/unipack/SoundEngine.test.ts` imports the committed
+[`chain-release-v1` packs and expectations](meta/unipack-conformance/chain-release-v1/README.md)
+and checks all six groups against the real `SoundEngine`, with a fake audio device
+and a logical clock. It checks the exact started buffer, infinite/finite duration,
+release-stop requests, natural ends and remaining playback after every step. Held
+input IDs in this unit adapter model the existing pointer lifetime filtering;
+they are not screen-feedback evidence. A late `onended` check protects the newer
+source registered at the same pad. Run it with `pnpm test` or `pnpm test:unipack`.
+
+`e2e/chain-release.spec.ts` is included in `pnpm test:e2e`. It uses the same
+`packs/manual.uni` and `packs/delayed.uni`, through normal file import, then
+Chromium's native touch dispatch for two simultaneous contacts, another contact
+on the chain button, and partial release (CR-001/002/003). CR-004 sends synthetic
+pointer cancel, up and lost-capture events through the actual `PadGrid` listeners
+to cancel only one contact and inject a late duplicate after repress. The unit
+suite additionally covers the unchanged single/three-play sound sequence and
+no-chain-change baseline (CR-005/006). No app-only test hooks are used.
+
+The CR-001 browser test attaches screenshots and real Web Audio start/stop call
+records before and after partial release. These are program input and playback
+request evidence. Audio is muted; no physical fingers, MIDI hardware, speaker
+quality, audible stop or latency is certified. The exact 99/100 ms delayed move
+and finite-play deadlines are checked only by the logical-clock unit suite.
+
+The common corpus bytes/expectations and their SHA-256 manifest stay unchanged.
+These new results remain separate from the 124 historical parser cases, KS-003,
+and the 60 preserved result rows. Same-coordinate simultaneous ownership remains
+outside this change; existing input filtering and visual release rules are kept.
