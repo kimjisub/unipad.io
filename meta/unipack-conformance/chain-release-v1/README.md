@@ -92,8 +92,10 @@ this table is a reading aid, not a substitute for the step data.
 ## Checks
 
 Run from the repository root with its installed dependencies (Node 24.15.0,
-pnpm 9.11.0). The negative integrity test uses the run-owned
-`PAPERCLIP_RUN_SCRATCH_DIR` or `PAPERCLIP_SCRATCH_DIR`.
+pnpm 9.11.0). `pnpm test` includes both checks below via `pnpm test:chain-release`.
+The negative integrity tests use `PAPERCLIP_RUN_SCRATCH_DIR` or
+`PAPERCLIP_SCRATCH_DIR` when provided, otherwise a temporary folder under
+`os.tmpdir()`. Every temporary copy is removed after the test.
 
 ```sh
 node meta/unipack-conformance/chain-release-v1/generate.mjs --check

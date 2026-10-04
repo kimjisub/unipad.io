@@ -1,0 +1,2 @@
+# Preserve the exact bytes of versioned conformance fixtures on every checkout.
+meta/unipack-conformance/chain-release-v1/** -text
