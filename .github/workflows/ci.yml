@@ -49,8 +49,8 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install browsers
+        run: pnpm exec playwright install --with-deps chromium webkit
       - name: Browser tests
         run: pnpm test:e2e
       - name: Preserve browser failure evidence
