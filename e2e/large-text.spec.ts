@@ -21,12 +21,59 @@ function reachable(target: Locator) {
   });
 }
 
+/**
+ * Sets the root font size to 200% where the browser offers no default font size setting.
+ * Sizes in rem grow as with the Chrome setting; media queries in em do not.
+ */
+async function useLargeRootText(page: Page) {
+  await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
+    const style = document.createElement('style');
+    style.textContent = 'html { font-size: 200% !important; }';
+    document.head.append(style);
+  }));
+}
+
+/** Scrolls without the page's smooth scrolling, which WebKit animates over several frames. */
+function scrollTo(page: Page, top: number) {
+  return page.evaluate(y => window.scrollTo({ top: y, behavior: 'instant' }), top);
+}
+
+/** Waits until the element and the boxes around it have finished fading and sliding in. */
+async function waitUntilSettled(target: Locator) {
+  await expect.poll(() => target.evaluate(element => {
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.opacity !== '1' || style.transform !== 'none') return false;
+    }
+    return true;
+  })).toBe(true);
+}
+
+/**
+ * Waits until the scroll-to-top button has kept its place and full opacity, or stayed away, for several frames.
+ * It is placed in the frame after a scroll, and a button that leaves fades out where it was.
+ */
+async function waitForButtonAtRest(page: Page) {
+  await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
+    const read = () => {
+      const button = document.querySelector<HTMLElement>('button[aria-label="Scroll to top"]');
+      return button ? `${button.style.bottom} ${getComputedStyle(button).opacity}` : '';
+    };
+    let first = '';
+    let frames = 0;
+    const step = () => {
+      if (frames === 0) first = read();
+      else if (read() !== first) return resolve(false);
+      if (++frames < 6) return requestAnimationFrame(step);
+      resolve(first === '' || first.endsWith(' 1'));
+    };
+    requestAnimationFrame(() => requestAnimationFrame(step));
+  }))).toBe(true);
+}
+
 async function scrollToFooter(page: Page) {
-  const install = page.locator('footer').getByRole('link', { name: 'iOS' });
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  // The footer fades and slides in; its final place is known once the animation ends.
-  await expect(install).toHaveCSS('opacity', '1');
-  await page.waitForTimeout(600);
+  await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
+  for (const link of installLinks(page)) await waitUntilSettled(link);
 }
 
 function installLinks(page: Page) {
@@ -101,23 +148,73 @@ test.describe('with default text', () => {
     });
   }
 
-  test('the scroll-to-top button appears clear of where the install links settle', async ({ page }) => {
+  test('the scroll-to-top button stays clear of where the install links settle while they slide in', async ({ page }) => {
     await page.setViewportSize({ width: 680, height: 800 });
     // The home page is long enough to show the button; at 680px the iOS link sits in its column.
     await page.goto('/');
     const button = page.getByRole('button', { name: 'Scroll to top' });
     // A scroll made before the page finishes loading can be undone, so repeat it until the button shows.
     await expect(async () => {
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
       await expect(button).toBeVisible({ timeout: 500 });
     }).toPass();
-    // Where the button is placed while the footer is still sliding in, without its own scale-in.
-    const first = await button.evaluate((el: HTMLElement) => ({ x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }));
+    await waitForButtonAtRest(page);
+    const placed = await button.evaluate((el: HTMLElement) => el.style.bottom);
     await scrollToFooter(page);
+    expect(await button.evaluate((el: HTMLElement) => el.style.bottom), 'place after the footer settled').toBe(placed);
+    // offset* leave out the button's own scale-in.
+    const box = await button.evaluate((el: HTMLElement) => ({ x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }));
     for (const link of installLinks(page)) {
-      const box = (await link.boundingBox())!;
-      const overlaps = first.x < box.x + box.width && box.x < first.x + first.width && first.y < box.y + box.height && box.y < first.y + first.height;
+      const other = (await link.boundingBox())!;
+      const overlaps = box.x < other.x + other.width && other.x < box.x + box.width && box.y < other.y + other.height && other.y < box.y + box.height;
       expect(overlaps, await link.innerText()).toBe(false);
     }
   });
+});
+
+test.describe('the scroll-to-top button', () => {
+  const cases = [
+    ...[320, 390, 680].flatMap(width => [false, true].map(large => ({ path: '/', width, height: 800, large }))),
+    { path: '/en', width: 320, height: 800, large: true },
+    { path: '/', width: 390, height: 360, large: true },
+  ];
+
+  for (const { path, width, height, large } of cases) {
+    test(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, browserName }) => {
+      await page.setViewportSize({ width, height });
+      if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
+      await page.goto(path);
+
+      // The start box and the footer slide in once seen; wait until they rest where the button must avoid them.
+      const startBox = await page.locator('#cta').evaluate(el => el.getBoundingClientRect().top + scrollY);
+      await scrollTo(page, startBox - height / 2);
+      for (const target of await page.locator('#cta a').all()) await waitUntilSettled(target);
+      await scrollToFooter(page);
+
+      const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+      let shown = 0;
+      for (let y = Math.max(startBox - height, 601); y < end + height / 4; y += height / 4) {
+        await scrollTo(page, Math.min(y, end));
+        await waitForButtonAtRest(page);
+        const placement = await page.evaluate(() => {
+          const button = document.querySelector<HTMLElement>('button[aria-label="Scroll to top"]');
+          if (!button) return null;
+          // offset* leave out the button's own scale-in.
+          const box = { left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth, bottom: button.offsetTop + button.offsetHeight };
+          const covered = [...document.querySelectorAll<HTMLElement>('#cta a, footer a, footer button')]
+            .filter(target => {
+              const other = target.getBoundingClientRect();
+              return other.width > 0 && box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom;
+            })
+            .map(target => target.innerText);
+          return { scrollY, top: box.top, barBottom: document.getElementById('navigation')!.offsetHeight, covered };
+        });
+        if (!placement) continue;
+        shown++;
+        expect(placement.top, `top at scroll ${placement.scrollY}`).toBeGreaterThanOrEqual(placement.barBottom);
+        expect(placement.covered, `covered at scroll ${placement.scrollY}`).toEqual([]);
+      }
+      expect(shown, 'scroll positions where the button showed').toBeGreaterThan(0);
+    });
+  }
 });
