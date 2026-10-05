@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import typography from '@tailwindcss/typography'
 
 // Theme colors are hex CSS variables, so opacity modifiers (e.g. `bg-card/50`) need color-mix.
 const withAlpha = (variable: string) =>
@@ -114,6 +115,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [require('@tailwindcss/typography')],
+  plugins: [typography],
 }
 export default config

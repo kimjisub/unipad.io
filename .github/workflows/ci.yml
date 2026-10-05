@@ -1,0 +1,72 @@
+name: Web CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Web checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      # Deliberately fake public config: builds never need production credentials.
+      NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'unipad-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+      NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record start time
+        run: echo "CI_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Install browsers
+        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Browser tests
+        run: pnpm test:e2e
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Record elapsed time
+        if: always()
+        run: |
+          if [ -n "$CI_STARTED_AT" ]; then
+            elapsed=$(( $(date +%s) - CI_STARTED_AT ))
+            echo "Web checks: ${elapsed} seconds (including setup, install and verification)." >> "$GITHUB_STEP_SUMMARY"
+          fi

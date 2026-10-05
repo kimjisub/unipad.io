@@ -49,6 +49,7 @@ export function MainScreen({
   const t = useTranslations('play.main');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
@@ -104,15 +105,10 @@ export function MainScreen({
     setSetting('sortOrder', String(sortAsc)).catch(() => {});
   }, [sortMethod, sortAsc]);
 
-  useEffect(() => {
-    if (filteredAndSortedPacks.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (selectedId && !filteredAndSortedPacks.some((pack) => pack.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [filteredAndSortedPacks, selectedId]);
+  // Reconcile selection before rendering when a pack disappears from the list.
+  if (selectedId && !filteredAndSortedPacks.some((pack) => pack.id === selectedId)) {
+    setSelectedId(null);
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -172,8 +168,6 @@ export function MainScreen({
     onPlay(id);
   }, [onPlay]);
 
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
   const handleDelete = useCallback((id: string) => {
     setDeleteConfirmId(id);
   }, []);
@@ -210,7 +204,7 @@ export function MainScreen({
       </div>
 
       {/* Left Panel */}
-      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center relative z-10">
+      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
             pack={selectedPack}
@@ -568,7 +562,7 @@ function PackDetailPanel({
   const openCount = pack.openCount ?? 0;
 
   return (
-    <div className="w-full rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-5 text-white overflow-hidden relative transition-all hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
+    <div className="w-full shrink-0 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-5 text-white overflow-hidden relative transition-all hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
         {/* Ambient glow */}
         <div className="absolute top-[-50px] left-1/2 -translate-x-1/2 w-64 h-64 rounded-full opacity-10 blur-[80px] pointer-events-none"
           style={{ background: 'radial-gradient(circle, var(--accent), transparent)' }}

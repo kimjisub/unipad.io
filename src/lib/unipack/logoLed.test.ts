@@ -210,6 +210,30 @@ test('pad and round lines still reach their own buttons', async (t) => {
   assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05']);
 });
 
+test('invalid pad coordinates neither light nor clear pads, round LEDs or the logo', async (t) => {
+  t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
+  const { runner, sent, tick } = await playOnLaunchpad([
+    'o 1b 1 FF0000',
+    'on 0 1 a 7',
+    'o 9 1 a 7',
+    'o 1 1 a 3',
+    'o mc 1 a 9',
+    'o l a 5',
+    'f 1b 1',
+    'off 0 1',
+    'f 0 33',
+    'd 100',
+    'f 1 1',
+    'f mc 1',
+    'f l',
+  ].join('\n'));
+
+  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05']);
+  tick(100);
+  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05', '80 51 00', 'b0 5b 00', 'b0 63 00']);
+  runner.stop();
+});
+
 test('round LED 33 does not light the logo', async (t) => {
   t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
   const { sent } = await playOnLaunchpad('o mc 33 a 5');

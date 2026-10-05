@@ -470,8 +470,13 @@ async function parseKeyLed(
               ledY = LOGO_FUNCTION_KEY;
               colorTokens = logoColorTokens(split);
             } else {
-              ledX = parseInt(xToken, 10) - 1;
+              ledX = strictInt(xToken) - 1;
               ledY = strictInt(split[2]) - 1;
+              // Validate pad coordinates before -1 can be treated as a round LED address.
+              if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+                errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+                continue;
+              }
               colorTokens = split.slice(3);
             }
 
@@ -514,8 +519,12 @@ async function parseKeyLed(
               ledX = -1;
               ledY = LOGO_FUNCTION_KEY;
             } else {
-              ledX = parseInt(xToken, 10) - 1;
+              ledX = strictInt(xToken) - 1;
               ledY = strictInt(split[2]) - 1;
+              if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+                errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+                continue;
+              }
             }
             if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);

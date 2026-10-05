@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "incremental": false,
+    "rootDir": "../../",
+    "outDir": "../../../.next/cache/chain-layout-test",
+    "types": ["node"]
+  },
+  "include": ["ChainBar.test.tsx"]
+}
