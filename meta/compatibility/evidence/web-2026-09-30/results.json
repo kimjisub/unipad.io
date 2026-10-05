@@ -1,0 +1,259 @@
+{
+  "base": "http://localhost:3688",
+  "pack": "Faded.zip",
+  "locale": "en",
+  "rotateHintText": "Rotate to landscape",
+  "startedUtc": "2026-09-30T10:50:27.566Z",
+  "browser": "Chromium 153.0.8010.12 headless (--mute-audio)",
+  "playwright": "1.63.0",
+  "host": {
+    "platform": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64"
+  },
+  "scope": "Playwright Chromium, headless, on this host only. Not Google Chrome, not another operating system. Tablet and phone profiles are mocked window sizes with touch events, not devices. Output is muted: sound is counted as starts, never heard.",
+  "blockedExternalOrAnalyticsHosts": [
+    "localhost:3688/_vercel/insights/script.js"
+  ],
+  "requestCount": 96,
+  "consoleErrors": [
+    "[desktop-1280x800] Failed to load resource: net::ERR_FAILED",
+    "[tablet-1024x768] Failed to load resource: net::ERR_FAILED",
+    "[tablet-834x1194] Failed to load resource: net::ERR_FAILED",
+    "[phone-390x844] Failed to load resource: net::ERR_FAILED"
+  ],
+  "failedProfiles": [],
+  "results": [
+    {
+      "profile": "desktop-1280x800",
+      "kind": "desktop",
+      "input": "mouse",
+      "steps": {
+        "packOpened": {
+          "pads": 64,
+          "lit": 0,
+          "allInsideViewport": true,
+          "minPadSidePx": 98,
+          "viewport": [
+            1280,
+            800
+          ]
+        },
+        "audioAfterOpen": {
+          "contexts": 1,
+          "decoded": 282,
+          "starts": 0,
+          "state": "running"
+        },
+        "padPress": {
+          "input": "mouse",
+          "padId": "0,0",
+          "padsTried": 1,
+          "soundStarts": 1,
+          "contextState": "running",
+          "litIdle": 0,
+          "litWhileHeld": 4
+        }
+      },
+      "checks": {
+        "open_pack": true,
+        "sound": true,
+        "led": true,
+        "rotation": null
+      },
+      "ok": true
+    },
+    {
+      "profile": "tablet-1024x768",
+      "kind": "tablet-width",
+      "input": "touch",
+      "steps": {
+        "packOpened": {
+          "pads": 64,
+          "lit": 0,
+          "allInsideViewport": true,
+          "minPadSidePx": 94,
+          "viewport": [
+            1024,
+            768
+          ]
+        },
+        "audioAfterOpen": {
+          "contexts": 1,
+          "decoded": 282,
+          "starts": 0,
+          "state": "running"
+        },
+        "padPress": {
+          "input": "touch",
+          "padId": "0,0",
+          "padsTried": 1,
+          "soundStarts": 1,
+          "contextState": "running",
+          "litIdle": 0,
+          "litWhileHeld": 3
+        },
+        "rotate": {
+          "from": [
+            1024,
+            768
+          ],
+          "to": [
+            768,
+            1024
+          ],
+          "portraitHintVisibleBefore": false,
+          "portraitHintVisibleAfter": true,
+          "padsAfter": {
+            "pads": 64,
+            "lit": 0,
+            "allInsideViewport": true,
+            "minPadSidePx": 70,
+            "viewport": [
+              768,
+              1024
+            ]
+          },
+          "pressedAfterRotate": null,
+          "padIdAfterRotate": null,
+          "litWhileHeldAfterRotate": null,
+          "soundStartsBefore": 1,
+          "soundStartsAfter": 1
+        }
+      },
+      "checks": {
+        "open_pack": true,
+        "sound": true,
+        "led": true,
+        "rotation": true
+      },
+      "ok": true
+    },
+    {
+      "profile": "tablet-834x1194",
+      "kind": "tablet-width",
+      "input": "touch",
+      "steps": {
+        "packOpened": {
+          "pads": 64,
+          "lit": 0,
+          "allInsideViewport": true,
+          "minPadSidePx": 77,
+          "viewport": [
+            834,
+            1194
+          ]
+        },
+        "audioAfterOpen": {
+          "contexts": 1,
+          "decoded": 282,
+          "starts": 0,
+          "state": "running"
+        },
+        "padPress": {
+          "input": "touch",
+          "padId": null,
+          "portraitHintVisible": true,
+          "note": "no pad produced a sound start in the first layout"
+        },
+        "rotate": {
+          "from": [
+            834,
+            1194
+          ],
+          "to": [
+            1194,
+            834
+          ],
+          "portraitHintVisibleBefore": true,
+          "portraitHintVisibleAfter": false,
+          "padsAfter": {
+            "pads": 64,
+            "lit": 0,
+            "allInsideViewport": true,
+            "minPadSidePx": 102,
+            "viewport": [
+              1194,
+              834
+            ]
+          },
+          "pressedAfterRotate": true,
+          "padIdAfterRotate": "0,0",
+          "litWhileHeldAfterRotate": 3,
+          "soundStartsBefore": 0,
+          "soundStartsAfter": 1
+        }
+      },
+      "checks": {
+        "open_pack": true,
+        "sound": true,
+        "led": true,
+        "rotation": true
+      },
+      "ok": true
+    },
+    {
+      "profile": "phone-390x844",
+      "kind": "phone-width",
+      "input": "touch",
+      "steps": {
+        "packOpened": {
+          "pads": 64,
+          "lit": 0,
+          "allInsideViewport": true,
+          "minPadSidePx": 28,
+          "viewport": [
+            390,
+            844
+          ]
+        },
+        "audioAfterOpen": {
+          "contexts": 1,
+          "decoded": 282,
+          "starts": 0,
+          "state": "running"
+        },
+        "padPress": {
+          "input": "touch",
+          "padId": null,
+          "portraitHintVisible": true,
+          "note": "no pad produced a sound start in the first layout"
+        },
+        "rotate": {
+          "from": [
+            390,
+            844
+          ],
+          "to": [
+            844,
+            390
+          ],
+          "portraitHintVisibleBefore": true,
+          "portraitHintVisibleAfter": false,
+          "padsAfter": {
+            "pads": 64,
+            "lit": 0,
+            "allInsideViewport": true,
+            "minPadSidePx": 46,
+            "viewport": [
+              844,
+              390
+            ]
+          },
+          "pressedAfterRotate": true,
+          "padIdAfterRotate": "0,0",
+          "litWhileHeldAfterRotate": 3,
+          "soundStartsBefore": 0,
+          "soundStartsAfter": 1
+        }
+      },
+      "checks": {
+        "open_pack": true,
+        "sound": true,
+        "led": true,
+        "rotation": true
+      },
+      "ok": true
+    }
+  ]
+}

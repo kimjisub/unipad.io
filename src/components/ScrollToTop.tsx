@@ -4,8 +4,59 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowUp } from 'lucide-react';
 
+// Matches the button's `right-6 w-10 h-10` and the default `bottom-6`, in rem.
+const EDGE_REM = 1.5;
+const SIZE_REM = 2.5;
+const CLEARANCE_PX = 8;
+
+/**
+ * The element's box in the viewport where layout puts it, ignoring transforms:
+ * footer items slide in, and the button must clear where they settle, not where they pass.
+ */
+function layoutRect(el: HTMLElement) {
+	let top = 0;
+	let left = 0;
+	for (let node: HTMLElement | null = el; node; node = node.offsetParent as HTMLElement | null) {
+		top += node.offsetTop + (node === el ? 0 : node.clientTop);
+		left += node.offsetLeft + (node === el ? 0 : node.clientLeft);
+	}
+	top -= window.scrollY;
+	left -= window.scrollX;
+	return { top, left, bottom: top + el.offsetHeight, right: left + el.offsetWidth };
+}
+
+/**
+ * The lowest `bottom` (px) at which the button covers no footer link or button,
+ * such as the install links. Null when no such place is left on screen.
+ */
+function findClearBottom(): number | null {
+	const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+	const baseBottom = EDGE_REM * rem;
+	const footer = document.querySelector('footer');
+	if (!footer) return baseBottom;
+
+	const size = SIZE_REM * rem;
+	const right = document.documentElement.clientWidth - EDGE_REM * rem;
+	const left = right - size;
+	const targets = [...footer.querySelectorAll<HTMLElement>('a, button')]
+		.filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0)
+		.map(layoutRect)
+		.filter((rect) => rect.left < right && left < rect.right);
+
+	let bottom = baseBottom;
+	for (let i = 0; i <= targets.length; i++) {
+		const top = window.innerHeight - bottom - size;
+		if (top < 0) return null;
+		const covered = targets.filter((rect) => rect.top < top + size + CLEARANCE_PX && top - CLEARANCE_PX < rect.bottom);
+		if (covered.length === 0) return bottom;
+		bottom = window.innerHeight - Math.min(...covered.map((rect) => rect.top)) + CLEARANCE_PX;
+	}
+	return null;
+}
+
 export function ScrollToTop() {
 	const [visible, setVisible] = useState(false);
+	const [clearBottom, setClearBottom] = useState<number | null>();
 
 	useEffect(() => {
 		const handleScroll = () => {
@@ -15,16 +66,38 @@ export function ScrollToTop() {
 		return () => window.removeEventListener('scroll', handleScroll);
 	}, []);
 
+	useEffect(() => {
+		if (!visible) return;
+		let frame = 0;
+		const schedule = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => setClearBottom(findClearBottom()));
+		};
+		schedule();
+		// The page grows or shrinks without scrolling as images and content load.
+		const resizeObserver = new ResizeObserver(schedule);
+		resizeObserver.observe(document.body);
+		window.addEventListener('scroll', schedule, { passive: true });
+		window.addEventListener('resize', schedule);
+		return () => {
+			cancelAnimationFrame(frame);
+			resizeObserver.disconnect();
+			window.removeEventListener('scroll', schedule);
+			window.removeEventListener('resize', schedule);
+		};
+	}, [visible]);
+
 	return (
 		<AnimatePresence>
-			{visible && (
+			{visible && clearBottom !== null && (
 				<motion.button
 					initial={{ opacity: 0, scale: 0.8 }}
 					animate={{ opacity: 1, scale: 1 }}
 					exit={{ opacity: 0, scale: 0.8 }}
 					transition={{ duration: 0.2 }}
 					onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-					className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full border border-white/[0.1] bg-card/80 backdrop-blur-md text-muted-foreground hover:text-foreground hover:border-accent/30 hover:bg-card transition-colors flex items-center justify-center shadow-lg"
+					style={{ bottom: clearBottom ?? `${EDGE_REM}rem` }}
+					className="fixed right-6 z-40 w-10 h-10 rounded-full border border-white/[0.1] bg-card/80 backdrop-blur-md text-muted-foreground hover:text-foreground hover:border-accent/30 hover:bg-card transition-colors flex items-center justify-center shadow-lg"
 					aria-label="Scroll to top"
 				>
 					<ArrowUp className="w-4 h-4" />
