@@ -110,3 +110,18 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
 });
+
+// Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
+// right of the menu, 61 px right of the screen's centre line on every landscape screen.
+test('pad grid sits on the screen centre line in landscape', async ({ page }) => {
+  await loadPack(page);
+  for (const [width, height] of [[915, 402], [844, 390], [1280, 720], [1920, 1080]]) {
+    await page.setViewportSize({ width, height });
+    await expect.poll(() => page.evaluate(() => {
+      const pads = [...document.querySelectorAll('[data-pad]')].map(pad => pad.getBoundingClientRect());
+      const left = Math.min(...pads.map(pad => pad.left));
+      const right = Math.max(...pads.map(pad => pad.right));
+      return Math.abs((left + right) / 2 - window.innerWidth / 2);
+    }), `${width}x${height}`).toBeLessThanOrEqual(1);
+  }
+});
