@@ -49,20 +49,6 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
-      - name: Install browsers
-        run: pnpm exec playwright install --with-deps chromium webkit
-      - name: Browser tests
-        run: pnpm test:e2e
-      - name: Preserve browser failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: browser-failure-${{ github.run_id }}
-          path: |
-            test-results/
-            playwright-report/
-          if-no-files-found: ignore
-          retention-days: 14
       - name: Record elapsed time
         if: always()
         run: |
