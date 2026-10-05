@@ -3,6 +3,7 @@
 import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import type { PadState } from './useUniPadEngine';
 import type { ThemeAssets } from '@/lib/unipack';
+import { SkinImage } from './SkinImage';
 
 interface PadGridProps {
   buttonX: number;
@@ -263,11 +264,10 @@ export function PadGrid({
             >
               {/* Layer 1: button base */}
               {buttonBase ? (
-                <img
+                <SkinImage
                   src={buttonBase}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
-                  draggable={false}
+                  fill
+                  className="object-fill pointer-events-none z-0"
                 />
               ) : (
                 <div
@@ -278,11 +278,10 @@ export function PadGrid({
 
               {/* Layer 2: color overlay */}
               {ledPressedOverlay ? (
-                <img
+                <SkinImage
                   src={ledPressedOverlay}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
-                  draggable={false}
+                  fill
+                  className="object-fill pointer-events-none z-10"
                 />
               ) : hasLedColor ? (
                 <div
@@ -293,12 +292,11 @@ export function PadGrid({
 
               {/* Layer 3: Phantom overlay for guide state */}
               {phantomImage && (
-                <img
+                <SkinImage
                   src={phantomImage}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
+                  fill
+                  className="object-fill pointer-events-none z-20"
                   style={{ transform: `rotate(${phantomRotation}deg)` }}
-                  draggable={false}
                 />
               )}
 

@@ -144,7 +144,7 @@ try {
     input.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   await quit();
-  if (await run(`${row}?.getAttribute('aria-selected') === 'true'`)) await tap(`${row}.querySelector('div.flex-1')`);
+  if (await run(`${row}?.getAttribute('aria-pressed') === 'true'`)) await tap(`${row}.querySelector('div.flex-1')`);
   await tap(`${row}.querySelector('div.flex-1')`);
   await until(`!!${detail}`);
   await snapshot('home-selected-initial');
@@ -174,7 +174,7 @@ try {
     await tap(`${row}.querySelector('div.flex-1')`);
     await until(`!${detail}`);
     await key('ArrowDown', 'ArrowDown', 40);
-    await until(`${row}?.getAttribute('aria-selected') === 'true' && !!${detail}`);
+    await until(`${row}?.getAttribute('aria-pressed') === 'true' && !!${detail}`);
     await key('Enter', 'Enter', 13);
     await quit();
     assert.deepEqual(errors, [], 'No uncaught browser errors');

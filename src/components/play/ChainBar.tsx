@@ -1,6 +1,7 @@
 'use client';
 
 import type { ThemeAssets } from '@/lib/unipack';
+import { SkinImage } from './SkinImage';
 
 interface ChainBarProps {
   chainCount: number;
@@ -105,11 +106,10 @@ export function ChainBar({
           >
             {/* Layer 1: background (btn or state-based image) */}
             {backgroundImage ? (
-              <img
+              <SkinImage
                 src={backgroundImage}
-                alt=""
-                className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
-                draggable={false}
+                fill
+                className="object-fill pointer-events-none z-0"
               />
             ) : (
               <div
@@ -128,11 +128,10 @@ export function ChainBar({
 
             {/* Layer 3: phantom (chainled or chain image on top) */}
             {phantomImage && (
-              <img
+              <SkinImage
                 src={phantomImage}
-                alt=""
-                className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
-                draggable={false}
+                fill
+                className="object-fill pointer-events-none z-20"
               />
             )}
 
