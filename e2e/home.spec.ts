@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 import { test, expect } from './browser';
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.kimjisub.launchpad';
@@ -42,17 +42,32 @@ async function overflow(page: Page) {
   });
 }
 
+/**
+ * Waits until no request has been in flight for half a second. Links prefetch their pages when they
+ * come into view, also after a resize; navigating away cancels such a prefetch, which Linux WebKit
+ * reports as an uncaught "access control checks" error. Playwright's networkidle cannot be reused
+ * here because it resolves at once after the page has been idle once.
+ */
+function networkSettled(page: Page) {
+  const inFlight = new Set<Request>();
+  let changedAt = Date.now();
+  const ended = (request: Request) => { inFlight.delete(request); changedAt = Date.now(); };
+  page.on('request', request => { inFlight.add(request); changedAt = Date.now(); });
+  page.on('requestfinished', ended);
+  page.on('requestfailed', ended);
+  return () => expect.poll(() => inFlight.size === 0 && Date.now() - changedAt >= 500, { intervals: [100] }).toBe(true);
+}
+
 for (const l of locales) {
   test.describe(`${l.locale} home`, () => {
     test.use({ locale: l.locale === 'ko' ? 'ko-KR' : 'en-US' });
 
     for (const bigText of [false, true]) {
       test(`title, description and the three start buttons fit every width${bigText ? ' at 200% text' : ''}`, async ({ page }) => {
-        for (const [index, size] of sizes.entries()) {
-          // Links prefetch their pages once visible; navigating while one is in flight cancels it,
-          // which Linux WebKit reports as an uncaught "access control checks" error.
-          if (index > 0) await page.waitForLoadState('networkidle');
+        const settled = networkSettled(page);
+        for (const size of sizes) {
           await page.setViewportSize({ width: size.width, height: size.height });
+          await settled();
           await page.goto(l.path);
           // A larger default font size scales everything set in rem, as the browser setting does.
           if (bigText) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
