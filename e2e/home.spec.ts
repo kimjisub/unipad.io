@@ -48,7 +48,10 @@ for (const l of locales) {
 
     for (const bigText of [false, true]) {
       test(`title, description and the three start buttons fit every width${bigText ? ' at 200% text' : ''}`, async ({ page }) => {
-        for (const size of sizes) {
+        for (const [index, size] of sizes.entries()) {
+          // Links prefetch their pages once visible; navigating while one is in flight cancels it,
+          // which Linux WebKit reports as an uncaught "access control checks" error.
+          if (index > 0) await page.waitForLoadState('networkidle');
           await page.setViewportSize({ width: size.width, height: size.height });
           await page.goto(l.path);
           // A larger default font size scales everything set in rem, as the browser setting does.
