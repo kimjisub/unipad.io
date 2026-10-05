@@ -23,6 +23,11 @@ const sectionHeadingClass = 'text-xs font-semibold uppercase tracking-widest tex
 const platformLinkClass =
 	'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors';
 
+// Never shrinks next to the copyright row, so default text keeps one line; when larger text
+// no longer fits beside it, the row moves to its own line and wraps within the page width.
+const platformLinksClass =
+	'flex flex-wrap items-center justify-center sm:justify-end gap-3 shrink-0 max-w-full sm:ml-auto';
+
 const containerVariants: Variants = {
 	hidden: { opacity: 0 },
 	visible: {
@@ -128,9 +133,9 @@ export default function Footer() {
 
 					<motion.div
 						variants={itemVariants}
-						className="flex flex-col sm:flex-row justify-between items-center gap-4"
+						className="flex flex-col sm:flex-row sm:flex-wrap justify-between items-center gap-4"
 					>
-						<div className="flex flex-col sm:flex-row items-center gap-2">
+						<div className="flex flex-col sm:flex-row sm:flex-1 items-center gap-2">
 							<p className="text-xs text-muted-foreground">
 								{t('common.copyright', { year: currentYear })}
 							</p>
@@ -145,7 +150,7 @@ export default function Footer() {
 								<ExternalLink className="w-3 h-3" />
 							</a>
 						</div>
-						<div className="flex items-center gap-3">
+						<div className={platformLinksClass}>
 							<Link
 								href="/play"
 								className={platformLinkClass}

@@ -101,17 +101,17 @@ const TopBar: React.FC = () => {
 					backgroundColor: `color-mix(in srgb, var(--background) ${Math.round(bgOpacity * 100)}%, transparent)`,
 				}}
 			>
-				<div className="h-14 max-w-6xl mx-auto px-5 md:px-8 flex items-center justify-between">
+				<div className="h-14 max-w-6xl mx-auto px-5 md:px-8 [@media(max-width:12em)]:px-2 flex items-center justify-between">
 					<Link
 						href="/"
-						className="flex items-center gap-2 text-foreground hover:text-muted-foreground transition-colors"
+						className="flex shrink-0 items-center gap-2 [@media(max-width:12em)]:gap-1.5 text-foreground hover:text-muted-foreground transition-colors"
 					>
 						<Image src="/logo.svg" alt="UniPad" width={24} height={24} />
-						<span className="text-lg font-bold tracking-tight">UniPad</span>
+						<span className="text-lg [@media(max-width:12em)]:text-base font-bold tracking-tight">UniPad</span>
 					</Link>
 
 					{/* Desktop */}
-					<div className="hidden md:flex items-center gap-6">
+					<div className="hidden md:[@media(min-width:28em)]:flex items-center gap-6">
 						{links.map((link) => (
 							<Link
 								key={link.path}
@@ -200,7 +200,7 @@ const TopBar: React.FC = () => {
 					</div>
 
 					{/* Mobile */}
-					<div className="md:hidden flex items-center gap-2">
+					<div className="flex shrink-0 items-center gap-2 [@media(max-width:12em)]:gap-0.5 md:[@media(min-width:28em)]:hidden">
 						<button
 							onClick={toggleLocale}
 							aria-label={locale === 'en' ? '한국어로 전환' : 'Switch to English'}
@@ -231,7 +231,7 @@ const TopBar: React.FC = () => {
 					animate={{ opacity: 1, y: 0 }}
 					exit={{ opacity: 0, y: -8 }}
 					transition={{ duration: 0.2, ease: 'easeOut' }}
-					className="fixed inset-x-0 top-14 z-40 md:hidden border-b border-border bg-background"
+					className="fixed inset-x-0 top-14 z-40 md:[@media(min-width:28em)]:hidden max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-b border-border bg-background"
 				>
 					<div className="max-w-6xl mx-auto px-5 md:px-8 py-4 flex flex-col gap-3">
 						{links.map((link) => (
