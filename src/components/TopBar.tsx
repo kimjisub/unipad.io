@@ -104,10 +104,10 @@ const TopBar: React.FC = () => {
 				<div className="h-14 max-w-6xl mx-auto px-5 md:px-8 [@media(max-width:12em)]:px-2 flex items-center justify-between">
 					<Link
 						href="/"
-						className="flex shrink-0 items-center gap-2 [@media(max-width:12em)]:gap-1.5 text-foreground hover:text-muted-foreground transition-colors"
+						className="flex min-w-0 items-center gap-2 [@media(max-width:12em)]:gap-1.5 text-foreground hover:text-muted-foreground transition-colors"
 					>
 						<Image src="/logo.svg" alt="UniPad" width={24} height={24} />
-						<span className="text-lg [@media(max-width:12em)]:text-base font-bold tracking-tight">UniPad</span>
+						<span className="truncate text-lg [@media(max-width:12em)]:text-base font-bold tracking-tight">UniPad</span>
 					</Link>
 
 					{/* Desktop */}
