@@ -8,8 +8,22 @@ import { ArrowUp } from 'lucide-react';
 const EDGE_REM = 1.5;
 const SIZE_REM = 2.5;
 const CLEARANCE_PX = 8;
-// Footer items fade and slide in, so their final position is known only after the animation.
-const REMEASURE_DELAY_MS = 900;
+
+/**
+ * The element's box in the viewport where layout puts it, ignoring transforms:
+ * footer items slide in, and the button must clear where they settle, not where they pass.
+ */
+function layoutRect(el: HTMLElement) {
+	let top = 0;
+	let left = 0;
+	for (let node: HTMLElement | null = el; node; node = node.offsetParent as HTMLElement | null) {
+		top += node.offsetTop + (node === el ? 0 : node.clientTop);
+		left += node.offsetLeft + (node === el ? 0 : node.clientLeft);
+	}
+	top -= window.scrollY;
+	left -= window.scrollX;
+	return { top, left, bottom: top + el.offsetHeight, right: left + el.offsetWidth };
+}
 
 /**
  * The lowest `bottom` (px) at which the button covers no footer link or button,
@@ -24,9 +38,10 @@ function findClearBottom(): number | null {
 	const size = SIZE_REM * rem;
 	const right = document.documentElement.clientWidth - EDGE_REM * rem;
 	const left = right - size;
-	const targets = [...footer.querySelectorAll('a, button')]
-		.map((el) => el.getBoundingClientRect())
-		.filter((rect) => rect.width > 0 && rect.height > 0 && rect.left < right && left < rect.right);
+	const targets = [...footer.querySelectorAll<HTMLElement>('a, button')]
+		.filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0)
+		.map(layoutRect)
+		.filter((rect) => rect.left < right && left < rect.right);
 
 	let bottom = baseBottom;
 	for (let i = 0; i <= targets.length; i++) {
@@ -54,20 +69,19 @@ export function ScrollToTop() {
 	useEffect(() => {
 		if (!visible) return;
 		let frame = 0;
-		let timer = 0;
-		const update = () => setClearBottom(findClearBottom());
 		const schedule = () => {
 			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(update);
-			window.clearTimeout(timer);
-			timer = window.setTimeout(update, REMEASURE_DELAY_MS);
+			frame = requestAnimationFrame(() => setClearBottom(findClearBottom()));
 		};
 		schedule();
+		// The page grows or shrinks without scrolling as images and content load.
+		const resizeObserver = new ResizeObserver(schedule);
+		resizeObserver.observe(document.body);
 		window.addEventListener('scroll', schedule, { passive: true });
 		window.addEventListener('resize', schedule);
 		return () => {
 			cancelAnimationFrame(frame);
-			window.clearTimeout(timer);
+			resizeObserver.disconnect();
 			window.removeEventListener('scroll', schedule);
 			window.removeEventListener('resize', schedule);
 		};

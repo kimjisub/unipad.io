@@ -100,4 +100,24 @@ test.describe('with default text', () => {
       }
     });
   }
+
+  test('the scroll-to-top button appears clear of where the install links settle', async ({ page }) => {
+    await page.setViewportSize({ width: 680, height: 800 });
+    // The home page is long enough to show the button; at 680px the iOS link sits in its column.
+    await page.goto('/');
+    const button = page.getByRole('button', { name: 'Scroll to top' });
+    // A scroll made before the page finishes loading can be undone, so repeat it until the button shows.
+    await expect(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(button).toBeVisible({ timeout: 500 });
+    }).toPass();
+    // Where the button is placed while the footer is still sliding in, without its own scale-in.
+    const first = await button.evaluate((el: HTMLElement) => ({ x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }));
+    await scrollToFooter(page);
+    for (const link of installLinks(page)) {
+      const box = (await link.boundingBox())!;
+      const overlaps = first.x < box.x + box.width && box.x < first.x + first.width && first.y < box.y + box.height && box.y < first.y + first.height;
+      expect(overlaps, await link.innerText()).toBe(false);
+    }
+  });
 });
