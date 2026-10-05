@@ -66,6 +66,8 @@ export function ScrollToTop() {
 			setVisible(next);
 			if (!next) setClearBottom(undefined);
 		};
+		// The page may already be scrolled, as when a reload or going back restores the position.
+		handleScroll();
 		window.addEventListener('scroll', handleScroll, { passive: true });
 		return () => window.removeEventListener('scroll', handleScroll);
 	}, []);

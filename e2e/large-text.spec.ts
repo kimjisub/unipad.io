@@ -172,6 +172,19 @@ test.describe('with default text', () => {
 });
 
 test.describe('the scroll-to-top button', () => {
+  test('shows on a page that is already scrolled down when its scripts start', async ({ page }) => {
+    // As when a reload or going back restores the scroll position before the page's scripts run.
+    let startScripts = () => {};
+    const scriptsHeld = new Promise<void>(resolve => { startScripts = resolve; });
+    await page.route('**/_next/static/chunks/**/*.js', async route => { await scriptsHeld; await route.continue(); });
+    await page.goto('/', { waitUntil: 'commit' });
+    await page.locator('footer').waitFor({ state: 'attached' });
+    await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
+    expect(await page.evaluate(() => scrollY)).toBeGreaterThan(600);
+    startScripts();
+    await expect(page.getByRole('button', { name: 'Scroll to top' })).toBeVisible();
+  });
+
   const cases = [
     ...[320, 390, 680].flatMap(width => [false, true].map(large => ({ path: '/', width, height: 800, large }))),
     { path: '/en', width: 320, height: 800, large: true },
