@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
 
 const root = new URL('../', import.meta.url);
 
@@ -42,4 +44,16 @@ test('CI runs browser checks and retains failure evidence', () => {
   assert.match(workflow, /test-results\//);
   assert.match(workflow, /playwright-report\//);
   assert.ok(readme.includes('pnpm test:e2e'));
+});
+
+test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {
+  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  const evidence = workflow.match(/Preserve browser failure evidence[\s\S]*?path: \|\n((?:\s+\S+\/\n)+)/);
+  assert.ok(evidence, 'CI must list the browser failure evidence folders');
+  const folders = evidence[1].trim().split(/\s+/);
+  assert.deepEqual(folders, ['test-results/', 'playwright-report/']);
+  const eslint = new ESLint({ cwd: fileURLToPath(root) });
+  for (const folder of folders) {
+    assert.ok(await eslint.isPathIgnored(`${folder}trace/assets/index.js`), `pnpm lint must skip ${folder}`);
+  }
 });
