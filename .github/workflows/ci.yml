@@ -15,7 +15,7 @@ concurrency:
 jobs:
   checks:
     name: Web checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: '1'
@@ -29,13 +29,13 @@ jobs:
       NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
       NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record start time
         run: echo "CI_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 9.11.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.15.0
           cache: pnpm
