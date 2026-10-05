@@ -52,23 +52,22 @@ async function waitUntilSettled(target: Locator) {
 /**
  * Waits until the scroll-to-top button has kept its place and full opacity, or stayed away, for several frames.
  * It is placed in the frame after a scroll, and a button that leaves fades out where it was.
+ * Polls 'at rest', or what each frame showed (bottom/opacity of every button) so a failure tells why.
  */
 async function waitForButtonAtRest(page: Page) {
-  await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
-    const read = () => {
-      const button = document.querySelector<HTMLElement>('button[aria-label="Scroll to top"]');
-      return button ? `${button.style.bottom} ${getComputedStyle(button).opacity}` : '';
-    };
-    let first = '';
-    let frames = 0;
+  await expect.poll(() => page.evaluate(() => new Promise<string>(resolve => {
+    const read = () => [...document.querySelectorAll<HTMLElement>('button[aria-label="Scroll to top"]')]
+      .map(button => `${button.style.bottom}/${getComputedStyle(button).opacity}`)
+      .join(' + ') || 'none';
+    const frames: string[] = [];
     const step = () => {
-      if (frames === 0) first = read();
-      else if (read() !== first) return resolve(false);
-      if (++frames < 6) return requestAnimationFrame(step);
-      resolve(first === '' || first.endsWith(' 1'));
+      frames.push(read());
+      if (frames.length < 6) return requestAnimationFrame(step);
+      const atRest = frames.every(frame => frame === frames[0]) && (frames[0] === 'none' || /^[^+]*\/1$/.test(frames[0]));
+      resolve(atRest ? 'at rest' : `scroll ${scrollY}: ${frames.join(' | ')}`);
     };
     requestAnimationFrame(() => requestAnimationFrame(step));
-  }))).toBe(true);
+  }))).toBe('at rest');
 }
 
 async function scrollToFooter(page: Page) {
