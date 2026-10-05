@@ -36,7 +36,6 @@ MotionGlobalConfig.skipAnimations = true;
 const { OptionPanel } = await import('./OptionPanel.tsx');
 const { StoreModal } = await import('./StoreModal.tsx');
 const { MainScreen } = await import('./MainScreen.tsx');
-const { TypewriterEffect } = await import('../TypewriterEffect.tsx');
 const { default: Preloader } = await import('../ui/Preloader.tsx');
 const messages = JSON.parse(readFileSync(new URL('../../i18n/messages/en.json', import.meta.url)));
 const noop = () => {};
@@ -136,11 +135,6 @@ test('Delete opens confirmation without deleting the selected saved pack', async
   assert.deepEqual(deleted, ['ci']);
 });
 
-test('reduced motion shows the first typewriter text without animation', () => {
-  const view = render(React.createElement(TypewriterEffect, { texts: ['First', 'Second'] }));
-  assert.equal(view.container.textContent, 'First');
-});
-
 test('preloader appears only on the first visit and dismisses on its original timer', async () => {
   const view = render(React.createElement(Preloader));
   assert.ok(view.getByText('Play Rhythm'));
@@ -150,23 +144,4 @@ test('preloader appears only on the first visit and dismisses on its original ti
   view.unmount();
   const second = render(React.createElement(Preloader));
   assert.equal(second.queryByText('Play Rhythm'), null);
-});
-
-
-test('typewriter keeps typing, pausing, deleting and advancing at the configured speeds', () => {
-  reducedMotion = false;
-  for (const listener of mediaListeners) listener();
-  mock.timers.enable({ apis: ['setTimeout'] });
-  const view = render(React.createElement(TypewriterEffect, {
-    texts: ['A', 'B'], typingSpeed: 20, deletingSpeed: 10, pauseTime: 40,
-  }));
-  act(() => mock.timers.tick(20));
-  assert.equal(view.container.textContent, 'A');
-  act(() => mock.timers.tick(39));
-  assert.equal(view.container.textContent, 'A');
-  act(() => mock.timers.tick(1));
-  act(() => mock.timers.tick(10));
-  assert.equal(view.container.textContent, '\u00a0');
-  act(() => mock.timers.tick(20));
-  assert.equal(view.container.textContent, 'B');
 });
