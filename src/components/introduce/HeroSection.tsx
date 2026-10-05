@@ -42,7 +42,7 @@ export const HeroSection = () => {
 							href="/play"
 							className={`${LARGE_BUTTON_CLASS} bg-accent px-5 text-accent-foreground hover:bg-accent/90 sm:px-6`}
 						>
-							<Play className="h-[1.125rem] w-[1.125rem] fill-current" aria-hidden />
+							<Play className="h-[1.125rem] w-[1.125rem] shrink-0 fill-current" aria-hidden />
 							{t('playOnWeb')}
 						</Link>
 						<StoreButtons layout="labeled" />

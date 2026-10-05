@@ -1,4 +1,4 @@
-import type { Page, Request } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { test, expect } from './browser';
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.kimjisub.launchpad';
@@ -31,74 +31,71 @@ function heroControls(page: Page, l: (typeof locales)[number]) {
   };
 }
 
-/** Elements whose content is wider than their box (cut off), plus the page's own sideways overflow. */
+/**
+ * Text and controls of the home page sections whose content is wider than their box (cut off), icons in
+ * links squeezed narrower than they are tall by the text beside them, and the page's own sideways
+ * overflow. The header, footer and back-to-top button are shared by every page.
+ */
 async function overflow(page: Page) {
   return page.evaluate(() => {
     const root = document.documentElement;
-    const clipped = [...document.querySelectorAll('#hero h1, #hero p, #hero a, #hero li')]
+    const where = (el: Element) => `${el.closest('section')!.id}: ${el.closest('a, h3, li')?.textContent?.trim()}`;
+    const clipped = [...document.querySelectorAll('#main-content section :is(h1, h2, h3, p, a, li, button)')]
       .filter(el => el.scrollWidth > el.clientWidth + 1)
-      .map(el => el.textContent?.trim());
-    return { page: root.scrollWidth - root.clientWidth, clipped };
+      .map(where);
+    const squeezed = [...document.querySelectorAll('#main-content section a svg')]
+      .filter(icon => {
+        const { width, height } = icon.getBoundingClientRect();
+        return height > 0 && width < height - 0.5;
+      })
+      .map(where);
+    return { page: root.scrollWidth - root.clientWidth, clipped, squeezed };
   });
-}
-
-/**
- * Waits until no request has been in flight for half a second. Links prefetch their pages when they
- * come into view, also after a resize; navigating away cancels such a prefetch, which Linux WebKit
- * reports as an uncaught "access control checks" error. Playwright's networkidle cannot be reused
- * here because it resolves at once after the page has been idle once.
- */
-function networkSettled(page: Page) {
-  const inFlight = new Set<Request>();
-  let changedAt = Date.now();
-  const ended = (request: Request) => { inFlight.delete(request); changedAt = Date.now(); };
-  page.on('request', request => { inFlight.add(request); changedAt = Date.now(); });
-  page.on('requestfinished', ended);
-  page.on('requestfailed', ended);
-  return () => expect.poll(() => inFlight.size === 0 && Date.now() - changedAt >= 500, { intervals: [100] }).toBe(true);
 }
 
 for (const l of locales) {
   test.describe(`${l.locale} home`, () => {
     test.use({ locale: l.locale === 'ko' ? 'ko-KR' : 'en-US' });
 
-    for (const bigText of [false, true]) {
-      test(`title, description and the three start buttons fit every width${bigText ? ' at 200% text' : ''}`, async ({ page }) => {
-        const settled = networkSettled(page);
-        for (const size of sizes) {
-          await page.setViewportSize({ width: size.width, height: size.height });
-          await settled();
-          await page.goto(l.path);
-          // A larger default font size scales everything set in rem, as the browser setting does.
-          if (bigText) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
-          const c = heroControls(page, l);
-          const at = `${size.width}px`;
+    // One page per width: reloading a page in another width cancels the link prefetches the previous
+    // width started, which Linux WebKit reports as an uncaught error.
+    for (const size of sizes) {
+      test.describe(`${size.width}px`, () => {
+        test.use({ viewport: { width: size.width, height: size.height } });
 
-          expect((await c.title.innerText()).replace(/\s+/g, ' '), at).toContain(l.title);
-          for (const control of [c.title, c.play, c.googlePlay, c.appStore, c.guide]) {
-            await expect(control, at).toBeVisible();
-            const box = (await control.boundingBox())!;
-            expect(box.x, at).toBeGreaterThanOrEqual(0);
-            expect(box.x + box.width, at).toBeLessThanOrEqual(size.width + 0.5);
-          }
-          expect(await overflow(page), at).toEqual({ page: 0, clipped: [] });
+        for (const bigText of [false, true]) {
+          test(`title, description, three start buttons and the lower sections fit${bigText ? ' at 200% text' : ''}`, async ({ page }) => {
+            await page.goto(l.path);
+            // A larger default font size scales everything set in rem, as the browser setting does.
+            if (bigText) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+            const c = heroControls(page, l);
 
-          if (!bigText && size.aboveFold) {
-            const fold = [c.play, c.googlePlay, c.appStore, ...(size.guideAboveFold ? [c.guide] : [])];
-            for (const control of fold) {
+            expect((await c.title.innerText()).replace(/\s+/g, ' ')).toContain(l.title);
+            for (const control of [c.title, c.play, c.googlePlay, c.appStore, c.guide]) {
+              await expect(control).toBeVisible();
               const box = (await control.boundingBox())!;
-              expect(box.y + box.height, `${at}: above the fold`).toBeLessThanOrEqual(size.height);
+              expect(box.x).toBeGreaterThanOrEqual(0);
+              expect(box.x + box.width).toBeLessThanOrEqual(size.width + 0.5);
             }
-          }
+            expect(await overflow(page)).toEqual({ page: 0, clipped: [], squeezed: [] });
 
-          if (!bigText) {
-            const smallText = await c.hero.evaluate(hero =>
-              [...hero.querySelectorAll('*')]
-                .filter(el => [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.textContent!.trim()))
-                .filter(el => !el.closest('.sr-only') && parseFloat(getComputedStyle(el).fontSize) < 12)
-                .map(el => el.textContent));
-            expect(smallText, `${at}: text under 12px`).toEqual([]);
-          }
+            if (!bigText && size.aboveFold) {
+              const fold = [c.play, c.googlePlay, c.appStore, ...(size.guideAboveFold ? [c.guide] : [])];
+              for (const control of fold) {
+                const box = (await control.boundingBox())!;
+                expect(box.y + box.height, 'above the fold').toBeLessThanOrEqual(size.height);
+              }
+            }
+
+            if (!bigText) {
+              const smallText = await c.hero.evaluate(hero =>
+                [...hero.querySelectorAll('*')]
+                  .filter(el => [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.textContent!.trim()))
+                  .filter(el => !el.closest('.sr-only') && parseFloat(getComputedStyle(el).fontSize) < 12)
+                  .map(el => el.textContent));
+              expect(smallText, 'text under 12px').toEqual([]);
+            }
+          });
         }
       });
     }

@@ -35,7 +35,8 @@ export const CtaSection = () => {
 
 	return (
 		<SectionContainer id="cta" divided={false}>
-			<div className="relative overflow-hidden rounded-[1.75rem] bg-accent px-6 py-10 text-accent-foreground md:p-14">
+			{/* 휴대폰의 좌우 여백은 큰 글씨에서도 24px까지만 늘려 안의 버튼에 글자 자리를 남긴다. */}
+			<div className="relative overflow-hidden rounded-[1.75rem] bg-accent px-[min(1.5rem,24px)] py-10 text-accent-foreground md:p-14">
 				<PadArt />
 				<div className="relative">
 					<SectionHeading sectionId="cta">{t('title')}</SectionHeading>
@@ -46,7 +47,7 @@ export const CtaSection = () => {
 							href="/play"
 							className={`${LARGE_BUTTON_CLASS} ${ON_ACCENT_FOCUS_CLASS} bg-accent-foreground px-6 text-white hover:bg-accent-foreground/90`}
 						>
-							<Play className="h-5 w-5 fill-current" aria-hidden />
+							<Play className="h-5 w-5 shrink-0 fill-current" aria-hidden />
 							{t('playNow')}
 						</Link>
 						<StoreButtons variant="onAccent" />

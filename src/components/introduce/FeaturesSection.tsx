@@ -118,7 +118,7 @@ export const FeaturesSection = () => {
 						</div>
 						<h3 className="flex items-center gap-2.5 text-[1.1875rem] font-semibold tracking-[-0.015em] text-foreground">
 							<Icon className="h-[1.125rem] w-[1.125rem] shrink-0 text-accent" aria-hidden />
-							{t(`${key}.title`)}
+							<span className="min-w-0 [overflow-wrap:anywhere]">{t(`${key}.title`)}</span>
 						</h3>
 						<p className="mt-2.5 text-[0.9375rem] text-muted-foreground">{t(`${key}.description`)}</p>
 						<div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 pt-5">
@@ -129,7 +129,7 @@ export const FeaturesSection = () => {
 									className="group inline-flex min-h-11 items-center gap-1 text-[0.9375rem] font-semibold text-foreground transition-colors hover:text-accent"
 								>
 									{href === '/play' ? t('tryIt') : t('learnMore')}
-									<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+									<ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" aria-hidden />
 								</Link>
 							)}
 						</div>

@@ -28,8 +28,10 @@ const variantClass = {
 } as const;
 
 // 정렬·간격·좌우 여백은 배치마다 여기서 한 가지씩만 정한다.
+// plain은 좁은 상자 안에서도 쓰여, 큰 글씨에서 여백이 글자 자리를 먹지 않도록 기본 크기 이상 늘리지 않고
+// 이름이 아이콘 옆에 안 들어가면 아이콘 아래로 내린다.
 const layoutClass = {
-	plain: `${CENTERED_CONTENT_CLASS} px-5 sm:min-w-[9rem]`,
+	plain: `${CENTERED_CONTENT_CLASS} flex-wrap px-[min(1.25rem,20px)] text-center sm:min-w-[9rem]`,
 	labeled: 'justify-start gap-3 px-3.5 sm:min-w-[10rem]',
 } as const;
 
@@ -63,7 +65,7 @@ export function StoreButtons({ variant = 'surface', layout = 'plain', className 
 							<span className="text-base leading-tight">{name}</span>
 						</span>
 					) : (
-						name
+						<span className="min-w-0 [overflow-wrap:anywhere]">{name}</span>
 					)}
 				</a>
 			))}

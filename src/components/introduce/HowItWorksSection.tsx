@@ -37,7 +37,7 @@ export const HowItWorksSection = () => {
 			<div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
 				<Link href="/play" className={`${LARGE_BUTTON_CLASS} bg-foreground px-6 text-background hover:bg-foreground/90`}>
 					{t('startNow')}
-					<ArrowRight className="h-5 w-5" aria-hidden />
+					<ArrowRight className="h-5 w-5 shrink-0" aria-hidden />
 				</Link>
 				<Link
 					href={GET_STARTED_PATH}
