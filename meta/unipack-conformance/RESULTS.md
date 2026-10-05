@@ -31,6 +31,33 @@ the list, and what was not exercised).
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
 
+## Changes after the Android colour-length fix
+
+The previous canonical corpus SHA256 was
+`30ad4442b7abf40ee0cbfcc97976999fbde4571b30f1d39590425620e4c465eb`, with 23 pinned platform differences.
+KL-M13 previously recorded Android accepting `o 1 1 1234567` as `on 0 0 00234567 4`, with no error.
+`UniPackFolder.kt` converted the colour with `toInt(16)` without checking its length; the seven-digit
+value carried into the alpha byte when the opaque-alpha offset was added.
+
+[unipad-android PR #133](https://github.com/kimjisub/unipad-android/pull/133), merged into main as
+[`59f8ebcf`](https://github.com/kimjisub/unipad-android/commit/59f8ebcf493e82a6a2726ba39757a88aa41184ea),
+rejects direct colour tokens longer than six characters before integer conversion. Its
+`klM13_sevenDigitColorIsReportedAndSkipped` regression uses the unchanged KL-M13 input and requires
+one format error, only the off event, and a successfully loaded pack.
+
+Only the KL-M13 Android pin was removed from `divergences.json`; the other 22 platform records are
+unchanged. The regenerated canonical corpus SHA256 is
+`ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`. All 124 input fingerprints, expected results and
+bases are unchanged, including KL-M13
+`7c21fd3e45e558cad69336af853868c266c389c42cbf81d2417a297eb9a36744`; `cases.mjs` and `palette.json`
+are unchanged. The empty KL-M13 object retains its position without pinning any platform result.
+
+The table above remains the historical run on the previous corpus. Android and iOS were not rerun
+here, and no new aggregate or cross-platform pass count is inferred. The web suite was rerun before
+and after this pin removal: all 175 tests pass in each run, and all 124 recorded web case results are
+identical. App copies must be synchronized and rerun separately against the new corpus before a new
+three-platform table can be produced. No product parser, runner or expectation was changed here.
+
 ## Changes after the independent review
 
 The 2026-09-30 review left two documentation/expectation corrections. The previously checked tooling

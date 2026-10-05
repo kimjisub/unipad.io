@@ -5458,66 +5458,7 @@
           "keyLed:format"
         ]
       },
-      "known": {
-        "android": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [
-              {
-                "c": 0,
-                "x": 3,
-                "y": 2,
-                "queue": [
-                  {
-                    "file": "c.wav",
-                    "loop": 0,
-                    "wormhole": -1
-                  }
-                ]
-              }
-            ],
-            "keyLedExist": true,
-            "leds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "loop": 1,
-                    "events": [
-                      [
-                        "on",
-                        0,
-                        0,
-                        "00234567",
-                        4
-                      ],
-                      [
-                        "off",
-                        0,
-                        0
-                      ]
-                    ]
-                  }
-                ]
-              }
-            ],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Android parses the colour with toInt(16), which accepts 7 hex digits; the colour comes out with alpha 00 (UniPackFolder.kt). Web and iOS reject more than 6 digits."
-        }
-      }
+      "known": {}
     },
     {
       "layer": "parse",

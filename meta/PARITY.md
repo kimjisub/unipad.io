@@ -122,9 +122,21 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 - **iOS keeps invalid round LED lines.** `o mc 33`, `o * 0`, `f mc 33`, `f mc 0` are not dropped, so number 33 reaches the logo (index 32) and 0 addresses index -1. Android and web drop them (KL-012).
 - **iOS accepts extra or unparsable trailing tokens on LED lines.** `o 1 1 FF0000 x`, `o 1 1 FF0000 5 6` and `o l 0 a 5 9` light instead of being reported (KL-M11, KL-M12, KL-014).
 - **iOS reads an out-of-range auto velocity as a hex colour.** `o 1 1 a 200` and `o 1 1 a -1` light `ff00000a` (KL-M17, KL-M18).
-- **Android accepts a 7-digit hex colour** (alpha 00); web and iOS reject it (KL-M13).
 - **Web reads the x column of `on`/`off` lines with `parseInt`,** so `o 1b 1 FF0000` lights pad (0,0); Android and iOS reject it (KL-M05).
 - **Web names non-numeric values differently.** Non-numeric autoPlay values and keyLED file-name fields are reported as `range` instead of `format` (AP-M01..M09, AP-M11, KL-N01..N05). The line or file is dropped by all three; only the message differs.
+
+### Resolved differences found by the corpus
+
+- **KL-M13: Android now rejects a 7-digit hex colour.** The previous Android result was
+  `on 0 0 00234567 4` with no error: `toInt(16)` accepted seven digits and adding the alpha offset
+  carried into alpha. [unipad-android PR #133](https://github.com/kimjisub/unipad-android/pull/133),
+  main [`59f8ebcf`](https://github.com/kimjisub/unipad-android/commit/59f8ebcf493e82a6a2726ba39757a88aa41184ea),
+  checks the colour token length before conversion and includes a regression for the exact KL-M13 input.
+  Only its Android pin was removed; the other 22 records and all 124 input fingerprints remain unchanged.
+  The previous corpus SHA256 was `30ad4442b7abf40ee0cbfcc97976999fbde4571b30f1d39590425620e4c465eb`;
+  the regenerated corpus SHA256 is `ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-android-colour-length-fix) for the
+  preserved history and rerun limits; the historical aggregate above was not recalculated.
 
 ### Not observed, so not known
 
