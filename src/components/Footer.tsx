@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link } from '@/i18n/navigation';
-import { APP_STORE_URL, EXTERNAL_LINKS, GOOGLE_PLAY_URL } from '@/lib/constants';
+import { APP_STORE_URL, EXTERNAL_LINKS, GOOGLE_PLAY_URL, SCROLL_TOP_AVOID } from '@/lib/constants';
 
 const communityLinks = [
 	{ name: 'Discord', url: EXTERNAL_LINKS.discord },
@@ -60,6 +60,7 @@ export default function Footer() {
 	return (
 		<footer
 			ref={ref}
+			{...SCROLL_TOP_AVOID}
 			className="relative border-t border-white/[0.06] overflow-hidden bg-black/20"
 		>
 			<div

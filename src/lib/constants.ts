@@ -19,3 +19,10 @@ export const EXTERNAL_LINKS = {
 	github: 'https://github.com/kimjisub/unipad-android',
 	namuWiki: 'https://namu.wiki/w/%EC%9C%A0%EB%8B%88%ED%8C%A8%EB%93%9C',
 } as const;
+
+const SCROLL_TOP_AVOID_ATTRIBUTE = 'data-scroll-top-avoid';
+
+/** Spread on a group whose links and buttons the scroll-to-top button moves away from, such as install links. */
+export const SCROLL_TOP_AVOID = { [SCROLL_TOP_AVOID_ATTRIBUTE]: '' } as const;
+
+export const SCROLL_TOP_AVOID_SELECTOR = `[${SCROLL_TOP_AVOID_ATTRIBUTE}]`;
