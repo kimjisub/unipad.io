@@ -723,10 +723,10 @@ function UnipackListItem({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.16, delay: reduceMotion ? 0 : Math.min(index * 0.01, 0.08) }}
       data-pack-id={pack.id}
-      role="button"
+      role="option"
       tabIndex={0}
       aria-label={`${pack.title} by ${pack.producerName}`}
-      aria-pressed={isSelected}
+      aria-selected={isSelected}
       className="flex h-[72px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}

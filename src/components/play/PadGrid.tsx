@@ -266,8 +266,7 @@ export function PadGrid({
               {buttonBase ? (
                 <SkinImage
                   src={buttonBase}
-                  fill
-                  className="object-fill pointer-events-none z-0"
+                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
                 />
               ) : (
                 <div
@@ -280,8 +279,7 @@ export function PadGrid({
               {ledPressedOverlay ? (
                 <SkinImage
                   src={ledPressedOverlay}
-                  fill
-                  className="object-fill pointer-events-none z-10"
+                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
                 />
               ) : hasLedColor ? (
                 <div
@@ -294,8 +292,7 @@ export function PadGrid({
               {phantomImage && (
                 <SkinImage
                   src={phantomImage}
-                  fill
-                  className="object-fill pointer-events-none z-20"
+                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
                   style={{ transform: `rotate(${phantomRotation}deg)` }}
                 />
               )}

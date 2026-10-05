@@ -108,8 +108,7 @@ export function ChainBar({
             {backgroundImage ? (
               <SkinImage
                 src={backgroundImage}
-                fill
-                className="object-fill pointer-events-none z-0"
+                className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
               />
             ) : (
               <div
@@ -130,8 +129,7 @@ export function ChainBar({
             {phantomImage && (
               <SkinImage
                 src={phantomImage}
-                fill
-                className="object-fill pointer-events-none z-20"
+                className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
               />
             )}
 

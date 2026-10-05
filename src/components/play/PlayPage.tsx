@@ -1484,14 +1484,11 @@ export function PlayPage() {
       {theme.customLogo && !optionPanelOpen && (
         <SkinImage
           src={theme.customLogo}
-          width={90}
-          height={0}
           className="fixed z-30 pointer-events-none"
           style={{
             top: '16px',
             right: '16px',
             width: '90px',
-            height: 'auto',
           }}
         />
       )}
