@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test:unipack": "rm -rf .next/cache/unipack-test && tsc -p src/lib/unipack/tsconfig.test.json && node --test \".next/cache/unipack-test/**/*.test.js\"",
-    "test": "rm -rf .next/cache/unit-test && tsc -p tsconfig.test.json && node --import tsx --test \".next/cache/unit-test/**/*.test.js\" \"src/**/*.test.mjs\" \"scripts/*.test.mjs\"",
+    "test:chain-release": "node meta/unipack-conformance/chain-release-v1/generate.mjs --check && node --import tsx --test meta/unipack-conformance/chain-release-v1/corpus.test.mjs",
+    "test": "rm -rf .next/cache/unit-test && tsc -p tsconfig.test.json && node --import tsx --test \".next/cache/unit-test/**/*.test.js\" \"src/**/*.test.mjs\" \"scripts/*.test.mjs\" && pnpm test:chain-release",
     "test:e2e": "playwright test"
   },
   "dependencies": {
