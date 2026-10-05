@@ -5,6 +5,9 @@ export class SoundEngine {
   private gainNode: GainNode;
   private bufferCache = new Map<string, AudioBuffer>();
   private activeNodes = new Map<string, AudioBufferSourceNode>();
+  // The pad's current press owns the source selected at down time, independently of
+  // the current chain and the (already advanced) sound sequence.
+  private heldNodes = new Map<string, { key: string; node: AudioBufferSourceNode; infinite: boolean }>();
   private chainValue: () => number;
   private setChain: (c: number) => void;
   private unipack: UniPackData;
@@ -125,6 +128,8 @@ export class SoundEngine {
   soundOn(x: number, y: number): void {
     const chain = this.chainValue();
     const key = this.stopKey(chain, x, y);
+    const padKey = `${x}-${y}`;
+    this.heldNodes.delete(padKey);
 
     // Stop currently playing sound for this pad
     const existing = this.activeNodes.get(key);
@@ -140,28 +145,17 @@ export class SoundEngine {
     source.buffer = sound.audioBuffer;
     source.connect(this.gainNode);
 
-    if (sound.loop === -1) {
-      // loop=-1 means loop forever (original: loop count 0 = infinite loop in SoundPool)
-      source.loop = true;
-    } else if (sound.loop > 0) {
-      source.loop = true;
-      source.start(0);
-      const stopTime = this.audioContext.currentTime + sound.audioBuffer.duration * (sound.loop + 1);
-      source.stop(stopTime);
-      this.soundPush(chain, x, y);
-      this.activeNodes.set(key, source);
-      source.onended = () => this.forgetNode(key, source);
-
-      if (sound.wormhole !== NO_WORMHOLE) {
-        setTimeout(() => this.setChain(sound.wormhole), 100);
-      }
-      return;
-    }
+    if (sound.loop === -1 || sound.loop > 0) source.loop = true;
 
     source.start(0);
+    if (sound.loop > 0) {
+      const stopTime = this.audioContext.currentTime + sound.audioBuffer.duration * (sound.loop + 1);
+      source.stop(stopTime);
+    }
     this.soundPush(chain, x, y);
     this.activeNodes.set(key, source);
-    source.onended = () => this.forgetNode(key, source);
+    this.heldNodes.set(padKey, { key, node: source, infinite: sound.loop === -1 });
+    source.onended = () => this.forgetNode(key, padKey, source);
 
     if (sound.wormhole !== NO_WORMHOLE) {
       setTimeout(() => this.setChain(sound.wormhole), 100);
@@ -169,22 +163,19 @@ export class SoundEngine {
   }
 
   soundOff(x: number, y: number): void {
-    const chain = this.chainValue();
-    const sound = this.soundGet(chain, x, y);
-    if (sound && sound.loop === -1) {
-      const key = this.stopKey(chain, x, y);
-      const node = this.activeNodes.get(key);
-      if (node) {
-        try { node.stop(); } catch { /* already stopped */ }
-        this.activeNodes.delete(key);
-      }
-    }
+    const padKey = `${x}-${y}`;
+    const press = this.heldNodes.get(padKey);
+    this.heldNodes.delete(padKey);
+    if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) return;
+    try { press.node.stop(); } catch { /* already stopped */ }
+    this.activeNodes.delete(press.key);
   }
 
   /** onended of an older node must not drop the newer node registered under the same key;
    *  it left an infinite-loop sample with nothing that could stop it. */
-  private forgetNode(key: string, source: AudioBufferSourceNode): void {
+  private forgetNode(key: string, padKey: string, source: AudioBufferSourceNode): void {
     if (this.activeNodes.get(key) === source) this.activeNodes.delete(key);
+    if (this.heldNodes.get(padKey)?.node === source) this.heldNodes.delete(padKey);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {
@@ -223,6 +214,7 @@ export class SoundEngine {
       try { node.stop(); } catch { /* already stopped */ }
     });
     this.activeNodes.clear();
+    this.heldNodes.clear();
     this.audioContext.close();
   }
 
