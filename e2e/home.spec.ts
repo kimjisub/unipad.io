@@ -39,7 +39,7 @@ function heroControls(page: Page, l: (typeof locales)[number]) {
 async function overflow(page: Page) {
   return page.evaluate(() => {
     const root = document.documentElement;
-    const where = (el: Element) => `${el.closest('section')!.id}: ${el.closest('a, h3, li')?.textContent?.trim()}`;
+    const where = (el: Element) => `${el.closest('section')!.id}: ${(el.closest('a, h3, li') ?? el).textContent?.trim()}`;
     const clipped = [...document.querySelectorAll('#main-content section :is(h1, h2, h3, p, a, li, button)')]
       .filter(el => el.scrollWidth > el.clientWidth + 1)
       .map(where);
@@ -66,8 +66,14 @@ for (const l of locales) {
         for (const bigText of [false, true]) {
           test(`title, description, three start buttons and the lower sections fit${bigText ? ' at 200% text' : ''}`, async ({ page }) => {
             await page.goto(l.path);
-            // A larger default font size scales everything set in rem, as the browser setting does.
-            if (bigText) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+            // A larger default font size scales everything set in rem, as the browser setting does. Pages use
+            // the system font, so a wide one stands in for the widest of them: Verdana where it is installed,
+            // otherwise Linux's DejaVu Sans, which is as wide.
+            if (bigText) {
+              await page.addStyleTag({
+                content: 'html { font-size: 200% !important; } body, body * { font-family: Verdana, "DejaVu Sans", sans-serif !important; }',
+              });
+            }
             const c = heroControls(page, l);
 
             expect((await c.title.innerText()).replace(/\s+/g, ' ')).toContain(l.title);

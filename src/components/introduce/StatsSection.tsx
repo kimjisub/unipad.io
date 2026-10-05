@@ -24,18 +24,19 @@ export const StatsSection = () => {
 				title={t('title')}
 				subtitle={t('subtitle')}
 				aside={
-					<span className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-accent/35 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent">
-						<Trophy className="h-4 w-4" aria-hidden />
+					<span className="inline-flex shrink-0 items-center gap-2 self-start rounded-full md:max-w-[50%] border border-accent/35 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent">
+						<Trophy className="h-4 w-4 shrink-0" aria-hidden />
 						{t('achievement')}
 					</span>
 				}
 			/>
 
+			{/* 휴대폰에서 칸 여백은 큰 글씨에서도 기본 크기까지만 늘려 숫자 자리를 남긴다. */}
 			<div className="grid grid-cols-2 overflow-hidden rounded-[1.25rem] border border-muted lg:grid-cols-4">
 				{statKeys.map((key, i) => (
 					<div
 						key={key}
-						className={`min-w-0 border-muted p-4 min-[400px]:p-5 lg:p-8 ${i % 2 === 1 ? 'border-l' : ''} ${i >= 2 ? 'border-t lg:border-t-0' : ''} ${i === 2 ? 'lg:border-l' : ''}`}
+						className={`min-w-0 border-muted p-[min(1rem,16px)] min-[400px]:p-[min(1.25rem,20px)] lg:p-8 ${i % 2 === 1 ? 'border-l' : ''} ${i >= 2 ? 'border-t lg:border-t-0' : ''} ${i === 2 ? 'lg:border-l' : ''}`}
 					>
 						<p className="text-[1.75rem] font-extrabold leading-tight tracking-[-0.03em] tabular-nums text-foreground [overflow-wrap:anywhere] min-[400px]:text-4xl lg:text-5xl">
 							{t(`${key}Value`)}
