@@ -119,14 +119,24 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **iOS keeps invalid round LED lines.** `o mc 33`, `o * 0`, `f mc 33`, `f mc 0` are not dropped, so number 33 reaches the logo (index 32) and 0 addresses index -1. Android and web drop them (KL-012).
-- **iOS accepts extra or unparsable trailing tokens on LED lines.** `o 1 1 FF0000 x`, `o 1 1 FF0000 5 6` and `o l 0 a 5 9` light instead of being reported (KL-M11, KL-M12, KL-014).
-- **iOS reads an out-of-range auto velocity as a hex colour.** `o 1 1 a 200` and `o 1 1 a -1` light `ff00000a` (KL-M17, KL-M18).
 - **Web reads the x column of `on`/`off` lines with `parseInt`,** so `o 1b 1 FF0000` lights pad (0,0); Android and iOS reject it (KL-M05).
 - **Web names non-numeric values differently.** Non-numeric autoPlay values and keyLED file-name fields are reported as `range` instead of `format` (AP-M01..M09, AP-M11, KL-N01..N05). The line or file is dropped by all three; only the message differs.
 
 ### Resolved differences found by the corpus
 
+- **KL-012, KL-014, KL-M11, KL-M12, KL-M17, KL-M18: iOS now rejects malformed keyLED arguments.**
+  The previous iOS results kept `o mc 33`, `o * 0`, `f mc 33` and `f mc 0` (33 reached the logo at index 32,
+  0 addressed index -1), lit `o 1 1 FF0000 x`, `o 1 1 FF0000 5 6` and `o l 0 a 5 9` instead of reporting them,
+  and read the out-of-range auto velocities in `o 1 1 a 200` and `o 1 1 a -1` as the colour `ff00000a`.
+  [unipad-ios PR #56](https://github.com/kimjisub/unipad-ios/pull/56),
+  main [`0c0e47c9`](https://github.com/kimjisub/unipad-ios/commit/0c0e47c9a10ca563101ef898b022b012a3aa5e4b),
+  drops round LED numbers outside 1..32, rejects extra trailing arguments and malformed supplied
+  velocities, and adds `KeyLedInputValidationTests` with the exact inputs of all six cases. Only these six
+  iOS pins were removed; the 16 web records and all 124 input fingerprints remain unchanged. The previous
+  corpus SHA256 was `ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`; the regenerated
+  corpus SHA256 is `2317abb20fe8499fef8b9e9c4e0dc11e63849a8db5ba020d353418c835520c8b`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-ios-keyled-argument-fix) for the evidence
+  and rerun limits; the historical aggregate above was not recalculated.
 - **KL-M13: Android now rejects a 7-digit hex colour.** The previous Android result was
   `on 0 0 00234567 4` with no error: `toInt(16)` accepted seven digits and adding the alpha offset
   carried into alpha. [unipad-android PR #133](https://github.com/kimjisub/unipad-android/pull/133),

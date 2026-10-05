@@ -31,6 +31,34 @@ the list, and what was not exercised).
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
 
+## Changes after the iOS keyLED argument fix
+
+The previous canonical corpus SHA256 was
+`ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`, with 22 pinned platform differences,
+six of them on iOS. All six came from the iOS keyLED parser accepting arguments the other platforms reject:
+KL-012 (round LED numbers 0 and 33 kept), KL-M11, KL-M12 and KL-014 (extra or unparsable trailing tokens
+lit instead of reported), and KL-M17 and KL-M18 (an out-of-range auto velocity read as the colour
+`ff00000a`).
+
+[unipad-ios PR #56](https://github.com/kimjisub/unipad-ios/pull/56), merged into main as
+[`0c0e47c9`](https://github.com/kimjisub/unipad-ios/commit/0c0e47c9a10ca563101ef898b022b012a3aa5e4b),
+drops round LED numbers outside 1..32 and rejects extra trailing arguments and malformed supplied
+velocities in `UniPackFolder.swift`. Its `KeyLedInputValidationTests` use the unchanged inputs of all six
+cases. The unipad-ios required check on PR #52 (run
+[37335742392](https://github.com/kimjisub/unipad-ios/actions/runs/37335742392), the PR merged with main
+`c1adfa44`) reported each of the six as "a pinned difference no longer occurs".
+
+Only those six iOS pins were removed from `divergences.json`; the 16 web records are unchanged. The
+regenerated canonical corpus SHA256 is
+`2317abb20fe8499fef8b9e9c4e0dc11e63849a8db5ba020d353418c835520c8b`. All 124 input fingerprints,
+expected results and bases are unchanged; `cases.mjs` and `palette.json` are unchanged. The six empty
+objects retain their positions without pinning any platform result.
+
+The table above remains the historical run on an earlier corpus; no new aggregate or cross-platform pass
+count is inferred. The web suite was rerun after this pin removal: all 175 tests pass. The iOS unit tests
+were run on unipad-ios PR #52 merged with main `c1adfa44` and this corpus copied in (results in the PR).
+Android was not rerun here. No product parser, runner or expectation was changed here.
+
 ## Changes after the Android colour-length fix
 
 The previous canonical corpus SHA256 was
