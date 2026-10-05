@@ -68,7 +68,8 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**. It also runs after a merge to `main`. GitHub records each step's
+**Web CI**: install, type check, lint, unit tests and build. The browser tests
+(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
 duration; the job summary records elapsed time from setup through verification.
 Required-check configuration is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
@@ -122,8 +123,7 @@ Each test uses fresh browser storage. Uncaught page errors fail the suite.
 Tests have zero retries and `test.only` is forbidden.
 
 On failure, traces and screenshots remain in `test-results/` and the HTML
-report is in `playwright-report/`. GitHub uploads both as
-`browser-failure-<run id>` for 14 days. Open a trace with
+report is in `playwright-report/`. Open a trace with
 `pnpm exec playwright show-trace <trace.zip>`.
 
 ### Chain-release regression checks (basic feature 3)
