@@ -11,6 +11,7 @@ import { OptionPanel } from './OptionPanel';
 import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { padGroupOffsetX } from './padGroupOffset';
 import {
   parseUniPack,
   saveUniPack,
@@ -1105,6 +1106,15 @@ export function PlayPage() {
       bottomChainHeight,
     };
   })();
+  const stageLeft = stageInsetLeft + chromeStripWidth;
+  const padGroupLeft = padGroupOffsetX({
+    screenWidth: stageLeft + centerStageSize.width + stageInsetRight,
+    stageLeft,
+    stageWidth: centerStageSize.width,
+    padWidth: stageMetrics.padWidth,
+    leftChainWidth: stageMetrics.leftChainWidth,
+    rightChainWidth: stageMetrics.chainWidth,
+  });
   if (!unipack) return null;
 
   // Hide UI mode: hides control panels, keeps pad grid and chain bars
@@ -1330,9 +1340,9 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Center safe area: pads + chain bars centered within the area to the
-          right of the left chrome strip. Reserving the strip's measured width on
-          the left guarantees the floating ControlPanel never overlaps the pads. */}
+      {/* Center safe area: the area to the right of the left chrome strip. Reserving
+          the strip's measured width on the left guarantees the floating ControlPanel
+          never overlaps the pads; within it the pad grid sits on the screen's centre. */}
       <div
         className="absolute z-10 min-w-0"
         ref={centerStageRef}
@@ -1343,10 +1353,11 @@ export function PlayPage() {
           bottom: `${stageInsetBottom}px`,
         }}
       >
-        <div className="flex h-full items-center justify-center min-w-0">
+        <div className="flex h-full items-center min-w-0">
           <div
             className="flex flex-col min-w-0"
             style={{
+              marginLeft: `${padGroupLeft}px`,
               width: stageMetrics.totalWidth > 0 ? `${stageMetrics.totalWidth}px` : undefined,
               height: stageMetrics.totalHeight > 0 ? `${stageMetrics.totalHeight}px` : undefined,
             }}
