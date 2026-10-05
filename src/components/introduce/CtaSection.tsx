@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { SectionContainer, SectionHeading } from '@/components/introduce/SectionHeader';
 import { LARGE_BUTTON_CLASS, ON_ACCENT_FOCUS_CLASS, StoreButtons } from '@/components/introduce/StoreButtons';
 import { Link } from '@/i18n/navigation';
+import { SCROLL_TOP_AVOID } from '@/lib/constants';
 
 const ART_COLUMNS = 8;
 const ART_ROWS = 7;
@@ -42,7 +43,7 @@ export const CtaSection = () => {
 					<SectionHeading sectionId="cta">{t('title')}</SectionHeading>
 					<p className="mt-3.5 max-w-lg text-[1.0625rem] text-[#3d2600]">{t('subtitle')}</p>
 
-					<div className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+					<div {...SCROLL_TOP_AVOID} className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
 						<Link
 							href="/play"
 							className={`${LARGE_BUTTON_CLASS} ${ON_ACCENT_FOCUS_CLASS} bg-accent-foreground px-6 text-white hover:bg-accent-foreground/90`}

@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowUp } from 'lucide-react';
+
+import { SCROLL_TOP_AVOID_SELECTOR } from '@/lib/constants';
 
 // Matches the button's `right-6 w-10 h-10` and the default `bottom-6`, in rem.
 const EDGE_REM = 1.5;
@@ -26,27 +29,25 @@ function layoutRect(el: HTMLElement) {
 }
 
 /**
- * The lowest `bottom` (px) at which the button covers no footer link or button,
- * such as the install links. Null when no such place is left on screen.
+ * The lowest `bottom` (px) at which the button covers no marked link or button,
+ * such as the install links. Null when no such place is left below the top bar.
  */
 function findClearBottom(): number | null {
 	const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-	const baseBottom = EDGE_REM * rem;
-	const footer = document.querySelector('footer');
-	if (!footer) return baseBottom;
-
 	const size = SIZE_REM * rem;
 	const right = document.documentElement.clientWidth - EDGE_REM * rem;
 	const left = right - size;
-	const targets = [...footer.querySelectorAll<HTMLElement>('a, button')]
+	// The top bar is pinned to the top; keep below where it shows, even while it is slid away.
+	const topLimit = document.getElementById('navigation')?.offsetHeight ?? 0;
+	const targets = [...document.querySelectorAll<HTMLElement>(`${SCROLL_TOP_AVOID_SELECTOR} a, ${SCROLL_TOP_AVOID_SELECTOR} button`)]
 		.filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0)
 		.map(layoutRect)
 		.filter((rect) => rect.left < right && left < rect.right);
 
-	let bottom = baseBottom;
+	let bottom = EDGE_REM * rem;
 	for (let i = 0; i <= targets.length; i++) {
 		const top = window.innerHeight - bottom - size;
-		if (top < 0) return null;
+		if (top < topLimit) return null;
 		const covered = targets.filter((rect) => rect.top < top + size + CLEARANCE_PX && top - CLEARANCE_PX < rect.bottom);
 		if (covered.length === 0) return bottom;
 		bottom = window.innerHeight - Math.min(...covered.map((rect) => rect.top)) + CLEARANCE_PX;
@@ -56,12 +57,17 @@ function findClearBottom(): number | null {
 
 export function ScrollToTop() {
 	const [visible, setVisible] = useState(false);
+	// Undefined until measured, so the button is never drawn at a place not yet checked.
 	const [clearBottom, setClearBottom] = useState<number | null>();
 
 	useEffect(() => {
 		const handleScroll = () => {
-			setVisible(window.scrollY > 600);
+			const next = window.scrollY > 600;
+			setVisible(next);
+			if (!next) setClearBottom(undefined);
 		};
+		// The page may already be scrolled, as when a reload or going back restores the position.
+		handleScroll();
 		window.addEventListener('scroll', handleScroll, { passive: true });
 		return () => window.removeEventListener('scroll', handleScroll);
 	}, []);
@@ -71,7 +77,8 @@ export function ScrollToTop() {
 		let frame = 0;
 		const schedule = () => {
 			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(() => setClearBottom(findClearBottom()));
+			// Applied before this frame is painted, so the button never shows where the page was a frame ago.
+			frame = requestAnimationFrame(() => flushSync(() => setClearBottom(findClearBottom())));
 		};
 		schedule();
 		// The page grows or shrinks without scrolling as images and content load.
@@ -89,14 +96,14 @@ export function ScrollToTop() {
 
 	return (
 		<AnimatePresence>
-			{visible && clearBottom !== null && (
+			{visible && typeof clearBottom === 'number' && (
 				<motion.button
 					initial={{ opacity: 0, scale: 0.8 }}
 					animate={{ opacity: 1, scale: 1 }}
 					exit={{ opacity: 0, scale: 0.8 }}
 					transition={{ duration: 0.2 }}
 					onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-					style={{ bottom: clearBottom ?? `${EDGE_REM}rem` }}
+					style={{ bottom: clearBottom }}
 					className="fixed right-6 z-40 w-10 h-10 rounded-full border border-white/[0.1] bg-card/80 backdrop-blur-md text-muted-foreground hover:text-foreground hover:border-accent/30 hover:bg-card transition-colors flex items-center justify-center shadow-lg"
 					aria-label="Scroll to top"
 				>
