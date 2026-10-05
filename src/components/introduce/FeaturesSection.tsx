@@ -112,7 +112,8 @@ export const FeaturesSection = () => {
 
 			<div className="grid grid-cols-1 gap-4 md:grid-cols-6">
 				{features.map(({ key, icon: Icon, href, span, Demo }) => (
-					<article key={key} className={`flex min-w-0 flex-col rounded-[1.25rem] border border-border bg-card/60 p-6 ${span}`}>
+					// 안쪽 여백은 큰 글씨에서도 24px까지만 늘려 좁은 카드에 제목 자리를 남긴다.
+					<article key={key} className={`flex min-w-0 flex-col rounded-[1.25rem] border border-border bg-card/60 p-[min(1.5rem,24px)] ${span}`}>
 						<div className="mb-6 flex h-40 items-center justify-center overflow-hidden rounded-[0.875rem] border border-foreground/[0.05] bg-background/70 px-4 [container-type:inline-size]">
 							<Demo />
 						</div>
