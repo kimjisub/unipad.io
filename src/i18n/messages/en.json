@@ -369,7 +369,7 @@
         "mini": "In Programmer mode, the lights may initially be off. Check with a pack that includes lights.",
         "pro": "Launchpad Pro and Launchpad Pro MK3 are different models.",
         "other": "If the same model is not listed, do not choose a different model as a substitute. This guide does not confirm compatibility with new models.",
-        "web": "A model change applies on the next connection. Use Reconnect if connected, or Connect if disconnected. This guide does not connect automatically.",
+        "web": "Changing the model applies it immediately to devices that are already connected. If disconnected, choose a model and press Connect. This guide does not connect automatically.",
         "guide": "Read the manufacturer's guide",
         "openFailed": "Could not open the manufacturer's guide. You can continue reading this help.",
         "close": "Close help"
