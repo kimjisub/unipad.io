@@ -10,6 +10,7 @@ import { ControlPanel } from './ControlPanel';
 import { OptionPanel } from './OptionPanel';
 import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
+import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import {
@@ -1507,16 +1508,14 @@ export function PlayPage() {
       {/* Custom logo (Android: TopEnd, 16dp padding, 90dp width) */}
       {/* Android and iOS draw the skin's logo unconditionally; it used to disappear with the watermark. */}
       {theme.customLogo && !optionPanelOpen && (
-        <img
+        <SkinImage
           src={theme.customLogo}
-          alt=""
           className="fixed z-30 pointer-events-none"
           style={{
             top: '16px',
             right: '16px',
             width: '90px',
           }}
-          draggable={false}
         />
       )}
 

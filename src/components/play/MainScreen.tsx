@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
@@ -415,9 +416,12 @@ function TotalPanel({
       />
 
       <div className="flex flex-col items-center gap-1 relative">
-        <img
+        <Image
           src="/theme/custom_logo.png"
           alt={t('logoAlt')}
+          width={710}
+          height={180}
+          unoptimized
           className="w-32 h-auto opacity-90"
           draggable={false}
         />
@@ -719,7 +723,7 @@ function UnipackListItem({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.16, delay: reduceMotion ? 0 : Math.min(index * 0.01, 0.08) }}
       data-pack-id={pack.id}
-      role="button"
+      role="option"
       tabIndex={0}
       aria-label={`${pack.title} by ${pack.producerName}`}
       aria-selected={isSelected}
