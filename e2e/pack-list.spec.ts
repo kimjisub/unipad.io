@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect } from './browser';
 
@@ -13,14 +15,26 @@ const [last, middle, first] = packs.map(([, name]) => name);
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
 const option = (page: Page, name: string) => list(page).getByRole('option', { name, exact: true });
 
-async function openListWithThreePacks(page: Page) {
-  for (const [file] of packs) {
+type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
+
+async function openList(page: Page, files: readonly PackFile[]) {
+  for (const file of files) {
     await page.goto('/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(resolve(file));
+    await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
     await expect(page.locator('[data-pad]')).toHaveCount(64);
   }
   await page.goto('/play');
-  await expect(list(page).getByRole('option')).toHaveCount(3);
+  await expect(list(page).getByRole('option')).toHaveCount(files.length);
+}
+
+const openListWithThreePacks = (page: Page) => openList(page, packs.map(([file]) => file));
+
+// The basic test pack under another title.
+async function packTitled(title: string): Promise<PackFile> {
+  const zip = await JSZip.loadAsync(readFileSync(resolve(packs[0][0])));
+  const info = await zip.file('info')!.async('string');
+  zip.file('info', info.replace(/^title=.*$/m, `title=${title}`));
+  return { name: 'titled.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
 }
 
 async function expectActive(page: Page, name: string) {
@@ -58,6 +72,19 @@ test('the pack list is one Tab stop and arrow, Home and End keys move focus and 
   await expect(list(page).getByRole('option').and(page.locator(':focus'))).toHaveCount(0);
   await page.keyboard.press('Shift+Tab');
   await expect(option(page, first)).toBeFocused();
+});
+
+test('arrow keys move past a pack whose title has a double quote', async ({ page }) => {
+  await openList(page, [packs[2][0], await packTitled('Quote "Pack"'), packs[0][0]]);
+  const quoted = 'Quote "Pack" by UniPad Tests';
+  await option(page, last).click();
+
+  await page.keyboard.press('ArrowDown');
+  await expectActive(page, quoted);
+  await page.keyboard.press('ArrowDown');
+  await expectActive(page, first);
+  await page.keyboard.press('ArrowUp');
+  await expectActive(page, quoted);
 });
 
 test('Space selects the focused pack and Enter plays it', async ({ page }) => {

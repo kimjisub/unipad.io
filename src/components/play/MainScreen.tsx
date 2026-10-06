@@ -112,7 +112,7 @@ export function MainScreen({
 
   const selectPackRow = useCallback((id: string, focus: boolean) => {
     setSelectedId(id);
-    const row = packListRef.current?.querySelector<HTMLElement>(`[data-pack-id="${id}"]`);
+    const row = packListRef.current?.querySelector<HTMLElement>(`[data-pack-id="${CSS.escape(id)}"]`);
     if (focus) row?.focus({ preventScroll: true });
     row?.scrollIntoView({ block: 'nearest' });
   }, []);
