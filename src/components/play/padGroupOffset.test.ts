@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { padGroupOffsetX } from './padGroupOffset';
+import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 
 const INSET = 8;
 const STRIP = 122;
@@ -69,4 +69,11 @@ test('a left chain column stays clear of the menu strip', () => {
   const l = layout(640, 402, true, true);
   assert.equal(l.offset, 0);
   assertInsideStage(l);
+});
+
+test('a pad cell is a whole number of pixels that fits the box', () => {
+  assert.equal(fitPadUnit(1264, 704, 10, 8), 88);
+  assert.equal(fitPadUnit(684, 1164, 10, 8), 68);
+  assert.equal(fitPadUnit(0, 704, 10, 8), 0);
+  assert.equal(fitPadUnit(5, 5, 10, 8), 1);
 });

@@ -28,3 +28,12 @@ export function padGroupOffsetX({
   const centred = screenWidth / 2 - stageLeft - padWidth / 2 - leftChainWidth;
   return Math.round(Math.max(0, Math.min(centred, stageWidth - groupWidth)));
 }
+
+/**
+ * Size of one pad cell, in whole pixels, that fits `columns` x `rows` cells into the given box.
+ * Whole pixels keep the cells from leaving thin seams between neighbouring pads.
+ */
+export function fitPadUnit(width: number, height: number, columns: number, rows: number): number {
+  if (width <= 0 || height <= 0) return 0;
+  return Math.max(1, Math.floor(Math.min(width / columns, height / rows)));
+}
