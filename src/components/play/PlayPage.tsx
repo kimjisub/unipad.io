@@ -12,6 +12,7 @@ import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import {
   parseUniPack,
   saveUniPack,
@@ -126,6 +127,16 @@ export function PlayPage() {
     if (!node || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
       setChromeStripWidth(Math.max(CHROME_STRIP_WIDTH, Math.ceil(node.getBoundingClientRect().width)));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const [hiddenStageSize, setHiddenStageSize] = useState({ width: 0, height: 0 });
+  const observeHiddenStage = useCallback((node: HTMLDivElement | null) => {
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setHiddenStageSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
     });
     observer.observe(node);
     return () => observer.disconnect();
@@ -1078,17 +1089,13 @@ export function PlayPage() {
       };
     }
 
-    // Use integer pixel units to avoid sub-pixel seams between pad and chain.
     const padCols = unipack.info.buttonY;
     const padRows = unipack.info.buttonX;
     const rightChainCols = showRightChainBar ? 1 : 0;
     const leftChainCols = showLeftChainBar ? 1 : 0;
     const topChainRows = showTopChainBar ? 1 : 0;
     const bottomChainRows = showBottomChainBar ? 1 : 0;
-    const unit = Math.max(1, Math.floor(Math.min(
-      cw / (padCols + rightChainCols + leftChainCols),
-      ch / (padRows + topChainRows + bottomChainRows),
-    )));
+    const unit = fitPadUnit(cw, ch, padCols + rightChainCols + leftChainCols, padRows + topChainRows + bottomChainRows);
     const padHeight = unit * padRows;
     const padWidth = unit * padCols;
     const rightChainWidth = showRightChainBar ? unit : 0;
@@ -1106,12 +1113,27 @@ export function PlayPage() {
       bottomChainHeight,
     };
   })();
+  const stageLeft = stageInsetLeft + chromeStripWidth;
+  const padGroupLeft = padGroupOffsetX({
+    screenWidth: stageLeft + centerStageSize.width + stageInsetRight,
+    stageLeft,
+    stageWidth: centerStageSize.width,
+    padWidth: stageMetrics.padWidth,
+    leftChainWidth: stageMetrics.leftChainWidth,
+    rightChainWidth: stageMetrics.chainWidth,
+  });
   if (!unipack) return null;
 
   // Hide UI mode: hides control panels, keeps pad grid and chain bars
   if (state.hideUI) {
-    const hiddenTotalCols = unipack.info.buttonY + (showRightChainBar ? 1 : 0) + (showLeftChainBar ? 1 : 0);
+    // Both sides reserve a chain column when either side shows one, so the pad grid stays on the
+    // screen's centre line, where the full layout puts it, instead of shifting by half a column.
+    const hiddenSideCols = showLeftChainBar || showRightChainBar ? 1 : 0;
+    const hiddenTotalCols = unipack.info.buttonY + hiddenSideCols * 2;
     const hiddenTotalRows = unipack.info.buttonX + (showTopChainBar ? 1 : 0) + (showBottomChainBar ? 1 : 0);
+    const hiddenUnit = fitPadUnit(hiddenStageSize.width, hiddenStageSize.height, hiddenTotalCols, hiddenTotalRows);
+    const hiddenSideFlex = `0 0 ${hiddenUnit * hiddenSideCols}px`;
+    const hiddenPadFlex = `0 0 ${hiddenUnit * unipack.info.buttonY}px`;
     return (
       <div
         className="h-dvh flex items-center justify-center overflow-hidden"
@@ -1135,12 +1157,15 @@ export function PlayPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <div className="w-full h-full flex items-center justify-center p-2">
-          <div className="flex flex-col" style={{ aspectRatio: `${hiddenTotalCols} / ${hiddenTotalRows}`, maxWidth: '95vw', maxHeight: '95dvh' }}>
+        <div ref={observeHiddenStage} className="w-full h-full flex items-center justify-center p-2">
+          <div
+            className="flex flex-col"
+            style={{ width: `${hiddenUnit * hiddenTotalCols}px`, height: `${hiddenUnit * hiddenTotalRows}px` }}
+          >
             {showTopChainBar && (
-              <div style={{ display: 'flex', flex: `0 0 ${(1 / hiddenTotalRows) * 100}%` }}>
-                <div style={{ flex: `0 0 ${((showLeftChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
-                <div style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%`, height: '100%' }}>
+              <div style={{ display: 'flex', flex: `0 0 ${hiddenUnit}px` }}>
+                <div style={{ flex: hiddenSideFlex }} />
+                <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
                     chainCount={CIRCLE_ARRAY_SIZE}
                     slotCount={chainAreaSlotsH}
@@ -1155,13 +1180,13 @@ export function PlayPage() {
                     onChainSelect={handleChainSelect}
                   />
                 </div>
-                <div style={{ flex: `0 0 ${((showRightChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
+                <div style={{ flex: hiddenSideFlex }} />
               </div>
             )}
-            <div className="flex" style={{ flex: `0 0 ${(unipack.info.buttonX / hiddenTotalRows) * 100}%` }}>
-              {showLeftChainBar && (
-                <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
-                  <ChainBar
+            <div className="flex" style={{ flex: `0 0 ${hiddenUnit * unipack.info.buttonX}px` }}>
+              {hiddenSideCols > 0 && (
+                <div className="h-full" style={{ flex: hiddenSideFlex }}>
+                  {showLeftChainBar && <ChainBar
                     chainCount={CIRCLE_ARRAY_SIZE}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
@@ -1173,10 +1198,10 @@ export function PlayPage() {
                     rangeEnd={32}
                     reversed
                     onChainSelect={handleChainSelect}
-                  />
+                  />}
                 </div>
               )}
-              <div className="h-full" style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%` }}>
+              <div className="h-full" style={{ flex: hiddenPadFlex }}>
                 <PadGrid
                   buttonX={unipack.info.buttonX}
                   buttonY={unipack.info.buttonY}
@@ -1188,9 +1213,9 @@ export function PlayPage() {
                   onPadUp={padTouchOff}
                 />
               </div>
-              {showRightChainBar && (
-                <div className="h-full" style={{ flex: `0 0 ${100 / hiddenTotalCols}%` }}>
-                  <ChainBar
+              {hiddenSideCols > 0 && (
+                <div className="h-full" style={{ flex: hiddenSideFlex }}>
+                  {showRightChainBar && <ChainBar
                     chainCount={CIRCLE_ARRAY_SIZE}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
@@ -1201,14 +1226,14 @@ export function PlayPage() {
                     rangeStart={8}
                     rangeEnd={16}
                     onChainSelect={handleChainSelect}
-                  />
+                  />}
                 </div>
               )}
             </div>
             {showBottomChainBar && (
-              <div style={{ display: 'flex', flex: `0 0 ${(1 / hiddenTotalRows) * 100}%` }}>
-                <div style={{ flex: `0 0 ${((showLeftChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
-                <div style={{ flex: `0 0 ${(unipack.info.buttonY / hiddenTotalCols) * 100}%`, height: '100%' }}>
+              <div style={{ display: 'flex', flex: `0 0 ${hiddenUnit}px` }}>
+                <div style={{ flex: hiddenSideFlex }} />
+                <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
                     chainCount={CIRCLE_ARRAY_SIZE}
                     slotCount={chainAreaSlotsH}
@@ -1224,7 +1249,7 @@ export function PlayPage() {
                     onChainSelect={handleChainSelect}
                   />
                 </div>
-                <div style={{ flex: `0 0 ${((showRightChainBar ? 1 : 0) / hiddenTotalCols) * 100}%` }} />
+                <div style={{ flex: hiddenSideFlex }} />
               </div>
             )}
           </div>
@@ -1331,9 +1356,9 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Center safe area: pads + chain bars centered within the area to the
-          right of the left chrome strip. Reserving the strip's measured width on
-          the left guarantees the floating ControlPanel never overlaps the pads. */}
+      {/* Center safe area: the area to the right of the left chrome strip. Reserving
+          the strip's measured width on the left guarantees the floating ControlPanel
+          never overlaps the pads; within it the pad grid sits on the screen's centre. */}
       <div
         className="absolute z-10 min-w-0"
         ref={centerStageRef}
@@ -1344,10 +1369,11 @@ export function PlayPage() {
           bottom: `${stageInsetBottom}px`,
         }}
       >
-        <div className="flex h-full items-center justify-center min-w-0">
+        <div className="flex h-full items-center min-w-0">
           <div
             className="flex flex-col min-w-0"
             style={{
+              marginLeft: `${padGroupLeft}px`,
               width: stageMetrics.totalWidth > 0 ? `${stageMetrics.totalWidth}px` : undefined,
               height: stageMetrics.totalHeight > 0 ? `${stageMetrics.totalHeight}px` : undefined,
             }}
