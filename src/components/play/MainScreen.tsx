@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
+import { listboxTargetIndex } from './listboxNavigation';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -50,6 +51,7 @@ export function MainScreen({
   const t = useTranslations('play.main');
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const packListRef = useRef<HTMLDivElement | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,6 +89,8 @@ export function MainScreen({
     });
   }, [savedPacks, searchQuery, sortMethod, sortAsc]);
   const selectedPack = filteredAndSortedPacks.find((p) => p.id === selectedId) ?? null;
+  // Only one row is in the Tab order: the selected pack, or the first one when none is selected.
+  const tabStopId = selectedPack?.id ?? filteredAndSortedPacks[0]?.id ?? null;
 
   // Restore sort settings from IndexedDB (persists across sessions like Android SharedPreferences)
   useEffect(() => {
@@ -105,6 +109,13 @@ export function MainScreen({
     setSetting('sortMethod', sortMethod).catch(() => {});
     setSetting('sortOrder', String(sortAsc)).catch(() => {});
   }, [sortMethod, sortAsc]);
+
+  const selectPackRow = useCallback((id: string, focus: boolean) => {
+    setSelectedId(id);
+    const row = packListRef.current?.querySelector<HTMLElement>(`[data-pack-id="${id}"]`);
+    if (focus) row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: 'nearest' });
+  }, []);
 
   // Reconcile selection before rendering when a pack disappears from the list.
   if (selectedId && !filteredAndSortedPacks.some((pack) => pack.id === selectedId)) {
@@ -131,21 +142,12 @@ export function MainScreen({
 
       if (isTextInput || filteredAndSortedPacks.length === 0) return;
 
-      const selectedIndex = filteredAndSortedPacks.findIndex((pack) => pack.id === selectedId);
-      if (event.key === 'ArrowDown') {
+      // Up and down select from anywhere on the page; inside the list the list itself handles them.
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        const next = selectedIndex < 0 ? 0 : (selectedIndex + 1) % filteredAndSortedPacks.length;
-        const nextId = filteredAndSortedPacks[next].id;
-        setSelectedId(nextId);
-        document.querySelector(`[data-pack-id="${nextId}"]`)?.scrollIntoView({ block: 'nearest' });
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        const prev = selectedIndex <= 0 ? filteredAndSortedPacks.length - 1 : selectedIndex - 1;
-        const prevId = filteredAndSortedPacks[prev].id;
-        setSelectedId(prevId);
-        document.querySelector(`[data-pack-id="${prevId}"]`)?.scrollIntoView({ block: 'nearest' });
+        const selectedIndex = filteredAndSortedPacks.findIndex((pack) => pack.id === selectedId);
+        const target = listboxTargetIndex(event.key, selectedIndex, filteredAndSortedPacks.length);
+        if (target !== null) selectPackRow(filteredAndSortedPacks[target].id, false);
         return;
       }
       if (event.key === 'Enter' && selectedId) {
@@ -159,7 +161,30 @@ export function MainScreen({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filteredAndSortedPacks, onPlay, selectedId, keyboardDisabled, showSortMenu]);
+  }, [filteredAndSortedPacks, onPlay, selectedId, keyboardDisabled, showSortMenu, selectPackRow]);
+
+  // Listbox keys for the focused row: arrows, Home and End move focus and selection together,
+  // Space selects, Enter plays.
+  const handlePackListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (keyboardDisabled) return;
+    const focusedId = (event.target as HTMLElement).closest<HTMLElement>('[data-pack-id]')?.dataset.packId;
+    if (!focusedId) return;
+
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Enter') onPlay(focusedId);
+      else setSelectedId(focusedId);
+      return;
+    }
+
+    const focusedIndex = filteredAndSortedPacks.findIndex((pack) => pack.id === focusedId);
+    const target = listboxTargetIndex(event.key, focusedIndex, filteredAndSortedPacks.length);
+    if (target === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectPackRow(filteredAndSortedPacks[target].id, true);
+  };
 
   const handleItemClick = useCallback((id: string) => {
     setSelectedId((prev) => (prev === id ? null : id));
@@ -335,7 +360,7 @@ export function MainScreen({
         </div>
 
         {/* Pack List */}
-        <div role="listbox" aria-label={t('packListAriaLabel')} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 rounded-xl">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 rounded-xl">
           {filteredAndSortedPacks.length === 0 ? (
             searchQuery.trim() ? (
               <NoResults query={searchQuery.trim()} onClear={() => setSearchQuery('')} />
@@ -343,12 +368,19 @@ export function MainScreen({
               <EmptyState onImport={onImport} onOpenStore={onOpenStore} />
             )
           ) : (
-            <div className="flex flex-col gap-1">
+            <div
+              ref={packListRef}
+              role="listbox"
+              aria-label={t('packListAriaLabel')}
+              className="flex flex-col gap-1"
+              onKeyDown={handlePackListKeyDown}
+            >
               {filteredAndSortedPacks.map((pack, index) => (
                 <UnipackListItem
                   key={pack.id}
                   pack={pack}
                   isSelected={pack.id === selectedId}
+                  isTabStop={pack.id === tabStopId}
                   onClick={() => handleItemClick(pack.id)}
                   onDoubleClick={() => handleItemDoubleClick(pack.id)}
                   onPlay={() => onPlay(pack.id)}
@@ -698,6 +730,7 @@ function PropertyBlock({ label, value }: { label: string; value: string }) {
 function UnipackListItem({
   pack,
   isSelected,
+  isTabStop,
   onClick,
   onDoubleClick,
   onPlay,
@@ -706,6 +739,7 @@ function UnipackListItem({
 }: {
   pack: StoredUniPack;
   isSelected: boolean;
+  isTabStop: boolean;
   onClick: () => void;
   onDoubleClick: () => void;
   onPlay: () => void;
@@ -724,22 +758,17 @@ function UnipackListItem({
       transition={{ duration: reduceMotion ? 0 : 0.16, delay: reduceMotion ? 0 : Math.min(index * 0.01, 0.08) }}
       data-pack-id={pack.id}
       role="option"
-      tabIndex={0}
+      tabIndex={isTabStop ? 0 : -1}
       aria-label={`${pack.title} by ${pack.producerName}`}
       aria-selected={isSelected}
       className="flex h-[72px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          onDoubleClick();
-        }
-      }}
     >
-      {/* Flag area - slides out from left (Android-style) */}
-      <motion.button
+      {/* Flag area - slides out from left (Android-style). A pointer shortcut only: an option
+          cannot hold controls, and Enter on the row plays the pack. */}
+      <motion.div
+        aria-hidden
         className="shrink-0 h-full flex items-center justify-center gap-1.5 rounded-l-xl overflow-hidden"
         style={{ background: 'var(--accent)' }}
         initial={false}
@@ -749,8 +778,6 @@ function UnipackListItem({
         }}
         transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 30 }}
         onClick={(e) => { e.stopPropagation(); if (isSelected) onPlay(); }}
-        aria-label={tCommon('play') + ' ' + pack.title}
-        tabIndex={-1}
       >
         {isSelected && (
           <motion.span
@@ -765,7 +792,7 @@ function UnipackListItem({
             {tCommon('play')}
           </motion.span>
         )}
-      </motion.button>
+      </motion.div>
 
       {/* Content area */}
       <div className={`flex-1 flex items-center px-4 min-w-0 transition-colors rounded-r-xl ${
