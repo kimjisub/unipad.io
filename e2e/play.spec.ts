@@ -112,16 +112,41 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
 });
 
 // Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
-// right of the menu, 61 px right of the screen's centre line on every landscape screen.
-test('pad grid sits on the screen centre line in landscape', async ({ page }) => {
-  await loadPack(page);
-  for (const [width, height] of [[915, 402], [844, 390], [1280, 720], [1920, 1080]]) {
-    await page.setViewportSize({ width, height });
-    await expect.poll(() => page.evaluate(() => {
-      const pads = [...document.querySelectorAll('[data-pad]')].map(pad => pad.getBoundingClientRect());
-      const left = Math.min(...pads.map(pad => pad.left));
-      const right = Math.max(...pads.map(pad => pad.right));
-      return Math.abs((left + right) / 2 - window.innerWidth / 2);
-    }), `${width}x${height}`).toBeLessThanOrEqual(1);
-  }
+// right of the menu, 61 px right of the screen's centre line on every landscape screen, and with
+// the menu hidden it centred the pads together with the chain column, half a column to the left,
+// and drew them at zero size, then at fractional sizes with seams between them.
+const padGrid = (page: Page) => page.evaluate(() => {
+  const pads = [...document.querySelectorAll('[data-pad]')].map(pad => pad.getBoundingClientRect());
+  const left = Math.min(...pads.map(pad => pad.left));
+  const right = Math.max(...pads.map(pad => pad.right));
+  const top = Math.min(...pads.map(pad => pad.top));
+  const bottom = Math.max(...pads.map(pad => pad.bottom));
+  return {
+    offCentre: Math.abs((left + right) / 2 - window.innerWidth / 2),
+    heightShare: (bottom - top) / window.innerHeight,
+    // Pads of a fractional width leave thin seams between neighbours.
+    wholePixelPads: pads.every(pad => Number.isInteger(pad.width) && Number.isInteger(pad.height)),
+  };
 });
+
+for (const [name, file] of [
+  ['without a chain column', pack],
+  ['with a chain column', resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni')],
+]) {
+  test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
+    await page.goto('/play');
+    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    for (const hideUI of [false, true]) {
+      if (hideUI) await page.keyboard.press('Alt+h');
+      await expect(page.getByRole('button', { name: 'Feedback', exact: true })).toHaveCount(hideUI ? 0 : 1);
+      for (const [width, height] of [[915, 402], [844, 390], [1280, 720], [1920, 1080]]) {
+        await page.setViewportSize({ width, height });
+        const screen = `${width}x${height}${hideUI ? ' menu hidden' : ''}`;
+        await expect.poll(async () => (await padGrid(page)).offCentre, screen).toBeLessThanOrEqual(1);
+        await expect.poll(async () => (await padGrid(page)).heightShare, screen).toBeGreaterThan(0.8);
+        await expect.poll(async () => (await padGrid(page)).wholePixelPads, screen).toBe(true);
+      }
+    }
+  });
+}
