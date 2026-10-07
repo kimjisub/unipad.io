@@ -188,6 +188,9 @@ for (const screen of touchScreens) {
           Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
           document.dispatchEvent(new Event('visibilitychange'));
         });
+        // React's visual update can land after the lifecycle event returns.
+        await expectHeld(page, [], started);
+        expect(await sortedStops(page)).toEqual(Array.from({ length: started }, (_, i) => i + 1));
         await evidence(page, info, 'after-tab-hidden');
         await page.evaluate(() => {
           delete (document as { visibilityState?: unknown }).visibilityState;
@@ -200,6 +203,9 @@ for (const screen of touchScreens) {
         await holdBoth();
         await evidence(page, info, 'before-window-blur');
         await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+        // React's visual update can land after the lifecycle event returns.
+        await expectHeld(page, [], started);
+        expect(await sortedStops(page)).toEqual(Array.from({ length: started }, (_, i) => i + 1));
         await evidence(page, info, 'after-window-blur');
         await expectReleasedAndPlayable();
       });
