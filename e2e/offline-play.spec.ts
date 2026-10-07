@@ -42,17 +42,19 @@ for (const cachedCount of [0, 17]) {
       ? route.continue() : route.abort('blockedbyclient'));
     await seedSavedPack(page);
     if (cachedCount) await page.evaluate(count => localStorage.setItem('store_count_cache_v1', String(count)), cachedCount);
+    const openedAt = Date.now();
     await page.goto('/play', { waitUntil: 'domcontentloaded' });
     try {
       await expect(page.getByText('Browser Test Pack', { exact: true })).toBeVisible({ timeout: 5000 });
+      await testInfo.attach('restore-time', { body: JSON.stringify({ elapsedMs: Date.now() - openedAt }), contentType: 'application/json' });
     } finally {
       await testInfo.attach('browser-errors', { body: JSON.stringify(errors), contentType: 'application/json' });
-      await testInfo.attach('saved-list', { body: await page.screenshot(), contentType: 'image/png' });
+      await testInfo.attach('saved-list', { body: await page.screenshot({ path: testInfo.outputPath('saved-list.png') }), contentType: 'image/png' });
     }
     const store = page.getByRole('button', { name: /^Store/ });
     if (cachedCount) await expect(store).toContainText(String(cachedCount));
     else await expect(store).toHaveText('Store');
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Play Browser Test Pack', exact: true }).click();
     await expect(page.locator('[data-pad]')).toHaveCount(64);
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
     await page.locator('[data-pad="0,0"]').hover();
@@ -60,7 +62,7 @@ for (const cachedCount of [0, 17]) {
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
     await page.mouse.up();
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
-    await testInfo.attach('saved-pack-playing', { body: await page.screenshot(), contentType: 'image/png' });
+    await testInfo.attach('saved-pack-playing', { body: await page.screenshot({ path: testInfo.outputPath('saved-pack-playing.png') }), contentType: 'image/png' });
     // Reject other runtime errors; retain the SDK's known blocked-fetch failures as evidence.
     expect(errors.filter(message => message !== 'Failed to fetch')).toEqual([]);
   });
