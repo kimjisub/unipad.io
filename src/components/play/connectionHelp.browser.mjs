@@ -14,14 +14,20 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
     const page = await context.newPage();
     const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('pageerror', error => { errors.push(error.message); console.error('pageerror:', error.message); });
+    page.on('requestfailed', request => console.error('request failed:', request.url(), request.failure()?.errorText));
     await context.route('**/*', route => {
       const request = new URL(route.request().url());
       if (request.hostname === 'firebaseinstallations.googleapis.com') return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
       if (request.hostname === 'firebase.googleapis.com') return route.fulfill({ json: { appId: '1:000000000000:web:fake-ci-placeholder', measurementId: 'G-FAKE-CI' } });
       return request.origin === new URL(url).origin ? route.continue() : route.abort('blockedbyclient');
     });
-    await context.routeWebSocket(/.*/, socket => socket.close());
+    await context.routeWebSocket(/.*/, socket => {
+      const endpoint = new URL(socket.url());
+      // Next dev needs its local hot-reload socket to finish client startup.
+      if (endpoint.host === new URL(url).host) socket.connectToServer();
+      else socket.close();
+    });
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'requestMIDIAccess', { value: undefined, configurable: true });
       window.helpWrites = [];
@@ -29,6 +35,7 @@ try {
       Storage.prototype.setItem = function (...args) { window.helpWrites.push(args); return setItem.apply(this, args); };
     });
     await context.addCookies([{ name: 'NEXT_LOCALE', value: locale, url: new URL(url).origin }]);
+    if (['double-close', 'repeat-escape'].includes(process.env.REGRESSION_CASE)) await page.goto(new URL(url).origin);
     await page.goto(url);
     await page.locator('input[accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
     await expect(page.locator('[data-pad]')).toHaveCount(64);
@@ -37,6 +44,44 @@ try {
     await page.getByText(settingsName, { exact: true }).click();
     const settings = page.getByRole('dialog', { name: settingsName, exact: true });
     await expect(settings).toBeVisible();
+    if (['double-close', 'repeat-escape', 'entry-escape', 'strict-mode'].includes(process.env.REGRESSION_CASE)) {
+      const helpName = locale === 'en' ? 'Connection and light help' : '연결·불빛 도움말';
+      const entry = settings.getByRole('button', { name: helpName, exact: true });
+      const help = page.getByRole('dialog', { name: helpName, exact: true });
+      await entry.click();
+      if (process.env.REGRESSION_CASE !== 'strict-mode') await expect(help).toBeVisible();
+      const title = await page.title();
+      if (process.env.REGRESSION_CASE === 'double-close') {
+        await help.getByRole('button', { name: 'Close help', exact: true }).dblclick();
+      } else if (process.env.REGRESSION_CASE === 'repeat-escape') {
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Escape');
+      } else if (process.env.REGRESSION_CASE === 'entry-escape') {
+        await page.keyboard.press('Escape');
+        await expect(help).toHaveCount(0);
+        await expect(entry).toBeFocused();
+        await page.keyboard.press('Escape');
+      }
+      // Let queued history traversal and Strict Mode cleanup finish before checking.
+      await page.waitForTimeout(1000);
+      if (captures) await page.screenshot({ path: join(captures, `${process.env.REGRESSION_CASE}-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
+      if (process.env.REGRESSION_CASE === 'strict-mode') {
+        await expect(help).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(help).toHaveCount(0);
+        await expect(entry).toBeFocused();
+      } else {
+        await expect(help).toHaveCount(0);
+        if (process.env.REGRESSION_CASE === 'entry-escape') await expect(settings).toHaveCount(0);
+      }
+      expect(new URL(page.url()).pathname).toMatch(/\/play$/);
+      await expect(page.locator('[data-pad]')).toHaveCount(64);
+      expect(await page.title()).toBe(title);
+      expect(errors).toEqual([]);
+      console.log(`PASS ${process.env.REGRESSION_CASE}: play URL, pack and keyboard return preserved`);
+      await context.close();
+      continue;
+    }
     if (captures) await page.screenshot({ path: join(captures, `${process.env.BASELINE ? 'before' : 'after'}-${locale}-${width}.png`) });
     if (!process.env.BASELINE) {
       const helpName = locale === 'en' ? 'Connection and light help' : '연결·불빛 도움말';
@@ -174,4 +219,11 @@ try {
     console.log(`PASS ${process.env.BASELINE ? 'before capture' : 'help, keyboard, scroll, storage, Mini, back and large text'} ${locale} ${width}x${height}`);
     await context.close();
   }
+} catch (error) {
+  for (const context of browser.contexts()) for (const page of context.pages()) {
+    console.error('Failure URL:', page.url());
+    console.error('Failure page:', (await page.locator('body').innerText()).slice(0, 3000));
+    if (captures) await page.screenshot({ path: join(captures, `failure-${process.env.REGRESSION_CASE ?? 'all'}.png`) });
+  }
+  throw error;
 } finally { await browser.close(); }

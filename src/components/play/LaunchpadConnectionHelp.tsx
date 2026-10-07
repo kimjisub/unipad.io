@@ -19,23 +19,38 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
   const id = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const closingRef = useRef(false);
+  const cleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
   const mini = requestedProfile === 'launchpad_mini_mk3';
   const pro = requestedProfile === 'launchpad_pro' || requestedProfile === 'launchpad_pro_mk3';
   const other = !mini && !pro && !['launchpad_x', 'launchpad_s', 'launchpad_mk2'].includes(requestedProfile);
 
   const close = useCallback(() => {
+    // Back is asynchronous: keep repeated clicks/keys from leaving the player.
+    if (closingRef.current) return;
+    closingRef.current = true;
     if (window.history.state?.connectionHelp === id) window.history.back();
     else onClose();
   }, [id, onClose]);
 
   useEffect(() => {
+    if (cleanupRef.current !== null) {
+      clearTimeout(cleanupRef.current);
+      cleanupRef.current = null;
+    }
     const returnFocus = returnFocusRef.current;
     // A same-URL entry lets browser Back dismiss only this help. Preserve Next's
     // existing history fields; no settings or device state is stored here.
-    window.history.pushState({ ...window.history.state, connectionHelp: id }, '');
+    if (window.history.state?.connectionHelp !== id) {
+      window.history.pushState({ ...window.history.state, connectionHelp: id }, '');
+    }
     closeRef.current?.focus({ preventScroll: true });
-    const pop = () => onClose();
+    const pop = () => {
+      if (window.history.state?.connectionHelp === id) return;
+      closingRef.current = true;
+      onClose();
+    };
     const focus = (event: FocusEvent) => {
       if (!dialogRef.current?.contains(event.target as Node)) closeRef.current?.focus({ preventScroll: true });
     };
@@ -64,7 +79,15 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
       window.removeEventListener('popstate', pop);
       window.removeEventListener('keydown', key, true);
       window.removeEventListener('focusin', focus);
-      if (window.history.state?.connectionHelp === id) window.history.back();
+      // Strict Mode immediately reinstalls this effect. Let that installation
+      // cancel cleanup and reuse the entry; only a real unmount removes it.
+      cleanupRef.current = setTimeout(() => {
+        cleanupRef.current = null;
+        if (!closingRef.current && window.history.state?.connectionHelp === id) {
+          closingRef.current = true;
+          window.history.back();
+        }
+      }, 0);
       returnFocus?.focus({ preventScroll: true });
     };
   }, [close, id, onClose, returnFocusRef]);

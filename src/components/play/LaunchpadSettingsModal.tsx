@@ -6,6 +6,7 @@ import { LaunchpadConnectionHelp } from './LaunchpadConnectionHelp';
 import { useTranslations } from 'next-intl';
 
 import type { LaunchpadProfile } from '@/lib/unipack';
+import { getChainKey, getPadForKeyCode } from '@/lib/unipack/KeyboardMapping';
 
 interface LaunchpadSettingsModalProps {
   visible: boolean;
@@ -106,7 +107,12 @@ function LaunchpadSettingsContent({
               <p className="mt-2 text-[10px] leading-4 text-white/45">
                 {t(`notes.${requestedProfile}`)}
               </p>
-              <button ref={helpButtonRef} onClick={() => setHelpOpen(true)} onKeyDown={event => event.stopPropagation()}
+              <button ref={helpButtonRef} onClick={() => setHelpOpen(true)} onKeyDown={event => {
+                if (event.altKey || event.ctrlKey || event.metaKey) return;
+                if (event.key === ' ' || getChainKey(event.key) !== null || getPadForKeyCode(event.code, event.shiftKey, 8, 8)) {
+                  event.stopPropagation();
+                }
+              }}
                 className="mt-2 rounded-md bg-white/10 px-3 py-2 text-xs text-white/80 hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300">
                 {t('help.title')}
               </button>

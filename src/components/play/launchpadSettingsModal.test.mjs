@@ -61,7 +61,12 @@ const { NextIntlClientProvider } = createRequire(import.meta.url)('next-intl');
 const { render, cleanup, fireEvent, act } = await import('@testing-library/react');
 const { LaunchpadSettingsModal } = await import('./LaunchpadSettingsModal.tsx');
 const { afterEach, mock } = await import('node:test');
-afterEach(() => { cleanup(); localStorage.clear(); mock.restoreAll(); });
+afterEach(async () => {
+  cleanup();
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  localStorage.clear();
+  mock.restoreAll();
+});
 const props = {
   visible: true, midiConnected: false, midiInputName: null, midiOutputName: null,
   requestedProfile: 'auto', resolvedProfile: 'launchpad_mini_mk3',
@@ -90,7 +95,7 @@ test('reading help preserves requested model, storage, settings scroll and every
   fireEvent.keyDown(window, { key: 'Escape' });
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
   assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }), null);
-  assert.equal(document.activeElement, entry);
+  assert.equal(document.activeElement === entry, true, 'focus returns to the help entry');
   assert.equal(scroller.scrollTop, 45);
   assert.equal(view.getByRole('combobox').value, 'auto');
   assert.equal(localStorage.getItem('existing-setting'), 'unchanged');
@@ -105,12 +110,12 @@ test('Mini help traps both Tab directions, prevents parent Escape and preserves 
   assert.match(help.textContent, /In Programmer mode/);
   const close = view.getByRole('button', { name: 'Close help' });
   const guide = view.getByRole('button', { name: "Read the manufacturer's guide" });
-  assert.equal(document.activeElement, close);
+  assert.equal(document.activeElement === close, true, 'close receives initial focus');
   guide.focus();
   fireEvent.keyDown(guide, { key: 'Tab' });
-  assert.equal(document.activeElement, close);
+  assert.equal(document.activeElement === close, true, 'Tab wraps to close');
   fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
-  assert.equal(document.activeElement, guide);
+  assert.equal(document.activeElement === guide, true, 'Shift+Tab wraps to the guide');
   mock.method(window, 'open', () => null);
   fireEvent.click(guide);
   assert.match(help.textContent, /Could not open the manufacturer's guide/);
@@ -122,7 +127,7 @@ test('Mini help traps both Tab directions, prevents parent Escape and preserves 
   window.removeEventListener('keydown', parent);
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
   assert.equal(parentEscapes, 0);
-  assert.equal(document.activeElement, entry);
+  assert.equal(document.activeElement === entry, true, 'focus returns to the help entry');
   assert.ok(view.getByRole('button', { name: 'Reconnect', exact: true }));
 });
 
@@ -198,4 +203,66 @@ test('help entry keyboard activation preserves the native button action and stop
   } finally {
     window.removeEventListener('keydown', background);
   }
+});
+
+test('help entry passes Escape and modified shortcuts to the settings handler', () => {
+  const view = render(wrapped());
+  const entry = view.getByRole('button', { name: 'Connection and light help' });
+  const keys = [];
+  const background = event => keys.push(event.key);
+  window.addEventListener('keydown', background);
+  try {
+    fireEvent.keyDown(entry, { key: 'Escape' });
+    fireEvent.keyDown(entry, { key: 'o', code: 'KeyO', altKey: true });
+    assert.deepEqual(keys, ['Escape', 'o']);
+    fireEvent.keyDown(entry, { key: 'q', code: 'KeyQ' });
+    assert.deepEqual(keys, ['Escape', 'o'], 'unmodified pad keys stay out of the player');
+  } finally {
+    window.removeEventListener('keydown', background);
+  }
+});
+
+for (const action of ['click', 'Escape']) {
+  test(`rapid repeated help ${action} requests exactly one asynchronous history traversal`, async () => {
+    const view = render(wrapped());
+    openHelp(view);
+    const back = mock.method(window.history, 'back', () => {});
+    const close = view.getByRole('button', { name: 'Close help' });
+    for (let i = 0; i < 2; i++) {
+      if (action === 'click') fireEvent.click(close);
+      else fireEvent.keyDown(close, { key: 'Escape' });
+    }
+    assert.equal(back.mock.callCount(), 1);
+    view.unmount();
+    await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+    assert.equal(back.mock.callCount(), 1, 'unmount must not traverse again while Back is pending');
+    window.history.replaceState({}, '');
+  });
+}
+
+test('Strict Mode effect replay keeps one help history entry and help stays open', async () => {
+  const view = render(React.createElement(React.StrictMode, null, wrapped()));
+  const push = mock.method(window.history, 'pushState');
+  const back = mock.method(window.history, 'back');
+  const { entry } = openHelp(view);
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  assert.ok(view.queryByRole('dialog', { name: 'Connection and light help' }));
+  assert.equal(push.mock.callCount(), 1);
+  assert.equal(back.mock.callCount(), 0);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }), null);
+  assert.equal(document.activeElement === entry, true, 'Strict Mode close restores entry focus');
+  assert.equal(back.mock.callCount(), 1);
+});
+
+test('unmounting open settings removes its help history entry once', async () => {
+  window.history.replaceState({ testBase: true }, '');
+  const view = render(wrapped());
+  openHelp(view);
+  const back = mock.method(window.history, 'back');
+  view.unmount();
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  assert.equal(back.mock.callCount(), 1);
+  assert.equal(window.history.state?.testBase, true);
 });
