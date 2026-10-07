@@ -53,6 +53,7 @@ async function waitUntilSettled(target: Locator) {
  * Waits until the scroll-to-top button has kept its place and full opacity, or stayed away, for several frames.
  * It is placed in the frame after a scroll, and a button that leaves fades out where it was.
  * Polls 'at rest', or what each frame showed (bottom/opacity of every button) so a failure tells why.
+ * One eight-frame sample can take longer than the default five-second poll budget in Chromium.
  */
 async function waitForButtonAtRest(page: Page) {
   await expect.poll(() => page.evaluate(() => new Promise<string>(resolve => {
@@ -67,7 +68,7 @@ async function waitForButtonAtRest(page: Page) {
       resolve(atRest ? 'at rest' : `scroll ${scrollY}: ${frames.join(' | ')}`);
     };
     requestAnimationFrame(() => requestAnimationFrame(step));
-  }))).toBe('at rest');
+  })), { timeout: 15_000 }).toBe('at rest');
 }
 
 async function scrollToFooter(page: Page) {

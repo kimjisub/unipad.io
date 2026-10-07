@@ -93,6 +93,13 @@ export function PadGrid({
     const handlePointerCancel = (e: PointerEvent) => releasePointer(e.pointerId);
     const handleLostCapture = (e: PointerEvent) => releasePointer(e.pointerId);
 
+    // A finger still down when the app goes to the background (notification shade, app switch,
+    // another window) may never send its pointerup; release it as the keyboard path does.
+    const releaseAllPointers = () => {
+      for (const id of Array.from(pointers.keys())) releasePointer(id);
+    };
+    const handleVisibility = () => { if (document.hidden) releaseAllPointers(); };
+
     const handleContextMenu = (e: Event) => e.preventDefault();
 
     grid.addEventListener('pointerdown', handlePointerDown);
@@ -101,16 +108,20 @@ export function PadGrid({
     grid.addEventListener('pointercancel', handlePointerCancel);
     grid.addEventListener('lostpointercapture', handleLostCapture);
     grid.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('blur', releaseAllPointers);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       // The grid unmounts on hideUI toggles; pads still held here would never get their release.
-      for (const id of Array.from(pointers.keys())) releasePointer(id);
+      releaseAllPointers();
       grid.removeEventListener('pointerdown', handlePointerDown);
       grid.removeEventListener('pointermove', handlePointerMove);
       grid.removeEventListener('pointerup', handlePointerUp);
       grid.removeEventListener('pointercancel', handlePointerCancel);
       grid.removeEventListener('lostpointercapture', handleLostCapture);
       grid.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('blur', releaseAllPointers);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [onPadDown, onPadUp, getPadFromPoint]);
 
