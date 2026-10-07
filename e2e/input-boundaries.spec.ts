@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
 import { pad, point, touch, touchScreens } from './touch';
@@ -21,15 +22,16 @@ async function stopped(page: Page, ids: number[]) {
   await expect.poll(async () => (await audio(page)).stops.toSorted((a, b) => a - b)).toEqual(ids);
 }
 async function evidence(page: Page, info: TestInfo, name: string) {
-  const screenshot = info.outputPath(`${name}.png`);
-  await page.screenshot({ path: screenshot });
+  async function jsonEvidence(info: TestInfo, name: string, data: unknown) {
+  const path = info.outputPath(`${name}.json`);
+  await writeFile(path, JSON.stringify(data, null, 2));
+  await info.attach(name, { path, contentType: 'application/json' });
+}
+const screenshot = info.outputPath(`${name}.png`);
+  await page.screenshot({ path: screenshot, animations: 'disabled' });
   await info.attach(name, { path: screenshot, contentType: 'image/png' });
-  await info.attach(`${name}-pointer-events`, {
-    body: JSON.stringify(await page.evaluate(() => window.inputBoundaryEvents), null, 2), contentType: 'application/json',
-  });
-  await info.attach(`${name}-requests`, {
-    body: JSON.stringify(await audio(page), null, 2), contentType: 'application/json',
-  });
+  await jsonEvidence(info, `${name}-pointer-events`, await page.evaluate(() => window.inputBoundaryEvents));
+  await jsonEvidence(info, `${name}-requests`, await audio(page));
 }
 const screens = [
   { name: 'phone portrait', width: 390, height: 844 },
@@ -193,7 +195,7 @@ for (const screen of shapeScreens) {
         await expect.poll(async () => (await pad(page, '0,0').boundingBox())?.width ?? 0).toBeGreaterThan(1);
         const rectangular = await geometry(page);
         const changed = rectangular.some((r, i) => Math.abs(r.width - square[i].width) > 0.5 || Math.abs(r.height - square[i].height) > 0.5);
-        await info.attach('pad-geometry', { body: JSON.stringify({ viewport: screen.viewport, square, rectangular, changed }, null, 2), contentType: 'application/json' });
+        await jsonEvidence(info, 'pad-geometry', { viewport: screen.viewport, square, rectangular, changed });
         await evidence(page, info, 'rectangular-pad-layout');
         if (!changed) {
           info.annotations.push({ type: 'applicability', description: 'No rendered size difference at this viewport; rectangular edge comparison is not applicable.' });

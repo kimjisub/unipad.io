@@ -43,16 +43,16 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
   if (!observedPages.has(page)) {
     observedPages.add(page);
     await page.addInitScript(() => {
-    window.inputBoundaryEvents = [];
-    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
-      document.addEventListener(type, event => {
-        const e = event as PointerEvent;
-        const target = (e.target as Element).closest('[data-pad], button');
-        window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
-          buttons: e.buttons, trusted: e.isTrusted,
-          target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });
-      }, true);
-    }
+      window.inputBoundaryEvents = [];
+      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+        document.addEventListener(type, event => {
+          const e = event as PointerEvent;
+          const target = (e.target as Element).closest('[data-pad], button');
+          window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
+            buttons: e.buttons, trusted: e.isTrusted,
+            target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });
+        }, true);
+      }
     });
   }
   await page.goto('/play');
