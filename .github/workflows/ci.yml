@@ -37,11 +37,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.15.0
-      # Corepack installs the pnpm version pinned in package.json's packageManager field.
+      # Installs the pnpm version pinned in package.json's packageManager field. A global npm
+      # install keeps pnpm under node_modules, where Node does not flag its url.parse() use.
       - name: Set up pnpm
-        run: |
-          corepack enable pnpm
-          corepack install
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
       - name: Locate pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"

@@ -49,8 +49,7 @@ src/
 
 ## Verification
 
-Use Node.js **24.15.0** and pnpm **9.11.0**, matching GitHub Actions
-(`corepack enable pnpm` sets up the pnpm version pinned in `package.json`):
+Use Node.js **24.15.0** and pnpm **9.11.0**, matching GitHub Actions:
 
 ```bash
 pnpm install --frozen-lockfile
