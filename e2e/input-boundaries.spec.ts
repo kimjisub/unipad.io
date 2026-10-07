@@ -21,13 +21,13 @@ async function held(page: Page, positions: string[], requested: string[], chain 
 async function stopped(page: Page, ids: number[]) {
   await expect.poll(async () => (await audio(page)).stops.toSorted((a, b) => a - b)).toEqual(ids);
 }
-async function evidence(page: Page, info: TestInfo, name: string) {
-  async function jsonEvidence(info: TestInfo, name: string, data: unknown) {
+async function jsonEvidence(info: TestInfo, name: string, data: unknown) {
   const path = info.outputPath(`${name}.json`);
   await writeFile(path, JSON.stringify(data, null, 2));
   await info.attach(name, { path, contentType: 'application/json' });
 }
-const screenshot = info.outputPath(`${name}.png`);
+async function evidence(page: Page, info: TestInfo, name: string) {
+  const screenshot = info.outputPath(`${name}.png`);
   await page.screenshot({ path: screenshot, animations: 'disabled' });
   await info.attach(name, { path: screenshot, contentType: 'image/png' });
   await jsonEvidence(info, `${name}-pointer-events`, await page.evaluate(() => window.inputBoundaryEvents));
