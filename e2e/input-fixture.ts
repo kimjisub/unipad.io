@@ -3,12 +3,17 @@ import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { expect } from './browser';
 
+export interface InputEventRecord { type: string; pointerType: string; pointerId: number; buttons: number; trusted: boolean; target: string | null }
+declare global { interface Window { inputBoundaryEvents: InputEventRecord[] } }
+
 // Reuse the original fixture tone, with a distinct duration for every pad and chain.
 // No keyLED scripts: each held pad has the existing press overlay until release.
 export const duration = (rows: number, cols: number, position: string, chain = 1) => {
   const [row, col] = position.split(',').map(Number);
   return (100 + (chain - 1) * rows * cols + row * cols + col) / 1000;
 };
+
+const observedPages = new WeakSet<Page>();
 
 export async function loadInputPack(page: Page, rows = 8, cols = 8, square = true) {
   const original = await JSZip.loadAsync(await readFile('e2e/fixtures/multi-touch.uni'));
@@ -35,6 +40,21 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     }
   }
   zip.file('keySound', `${mappings.join('\n')}\n`, { date });
+  if (!observedPages.has(page)) {
+    observedPages.add(page);
+    await page.addInitScript(() => {
+    window.inputBoundaryEvents = [];
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      document.addEventListener(type, event => {
+        const e = event as PointerEvent;
+        const target = (e.target as Element).closest('[data-pad], button');
+        window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
+          buttons: e.buttons, trusted: e.isTrusted,
+          target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });
+      }, true);
+    }
+    });
+  }
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
     name: 'input-boundaries.uni', mimeType: 'application/zip',
