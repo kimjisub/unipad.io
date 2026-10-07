@@ -18,7 +18,7 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { browserName: 'chromium', launchOptions: { args: ['--mute-audio'] } } },
     // iPhone Safari draws pages with WebKit; only WebKit shows Hangul without a font as missing-glyph boxes.
-    { name: 'webkit', testMatch: ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'input-boundaries.spec.ts'], use: { browserName: 'webkit' } },
+    { name: 'webkit', testMatch: ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'input-boundaries.spec.ts'], use: { browserName: 'webkit' } },
   ],
   webServer: {
     command: 'pnpm exec next start --hostname localhost --port 3184',

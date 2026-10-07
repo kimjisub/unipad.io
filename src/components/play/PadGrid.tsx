@@ -270,7 +270,7 @@ export function PadGrid({
               `}
               style={{
                 aspectRatio: squareButton ? '1' : undefined,
-                minHeight: squareButton ? undefined : '2.5rem',
+                minHeight: squareButton ? undefined : 0,
               }}
             >
               {/* Layer 1: button base */}
