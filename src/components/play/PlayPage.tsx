@@ -31,7 +31,7 @@ import {
 import {
   downloadStoreItem,
   fetchStoreItems,
-  fetchStoreCount,
+  loadCachedStoreCount,
   getStoreYoutubeSearchUrl,
   subscribeStoreCount,
   subscribeStoreItems,
@@ -146,7 +146,6 @@ export function PlayPage() {
   const currentPackIdRef = useRef<string | null>(null);
   const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
-  const storeCountUnsubscribeRef = useRef<(() => void) | null>(null);
   const storeItemsRef = useRef<StoreItem[]>([]);
   const toastTimerRef = useRef<number | null>(null);
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
@@ -222,16 +221,8 @@ export function PlayPage() {
           && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {
           setMidiProfile(savedMidiProfile as LaunchpadProfile);
         }
-        const [savedLastPackId, countResult] = await Promise.all([
-          getSetting('lastUniPackId'),
-          fetchStoreCount(),
-        ]);
-        const prev = Number(await getSetting('prevStoreCount') ?? '0');
-        if (!cancelled) {
-          if (savedLastPackId) setLastPlayedPackId(savedLastPackId);
-          setStoreCount(countResult);
-          setHasStoreUpdate(countResult > prev);
-        }
+        const savedLastPackId = await getSetting('lastUniPackId');
+        if (!cancelled && savedLastPackId) setLastPlayedPackId(savedLastPackId);
       } catch {
         /* storage unavailable */
       }
@@ -241,21 +232,29 @@ export function PlayPage() {
   }, [refreshLists, setMidiProfile]);
 
   useEffect(() => {
-    subscribeStoreCount(
-      async (count) => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    // Store metadata must never hold up local packs, even while Firebase is initializing.
+    (async () => {
+      let updateVersion = 0;
+      const updateCount = async (count: number) => {
+        if (cancelled) return;
+        const version = ++updateVersion;
         setStoreCount(count);
-        const prev = Number(await getSetting('prevStoreCount') ?? '0');
-        setHasStoreUpdate(count > prev);
-      },
-    ).then((unsub) => {
-      storeCountUnsubscribeRef.current = unsub;
-    }).catch(() => {
-      // ignore
+        const prev = Number(await getSetting('prevStoreCount').catch(() => null) ?? '0');
+        if (!cancelled && version === updateVersion) setHasStoreUpdate(count > prev);
+      };
+      updateCount(loadCachedStoreCount());
+      const unsub = await subscribeStoreCount(updateCount);
+      if (cancelled) unsub();
+      else unsubscribe = unsub;
+    })().catch(() => {
+      // Keep the cached count when Firebase is unavailable.
     });
 
     return () => {
-      storeCountUnsubscribeRef.current?.();
-      storeCountUnsubscribeRef.current = null;
+      cancelled = true;
+      unsubscribe?.();
       if (toastTimerRef.current) {
         window.clearTimeout(toastTimerRef.current);
         toastTimerRef.current = null;

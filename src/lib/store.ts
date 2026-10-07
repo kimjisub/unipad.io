@@ -47,7 +47,7 @@ function saveCachedStoreItems(items: StoreItem[]): void {
   }
 }
 
-function loadCachedStoreCount(): number {
+export function loadCachedStoreCount(): number {
   if (typeof window === 'undefined') return 0;
   try {
     const raw = window.localStorage.getItem(STORE_COUNT_CACHE_KEY);
