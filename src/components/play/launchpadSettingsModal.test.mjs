@@ -94,7 +94,7 @@ test('reading help preserves requested model, storage, settings scroll and every
   assert.match(help.textContent, /do not choose a different model/);
   fireEvent.keyDown(window, { key: 'Escape' });
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
-  assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }), null);
+  assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }) === null, true, 'help closes after Escape');
   assert.equal(document.activeElement === entry, true, 'focus returns to the help entry');
   assert.equal(scroller.scrollTop, 45);
   assert.equal(view.getByRole('combobox').value, 'auto');
@@ -172,7 +172,7 @@ test('successful external open detaches its opener and leaves help and selection
   fireEvent.click(view.getByRole('button', { name: "Read the manufacturer's guide" }));
   assert.equal(external.opener, null);
   assert.equal(external.location.href, 'https://userguides.novationmusic.com/hc/en-gb/articles/23731330721682-Launchpad-Mini-MK3-s-Settings-menu');
-  assert.equal(view.getByRole('dialog', { name: 'Connection and light help' }), help);
+  assert.equal(view.getByRole('dialog', { name: 'Connection and light help' }) === help, true, 'external open keeps the same help');
   assert.equal(view.container.querySelector('select').value, 'launchpad_mini_mk3');
   assert.equal(view.queryByRole('alert'), null);
 });
@@ -251,7 +251,7 @@ test('Strict Mode effect replay keeps one help history entry and help stays open
   assert.equal(back.mock.callCount(), 0);
   fireEvent.keyDown(window, { key: 'Escape' });
   await act(() => new Promise(resolve => setTimeout(resolve, 30)));
-  assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }), null);
+  assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }) === null, true, 'Strict Mode help closes after Escape');
   assert.equal(document.activeElement === entry, true, 'Strict Mode close restores entry focus');
   assert.equal(back.mock.callCount(), 1);
 });
