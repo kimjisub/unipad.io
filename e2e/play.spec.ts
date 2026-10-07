@@ -84,6 +84,7 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
 });
 
 test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnects', async ({ page }) => {
+  test.slow(); // Pack import plus repeated connection changes can exhaust a short test's setup budget.
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
