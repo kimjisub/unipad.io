@@ -118,7 +118,7 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 | Audible sound quality | Unavailable in headless CI | Real decode, buffer duration and original Web Audio start/stop calls are observed; Chromium output is muted. Speaker output, latency and perceived quality require listening |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
 
-No production application code or test-only application hooks are added.
+No test-only application hooks are added.
 The browser probes wrap native Web Audio calls without changing their behavior.
 Auto-play checks wait across the fixture's next-note deadline to prove that
 pause and stop produce no further playback requests.

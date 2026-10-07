@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import type { CDPSession, Page } from '@playwright/test';
+import type { CDPSession, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
 import { pad, point, touch, touchScreens, type Contact } from './touch';
 
@@ -34,6 +34,14 @@ const moved = (page: Page, contact: Contact, position: string) => point(page, po
 async function expectHeld(page: Page, positions: string[], soundsStarted: number) {
   await expect.poll(() => lit(page)).toEqual([...positions].sort());
   await expect.poll(() => starts(page)).toBe(soundsStarted);
+}
+
+async function evidence(page: Page, info: TestInfo, name: string) {
+  await info.attach(name, { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach(`${name}-audio`, {
+    body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio), null, 2),
+    contentType: 'application/json',
+  });
 }
 
 async function session(page: Page): Promise<CDPSession> {
@@ -142,7 +150,7 @@ for (const screen of touchScreens) {
     // Headless Chromium never hides the tab or blurs the window itself (minimising the window
     // and bringing another tab forward were tried), so the hide and blur steps send the same
     // events a browser sends when the notification shade or another app takes over.
-    test('G a canceled touch, a hidden tab and a lost window focus stop held loops and lights', async ({ page }) => {
+    test('G a canceled touch, a hidden tab and a lost window focus stop held loops and lights', async ({ page }, info) => {
       await load(page);
       const input = await session(page);
       const fingers = await contacts(page, ['1,3', '6,4']);
@@ -174,11 +182,13 @@ for (const screen of touchScreens) {
       });
       await test.step('tab hidden', async () => {
         await holdBoth();
+        await evidence(page, info, 'before-tab-hidden');
         await page.evaluate(() => {
           Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
           Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
           document.dispatchEvent(new Event('visibilitychange'));
         });
+        await evidence(page, info, 'after-tab-hidden');
         await page.evaluate(() => {
           delete (document as { visibilityState?: unknown }).visibilityState;
           delete (document as { hidden?: unknown }).hidden;
@@ -188,7 +198,9 @@ for (const screen of touchScreens) {
       });
       await test.step('window focus lost', async () => {
         await holdBoth();
+        await evidence(page, info, 'before-window-blur');
         await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+        await evidence(page, info, 'after-window-blur');
         await expectReleasedAndPlayable();
       });
     });
