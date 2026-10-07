@@ -193,6 +193,9 @@ test.describe('the scroll-to-top button', () => {
 
   for (const { path, width, height, large } of cases) {
     test(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, browserName }) => {
+      // Scrolling a quarter of a short screen at a time takes about 30 steps through the tall start box and footer,
+      // each waiting at least eight frames; a busy machine draws a frame every 60-80ms, even on an empty page.
+      test.slow(height < 400, 'many scroll steps on a short screen');
       await page.setViewportSize({ width, height });
       if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
       await page.goto(path);
