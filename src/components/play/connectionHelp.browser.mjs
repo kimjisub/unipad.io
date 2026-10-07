@@ -51,7 +51,9 @@ try {
         await page.keyboard.press('Space');
         if (captures) await page.screenshot({ path: join(captures, `entry-space-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
         await expect(help).toBeVisible();
-        await expect(page.getByRole('button', { name: locale === 'en' ? 'Play mode: Auto' : '연주 모드: 자동', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        const autoPlay = page.getByRole('button', { name: locale === 'en' ? 'Play mode: Auto' : '연주 모드: 자동', exact: true });
+        await expect(autoPlay.first()).toBeAttached();
+        await expect(autoPlay.and(page.locator('[aria-pressed="true"]'))).toHaveCount(0);
         if (process.env.REGRESSION_CASE === 'entry-space') {
           console.log('PASS help entry opens with Space without starting auto-play');
           await context.close();

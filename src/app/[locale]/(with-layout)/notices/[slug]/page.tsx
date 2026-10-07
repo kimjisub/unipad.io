@@ -37,7 +37,7 @@ export default async function NoticePostPage({
       <article>
         <header className="mb-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-4">{post.title[lang]}</h1>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm [overflow-wrap:anywhere] text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
               {post.date}

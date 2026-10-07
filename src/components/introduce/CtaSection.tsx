@@ -1,126 +1,69 @@
-'use client';
-
-import { useRef } from 'react';
-import { motion, useInView } from 'framer-motion';
-import { Download, Star, Heart, Play, Code } from 'lucide-react';
+import { Code, Download, Heart, Play, Star } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import { GradientText } from '@/components/GradientText';
-import { AndroidLogo } from '@/components/icons/AndroidLogo';
+import { SectionContainer, SectionHeading } from '@/components/introduce/SectionHeader';
+import { LARGE_BUTTON_CLASS, ON_ACCENT_FOCUS_CLASS, StoreButtons } from '@/components/introduce/StoreButtons';
 import { Link } from '@/i18n/navigation';
-import { GOOGLE_PLAY_URL } from '@/lib/constants';
+import { SCROLL_TOP_AVOID } from '@/lib/constants';
+
+const ART_COLUMNS = 8;
+const ART_ROWS = 7;
+const artLitPads = new Set([3, 4, 5, 10, 12, 13, 18, 19, 20, 21, 27, 28, 34, 35, 36, 37, 38, 43, 44, 45, 46, 52, 53]);
+
+/** 시작 상자 오른쪽의 패드 무늬. 상자 안에서 잘리며 큰 화면에서만 보인다. */
+function PadArt() {
+	return (
+		<div
+			className="pointer-events-none absolute -right-10 top-1/2 hidden w-[26rem] -translate-y-1/2 -rotate-[8deg] grid-cols-8 gap-2 lg:grid"
+			aria-hidden
+		>
+			{Array.from({ length: ART_COLUMNS * ART_ROWS }, (_, i) => (
+				<i key={i} className={`aspect-square rounded-md ${artLitPads.has(i) ? 'bg-white/70' : 'bg-black/[0.08]'}`} />
+			))}
+		</div>
+	);
+}
 
 export const CtaSection = () => {
-	const ref = useRef(null);
-	const isInView = useInView(ref, { once: true, margin: '-80px' });
 	const t = useTranslations('cta');
 
+	const facts = [
+		{ icon: Download, label: '9.2M+' },
+		{ icon: Star, label: '4.0★' },
+		{ icon: Heart, label: t('free') },
+		{ icon: Code, label: 'Open Source' },
+	];
+
 	return (
-		<section className="py-28 relative overflow-hidden" aria-label={t('title')} ref={ref}>
-			{/* Top fade: blend from FAQ bg-card/20 into this section */}
-			<div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[var(--card)]/20 to-transparent pointer-events-none" aria-hidden />
+		<SectionContainer id="cta" divided={false}>
+			{/* 휴대폰의 좌우 여백은 큰 글씨에서도 24px까지만 늘려 안의 버튼에 글자 자리를 남긴다. */}
+			<div className="relative overflow-hidden rounded-[1.75rem] bg-accent px-[min(1.5rem,24px)] py-10 text-accent-foreground md:p-14">
+				<PadArt />
+				<div className="relative">
+					<SectionHeading sectionId="cta">{t('title')}</SectionHeading>
+					<p className="mt-3.5 max-w-lg text-[1.0625rem] text-[#3d2600]">{t('subtitle')}</p>
 
-			{/* Background glows */}
-			<div className="absolute inset-0" aria-hidden>
-				<motion.div
-					className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-20 blur-[120px]"
-					style={{ background: 'radial-gradient(circle, var(--accent) 0%, transparent 70%)' }}
-					animate={{ scale: [1, 1.1, 1], x: [0, 20, 0] }}
-					transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-				/>
-				<motion.div
-					className="absolute top-[40%] left-[30%] w-[400px] h-[400px] rounded-full opacity-[0.12] blur-[100px]"
-					style={{ background: 'radial-gradient(circle, var(--secondary) 0%, transparent 70%)' }}
-					animate={{ scale: [1, 1.15, 1], y: [0, -15, 0] }}
-					transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-				/>
-				<motion.div
-					className="absolute bottom-[20%] right-[25%] w-[300px] h-[300px] rounded-full opacity-[0.08] blur-[80px]"
-					style={{ background: 'radial-gradient(circle, var(--mesh-color-4) 0%, transparent 70%)' }}
-					animate={{ scale: [1, 1.1, 1], x: [0, -15, 0] }}
-					transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-				/>
+					<div {...SCROLL_TOP_AVOID} className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
+						<Link
+							href="/play"
+							className={`${LARGE_BUTTON_CLASS} ${ON_ACCENT_FOCUS_CLASS} bg-accent-foreground px-6 text-white hover:bg-accent-foreground/90`}
+						>
+							<Play className="h-5 w-5 shrink-0 fill-current" aria-hidden />
+							{t('playNow')}
+						</Link>
+						<StoreButtons variant="onAccent" />
+					</div>
+
+					<ul className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#3d2600]">
+						{facts.map(({ icon: Icon, label }) => (
+							<li key={label} className="inline-flex items-center gap-1.5">
+								<Icon className="h-3.5 w-3.5" aria-hidden />
+								{label}
+							</li>
+						))}
+					</ul>
+				</div>
 			</div>
-
-			{/* Top gradient line */}
-			<div className="absolute inset-x-0 top-0 h-px" aria-hidden>
-				<div className="mx-auto h-px w-1/2 bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
-			</div>
-
-			<div className="relative z-10 max-w-3xl mx-auto px-4 md:px-6 text-center">
-				<motion.h2
-					className="text-3xl md:text-5xl font-bold text-foreground mb-4 tracking-tight"
-					initial={{ opacity: 0, y: 20 }}
-					animate={isInView ? { opacity: 1, y: 0 } : {}}
-					transition={{ duration: 0.5 }}
-				>
-					<GradientText duration={6}>{t('title')}</GradientText>
-				</motion.h2>
-				<motion.p
-					className="text-lg md:text-xl text-muted-foreground mb-10"
-					initial={{ opacity: 0, y: 20 }}
-					animate={isInView ? { opacity: 1, y: 0 } : {}}
-					transition={{ duration: 0.5, delay: 0.1 }}
-				>
-					{t('subtitle')}
-				</motion.p>
-				<motion.div
-					className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center w-full max-w-md sm:max-w-none sm:w-auto mx-auto"
-					initial={{ opacity: 0, y: 20 }}
-					animate={isInView ? { opacity: 1, y: 0 } : {}}
-					transition={{ duration: 0.5, delay: 0.2 }}
-				>
-					<Link
-						href="/play"
-						className="relative px-8 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] group inline-flex items-center justify-center gap-2"
-					>
-						<span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-60 blur-sm -z-10 group-hover:opacity-80 transition-opacity" />
-						<span className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-25 blur-md -z-10 group-hover:opacity-40 transition-opacity" />
-						<Play className="w-5 h-5 fill-current" />
-						{t('playNow')}
-					</Link>
-					<a
-						href={GOOGLE_PLAY_URL}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="px-8 py-3.5 rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-md text-foreground font-medium text-lg text-center transition-all duration-300 hover:bg-white/[0.06] hover:border-white/[0.15] hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2"
-					>
-						<AndroidLogo className="w-5 h-5" />
-						{t('download')}
-					</a>
-				</motion.div>
-
-				{/* Social proof */}
-				<motion.div
-					className="flex flex-wrap items-center justify-center gap-4 mt-8"
-					initial={{ opacity: 0 }}
-					animate={isInView ? { opacity: 1 } : {}}
-					transition={{ duration: 0.5, delay: 0.4 }}
-				>
-					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-						<Download className="w-3 h-3" />
-						9.2M+
-					</span>
-					<span className="w-px h-3 bg-white/10" aria-hidden />
-					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-						<Star className="w-3 h-3" />
-						4.0★
-					</span>
-					<span className="w-px h-3 bg-white/10" aria-hidden />
-					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-						<Heart className="w-3 h-3" />
-						{t('free')}
-					</span>
-					<span className="w-px h-3 bg-white/10" aria-hidden />
-					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-						<Code className="w-3 h-3" />
-						Open Source
-					</span>
-				</motion.div>
-			</div>
-
-			{/* Bottom fade to footer */}
-			<div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b from-transparent to-[var(--background)]/40 pointer-events-none" aria-hidden />
-		</section>
+		</SectionContainer>
 	);
 };

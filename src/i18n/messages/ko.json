@@ -18,28 +18,22 @@
   },
   "hero": {
     "badge": "무료 & 오픈소스",
+    "headline1": "어디서든 켜지는",
+    "headline2": "나만의 Launchpad",
     "tagline": "리듬을 연주하다, UniPad",
     "description": "스마트폰, 태블릿, 브라우저 — 어디서든 Launchpad처럼. LED 가이드를 따라 연주하고, UniPack으로 만들고, 전 세계와 공유하세요.",
-    "downloadCta": "Google Play에서 다운로드",
     "playOnWeb": "웹에서 바로 플레이",
-    "viewDocs": "문서 보기",
-    "platforms": {
-      "title": "지원 플랫폼",
-      "web": "Web",
-      "webDesc": "브라우저에서 바로 플레이",
-      "android": "Android",
-      "androidDesc": "Google Play에서 다운로드",
-      "ios": "iOS",
-      "iosDesc": "App Store에서 다운로드"
-    },
-    "typewriter": {
-      "0": "리듬을 연주하다",
-      "1": "음악을 만들다",
-      "2": "UniPack을 공유하다",
-      "3": "어디서든 연습하다"
-    }
+    "guide": "처음이신가요? 시작 안내 보기",
+    "tryPads": "패드를 눌러보세요"
+  },
+  "stores": {
+    "android": "Android",
+    "ios": "iPhone · iPad",
+    "googlePlay": "Google Play",
+    "appStore": "App Store"
   },
   "stats": {
+    "eyebrow": "숫자로 보는 UniPad",
     "title": "수백만 유저가 선택한 UniPad",
     "subtitle": "2016년 출시 이후 전 세계 유저들과 함께 성장하고 있습니다.",
     "achievement": "Google Play 음악 게임 1위 달성",
@@ -58,6 +52,7 @@
     "featuredOn": "소개된 곳"
   },
   "features": {
+    "eyebrow": "기능",
     "title": "필요한 모든 것",
     "learnMore": "자세히 보기",
     "tryIt": "체험하기",
@@ -84,6 +79,7 @@
     }
   },
   "howItWorks": {
+    "eyebrow": "시작하기",
     "title": "몇 초 만에 시작하세요",
     "subtitle": "설치 없이 바로 플레이할 수 있습니다.",
     "step1": {
@@ -102,6 +98,7 @@
     "readGuide": "자세한 안내 보기"
   },
   "community": {
+    "eyebrow": "커뮤니티",
     "title": "커뮤니티에 참여하세요",
     "subtitle": "전 세계 크리에이터, 플레이어들과 소통하세요.",
     "discord": "Discord에서 대화하기",
@@ -114,6 +111,7 @@
     "githubDesc": "오픈소스 코드 기여하기"
   },
   "faq": {
+    "eyebrow": "자주 묻는 질문",
     "title": "자주 묻는 질문",
     "subtitle": "UniPad에 대해 궁금한 모든 것.",
     "moreQuestions": "더 궁금한 것이 있으신가요?",
@@ -153,7 +151,6 @@
     "title": "지금 바로 시작하세요",
     "subtitle": "회원가입도, 설치도 필요 없습니다. 바로 시작하세요.",
     "playNow": "웹에서 플레이",
-    "download": "앱 다운로드",
     "socialProof": "9.2M+ 다운로드 · Google Play 4.0★ · 완전 무료",
     "free": "완전 무료"
   },
@@ -372,7 +369,7 @@
         "mini": "프로그래머 모드에서는 처음에 불빛이 꺼질 수 있어요. 불빛이 있는 팩으로 확인해 주세요.",
         "pro": "Launchpad Pro와 Launchpad Pro MK3는 서로 다른 기종이에요.",
         "other": "목록에 같은 이름이 없으면 다른 기종을 대신 고르지 마세요. 이 안내는 새 기종의 호환을 보장하지 않아요.",
-        "web": "기종 변경은 다음 연결부터 적용돼요. 연결 중이면 ‘다시 연결’, 연결 전이면 ‘연결’을 눌러야 적용돼요. 도움말은 자동으로 연결하지 않아요.",
+        "web": "기종을 바꾸면 이미 연결된 장치에 바로 적용돼요. 연결 전이면 기종을 고른 뒤 ‘연결’을 눌러 주세요. 도움말은 자동으로 연결하지 않아요.",
         "guide": "제조사 설명 보기",
         "openFailed": "제조사 설명을 열 수 없어요. 이 도움말은 계속 읽을 수 있어요.",
         "close": "도움말 닫기"

@@ -4,7 +4,15 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-09-08
+Last verified: 2026-09-08. Sections marked *(re-read 2026-09-30)* were read again on that date at the latest
+`main` commit of each repository (unipad-android `20207d89`, unipad-ios `1ef848d`, unipad.io `1f13a4a`); the
+rest still date from 2026-09-08. "Sold build" means the commit is contained in the final release commit of a
+build on sale: Android 4.1.8 (115) `7d740029` (in a staged rollout next to 4.1.3), iOS 4.1.6 (build 7)
+`fe2e99c`, web `8019666` (`prod`, two commits behind baseline `3760b3c`). Everything in these sections was read from source;
+none of it was run on a device.
+
+Which devices, operating systems and browsers each platform runs on is not tracked here but in
+[`compatibility/`](compatibility/README.md) (support matrix, evidence, world-distribution sources).
 
 ## Repos
 
@@ -16,7 +24,7 @@ Last verified: 2026-09-08
 
 ## Screens
 
-Every Android screen has an iOS counterpart.
+Every Android screen has an iOS counterpart except the file-transfer screen.
 
 | Android | iOS |
 |---|---|
@@ -26,7 +34,7 @@ Every Android screen has an iOS counterpart.
 | FBStoreActivity | `Store/StoreView` |
 | SettingsActivity | `Settings/SettingsView` |
 | ThemeActivity | `Theme/ThemeView` |
-| TransferActivity | `Transfer/TransferView` |
+| TransferActivity | none on `main` *(re-read 2026-09-30)*: `Transfer/TransferView` was removed by unipad-ios#27 (2026-09-27) as unreachable; the sold 4.1.6 still contains the file |
 | MidiSelectActivity | `MidiSelect/MidiSelectView` |
 | ImportPackByUrlActivity | `Import/ImportByUrlView` |
 | MidiBannerController | `MidiConnectionBannerView` + `MidiBannerCoordinator` |
@@ -55,11 +63,15 @@ Note the Android class for the Pro MK3 is named `LaunchpadMK3`, not `LaunchpadPr
 - **Launchpad Pro MK2 (CFW), web: not supported.** The web `LaunchpadProfile` union has no
   `launchpad_pro_cfw`, so a CFW Pro falls back to the generic mapping and every pad is wrong.
   Android and iOS both have the driver.
+- **Launchpad Core CFW: iOS only** *(re-read 2026-09-30)*. `LaunchpadCoreCFWDriver` exists in unipad-ios and has no
+  Android or web counterpart (file listing of the three driver folders).
 - **CFW driver, iOS: ported, unverified on hardware.** `LaunchpadProCFWDriver`
   (unipad-ios, 2026-09-06) mirrors the Android note map and has unit tests for it,
   but nobody has plugged a Pro MK2 on the "Launchpad Open" firmware into an iPhone yet.
   Auto-detect keys on a CoreMIDI source name starting with "Launchpad Open".
-- **Dual-launchpad support.** Android only, still in review (#27); needs the contributor's rebase over the `MidiConnection` changes from #41 and #51.
+- **Dual-launchpad support: Android only** *(re-read 2026-09-30)*. Merged as unipad-android#64 on 2026-09-14 (replacing the
+  review-stage #27); it is in the 4.1.8 (115) sold build, not in 4.1.3, and in no iOS or web code (no dual or
+  secondary handling found in `Services/MIDI` or the web `MidiConnection.ts`). Never run with two physical pads.
 
 ## Engine
 
@@ -98,14 +110,21 @@ links, a volume slider, and persistence of the volume, watermark and feedback-li
 exist because the web player is a single page with a keyboard and no settings screen; the mobile
 apps keep those switches in the option panel and reset them per session.
 
-### Known remaining differences (2026-09-07 review, not yet closed)
+### Known remaining differences *(re-read 2026-09-30; first written in the 2026-09-07 review)*
 
-- **Android has no search on the pack list**; iOS and web do.
-- **Android sort options are three**; iOS offers five (play count, last opened).
-- **iOS `TransferView` is unreachable** (no navigation calls it), so the screen table above
-  overstates parity for that row.
-- **Deleting a pack leaves the database row on Android and iOS** and removes it on the web.
-- **Analytics events exist on the web only.**
+- **Android has no search on the pack list**; iOS (`MainViewModel.searchQuery`) and web do. Android's only search field is inside `TransferActivity`. Still open.
+- **Android sort options are three** (title, producer, download date); iOS offers five (adds play count, last opened). Still open.
+- **iOS has no file-transfer screen.** `TransferView` was removed from `main` by unipad-ios#27 (2026-09-27) as unreachable. The sold
+  4.1.6 still has the file and a navigation case for it; whether anything in that build navigates there was not checked.
+- **Deleting a pack now also removes the saved history row** (closed on `main`): unipad-android#105 and unipad-ios#32 both
+  landed after the final release commits (4.1.8 `7d740029`, 4.1.6 `fe2e99c`), so neither is in a sold build yet; the web already did.
+- **Analytics events differ by platform.** Web sends `pack_load`, `pad_press`, `autoplay_start`
+  (`src/lib/analytics/usageEvents.ts`). iOS sends `pack_import`, `pack_load`, `play_start`, `play_end`
+  (`Services/Analytics/UsageAnalytics.swift`, unipad-ios#19, 2026-09-25; its commit `f233f3b` is contained in the final
+  4.1.6 release commit, so the events are in the sold build).
+  Android sends none: the Firebase Analytics dependency is in `app/build.gradle` but no `logEvent` call exists in `app/src/main`.
+  The web file's comment about events "shared with the Android and iOS players" does not match the iOS event names.
+  How much of this reaches the analytics backend was not measured; local browser checks block all analytics requests.
 
 ## Slide across pads
 
@@ -113,7 +132,7 @@ Dragging a finger onto another pad plays it and releases the one it left.
 
 | Platform | Behaviour |
 |---|---|
-| Android | Opt-in: Settings > Play > "Slide across pads" (`PreferenceManager.slideMode`), off by default so a resting palm does not trigger runs. `SlideTouchOverlayView` over the grid, since 2026-09-06 (unipad-android#26). Ships after 4.1.5. |
+| Android | Opt-in: Settings > Play > "Slide across pads" (`PreferenceManager.slideMode`), off by default so a resting palm does not trigger runs. `SlideTouchOverlayView` over the grid, since 2026-09-06 (unipad-android#26). Present in the 4.1.8 (115) sold build *(re-read 2026-09-30)*. |
 | iOS | Always on (`MultiTouchView.touchesMoved`). |
 | Web | Always on (`PadGrid` uses `elementFromPoint` with pointer capture). |
 

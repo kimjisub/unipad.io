@@ -88,63 +88,13 @@ export default async function Home({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <section id="hero">
-        <HeroSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/20" />
-        <div className="w-1 h-1 rounded-full bg-accent/30" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/20" />
-      </div>
-
-      <section id="stats">
-        <StatsSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-secondary/15" />
-        <div className="w-1 h-1 rounded-full bg-secondary/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-secondary/15" />
-      </div>
-
-      <section id="features">
-        <FeaturesSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/15" />
-        <div className="w-1 h-1 rounded-full bg-accent/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/15" />
-      </div>
-
-      <section id="how-it-works">
-        <HowItWorksSection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-secondary/15" />
-        <div className="w-1 h-1 rounded-full bg-secondary/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-secondary/15" />
-      </div>
-
-      <section id="community">
-        <CommunitySection />
-      </section>
-
-      <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-r from-transparent to-accent/15" />
-        <div className="w-1 h-1 rounded-full bg-accent/25" />
-        <div className="h-px flex-1 max-w-[200px] bg-gradient-to-l from-transparent to-accent/15" />
-      </div>
-
-      <section id="faq">
-        <FaqSection />
-      </section>
-
-      <section id="cta">
-        <CtaSection />
-      </section>
+      <HeroSection />
+      <StatsSection />
+      <FeaturesSection />
+      <HowItWorksSection />
+      <CommunitySection />
+      <FaqSection />
+      <CtaSection />
     </div>
   );
 }

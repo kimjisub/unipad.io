@@ -9,6 +9,23 @@ Ship UniPad to Google Play (Android) and App Store Connect / TestFlight (iOS) fr
 machine using fastlane. All secrets live in 1Password and are injected at runtime — nothing
 sensitive is written to a repo or a commit.
 
+## How releases normally run
+
+Regular releases, rollout changes and review replies go through the workspace's release tools
+(`project/port/executors/run-release.sh`, `run-rollout.sh`, `reply-review.sh`). Each store call is
+wrapped in `project/port/executors/with-store-creds.sh android|ios|both -- <command>`, which:
+
+- reads 1Password with the machine's **service account token** (`OP_SERVICE_ACCOUNT_TOKEN`), not a
+  person's sign-in;
+- runs `unset OP_ACCOUNT` on purpose, so a personal account choice never applies to these reads;
+- exports `OP_VAULT` (the project's `[store_credentials] vault`), because a service account must
+  name the vault on every item read;
+- calls `scripts/op-bootstrap.sh <platform> deploy` and always runs `cleanup` on exit.
+
+Do not pin a personal account (`OP_ACCOUNT`) for this path. The manual steps in
+**Deploy — Android (manual)** and **Deploy — iOS (manual)** below are the **exception path**,
+for a person uploading by hand.
+
 ## Layout
 
 - `unipad-android/fastlane/` — `Appfile` + `Fastfile` (`build_only`, `deploy`, `promote`, `rollout`, `halt` lanes)
@@ -47,14 +64,27 @@ Then call `"$FL" <platform> <lane>`. `preflight.sh` prints which binary it resol
 
 Override item names with `OP_PLAY_JSON_ITEM` / `OP_ASC_KEY_ITEM` env vars if named differently.
 
-## Deploy — Android
+## Manual sign-in (exception path only)
+
+Both manual deploys below read 1Password as the signed-in person. This Mac has several personal
+1Password accounts signed in; if the default account changes, `op-bootstrap.sh` fails with
+`1Password item 'UniPad Play Service Account' not found` (or the ASC item) even though the item
+exists. Either sign in to that account again with `op signin --account my.1password.com` — the
+1Password CLI uses the most recently signed-in account unless a command names one, so later `op`
+commands use it too — or pin it for one command only by prefixing it:
+`SECRETS="$(OP_ACCOUNT=my.1password.com "$SD/scripts/op-bootstrap.sh" android deploy)"`.
+Do not `export OP_ACCOUNT` for the whole shell: `with-store-creds.sh` unsets it for its own reads,
+but every other `op` command you run by hand in that shell silently keeps using that account,
+which makes it hard to tell which account a command read from.
+
+## Deploy — Android (manual)
 
 Run from the workspace root (`~/GitHub/unipad`); every path below is anchored on `SD`.
 
 ```bash
 SD="$PWD/unipad.io/meta/store-deploy"
 FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fastlane"
-op vault list >/dev/null || op signin                 # 1Password reachable (see note below)
+op vault list >/dev/null || op signin                 # 1Password reachable (see "Manual sign-in")
 "$SD/scripts/preflight.sh" android                    # review version + git state
 
 # Assign first, then eval. `eval "$(...)"` on its own would eval the script's ERROR text
@@ -82,12 +112,12 @@ commit. Production is staged, and the three lanes below are the whole release pa
 `deploy track:production rollout:0.1` uploads straight to production at 10% instead; use it only
 when skipping internal is intended. Check `play.py vitals` for the new versionCode before widening.
 
-## Deploy — iOS
+## Deploy — iOS (manual)
 
 ```bash
 SD="$PWD/unipad.io/meta/store-deploy"
 FL="fastlane"; fastlane --version >/dev/null 2>&1 || FL="$(brew --prefix)/bin/fastlane"
-op vault list >/dev/null || op signin
+op vault list >/dev/null || op signin                 # 1Password reachable (see "Manual sign-in")
 "$SD/scripts/preflight.sh" ios
 
 # Prints `source .../fastlane/.secrets/asc.env`; that file exports ASC_KEY_ID / ASC_ISSUER_ID /

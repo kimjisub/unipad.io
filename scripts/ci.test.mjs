@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
 
 const root = new URL('../', import.meta.url);
 
@@ -32,14 +34,16 @@ test('the aggregate test command includes all existing test formats and tooling 
   }
 });
 
-test('CI runs browser checks and retains failure evidence', () => {
+test('browser checks run locally, not in CI', () => {
   const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
   const readme = readFileSync(new URL('README.md', root), 'utf8');
-  assert.match(workflow, /run: pnpm exec playwright install --with-deps chromium/);
-  assert.ok(workflow.indexOf('run: pnpm test:e2e') > workflow.indexOf('run: pnpm build'));
-  assert.match(workflow, /if: failure\(\)/);
-  assert.match(workflow, /uses: actions\/upload-artifact@v4/);
-  assert.match(workflow, /test-results\//);
-  assert.match(workflow, /playwright-report\//);
-  assert.ok(readme.includes('pnpm test:e2e'));
+  assert.doesNotMatch(workflow, /playwright|test:e2e/);
+  assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
+});
+
+test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {
+  const eslint = new ESLint({ cwd: fileURLToPath(root) });
+  for (const folder of ['test-results/', 'playwright-report/']) {
+    assert.ok(await eslint.isPathIgnored(`${folder}trace/assets/index.js`), `pnpm lint must skip ${folder}`);
+  }
 });

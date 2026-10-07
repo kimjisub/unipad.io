@@ -138,6 +138,14 @@ test('model-specific text follows explicit selection and Korean uses the approve
   view.rerender(wrapped({ requestedProfile: 'auto' }, 'ko'));
   assert.match(help.textContent, /선택한 기종: 자동 감지/);
   assert.match(help.textContent, /다른 기종을 대신 고르지/);
+  assert.match(help.textContent, /기종을 바꾸면 이미 연결된 장치에 바로 적용돼요\. 연결 전이면 기종을 고른 뒤 ‘연결’을 눌러 주세요\. 도움말은 자동으로 연결하지 않아요\./);
+  assert.doesNotMatch(help.textContent, /다음 연결부터/);
+});
+
+test('English web copy says a model change applies immediately to a connected device', () => {
+  const { help } = openHelp(render(wrapped({ midiConnected: true })));
+  assert.match(help.textContent, /Changing the model applies it immediately to devices that are already connected\. If disconnected, choose a model and press Connect\. This guide does not connect automatically\./);
+  assert.doesNotMatch(help.textContent, /next connection/);
 });
 
 test('all existing models get only their approved additional help', () => {
