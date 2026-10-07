@@ -207,7 +207,9 @@ For both a 4-column/3-row pack and an 8×8 pack, the shape tests import otherwis
 identical `squareButton=true` and `false` packs at compact phone (667×320),
 phone (844×390), and laptop (1280×800) sizes. They attach both screenshots and
 all actual pad bounds before deciding applicability. Matching rendered cell
-sizes mark the rectangular edge comparison as not applicable. If sizes differ,
+sizes mark the rectangular edge comparison as not applicable; edge and corner
+presses for both settings are still checked by `rectangular-pad-layout.spec.ts`.
+If sizes differ,
 every cell must remain visible and hit-testable, and native mouse presses two
 CSS pixels inside the grid's four edges and four corners must request only the
 mapped pad, light it, and stop it on release. This does not certify WebKit
