@@ -54,6 +54,7 @@ for (const cachedCount of [0, 17]) {
     const store = page.getByRole('button', { name: /^Store/ });
     if (cachedCount) await expect(store).toContainText(String(cachedCount));
     else await expect(store).toHaveText('Store');
+    await page.getByRole('option', { name: 'Browser Test Pack by Browser Tests', exact: true }).click();
     await page.getByRole('button', { name: 'Play Browser Test Pack', exact: true }).click();
     await expect(page.locator('[data-pad]')).toHaveCount(64);
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
