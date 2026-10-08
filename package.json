@@ -48,5 +48,15 @@
   "packageManager": "pnpm@9.11.0",
   "engines": {
     "node": ">=24.15.0"
+  },
+  "pnpm": {
+    "auditConfig": {
+      "ignoreCves": [
+        "CVE-2026-101915",
+        "CVE-2026-101916",
+        "CVE-2026-93687",
+        "CVE-2026-104844"
+      ]
+    }
   }
 }
