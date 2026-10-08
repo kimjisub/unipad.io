@@ -5,6 +5,21 @@ const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
 const STORE_CACHE_KEY = 'store_items_cache_v1';
 const STORE_COUNT_CACHE_KEY = 'store_count_cache_v1';
+const STORE_NETWORK_IDLE_TIMEOUT_MS = 5000;
+
+async function withNetworkDeadline<T>(pending: Promise<T>, onTimeout?: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error('Store connection timed out.'));
+        onTimeout?.();
+      }, STORE_NETWORK_IDLE_TIMEOUT_MS);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface StoreItem {
   code: string;
@@ -120,30 +135,32 @@ export async function fetchStoreItems(): Promise<StoreItem[]> {
 }
 
 export async function fetchStoreItemsResult(): Promise<StoreItemsResult> {
-  const services = await initFirebaseServices();
-  const db = services?.database;
-  if (!db) {
-    return { items: loadCachedStoreItems(), fromCache: true };
-  }
-
   try {
-    const snapshot = await get(ref(db, 'store'));
-    if (!snapshot.exists()) {
-      return { items: loadCachedStoreItems(), fromCache: true };
-    }
-
-    const items: StoreItem[] = [];
-    snapshot.forEach((child) => {
-      const normalized = normalizeStoreItem(child.val(), child.key ?? '');
-      if (normalized) items.push(normalized);
-    });
-
-    const normalizedItems = normalizeSortAndDedupe(items);
-    saveCachedStoreItems(normalizedItems);
-    return { items: normalizedItems, fromCache: false };
+    return await withNetworkDeadline(fetchLiveStoreItems());
   } catch {
     return { items: loadCachedStoreItems(), fromCache: true };
   }
+}
+
+async function fetchLiveStoreItems(): Promise<StoreItemsResult> {
+  const services = await initFirebaseServices();
+  const db = services?.database;
+  if (!db) return { items: loadCachedStoreItems(), fromCache: true };
+
+  const snapshot = await get(ref(db, 'store'));
+  if (!snapshot.exists()) {
+    return { items: loadCachedStoreItems(), fromCache: true };
+  }
+
+  const items: StoreItem[] = [];
+  snapshot.forEach((child) => {
+    const normalized = normalizeStoreItem(child.val(), child.key ?? '');
+    if (normalized) items.push(normalized);
+  });
+
+  const normalizedItems = normalizeSortAndDedupe(items);
+  saveCachedStoreItems(normalizedItems);
+  return { items: normalizedItems, fromCache: false };
 }
 
 export async function subscribeStoreItems(
@@ -229,6 +246,24 @@ export async function downloadStoreItem(
   onProgress?: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort(signal?.reason);
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    return await downloadStoreItemData(item, onProgress, controller);
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
+}
+
+async function downloadStoreItemData(
+  item: StoreItem,
+  onProgress: ((percent: number) => void) | undefined,
+  controller: AbortController,
+): Promise<ArrayBuffer> {
+  const signal = controller.signal;
+  const waitForNetwork = <T>(pending: Promise<T>) => withNetworkDeadline(pending, () => controller.abort());
   const proxyUrl = getStoreProxyUrl(item);
   const directUrl = getStoreDownloadUrl(item);
   let response: Response | null = null;
@@ -236,25 +271,26 @@ export async function downloadStoreItem(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      response = await fetch(proxyUrl, {
+      response = await waitForNetwork(fetch(proxyUrl, {
         method: 'GET',
         signal,
         cache: 'no-store',
-      });
+      }));
       if ([429, 502, 503, 504].includes(response.status) && attempt === 0) {
         await sleep(350);
         continue;
       }
       if ([400, 401, 403].includes(response.status)) {
         // Fallback to direct download if proxy rejects host/url.
-        response = await fetch(directUrl, {
+        response = await waitForNetwork(fetch(directUrl, {
           method: 'GET',
           signal,
           cache: 'no-store',
-        });
+        }));
       }
       break;
     } catch (error) {
+      if (error instanceof Error && /timed out/i.test(error.message)) throw error;
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new Error('Download was canceled.');
       }
@@ -281,7 +317,7 @@ export async function downloadStoreItem(
   const total = Number(response.headers.get('content-length') ?? 0);
   const reader = response.body?.getReader();
   if (!reader) {
-    return response.arrayBuffer();
+    return waitForNetwork(response.arrayBuffer());
   }
 
   const chunks: Uint8Array[] = [];
@@ -289,7 +325,7 @@ export async function downloadStoreItem(
   let pseudoProgress = 3;
   onProgress?.(pseudoProgress);
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await waitForNetwork(reader.read());
     if (done) break;
     if (!value) continue;
     chunks.push(value);

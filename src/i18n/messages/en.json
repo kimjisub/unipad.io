@@ -260,6 +260,8 @@
       "confirmDeletionAriaLabel": "Confirm deletion"
     },
     "store": {
+      "connectionFailed": "Cannot connect to the store. Check your connection and try again.",
+      "downloadConnectionFailed": "Cannot connect to the download source. Check your connection and try again.",
       "title": "Store",
       "ariaLabel": "Store",
       "loading": "Loading store...",
