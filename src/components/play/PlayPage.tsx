@@ -31,7 +31,6 @@ import {
 import {
   downloadStoreItem,
   fetchStoreItems,
-  loadCachedStoreCount,
   getStoreYoutubeSearchUrl,
   subscribeStoreCount,
   subscribeStoreItems,
@@ -104,6 +103,7 @@ export function PlayPage() {
   const [storeProgress, setStoreProgress] = useState(0);
   const [storeCount, setStoreCount] = useState(0);
   const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
+  const storeVisitedRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
 
   /**
@@ -237,14 +237,24 @@ export function PlayPage() {
     // Store metadata must never hold up local packs, even while Firebase is initializing.
     (async () => {
       let updateVersion = 0;
-      const updateCount = async (count: number) => {
+      let receivedLiveCount = false;
+      const updateCount = async (count: number, fromCache: boolean) => {
         if (cancelled) return;
         const version = ++updateVersion;
         setStoreCount(count);
+        const firstLiveCount = !fromCache && !receivedLiveCount;
+        if (!fromCache) receivedLiveCount = true;
+        // A visit before the first live count has already acknowledged that store.
+        if (firstLiveCount && storeVisitedRef.current) {
+          await setSetting('prevStoreCount', String(count)).catch(() => {});
+          if (!cancelled && version === updateVersion) setHasStoreUpdate(false);
+          return;
+        }
         const prev = Number(await getSetting('prevStoreCount').catch(() => null) ?? '0');
-        if (!cancelled && version === updateVersion) setHasStoreUpdate(count > prev);
+        if (!cancelled && version === updateVersion) {
+          setHasStoreUpdate(count > prev && !(fromCache && storeVisitedRef.current));
+        }
       };
-      updateCount(loadCachedStoreCount());
       const unsub = await subscribeStoreCount(updateCount);
       if (cancelled) unsub();
       else unsubscribe = unsub;
@@ -684,6 +694,7 @@ export function PlayPage() {
   }, []);
 
   const handleOpenStore = useCallback(() => {
+    storeVisitedRef.current = true;
     setStoreOpen(true);
     setStoreLoading(true);
     setStoreError(null);
