@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@radix-ui/themes": "^3.1.4",
-    "@tailwindcss/typography": "^0.5.16",
     "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "firebase": "^12.19.0",
@@ -31,6 +30,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@tailwindcss/typography": "^0.5.16",
     "@testing-library/react": "^16.3.3",
     "@types/mdx": "^2.0.13",
     "@types/node": "^20",
@@ -53,9 +53,7 @@
     "auditConfig": {
       "ignoreCves": [
         "CVE-2026-101915",
-        "CVE-2026-101916",
-        "CVE-2026-93687",
-        "CVE-2026-104844"
+        "CVE-2026-101916"
       ]
     }
   }
