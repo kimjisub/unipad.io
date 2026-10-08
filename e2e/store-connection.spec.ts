@@ -65,6 +65,8 @@ test('offers a retry for a shared link when Firebase is blocked', async ({ page,
   await verifyDatabase(page);
   database.block();
   await page.goto('/play?code=browser-pack');
+  // Shared lookup starts after local storage restoration, when the list appears.
+  await expect(page.getByRole('button', { name: /^Store/ })).toBeVisible();
   try {
     await expect(page.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
     await expect(page.getByText('Shared pack not found in store.')).toHaveCount(0);
