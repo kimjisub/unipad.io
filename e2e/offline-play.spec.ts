@@ -45,6 +45,8 @@ async function importSavedPack(page: Page) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expect(page.locator('[data-pad]')).toHaveCount(64);
+  // The pads render before saving finishes; the pack URL confirms persistence.
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.goto('/');
 }
 
