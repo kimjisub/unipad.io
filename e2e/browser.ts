@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
   audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[] };
@@ -26,6 +26,15 @@ export const test = base.extend<{ checkedPage: void }>({
       return url.origin === baseURL ? route.continue() : route.abort('blockedbyclient');
     });
     await context.routeWebSocket(/.*/, socket => socket.close());
+    await installBrowserProbe(page);
+    await use();
+    expect(errors, 'uncaught browser errors').toEqual([]);
+  }, { auto: true }],
+});
+
+export { expect };
+
+export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
       const audio: BrowserProbe['audio'] = { decoded: [], starts: [], stops: [] };
       const midi: BrowserProbe['midi'] = { requests: [], messages: [], emit: () => {} };
@@ -64,9 +73,4 @@ export const test = base.extend<{ checkedPage: void }>({
         value: async (options: MIDIOptions) => { midi.requests.push(options); return access; },
       });
     });
-    await use();
-    expect(errors, 'uncaught browser errors').toEqual([]);
-  }, { auto: true }],
-});
-
-export { expect };
+}

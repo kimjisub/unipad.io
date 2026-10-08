@@ -94,8 +94,26 @@ pnpm build
 ### Browser playback checks
 
 `pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Build first with the fake
-Firebase configuration above. The suite supplies inert responses for Firebase analytics configuration and
+headless browser tests, then stops its server. Use the fake Firebase configuration
+above, with a syntactically valid, unused database hostname for these tests:
+
+```bash
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://unipad-browser-test.firebaseio.com pnpm build
+pnpm test:e2e
+```
+
+The database hostname lets the SDK initialize a database client; all connections
+are intercepted locally. Each offline test first requires a working database
+subscription, then imports a pack through the normal file input before blocking
+external requests and reopening the saved list. A build with the CI-only
+`https://unipad-ci.invalid` database URL fails these checks with a message
+pointing to the browser-build command above; it cannot silently pass as offline.
+The offline tests abort every external HTTP request and
+WebSocket, open a saved pack within five seconds, and check real audio start/stop
+calls. Separate tests supply realtime database messages to check the cached
+store badge is refreshed, and that the first delayed count does not announce
+old items after a store visit while a later increase still does.
+The suite supplies inert responses for Firebase analytics configuration and
 installation, blocks all other non-local HTTP requests and WebSocket
 connections, and never needs the store or analytics servers.
 
