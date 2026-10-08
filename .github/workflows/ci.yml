@@ -51,6 +51,17 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Fails on any known vulnerability in the production dependencies. The CVEs ignored in
+      # package.json (pnpm.auditConfig.ignoreCves) have no fix reachable today:
+      # - CVE-2026-101915, CVE-2026-101916 (@grpc/grpc-js): firebase, up to 13.0.0, pins
+      #   ~1.9.0 through @firebase/firestore, and the site never imports Firestore.
+      # - CVE-2026-93687 (braces): no patched release exists; reached only through the
+      #   Tailwind CSS 3 build tooling.
+      # - CVE-2026-104844 (postcss-selector-parser): @tailwindcss/typography pins 6.0.10 and
+      #   Tailwind CSS 3 requires 6.x; both run only at build time.
+      # Drop an entry once its upgrade path exists.
+      - name: Audit production dependencies
+        run: pnpm audit --prod
       - name: Type check
         run: pnpm exec tsc --noEmit
       - name: Lint
