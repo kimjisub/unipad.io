@@ -22,6 +22,7 @@ drifts is detected (see [Keeping the copies in step](#keeping-the-copies-in-step
 | `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
 | `selftest.mjs` | Tests of the tooling itself: `corpus.json` is what the sources build, and what `report.mjs` may and may not count. `pnpm test:unipack` runs it. |
+| `diagnostics/` | The web parser's warnings as written, and a separate tool that explains its number warnings as format or range. It never changes a result or a status. See its README. |
 
 ## Running it
 
