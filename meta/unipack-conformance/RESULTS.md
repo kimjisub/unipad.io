@@ -1,35 +1,57 @@
-# Results (2026-10-02, Korea time)
+# Results (2026-10-11, Korea time)
 
-Corpus `30ad4442b7ab…` (sha256 of `corpus.json`), 124 cases, based on unipad-android 20207d89,
-unipad-ios 6244e49, unipad.io 8019666 plus the recovered conformance files and the expectation correction
-below. Regenerate this table with
-`report.mjs` (README, "Running it"). It describes these 124 cases only; it does not show that every
+Corpus `c30e75b9985e…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 1899614f,
+unipad-ios c6a6107 and unipad.io f8f27e0 plus the real-pack shape cases below. Regenerate this table
+with `report.mjs` (README, "Running it"). It describes these 132 cases only; it does not show that every
 UniPack is compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 102 | 1 | 0 | 0 | 21 | 2026-10-01 17:55:20 |
-| iOS | 93 | 6 | 0 | 0 | 25 | 2026-10-01 17:57:03 |
-| Web | 87 | 16 | 0 | 0 | 21 | 2026-10-01 17:52:42 |
+| Android | 110 | 0 | 0 | 0 | 22 | 2026-10-10 22:56:39 |
+| iOS | 104 | 0 | 0 | 0 | 28 | 2026-10-10 23:33:47 |
+| Web | 95 | 15 | 0 | 0 | 22 | 2026-10-10 23:04:55 |
 
-Pass on all three platforms: 76 of 124. Formats exercised: info, keySound, keyLED, autoPlay (both
-spellings of every command), the colour palette, and the sound, LED and autoPlay runners (see README for
-the list, and what was not exercised).
+Pass on all three platforms: 89 of 132. Formats exercised: info, keySound, keyLED, autoPlay (both
+spellings of every command), the colour palette, the sound, LED and autoPlay runners, an 8 x 8 grid, an
+MP3 sound, and lights that loop while autoPlay plays (see README for the list, and what was not
+exercised).
 
-- **Unverified, 21 on every platform:** cases where no doc or stated intent decides the expected result
-  (`undetermined`). Their observed results agree on all three platforms for 17 of them and differ for 4
-  (INF-007, INF-010, INF-015, KS-018).
-- **Unverified, iOS only (4):** RUN-A-001 and RUN-A-002 (the iOS `AutoPlayRunner` reads the wall clock and
-  sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared by the main screen after the
-  play screen is left, a screen-level step the harness does not drive). None of the four is known to
-  fail on iOS; they are not measured.
+- **Unverified, 22 on every platform:** cases where no doc or stated intent decides the expected result
+  (`undetermined`). Their observed results agree on all three platforms for 17 of them and differ for 5
+  (INF-007, INF-010, INF-015, KS-018, KL-024).
+- **Unverified, iOS only (6):** RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 (the iOS `AutoPlayRunner`
+  reads the wall clock and sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared
+  by the main screen after the play screen is left, a screen-level step the harness does not drive). None
+  of the six is known to fail on iOS; they are not measured.
 - **Fail** means the platform's result differs from the expected one. Each is pinned in
   `divergences.json` with the observed result and its cause; the platform suites stay green while a
-  pinned result is unchanged and go red when it changes or disappears. The differences are listed in
-  `meta/PARITY.md`, "Open differences found by the corpus", and each becomes a separate narrow fix.
+  pinned result is unchanged and go red when it changes or disappears. The 15 web differences are listed
+  in `meta/PARITY.md`, "Open differences found by the corpus", and each becomes a separate narrow fix.
 - A pass on the runner cases (RUN-*) shows each platform at the seam described in README, "What each
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
+
+## Changes after the real-pack shape cases
+
+The previous canonical corpus SHA256 was
+`3c8ec4875cffab4dabbd454f32fbb7f2b30b5d977b1d25ca0a0b8b21ebc251b9` (124 cases). Eight cases were added
+for shapes real packs use: RP-001 and RUN-RP-001 (an 8 x 8 grid to its last pad), RP-003 and RUN-RP-002
+(an MP3 sound read and started), RUN-RP-003 and RUN-RP-004 (lights that repeat twice or loop endlessly
+while autoPlay presses and releases the pad, then leaving the screen), RP-004 (`squareButton=false`), and
+RP-002 (five-part keyLED file names, undetermined; all three platforms read both files and queue them in
+name order). Every new expected result comes from a format doc or an intent already stated for an
+existing case; none was taken from what the platforms returned. All seven determined cases pass on
+every platform that can observe them, so no difference was pinned.
+
+The 124 earlier cases are unchanged: ids, input files, input fingerprints, expected results, bases,
+pinned differences and `unobserved` reasons were compared field by field with the `3c8ec487…` corpus and
+none differs. The new `tone-440-mp3` asset is added beside the three earlier ones, which are unchanged.
+
+`corpus.sha256` now travels with `corpus.json`, and each harness refuses a copy without it or one that
+does not hash to it. On each platform a copy with one byte changed and a copy without `corpus.sha256`
+failed the suite; a 124-case copy with its own matching `corpus.sha256` passed the suite and failed
+`sync.mjs --check`; the restored copy passed both. On the base harness (unipad.io f8f27e0) the copy with
+one byte changed in a case title passed all 136 tests.
 
 ## Changes after the web coordinate fix
 
@@ -147,6 +169,18 @@ review. What changed, and why:
 
 ## How the checks were run
 
+On 2026-10-11 (corpus `c30e75b9985e…`):
+
+| Platform | Command | Result |
+|---|---|---|
+| Web | `pnpm test:unipack` | 276 tests pass; the tooling subprocess runs 21 tests |
+| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` | 132 case tests + 10 checks that can fail, all pass |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test-without-building -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests` (iPhone 17 Pro simulator, iOS 27.0, Xcode 27.0) | 23 tests pass, 132 corpus cases included, read from the test bundle |
+
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash.
+
+On 2026-10-02 (corpus `30ad4442b7ab…`):
+
 | Platform | Command | Result |
 |---|---|---|
 | Web | `pnpm test:unipack` | 175 tests pass; the tooling subprocess runs 20 tests, including the new warning-evidence regression |
@@ -209,5 +243,6 @@ hangs the main thread for good when a pad's sound is stopped while that sound is
 
 ## Rights of the sample sounds
 
-Two 10 ms sine tones (440 Hz, 660 Hz) and 10 ms of silence, synthesized by `lib.mjs`. No third-party audio.
+Two 10 ms sine tones (440 Hz, 660 Hz) and 10 ms of silence, synthesized by `lib.mjs`, and the 440 Hz
+tone encoded as MP3 with LAME 3.100. No third-party audio.
 No licence beyond the repository's was chosen for them; the owner has not been asked.
