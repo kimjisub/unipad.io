@@ -189,3 +189,50 @@ the shared touch helpers. Headless Chromium never hides the tab or blurs the
 window by itself, so test G sends the `visibilitychange` and `blur` events a
 browser sends when the notification shade or another app takes over. These are
 synthetic-input results; real fingers on a physical device are not certified.
+
+### Held resize and input boundary checks
+
+`e2e/input-boundaries.spec.ts` runs in the default local `pnpm test:e2e`
+suite. `input-fixture.ts` builds a two-chain looping pack automatically from
+`multi-touch.uni`'s original PCM tone. Every pad and chain has a different
+buffer duration, so an unexpected playback request identifies the wrong mapping.
+The unchanged press overlay distinguishes held and released pads.
+
+The resize tests first prove a pad is sounding and lit, keep the input down
+through phone portrait (390×844), phone landscape (844×390), tablet (1180×820)
+and laptop (1280×800) viewport round trips, then release and play another pad.
+The existing grid remains mounted beneath the portrait overlay. These are
+viewport changes, not a physical device rotation test. Mouse dragging and chain
+clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
+touch resizing and both mouse/touch hold orders: both inputs must succeed and
+remain active together, and releasing the second must preserve the first.
+
+WebKit's public Playwright touchscreen API only supports `tap()`; creating a
+CDP session fails because CDP is Chromium-only. Held touch resizing and mixed
+input in WebKit are explicitly skipped as unverified, not counted as passes.
+Screenshots and playback request records are attached during held and released
+states. No engine methods or app test hooks are used to inject these inputs.
+Physical fingers, physical rotation, speaker quality and latency remain outside
+these automated checks.
+
+The margin tests keep a browser-native background touch down while another
+finger selects chain 2 exactly once, then verify the new chain's pad mapping
+and complete cleanup. They run at the existing phone and tablet sizes in
+Chromium; WebKit's two-contact margin case remains unverified for the same
+API limitation.
+
+For both a 4-column/3-row pack and an 8×8 pack, the shape tests import otherwise
+identical `squareButton=true` and `false` packs at compact phone (667×320),
+phone (844×390), and laptop (1280×800) sizes. They attach both screenshots and
+all actual pad bounds before deciding applicability. Matching rendered cell
+sizes mark the rectangular edge comparison as not applicable; edge and corner
+presses for both settings are still checked by `rectangular-pad-layout.spec.ts`.
+If sizes differ,
+every cell must remain visible and hit-testable, and native mouse presses two
+CSS pixels inside the grid's four edges and four corners must request only the
+mapped pad, light it, and stop it on release. This does not certify WebKit
+multi-touch or physical fingers. Pointer records observe browser events,
+including their trusted flag and input type; they do not call input handlers.
+
+Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
+The default suite includes all these cases; the GitHub workflow is unchanged.
