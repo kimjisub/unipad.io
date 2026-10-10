@@ -355,6 +355,24 @@
         "matrix": "4-bank grid mapping with 32 function LED slots.",
         "master_keyboard": "Input-only keyboard mapping. No LED output.",
         "none": "Generic fallback. No device-specific SysEx or Android driver mapping."
+      },
+      "help": {
+        "title": "Connection and light help",
+        "selectedModel": "Selected model: {model}",
+        "common": "The selected model does not confirm the actual device. Lights being off alone do not tell you whether the connection succeeded or failed.",
+        "notListedTitle": "My device is not listed",
+        "notListedBody": "Check the cable and connection. Compare the name on your device with the selected model.",
+        "noLightsTitle": "Connected, but no lights",
+        "noLightsBody": "Check whether the on-screen pads and sound respond, and whether the pack contains light data. You can use a pack you already have.",
+        "closesTitle": "The app closes unexpectedly",
+        "closesBody": "Disconnect the device and note the browser name and version, phone or computer model, operating system, and the step where it closed. You do not need to repeat the crash.",
+        "mini": "In Programmer mode, the lights may initially be off. Check with a pack that includes lights.",
+        "pro": "Launchpad Pro and Launchpad Pro MK3 are different models.",
+        "other": "If the same model is not listed, do not choose a different model as a substitute. This guide does not confirm compatibility with new models.",
+        "web": "Changing the model applies it immediately to devices that are already connected. If disconnected, choose a model and press Connect. This guide does not connect automatically.",
+        "guide": "Read the manufacturer's guide",
+        "openFailed": "Could not open the manufacturer's guide. You can continue reading this help.",
+        "close": "Close help"
       }
     },
     "player": {
