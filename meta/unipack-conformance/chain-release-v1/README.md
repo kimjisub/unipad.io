@@ -1,9 +1,7 @@
 # Chain release expectations, version 1
 
-This is the separate synthetic corpus for [JIS-339](/JIS/issues/JIS-339), using
-[JIS-325's approved plan](/JIS/issues/JIS-325#document-plan), revision
-`b2e2b2fc-98b0-4564-ac97-cbe27b4aacab`, approval comment
-`051f89a5-7015-46ad-845a-22da927f4b42`.
+This is a separate synthetic corpus for what should happen when a pad is
+released after its chain changes.
 
 It supplies shared inputs and authored expectations for Android, iOS and web.
 It does **not** report a platform pass, actual listening, physical multitouch,
@@ -121,7 +119,7 @@ platform result rows or historical rate recomputation are supplied here.
 
 | Path | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `expectations.json` | 26509 | `176a8eb31d8792887f00a20ba924373119ca9a601849dc647431afc7f0c922ca` |
+| `expectations.json` | 26350 | `3aa66349d27c751938e6f86267b5ad0ac653828288d25a3777b7c4f0fbdf7fe0` |
 | `packs/delayed.uni` | 27321 | `7f8647fc894b4226df180061d94febaa9306c0a2c1a3d019299b47a6c56c7236` |
 | `packs/manual.uni` | 27318 | `31b158622efea7d779b673ecea3c72906c3764a7fbae16408060eb4e0f50931d` |
 | `sources/delayed/info` | 103 | `fc11289aa0b46a538363af040596397f6cc7197e6bec86f13e61630361f4200a` |
