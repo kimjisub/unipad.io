@@ -29,18 +29,39 @@ jobs:
       NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
       NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
     steps:
+      - name: Name the initial branch for checkout
+        run: git config --global init.defaultBranch main
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record start time
         run: echo "CI_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 9.11.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.15.0
-          cache: pnpm
+      # Installs the pnpm version pinned in package.json's packageManager field. A global npm
+      # install keeps pnpm under node_modules, where Node does not flag its url.parse() use.
+      - name: Set up pnpm
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Fails on any known vulnerability in the production dependencies. The CVEs ignored in
+      # package.json (pnpm.auditConfig.ignoreCves) have no fix reachable today:
+      # - CVE-2026-101915, CVE-2026-101916 (@grpc/grpc-js): firebase, up to 13.0.0, pins
+      #   ~1.9.0 through @firebase/firestore, and the site never imports Firestore.
+      # - CVE-2026-93687 (braces): no patched release exists; reached only through the
+      #   Tailwind CSS 3 build tooling.
+      # - CVE-2026-104844 (postcss-selector-parser): @tailwindcss/typography pins 6.0.10 and
+      #   Tailwind CSS 3 requires 6.x; both run only at build time.
+      # Drop an entry once its upgrade path exists.
+      - name: Audit production dependencies
+        run: pnpm audit --prod
       - name: Type check
         run: pnpm exec tsc --noEmit
       - name: Lint
