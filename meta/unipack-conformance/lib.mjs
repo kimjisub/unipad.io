@@ -1,12 +1,14 @@
 // Shared pieces of the conformance corpus: generated sound assets, the input fingerprint, and the
 // builders that write expected results in the normalized form every platform harness emits.
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 export const SCHEMA = 'unipad-conformance/1';
 
 // ---------------------------------------------------------------------------------------------
 // Sound assets. Only synthesized signals: a 10 ms sine at two pitches and 10 ms of silence,
-// 8 kHz mono unsigned 8-bit PCM. Nothing is taken from a pack, a song or the internet.
+// 8 kHz mono unsigned 8-bit PCM, and the 440 Hz sine encoded as MP3. Nothing is taken from a pack, a
+// song or the internet.
 // ---------------------------------------------------------------------------------------------
 
 const SAMPLE_RATE = 8000;
@@ -38,10 +40,33 @@ function silence() {
   return wav(new Uint8Array((SAMPLE_RATE * DURATION_MS) / 1000).fill(128));
 }
 
+// The MP3 is kept as encoded bytes (assets/tone-440.mp3) rather than encoded at build time, so a machine
+// without the encoder builds the same corpus. To make it again from the tone-440 bytes above:
+//   lame --silent --resample 44.1 -b 64 --cbr --noreplaygain tone-440.wav tone-440.mp3   (LAME 3.100)
+const MP3_SOURCE_SHA256 = 'c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d';
+const MP3_SHA256 = '3feed8a87e71a319e76ffb515dff4aed66185fc93028634a89e717b80c5fd013';
+
+/** An MPEG audio frame header starts with 11 set sync bits; a renamed WAV or a text file does not. */
+export function startsWithMpegFrame(bytes) {
+  return bytes.length >= 4 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+}
+
+function storedMp3() {
+  if (sha256(sine(440)) !== MP3_SOURCE_SHA256) throw new Error('tone-440 changed; encode assets/tone-440.mp3 again from it (see lib.mjs)');
+  const bytes = readFileSync(new URL('./assets/tone-440.mp3', import.meta.url));
+  if (sha256(bytes) !== MP3_SHA256) throw new Error(`assets/tone-440.mp3 hashes to ${sha256(bytes)}, lib.mjs records ${MP3_SHA256}`);
+  if (!startsWithMpegFrame(bytes)) throw new Error('assets/tone-440.mp3 does not start with an MPEG audio frame');
+  return bytes;
+}
+
 export const ASSET_GENERATORS = {
   'tone-440': { describe: '10 ms sine, 440 Hz, 8 kHz mono u8 PCM WAV', make: () => sine(440) },
   'tone-660': { describe: '10 ms sine, 660 Hz, 8 kHz mono u8 PCM WAV', make: () => sine(660) },
   'silence-10ms': { describe: '10 ms of silence (u8 value 128), 8 kHz mono u8 PCM WAV', make: silence },
+  'tone-440-mp3': {
+    describe: `tone-440 (sha256 ${MP3_SOURCE_SHA256}) encoded by LAME 3.100: lame --silent --resample 44.1 -b 64 --cbr --noreplaygain; MPEG-1 Layer III, 44.1 kHz mono, stored bytes`,
+    make: storedMp3,
+  },
 };
 
 export function buildAssets() {
@@ -93,7 +118,7 @@ export function fingerprint(files, assets) {
 export const STD_INFO = ['title=Conformance', 'producerName=UniPad Conformance', 'buttonX=4', 'buttonY=3', 'chain=2', 'squareButton=true'].join('\n');
 export const DEFAULT_INFO = { title: 'Conformance', producerName: 'UniPad Conformance', buttonX: 4, buttonY: 3, chain: 2, squareButton: true };
 
-const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440' };
+const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440', 'a.mp3': 'tone-440-mp3' };
 
 /**
  * `info`/`keySound`: string, or null to leave the file out. `sounds`: names under sounds/ (default

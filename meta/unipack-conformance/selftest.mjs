@@ -4,15 +4,15 @@
 // src/lib/unipack/conformance.test.ts). Alone: node --test meta/unipack-conformance/selftest.mjs
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { buildCorpus, serialize } from './build-corpus.mjs';
-import { buildAssets, fingerprint } from './lib.mjs';
+import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
+import { ASSET_GENERATORS, buildAssets, fingerprint, sha256, startsWithMpegFrame } from './lib.mjs';
 import { buildReport, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
-import { COPY_PATHS, differences } from './sync.mjs';
+import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const canonical = loadCanonical();
@@ -51,8 +51,16 @@ const [determined, another] = plain;
 const undetermined = corpus.cases.find((c) => c.expectation === 'undetermined');
 const statusesOf = (judged) => [...new Set([...judged.values()].map((v) => v.status))];
 
-test('corpus.json is what the sources build', () => {
-  assert.equal(readFileSync(join(here, 'corpus.json'), 'utf8'), serialize(buildCorpus()));
+test('corpus.json is what the sources build, and corpus.sha256 is its hash', () => {
+  const text = serialize(buildCorpus());
+  assert.equal(readFileSync(join(here, 'corpus.json'), 'utf8'), text);
+  assert.equal(readFileSync(join(here, 'corpus.sha256'), 'utf8'), digestLine(Buffer.from(text)));
+});
+
+test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
+  const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
+  assert.ok(startsWithMpegFrame(mp3));
+  assert.ok(!startsWithMpegFrame(ASSET_GENERATORS['tone-440'].make()));
 });
 
 test('ignored or skipped lines do not establish an undocumented warning expectation', () => {
@@ -223,16 +231,47 @@ test('the table says when a result file was written and whether that run asserte
   assert.match(text, /\nios\s+no results given\n/);
 });
 
-test('the sync check notices a missing or drifted copy', () => {
+// What each harness checks before it runs a case: the corpus.json it read hashes to its corpus.sha256.
+const copyIsSelfConsistent = (dir) => readFileSync(join(dir, 'corpus.sha256'), 'utf8') === digestLine(readFileSync(join(dir, 'corpus.json')));
+
+test('the sync check fails on a drifted, missing or outdated copy and passes once it is restored', () => {
   const root = mkdtempSync(join(tmpdir(), 'unipack-sync-'));
+  const dir = join(root, COPY_DIRS.android);
+  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, ...args], { encoding: 'utf8' });
+  const restore = () => { for (const name of COPIED_FILES) writeFileSync(join(dir, name), readFileSync(join(here, name))); };
   try {
-    assert.equal(differences({ android: root }).length, 1);
-    const target = join(root, COPY_PATHS.android);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, readFileSync(join(here, 'corpus.json')));
+    assert.equal(differences({ android: root }).length, COPIED_FILES.length);
+    assert.equal(sync().status, 0);
     assert.deepEqual(differences({ android: root }), []);
-    writeFileSync(target, `${readFileSync(target, 'utf8')} `);
-    assert.equal(differences({ android: root }).length, 1);
+
+    // 1. one byte of the copy changed: the copy no longer matches its hash, and the sync check fails
+    const bytes = readFileSync(join(dir, 'corpus.json'));
+    bytes[bytes.indexOf('KS-001')] ^= 1;
+    writeFileSync(join(dir, 'corpus.json'), bytes);
+    assert.equal(copyIsSelfConsistent(dir), false);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 2. corpus.sha256 missing
+    rmSync(join(dir, 'corpus.sha256'));
+    assert.match(differences({ android: root }).join('\n'), /corpus\.sha256 is missing/);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 3. an older corpus.json together with its own hash: the app's check passes, the sync check does not
+    const older = serialize({ ...corpus, cases: corpus.cases.slice(0, -1) });
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(Buffer.from(older)));
+    assert.equal(copyIsSelfConsistent(dir), true);
+    assert.equal(differences({ android: root }).length, 2);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 4. restored
+    assert.equal(copyIsSelfConsistent(dir), true);
+    assert.deepEqual(differences({ android: root }), []);
+    assert.equal(sync('--check').status, 0);
+    assert.equal(sha256(readFileSync(join(dir, 'corpus.json'))), canonical.sha256);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

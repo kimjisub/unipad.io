@@ -581,5 +581,85 @@ export function buildCases(palette) {
     [intent('unipad-android ce6af172 (#86), unipad.io AutoPlayRunner.stop', 'a stopped runner sends no more presses')],
     { unobserved: { ios: IOS_WALL_CLOCK } });
 
+  // ---------------------------------------------------------------------------------------------
+  // shapes common in real packs: an 8 x 8 grid, five-part keyLED names, MP3 sounds, looping lights
+  // under autoPlay, and a pack that is not square
+  // ---------------------------------------------------------------------------------------------
+  const GRID_8 = lines('title=Conformance', 'producerName=UniPad Conformance', 'buttonX=8', 'buttonY=8', 'chain=1', 'squareButton=true');
+  add({
+    id: 'RP-001', area: 'realPack', title: 'an 8 x 8 pack maps sounds, lights and autoPlay to its first and last pad',
+    files: pack({
+      info: GRID_8,
+      keySound: lines('1 1 1 a.wav', '1 8 8 b.wav'),
+      sounds: ['a.wav', 'b.wav'],
+      keyLed: { '1 1 1': 'o 1 1 FF0000', '1 8 8': 'o 8 8 00FF00' },
+      autoPlay: lines('on 1 1', 'on 8 8', 'delay 10', 'off 8 8'),
+    }),
+    expected: loaded({
+      info: { buttonX: 8, buttonY: 8, chain: 1 },
+      sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 7, 7, [q('b.wav')])],
+      keyLedExist: true,
+      leds: [ledCell(0, 0, 0, [anim(1, [ev.on(0, 0, 'ffff0000')])]), ledCell(0, 7, 7, [anim(1, [ev.on(7, 7, 'ff00ff00')])])],
+      autoPlay: [ap.on(0, 0, 0, 0), ap.on(7, 7, 0, 0), ap.delay(10), ap.off(7, 7, 0)],
+    }),
+    basis: [
+      doc('info.mdx', 'Example: buttonX=8, buttonY=8'),
+      doc('key-sound.mdx', 'x 1 ~ buttonX, y 1 ~ buttonY'),
+      doc('key-led.mdx', 'x 1 ~ buttonX, y 1 ~ buttonY; loop default 1'),
+      doc('auto-play.mdx', 'Commands: on, off, delay'),
+      VEL4,
+    ],
+  });
+  add({
+    id: 'RP-002', area: 'realPack', title: 'two keyLED files for one pad whose names have a fifth part', expectation: 'undetermined',
+    ...led({ '1 1 1 1 a': 'o 1 1 FF0000', '1 1 1 1 b': 'o 1 1 00FF00' }),
+    question: 'key-led.mdx names a file "chain x y [loop]" and gives a fifth part no meaning, yet packs made by other tools name several files for one pad this way. Whether such a file is read, and in which order the two queue, is not stated (KL-004 states the order only for names that are mappings).',
+  });
+  add({
+    id: 'RP-003', area: 'realPack', title: 'an MP3 sound keeps its file, coordinate, loop and wormhole',
+    files: pack({ keySound: '1 2 3 a.mp3 2 2', sounds: ['a.mp3'] }),
+    expected: loaded({ sounds: [cell(0, 1, 2, [q('a.mp3', 1, 1)])] }),
+    basis: [doc('sounds.mdx', 'Supported Formats: MP3 Supported'), doc('key-sound.mdx', 'chain x y soundFile [loop] [wormhole]; Loop Values')],
+  });
+  add({
+    id: 'RP-004', area: 'realPack', title: 'squareButton=false on a 4 x 3 pack',
+    files: pack({ info: STD_INFO.replace('squareButton=true', 'squareButton=false') }),
+    expected: loaded({ info: { squareButton: false }, sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [doc('info.mdx', 'Properties table: squareButton boolean, default false')],
+  });
+
+  run('RUN-RP-001', 'realPack', 'on an 8 x 8 pack the last pad plays its sound and lights',
+    pack({ info: GRID_8, keySound: '1 8 8 a.wav', sounds: ['a.wav'], keyLed: { '1 8 8': lines('o 8 8 FF0000', 'd 100', 'f 8 8') } }),
+    [press(7, 7), advance(50), observe, release(7, 7), advance(100), observe, advance(200), observe],
+    [[snd(0, 7, 7, 'a.wav'), ['ledOn', 7, 7, RED, 4]], [['ledOff', 7, 7]], []],
+    [doc('key-sound.mdx', 'x 1 ~ buttonX, y 1 ~ buttonY'), doc('key-led.mdx', 'x 1 ~ buttonX, y 1 ~ buttonY; Full Example: on, delay, off'), VEL4]);
+  run('RUN-RP-002', 'realPack', 'pressing a pad mapped to an MP3 starts that sound',
+    pack({ keySound: '1 1 1 a.mp3', sounds: ['a.mp3'] }),
+    [press(0, 0), release(0, 0), observe],
+    [[snd(0, 0, 0, 'a.mp3')]],
+    [doc('sounds.mdx', 'Supported Formats: MP3 Supported'), doc('key-sound.mdx', 'chain x y soundFile')]);
+
+  // autoPlay with `toPads`: its presses and releases reach the sound engine and the LED runner the way
+  // the play screens forward them (Android PlayActivityViewModel, web useUniPadEngine).
+  const autoToPads = { do: 'autoplay', toPads: true };
+  run('RUN-RP-003', 'realPack', 'autoPlay pressing a pad whose light repeats twice',
+    pack({ keySound: '1 1 1 a.wav', sounds: ['a.wav'], keyLed: { '1 1 1 2': lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40') }, autoPlay: lines('on 1 1', 'delay 300', 'off 1 1') }),
+    [autoToPads, advance(20), observe, advance(40), observe, advance(40), observe, advance(40), observe, advance(240), observe, advance(400), observe],
+    [[['autoOn', 0, 0], snd(0, 0, 0, 'a.wav'), ['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], [['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], [['autoOff', 0, 0]], []],
+    [doc('key-led.mdx', 'loop: repeat count; "1 2 3 2" repeats 2 times'), doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds'), VEL4],
+    { unobserved: { ios: IOS_WALL_CLOCK } });
+  run('RUN-RP-004', 'realPack', 'autoPlay releasing a pad whose light loops endlessly, then leaving the screen',
+    pack({ keySound: '1 1 1 a.wav', sounds: ['a.wav'], keyLed: { '1 1 1 0': lines('o 1 1 FF0000', 'd 80', 'f 1 1', 'd 80') }, autoPlay: lines('on 1 1', 'delay 200', 'off 1 1') }),
+    [autoToPads, advance(20), observe, advance(90), observe, advance(75), observe, advance(40), observe, { do: 'stop' }, observe, advance(400), observe],
+    [[['autoOn', 0, 0], snd(0, 0, 0, 'a.wav'), ['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], [['ledOn', 0, 0, RED, 4]], [['autoOff', 0, 0], ['ledOff', 0, 0]], [], []],
+    [
+      doc('key-led.mdx', 'loop 0 = infinite loop'),
+      doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds'),
+      intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless animation ends when the pad is released (RUN-L-003)'),
+      intent('unipad-android 3e5a2fd6 (#101), ce6af172 (#86), unipad.io 8019666 (#32), AutoPlayRunner.stop', 'after leaving the screen no light and no press follows (RUN-L-006, RUN-A-002)'),
+      VEL4,
+    ],
+    { unobserved: { ios: IOS_WALL_CLOCK } });
+
   return cases;
 }

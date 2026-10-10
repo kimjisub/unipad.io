@@ -7,11 +7,11 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
 import {
-  actualFor, classify, CorpusCase, Deps, fingerprintOf, Json, loadCorpus, PLATFORM, REAL, resultFor, verifyFingerprint,
+  actualFor, classify, corpusPath, CorpusCase, Deps, fingerprintOf, Json, loadCorpus, PLATFORM, REAL, resultFor, verifyCorpusDigest, verifyFingerprint,
 } from './conformanceHarness';
 
 const { corpus, sha256 } = loadCorpus();
@@ -59,6 +59,17 @@ describe('cases', () => {
 // A check that cannot fail proves nothing: each of these breaks one thing the cases above rely on and
 // requires the comparison to notice.
 describe('the checks can fail', () => {
+  test('a copy of corpus.json that does not hash to its corpus.sha256, or has none, is refused', () => {
+    const bytes = readFileSync(corpusPath());
+    const digest = readFileSync(join(dirname(corpusPath()), 'corpus.sha256'), 'utf8');
+    assert.equal(verifyCorpusDigest(bytes, digest), sha256);
+    const changed = Buffer.from(bytes);
+    changed[changed.indexOf('KS-001')] ^= 1;
+    assert.throws(() => verifyCorpusDigest(changed, digest), /hashes to/);
+    assert.throws(() => verifyCorpusDigest(bytes, null), /corpus\.sha256 is missing/);
+    assert.throws(() => verifyCorpusDigest(bytes, digest.trim()), /not one/);
+  });
+
   test('a changed input file no longer matches the case fingerprint', () => {
     const c = byId('KS-001');
     const altered: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'keySound' ? { ...f, text: `${f.text}\n1 2 2 c.wav` } : f)) };
@@ -95,6 +106,13 @@ describe('the checks can fail', () => {
     }
     const noLed: Deps = { ...REAL, LedRunner: SilentLedRunner };
     assert.equal(classify(c, await actualFor(c, corpus, noLed)).status, 'fail');
+  });
+
+  test('autoPlay presses that do not reach the pads fail a toPads case', async () => {
+    const c = byId('RUN-RP-003');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const notForwarded: CorpusCase = { ...c, scenario: c.scenario!.map((s) => (s.do === 'autoplay' ? { do: 'autoplay' } : s)) };
+    assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
   });
 
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {

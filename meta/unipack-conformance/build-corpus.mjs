@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Builds corpus.json from cases.mjs, palette.json and divergences.json.
-//   node meta/unipack-conformance/build-corpus.mjs           write corpus.json
-//   node meta/unipack-conformance/build-corpus.mjs --check   fail if corpus.json is not what the sources build
+// Builds corpus.json from cases.mjs, palette.json and divergences.json, and corpus.sha256 beside it: the
+// sha256 every harness requires of the corpus.json it reads.
+//   node meta/unipack-conformance/build-corpus.mjs           write corpus.json and corpus.sha256
+//   node meta/unipack-conformance/build-corpus.mjs --check   fail if either is not what the sources build
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,7 +68,7 @@ export function buildCorpus() {
   return {
     schema: SCHEMA,
     generatedBy: 'meta/unipack-conformance/build-corpus.mjs',
-    rights: 'Every sound is a synthesized 10 ms signal made by lib.mjs (two sine tones and silence). No pack, song or third-party audio is included.',
+    rights: 'Every sound is a synthesized 10 ms signal made by lib.mjs (two sine tones and silence), and one of them encoded as MP3. No pack, song or third-party audio is included.',
     assets,
     palette,
     cases: out,
@@ -78,18 +79,27 @@ export function serialize(corpus) {
   return `${JSON.stringify(corpus, null, 2)}\n`;
 }
 
+/** The content of corpus.sha256: one line, `sha256sum` style, naming the file it is the hash of. */
+export function digestLine(corpusBytes) {
+  return `${sha256(corpusBytes)}  corpus.json\n`;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const target = join(here, 'corpus.json');
-  const text = serialize(buildCorpus());
+  const outputs = { 'corpus.json': serialize(buildCorpus()) };
+  outputs['corpus.sha256'] = digestLine(Buffer.from(outputs['corpus.json']));
+  const summary = `sha256 ${sha256(Buffer.from(outputs['corpus.json']))}, ${JSON.parse(outputs['corpus.json']).cases.length} cases`;
   if (process.argv.includes('--check')) {
-    const current = existsSync(target) ? readFileSync(target, 'utf8') : '';
-    if (current !== text) {
-      console.error('corpus.json is out of date with cases.mjs / palette.json / divergences.json; run build-corpus.mjs');
+    const stale = Object.entries(outputs).filter(([name, text]) => {
+      const target = join(here, name);
+      return !existsSync(target) || readFileSync(target, 'utf8') !== text;
+    });
+    if (stale.length) {
+      console.error(`${stale.map(([name]) => name).join(' and ')} out of date with cases.mjs / palette.json / divergences.json; run build-corpus.mjs`);
       process.exit(1);
     }
-    console.log(`corpus.json is current (sha256 ${sha256(Buffer.from(text))}, ${JSON.parse(text).cases.length} cases)`);
+    console.log(`corpus.json and corpus.sha256 are current (${summary})`);
   } else {
-    writeFileSync(target, text);
-    console.log(`wrote corpus.json (sha256 ${sha256(Buffer.from(text))}, ${JSON.parse(text).cases.length} cases)`);
+    for (const [name, text] of Object.entries(outputs)) writeFileSync(join(here, name), text);
+    console.log(`wrote corpus.json and corpus.sha256 (${summary})`);
   }
 }
