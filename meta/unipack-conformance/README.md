@@ -5,8 +5,8 @@ expected to give. It answers "do the three platforms read this pack the same way
 this directory and nothing more. **Passing this corpus is not "every UniPack is 100% compatible".**
 Real packs use more of the format than these cases exercise; see [What is not covered](#what-is-not-covered).
 
-This directory is the single source. The apps carry a byte-identical copy of `corpus.json`; a copy that
-drifts is detected (see [Keeping the copies in step](#keeping-the-copies-in-step)).
+This directory is the single source. The apps carry a byte-identical copy of `corpus.json` and of its hash
+`corpus.sha256`; a copy that drifts is detected (see [Keeping the copies in step](#keeping-the-copies-in-step)).
 
 ## Files
 
@@ -14,14 +14,17 @@ drifts is detected (see [Keeping the copies in step](#keeping-the-copies-in-step
 |---|---|
 | `cases.mjs` | The case list: input files, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
 | `lib.mjs` | Sound asset generator, input fingerprint, expected-result builders. |
+| `assets/tone-440.mp3` | The one sound kept as bytes: `tone-440` encoded as MP3 (see [Sounds](#case-format)). |
 | `palette.json` | The 128 colours an `auto` velocity resolves to (reference copy, see PAL-001). |
 | `divergences.json` | Differences observed on a platform today, pinned so a change in either direction is noticed. |
-| `corpus.json` | Generated from the four files above. The only file the apps read. |
-| `build-corpus.mjs` | `node meta/unipack-conformance/build-corpus.mjs` writes it, `--check` verifies it is current. |
-| `sync.mjs` | Copies `corpus.json` into the app checkouts, or `--check`s that the copies are identical. |
+| `corpus.json` | Generated from the files above. The only file the apps read cases from. |
+| `corpus.sha256` | The sha256 of `corpus.json`, one `<sha256>  corpus.json` line. Every harness refuses a `corpus.json` that does not hash to it. |
+| `build-corpus.mjs` | `node meta/unipack-conformance/build-corpus.mjs` writes both, `--check` verifies both are current. |
+| `sync.mjs` | Copies `corpus.json` and `corpus.sha256` into the app checkouts, or `--check`s that the copies are identical. |
+| `copies.json`, `copies.mjs` | The app commits whose copies CI compares (see [The comparison in CI](#the-comparison-in-ci)). |
 | `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
-| `selftest.mjs` | Tests of the tooling itself: `corpus.json` is what the sources build, and what `report.mjs` may and may not count. `pnpm test:unipack` runs it. |
+| `selftest.mjs` | Tests of the tooling itself: `corpus.json` and `corpus.sha256` are what the sources build, what `report.mjs` may and may not count, and which copies `sync.mjs --check` refuses. `pnpm test:unipack` runs it. |
 
 ## Running it
 
@@ -102,8 +105,8 @@ Expected results are never taken from what the three parsers agree on.
 
 A case can also name a platform whose harness cannot observe it (`unobserved`, with the reason). That
 platform does not run the case and reports it as `unverified`; the others are judged as usual. Today:
-RUN-A-001 and RUN-A-002 on iOS (the autoPlay runner cannot be driven on a virtual clock) and RUN-L-006
-and RUN-L-007 on iOS (leaving the play screen, see `stop` below).
+RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 on iOS (the autoPlay runner cannot be driven on a
+virtual clock) and RUN-L-006 and RUN-L-007 on iOS (leaving the play screen, see `stop` below).
 
 ## Case format
 
@@ -134,8 +137,12 @@ and refuses a case whose files no longer hash to the declared value. `corpusSha2
 `corpus.json` bytes; every platform reports the hash of its own copy.
 
 **Sounds.** Only what `lib.mjs` synthesizes: two 10 ms sine tones and 10 ms of silence (8 kHz mono 8-bit
-PCM WAV). Regenerate with `node meta/unipack-conformance/build-corpus.mjs`; the bytes and sha256 are in
-`corpus.assets`. No pack, song or third-party audio is copied here. `Faded.zip` and other packs on the
+PCM WAV), and the 440 Hz tone encoded as MP3 (`tone-440-mp3`: LAME 3.100, `lame --silent --resample 44.1
+-b 64 --cbr --noreplaygain`, MPEG-1 Layer III 44.1 kHz mono). The MP3 is kept as bytes in
+`assets/tone-440.mp3` so that a machine without the encoder builds the same corpus; `lib.mjs` records the
+sha256 of the WAV it was encoded from and of the MP3, and refuses either when it changes or when the MP3
+does not start with an MPEG audio frame. Regenerate with `node meta/unipack-conformance/build-corpus.mjs`;
+the bytes and sha256 are in `corpus.assets`. No pack, song or third-party audio is copied here. `Faded.zip` and other packs on the
 maintainers' machines were used for local comparison only and are not part of this corpus. The generated
 signals contain no third-party material; the repository's licence applies to them (the owner has not been
 asked to choose another).
@@ -182,7 +189,9 @@ autoPlay runner on one virtual clock, and reports `{ "checkpoints": [ [event, ..
 per `observe` step holding what happened since the previous one, in the order it happened. Steps:
 `press`/`release` (x, y: the sound engine and the LED runner, as the play screen calls them), `chain`
 (c: the user picks a chain), `advance` (ms of virtual time, runners ticking at 4 ms, autoPlay at 1 ms),
-`observe`, `autoplay` (start the autoPlay runner), `stop` (leave the play screen). Events:
+`observe`, `autoplay` (start the autoPlay runner; with `"toPads": true` each of its presses and releases
+also goes to the sound engine and the LED runner, as the play screens forward them), `stop` (leave the
+play screen). Events:
 `["sound", chain, x, y, file, loop]` (loop as stored: -1 endless, 0 once, N repeats),
 `["ledOn", x, y, "aarrggbb", velocity]`, `["ledOff", x, y]`, `["chain", c]` (a keyLed `c` line or a
 wormhole switched the chain; the harness's chain follows), `["autoOn", x, y]`, `["autoOff", x, y]`,
@@ -202,7 +211,8 @@ this seam":
 | Lights | what the play screen would draw: `PlayActivityViewModel` with a `ChannelManager`, read at `UiCallback` | `LedRunner.Listener` batches, the runner alone | `LedRunnerListener` calls, the runner alone |
 | Round and logo lights | measured with **Pro light mode on**. The play screen starts with it off, where the LED channel's round and logo lights are hidden (`PlayActivityViewModel.proLightMode`); that default is not measured | no such setting in the runner | no such setting in the runner |
 | `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | not observed (RUN-L-006, RUN-L-007 are `unobserved`): iOS clears the Launchpad when the main screen takes the MIDI controller back, a screen-level step this harness does not drive | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
-| autoPlay | `AutoPlayRunner` on the virtual clock | not observed (wall clock) | `AutoPlayRunner` on the virtual clock |
+| autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | not observed (wall clock) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
+| MP3 | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for any bytes |
 
 The reset of every pad's queue position when the chain changes is done by the play screens (Android
 `PlayActivityViewModel`, iOS `PlayViewModel`, web `useUniPadEngine`), not by the runners, and no harness
@@ -237,12 +247,36 @@ iOS log given as `--android` all have to come out unverified.
 - `unipad-android/app/src/test/resources/unipack-conformance/corpus.json`
 - `unipad-ios/unipadTests/UniPackConformance/corpus.json`
 
-`node meta/unipack-conformance/sync.mjs --android <checkout> --ios <checkout>` copies it; with `--check` it
-only compares and exits 1 on a difference. On every run each platform also reports the sha256 of the copy
-it read, and `report.mjs` marks a platform whose hash differs from the canonical file as unverified.
+together with `corpus.sha256`. `node meta/unipack-conformance/sync.mjs --android <checkout> --ios <checkout>`
+copies both; with `--check` it only compares and exits 1 when either file is missing or differs.
+
+Each harness, before it runs anything, hashes the `corpus.json` it actually read and compares the result
+with the `corpus.sha256` beside it (on iOS the copy in the test bundle, or the one beside the sources, as
+the result file's `corpusSource` says). A missing `corpus.sha256` or a different hash fails the run, a
+record-only run included. That catches a copy that was edited or half copied. It cannot catch an older
+`corpus.json` copied together with its own older `corpus.sha256`: only `sync.mjs --check` against this
+directory does, and CI runs it (below). Every platform also reports the sha256 of the copy it read, and `report.mjs` marks a
+platform whose hash differs from the canonical file as unverified.
 
 After editing `cases.mjs`, `palette.json` or `divergences.json`: `build-corpus.mjs`, then `sync.mjs`, then
 the three suites. `pnpm test:unipack` fails while `corpus.json` is not what the sources build.
+
+### The comparison in CI
+
+The `UniPack corpus copies` job in `.github/workflows/ci.yml` checks out only the copy folder of each app
+repository at an exact commit and runs `selftest.mjs`, `build-corpus.mjs --check` and
+`sync.mjs --check --android … --ios …` against this commit. Which app commits it compares:
+
+- pull requests and pushes to `main`: the ones in `copies.json`;
+- a manual run (`workflow_dispatch`): the `android` and `ios` inputs, or `copies.json` for an empty one;
+- the weekly scheduled run: the latest commit of each app's default branch, so a copy changed only in an
+  app is noticed.
+
+`copies.json` holds exactly `android` and `ios`, each a full 40-character commit hash; `copies.mjs` refuses a
+branch, a tag or a short hash, so the comparison never runs against a moving target. When a change to the
+corpus is reviewed together with its app copies, `copies.json` names the commits of the app pull requests;
+once those are merged, `copies.json` is moved to the merge commits on the app default branches. To run the
+comparison locally, check out both apps at the pinned commits and run the three commands above.
 
 ## What is covered
 
@@ -251,13 +285,18 @@ the three suites. `pnpm test:unipack` fails while `corpus.json` is not what the 
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
 - runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
+- shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
+  started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
+  `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are run but undetermined.
 - palette: the 128 colours.
 
 ## What is not covered
 
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
 - File and folder name case (`keyLED` vs `keyled`, `A.WAV` vs `a.wav`): it depends on the file system of the machine running the test.
-- Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine; iOS runs its real engine but the test cannot hear it.
+- Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
+- Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
+- Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.
 - MIDI devices and drivers, Launchpad colour output, the play screens, practice/guide mode of autoPlay, volume, theme packs.
 - What a user sees after leaving the play screen on iOS, and on any platform with a real Launchpad connected.
 - Android with Pro light mode off (its default), where round and logo lights of a keyLED file are hidden.

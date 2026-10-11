@@ -3,8 +3,8 @@
 // harness turns what its code did into the normalized result the corpus states and never sees the
 // expected side. See meta/unipack-conformance/README.md.
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
@@ -28,7 +28,7 @@ export interface CorpusCase {
   expectation: 'determined' | 'undetermined';
   expected?: Json;
   question?: string;
-  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number }[];
+  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean }[];
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -54,9 +54,25 @@ export function corpusPath(): string {
   return process.env.UNIPACK_CONFORMANCE_CORPUS ?? join(process.cwd(), 'meta/unipack-conformance/corpus.json');
 }
 
+/**
+ * The sha256 of the corpus.json bytes, after checking it against the corpus.sha256 written beside it by
+ * build-corpus.mjs. A copy without that file, or one that does not hash to it, is refused.
+ */
+export function verifyCorpusDigest(bytes: Buffer, digestFile: string | null): string {
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (digestFile === null) throw new Error('corpus.sha256 is missing beside corpus.json; copy both with meta/unipack-conformance/sync.mjs');
+  const declared = /^([0-9a-f]{64}) {2}corpus\.json\n$/.exec(digestFile)?.[1];
+  if (!declared) throw new Error(`corpus.sha256 is not one "<sha256>  corpus.json" line: ${JSON.stringify(digestFile)}`);
+  if (declared !== actual) throw new Error(`corpus.json hashes to ${actual}, corpus.sha256 declares ${declared}`);
+  return actual;
+}
+
 export function loadCorpus(): { corpus: Corpus; sha256: string } {
-  const bytes = readFileSync(corpusPath());
-  return { corpus: JSON.parse(bytes.toString('utf8')) as Corpus, sha256: createHash('sha256').update(bytes).digest('hex') };
+  const path = corpusPath();
+  const bytes = readFileSync(path);
+  const digestPath = join(dirname(path), 'corpus.sha256');
+  const sha256 = verifyCorpusDigest(bytes, existsSync(digestPath) ? readFileSync(digestPath, 'utf8') : null);
+  return { corpus: JSON.parse(bytes.toString('utf8')) as Corpus, sha256 };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -294,24 +310,31 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   led.launch();
   let autoPlay: AutoPlayRunner | null = null;
 
+  // A pad press and release as the play screen sends them to the sound engine and the LED runner.
+  const pressPad = (x: number, y: number) => {
+    const before = FakeAudioContext.started.length;
+    const at = chain;
+    sound.soundOn(x, y);
+    for (const started of FakeAudioContext.started.slice(before)) {
+      // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
+      const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
+      events.push(['sound', at, x, y, started.name.replace(/^(?:.*\/)?sounds\//i, ''), loop]);
+    }
+    led.eventOn(x, y);
+  };
+  const releasePad = (x: number, y: number) => {
+    sound.soundOff(x, y);
+    led.eventOff(x, y);
+  };
+
   try {
     for (const step of c.scenario ?? []) {
       switch (step.do) {
-        case 'press': {
-          const before = FakeAudioContext.started.length;
-          const at = chain;
-          sound.soundOn(step.x!, step.y!);
-          for (const started of FakeAudioContext.started.slice(before)) {
-            // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
-            const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
-            events.push(['sound', at, step.x!, step.y!, started.name.replace(/^(?:.*\/)?sounds\//i, ''), loop]);
-          }
-          led.eventOn(step.x!, step.y!);
+        case 'press':
+          pressPad(step.x!, step.y!);
           break;
-        }
         case 'release':
-          sound.soundOff(step.x!, step.y!);
-          led.eventOff(step.x!, step.y!);
+          releasePad(step.x!, step.y!);
           break;
         case 'chain':
           chain = step.c!;
@@ -324,10 +347,12 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           events = [];
           break;
         case 'autoplay': {
+          // toPads: the presses also reach the pads, as useUniPadEngine forwards them to padTouchOn/Off.
+          const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); },
-            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); },
+            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y); },
+            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y); },
             onChainChange: (next) => { chain = next; events.push(['autoChain', next]); },
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
           };
