@@ -21,6 +21,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | `corpus.sha256` | The sha256 of `corpus.json`, one `<sha256>  corpus.json` line. Every harness refuses a `corpus.json` that does not hash to it. |
 | `build-corpus.mjs` | `node meta/unipack-conformance/build-corpus.mjs` writes both, `--check` verifies both are current. |
 | `sync.mjs` | Copies `corpus.json` and `corpus.sha256` into the app checkouts, or `--check`s that the copies are identical. |
+| `copies.json`, `copies.mjs` | The app commits whose copies CI compares (see [The comparison in CI](#the-comparison-in-ci)). |
 | `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
 | `selftest.mjs` | Tests of the tooling itself: `corpus.json` and `corpus.sha256` are what the sources build, what `report.mjs` may and may not count, and which copies `sync.mjs --check` refuses. `pnpm test:unipack` runs it. |
@@ -254,11 +255,28 @@ with the `corpus.sha256` beside it (on iOS the copy in the test bundle, or the o
 the result file's `corpusSource` says). A missing `corpus.sha256` or a different hash fails the run, a
 record-only run included. That catches a copy that was edited or half copied. It cannot catch an older
 `corpus.json` copied together with its own older `corpus.sha256`: only `sync.mjs --check` against this
-directory does. Every platform also reports the sha256 of the copy it read, and `report.mjs` marks a
+directory does, and CI runs it (below). Every platform also reports the sha256 of the copy it read, and `report.mjs` marks a
 platform whose hash differs from the canonical file as unverified.
 
 After editing `cases.mjs`, `palette.json` or `divergences.json`: `build-corpus.mjs`, then `sync.mjs`, then
 the three suites. `pnpm test:unipack` fails while `corpus.json` is not what the sources build.
+
+### The comparison in CI
+
+The `UniPack corpus copies` job in `.github/workflows/ci.yml` checks out only the copy folder of each app
+repository at an exact commit and runs `selftest.mjs`, `build-corpus.mjs --check` and
+`sync.mjs --check --android … --ios …` against this commit. Which app commits it compares:
+
+- pull requests and pushes to `main`: the ones in `copies.json`;
+- a manual run (`workflow_dispatch`): the `android` and `ios` inputs, or `copies.json` for an empty one;
+- the weekly scheduled run: the latest commit of each app's default branch, so a copy changed only in an
+  app is noticed.
+
+`copies.json` holds exactly `android` and `ios`, each a full 40-character commit hash; `copies.mjs` refuses a
+branch, a tag or a short hash, so the comparison never runs against a moving target. When a change to the
+corpus is reviewed together with its app copies, `copies.json` names the commits of the app pull requests;
+once those are merged, `copies.json` is moved to the merge commits on the app default branches. To run the
+comparison locally, check out both apps at the pinned commits and run the three commands above.
 
 ## What is covered
 

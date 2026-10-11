@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
 import { ASSET_GENERATORS, buildAssets, fingerprint, sha256, startsWithMpegFrame } from './lib.mjs';
 import { buildReport, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
+import { resolveCommits } from './copies.mjs';
 import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -275,6 +276,25 @@ test('the sync check fails on a drifted, missing or outdated copy and passes onc
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('copies.json pins the app copies CI compares to full commit hashes only', () => {
+  const a = 'a'.repeat(40);
+  const b = 'b'.repeat(40);
+  const pins = JSON.stringify({ android: a, ios: b });
+  assert.deepEqual(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8')), JSON.parse(readFileSync(join(here, 'copies.json'), 'utf8')));
+  assert.deepEqual(resolveCommits(pins), { android: a, ios: b });
+  assert.deepEqual(resolveCommits(pins, { android: '', ios: 'c'.repeat(40) }), { android: a, ios: 'c'.repeat(40) });
+  for (const commit of ['main', a.slice(0, 7), `${a}0`, a.toUpperCase(), `refs/heads/${a}`]) {
+    assert.throws(() => resolveCommits(JSON.stringify({ android: commit, ios: b })), /full 40-character commit/, commit);
+    assert.throws(() => resolveCommits(pins, { ios: commit }), /full 40-character commit/, commit);
+  }
+  assert.throws(() => resolveCommits(JSON.stringify({ android: a })), /exactly android and ios/);
+  assert.throws(() => resolveCommits(JSON.stringify({ android: a, ios: b, web: a })), /exactly android and ios/);
+  assert.throws(() => resolveCommits('[]'), /must be an object/);
+  const cli = spawnSync(process.execPath, [join(here, 'copies.mjs'), '--ios', 'main'], { encoding: 'utf8' });
+  assert.equal(cli.status, 1);
+  assert.match(cli.stderr, /ios: "main" is not a full 40-character commit hash/);
 });
 
 test('report rows cover every platform', () => {
