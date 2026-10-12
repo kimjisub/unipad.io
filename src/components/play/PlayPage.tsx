@@ -16,6 +16,7 @@ import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import {
   parseUniPack,
   saveUniPack,
+  saveStoreUniPack,
   getUniPack,
   listUniPacks,
   deleteUniPack,
@@ -764,13 +765,7 @@ export function PlayPage() {
       }, controller.signal);
       const parsed = await parseUniPack(zipData.slice(0));
 
-      const packs = await listUniPacks();
-      const existing = packs.find((p) => p.storeCode === item.code);
-      if (existing) {
-        await deleteUniPack(existing.id);
-      }
-
-      await saveUniPack(zipData, {
+      await saveStoreUniPack(zipData, {
         ...parsed.info,
         keyLedExist: parsed.keyLedExist,
         autoPlayExist: parsed.autoPlayExist,
