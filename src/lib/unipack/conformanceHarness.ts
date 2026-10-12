@@ -196,9 +196,10 @@ export interface Deps {
 
 export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine };
 
-async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<UniPackData | null> {
+/** The parsed pack, or null when the parser refuses it. Also used for real packs (meta/unipack-conformance/real-packs). */
+export async function parseOrRefuse(zip: ArrayBuffer, deps: Deps = REAL): Promise<UniPackData | null> {
   try {
-    return await deps.parse(await zipOf(c, corpus));
+    return await deps.parse(zip);
   } catch (error) {
     // The web parser throws for a pack it refuses; anything else is a bug the case must surface.
     if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return null;
@@ -208,7 +209,7 @@ async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise
 
 export async function actualFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Json> {
   if (c.layer === 'palette') return { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) };
-  const pack = await parseOrRefuse(c, corpus, deps);
+  const pack = await parseOrRefuse(await zipOf(c, corpus), deps);
   if (!pack) return { loaded: false };
   return c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
 }
