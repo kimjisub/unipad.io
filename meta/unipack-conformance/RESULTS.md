@@ -1,17 +1,16 @@
 # Results (2026-10-12, Korea time)
 
-Corpus `72064eeab90f…` (sha256 of `corpus.json`), 132 cases, run on unipad-android 7859c691 and
-unipad-ios aa7188a (the main merge commits of unipad-android PR #193 and unipad-ios PR #121, whose
-corpus copies are byte for byte those of the pull request heads in `copies.json`) and unipad.io main
-f3c4b81 with the report change described below. Regenerate this table with `report.mjs` (README, "Running it"). It
+Corpus `9d29eaa62e4a…` (sha256 of `corpus.json`), 132 cases, run on unipad-android 5306e01e and
+unipad-ios 3d2638c (the pull request heads in `copies.json`) and unipad.io main cf78c60 with the corpus
+change described below. Regenerate this table with `report.mjs` (README, "Running it"). It
 describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
 compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 2 | 0 | 0 | 0 | 2026-10-12 12:44:57 |
-| iOS | 129 | 3 | 0 | 0 | 0 | 2026-10-12 13:10:16 |
-| Web | 130 | 2 | 0 | 0 | 0 | 2026-10-12 13:10:56 |
+| Android | 130 | 2 | 0 | 0 | 0 | 2026-10-12 14:15:53 |
+| iOS | 129 | 3 | 0 | 0 | 0 | 2026-10-12 14:10:05 |
+| Web | 130 | 2 | 0 | 0 | 0 | 2026-10-12 14:35:20 |
 
 Pass on all three platforms: 127 of 132, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
 the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1). Formats exercised: info,
@@ -38,6 +37,25 @@ the list, and what was not exercised).
 - A pass on the runner cases (RUN-*) shows each platform at the seam described in README, "What each
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
+
+## Changes after dropping the iOS unobserved marks
+
+The previous canonical corpus SHA256 was `72064eeab90f…`. It still marked RUN-L-006, RUN-L-007,
+RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 as unobserved on iOS, although the iOS harness records
+a result for all six and they pass (below).
+
+- **The six marks and their reasons are gone.** No case is marked `unobserved` now. Ids, input files,
+  fingerprints, expected results, bases and pinned differences are unchanged: the two corpora were
+  compared case by case with `unobserved` left out, and none differs.
+- **The iOS harness no longer keeps its list of the six** (`newlyObservableCases`), which let it run
+  them in spite of the mark. A case the corpus marks `unobserved` for iOS is again reported unverified
+  with its reason and not run.
+- **`selftest.mjs` marks two cases `unobserved` itself** (a parse case and a run case) to keep checking
+  how `report.mjs` treats such a case, since the corpus has none. With the check that returns the reason
+  removed from `report.mjs`, the test fails.
+- The table is the same as on `72064eea…`: Android 130, 2, 0; iOS 129, 3, 0; web 130, 2, 0. The Android
+  and iOS copies were synchronized to `9d29eaa6…` (`sync.mjs --check` passes against both pull request
+  copies).
 
 ## Changes after iOS observed the six exit and autoPlay cases
 
