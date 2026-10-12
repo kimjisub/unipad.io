@@ -1,8 +1,9 @@
 # Results (2026-10-12, Korea time)
 
-Corpus `aa16cb34a0cf…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 4d31dbf1 and
-unipad-ios c7203bb9 (their main, with this corpus copied in as in unipad-android PR #191 and unipad-ios
-PR #118) and unipad.io e5d85f6. Regenerate this table with `report.mjs` (README, "Running it"). It
+Corpus `aa16cb34a0cf…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 88e40439 and
+unipad-ios 003d71ba (the head commits of unipad-android PR #191 and unipad-ios PR #118, which copy this
+corpus onto their main at 4d31dbfd and c7203bb9; the same commits as `copies.json`) and unipad.io
+e5d85f6. Regenerate this table with `report.mjs` (README, "Running it"). It
 describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
 compatibility is not known.
 
@@ -203,11 +204,13 @@ On 2026-10-12 (corpus `aa16cb34a0cf…`):
 | Platform | Command | Result |
 |---|---|---|
 | Web | `pnpm test:unipack` | 300 tests pass; the tooling subprocess runs 23 tests |
-| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` | `BUILD SUCCESSFUL`, every case and check passes |
-| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests` (simulator, warnings as errors) | exit 0, 132 corpus cases included |
+| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` | 132 case tests + 10 checks that can fail, all pass |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests` (simulator, warnings as errors; the simulator model, iOS and Xcode versions and the test count were not recorded) | exit 0, 132 corpus cases included |
 
-All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash. The new parser
-tests fail 17 of 300 on the previous `parser.ts` (unipad.io 83632e6) and all pass on e5d85f6.
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash. With the previous
+`parser.ts` (unipad.io 83632e6) put back, `pnpm test:unipack` fails 32 of 300: the 17 new parser tests
+and the 15 corpus cases whose pinned web difference was removed (KL-N01 to KL-N05, AP-M01 to AP-M09 and
+AP-M11), so the corpus cases now catch this regression themselves. All 300 pass on e5d85f6.
 
 On 2026-10-11 (corpus `c30e75b9985e…`):
 
