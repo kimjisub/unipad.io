@@ -156,7 +156,9 @@ Tests have zero retries and `test.only` is forbidden.
 changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
-playback; exploratory page failures are investigated separately. Native multi-touch CDP tests remain Chromium-only.
+playback; exploratory page failures are investigated separately. Firefox allows
+90 seconds overall for page setup and playback; individual assertion timeouts
+stay unchanged. Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
@@ -195,9 +197,9 @@ no-chain-change baseline (CR-005/006). No app-only test hooks are used.
 
 The CR-001 browser test attaches screenshots and real Web Audio start/stop call
 records before and after partial release. These are program input and playback
-request evidence. Audio is muted; no physical fingers, MIDI hardware, speaker
-quality, audible stop or latency is certified. The exact 99/100 ms delayed move
-and finite-play deadlines are checked only by the logical-clock unit suite.
+request evidence. Audio output is checked separately by the RMS test; no physical
+fingers, MIDI hardware, speaker quality, audible stop or latency is certified.
+The exact 99/100 ms delayed move and finite-play deadlines are checked only by the logical-clock unit suite.
 
 The common corpus bytes/expectations and their SHA-256 manifest stay unchanged.
 These new results remain separate from the 124 historical parser cases, KS-003,
