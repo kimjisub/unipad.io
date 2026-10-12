@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
-import { duration, loadInputPack } from './input-fixture';
+import { duration, loadInputPack, stateTimeout } from './input-fixture';
 
 const screens = [
   { name: 'compact phone', viewport: { width: 667, height: 320 } },
@@ -13,7 +13,7 @@ const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements =
   return { position: element.getAttribute('data-pad')!, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 }));
 // A press shows within a frame or two; the default first retry after 100 ms adds up over every edge press.
-const quickPoll = { intervals: [16, 32, 64, 100] };
+const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
 const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
   .evaluateAll(elements => elements.map(element => element.getAttribute('data-pad')));
 async function record(page: Page, info: TestInfo, name: string) {
@@ -37,7 +37,7 @@ for (const screen of screens) {
         const label = square ? 'square' : 'rectangular';
         test(`${label} pads fit and play every bottom and right edge`, async ({ page }, info) => {
           await loadInputPack(page, shape.rows, shape.cols, square);
-          await expect.poll(async () => (await bounds(page))[0].width).toBeGreaterThan(1);
+          await expect.poll(async () => (await bounds(page))[0].width, poll).toBeGreaterThan(1);
           await record(page, info, `${label}-before-input`);
           // Pressing a pad never moves the layout; the hit test below still checks each point at press time.
           const pads = await bounds(page);
@@ -62,14 +62,14 @@ for (const screen of screens) {
             expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-pad]')?.getAttribute('data-pad'), point)).toBe(location.position);
             await page.mouse.move(point.x, point.y);
             await page.mouse.down();
-            await expect.poll(() => lit(page), quickPoll).toEqual([location.position]);
+            await expect.poll(() => lit(page), poll).toEqual([location.position]);
             const audio = await page.evaluate(() => window.browserProbe.audio);
             expect(audio.starts).toHaveLength(index + 1);
             expect(audio.starts[index].duration).toBeCloseTo(duration(shape.rows, shape.cols, location.position), 4);
             expect(audio.starts[index].loop).toBe(true);
             await page.mouse.up();
-            await expect.poll(() => lit(page), quickPoll).toEqual([]);
-            await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops), quickPoll).toEqual(Array.from({ length: index + 1 }, (_, i) => i + 1));
+            await expect.poll(() => lit(page), poll).toEqual([]);
+            await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops), poll).toEqual(Array.from({ length: index + 1 }, (_, i) => i + 1));
           }
           const events = await page.evaluate(() => window.inputBoundaryEvents.filter(event => event.type === 'pointerdown'));
           expect(events).toHaveLength(locations.length);
