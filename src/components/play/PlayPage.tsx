@@ -32,6 +32,8 @@ import {
   downloadStoreItem,
   fetchStoreItems,
   getStoreYoutubeSearchUrl,
+  runStoreDownloadStep,
+  storeDownloadFailParams,
   subscribeStoreCount,
   subscribeStoreItems,
   type StoreItem,
@@ -762,21 +764,23 @@ export function PlayPage() {
       const zipData = await downloadStoreItem(item, (percent) => {
         setStoreProgress(percent);
       }, controller.signal);
-      const parsed = await parseUniPack(zipData.slice(0));
+      const parsed = await runStoreDownloadStep('invalid_pack', () => parseUniPack(zipData.slice(0)));
 
-      const packs = await listUniPacks();
-      const existing = packs.find((p) => p.storeCode === item.code);
-      if (existing) {
-        await deleteUniPack(existing.id);
-      }
+      await runStoreDownloadStep('storage', async () => {
+        const packs = await listUniPacks();
+        const existing = packs.find((p) => p.storeCode === item.code);
+        if (existing) {
+          await deleteUniPack(existing.id);
+        }
 
-      await saveUniPack(zipData, {
-        ...parsed.info,
-        keyLedExist: parsed.keyLedExist,
-        autoPlayExist: parsed.autoPlayExist,
-        soundCount: parsed.soundCount,
-        ledCount: parsed.ledCount,
-        storeCode: item.code,
+        await saveUniPack(zipData, {
+          ...parsed.info,
+          keyLedExist: parsed.keyLedExist,
+          autoPlayExist: parsed.autoPlayExist,
+          soundCount: parsed.soundCount,
+          ledCount: parsed.ledCount,
+          storeCode: item.code,
+        });
       });
 
       await refreshLists();
@@ -789,7 +793,10 @@ export function PlayPage() {
       const message = normalizeStoreError(error);
       setStoreError(message);
       setFailedStoreCode(item.code);
-      trackStoreEvent('store_download_fail', { code: item.code, message });
+      const failParams = storeDownloadFailParams(error, controller.signal.aborted);
+      if (failParams) {
+        trackStoreEvent('store_download_fail', { code: item.code, message, ...failParams });
+      }
       showToast(message);
     } finally {
       storeDownloadAbortRef.current = null;
