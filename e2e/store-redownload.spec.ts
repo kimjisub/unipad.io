@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 import { test, expect } from './browser';
 import { connectStore } from './database';
+import { savedRecords, type SavedRecord } from './saved-packs';
 
 const STORE_CODE = 'browser-test';
 const PACK_NAME = 'Browser Test Pack by UniPad Tests';
@@ -16,24 +17,6 @@ const storeItems = {
   },
 };
 
-interface SavedRecord { id: string; storeCode?: string; zipBytes: number }
-
-function savedRecords(page: Page): Promise<SavedRecord[]> {
-  return page.evaluate(() => new Promise<SavedRecord[]>((resolve, reject) => {
-    const open = indexedDB.open('unipad');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const request = db.transaction('unipacks').objectStore('unipacks').getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        db.close();
-        resolve(request.result.map(({ id, storeCode, zipData }) => ({ id, storeCode, zipBytes: zipData.byteLength })));
-      };
-    };
-  }));
-}
-
 /**
  * Leaves a downloaded copy of the store pack in browser storage that the open page has not
  * listed yet, as when it was downloaded in another tab. The store then offers it for download again.
@@ -46,7 +29,6 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
   await database.publish(1);
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expect(page.locator('[data-pad]')).toHaveCount(64);
-  // The import shows the pads before it saves the pack.
   await expect.poll(async () => (await savedRecords(page)).length).toBe(1);
   await page.goto('/play');
   await expect(page.getByRole('option', { name: PACK_NAME, exact: true })).toBeVisible();
@@ -69,20 +51,23 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
 
 test('keeps the downloaded copy when saving the store pack again fails', async ({ page }, testInfo) => {
   const copy = await openStoreWithUnlistedCopy(page);
-  // Browsers report full storage by aborting the write transaction.
+  // Full storage aborts the write transaction after its requests were accepted.
   await page.evaluate(() => {
     const put = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (value, key) {
       const request = put.call(this, value, key);
-      if ((value as { storeCode?: string }).storeCode) this.transaction.abort();
+      if ((value as { storeCode?: string }).storeCode) {
+        request.addEventListener('success', () => this.transaction.abort());
+      }
       return request;
     };
   });
   const row = page.locator(`[data-store-code="${STORE_CODE}"]`);
   await row.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(row.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  await expect(page.getByText(/^(Download canceled\.|Downloaded: Browser Test Pack)$/)).toBeVisible();
   await testInfo.attach('failed-save', { body: await page.screenshot({ path: testInfo.outputPath('failed-save.png') }), contentType: 'image/png' });
   expect(await savedRecords(page)).toEqual([copy]);
+  await expect(row.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
 
   await page.goto('/play');
   await page.getByRole('option', { name: PACK_NAME, exact: true }).press('Enter');
