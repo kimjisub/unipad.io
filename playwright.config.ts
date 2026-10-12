@@ -31,7 +31,7 @@ export default defineConfig({
     ] : []),
   ],
   webServer: {
-    command: 'pnpm exec next start --hostname localhost --port 3184',
+    command: 'node node_modules/next/dist/bin/next start --hostname localhost --port 3184',
     url: 'http://localhost:3184/play',
     reuseExistingServer: false,
   },
