@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
 import { buildCases } from './cases.mjs';
-import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, sha256, startsWithMpegFrame } from './lib.mjs';
+import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDecision, sha256, startsWithMpegFrame } from './lib.mjs';
 import { buildReport, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
 import { resolveCommits } from './copies.mjs';
 import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
@@ -50,7 +50,16 @@ function logOf(platform) {
 
 const plain = corpus.cases.filter((c) => c.expectation === 'determined' && !c.known && !c.unobserved);
 const [determined, another] = plain;
-const undetermined = corpus.cases.find((c) => c.expectation === 'undetermined');
+/** `c` as an undetermined case: an open question in place of its expected result and basis. */
+function asUndetermined(c) {
+  const open = { ...c, expectation: 'undetermined', question: 'still open?' };
+  delete open.expected;
+  delete open.basis;
+  return open;
+}
+// The corpus may have no undetermined case, so one is made from a determined one.
+const undetermined = asUndetermined(determined);
+const withUndetermined = { ...canonical, corpus: { ...corpus, cases: corpus.cases.map((c) => (c.id === undetermined.id ? undetermined : c)) } };
 const statusesOf = (judged) => [...new Set([...judged.values()].map((v) => v.status))];
 
 test('corpus.json is what the sources build, and corpus.sha256 is its hash', () => {
@@ -89,11 +98,38 @@ test('a warning no doc asks for is expected only on an agreed basis, and the rep
   assert.equal(judge(canonical, 'web', changed).get(agreedIds[0]).status, 'fail');
 });
 
-test('a determined case needs a doc, intent or agreed basis, and an agreed one no open question', () => {
+test('a determined case needs a doc, intent, agreed or decision basis, and an agreed or decided one no open question', () => {
   const editing = (id, edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === id ? edit(structuredClone(c)) : c)));
   assert.doesNotThrow(editing('KL-005', (c) => c));
-  assert.throws(editing('KL-005', (c) => ({ ...c, basis: [] })), /KL-005: determined without a doc, intent or agreed basis/);
+  assert.throws(editing('KL-005', (c) => ({ ...c, basis: [] })), /KL-005: determined without a doc, intent, agreed or decision basis/);
   assert.throws(editing('KL-005', (c) => ({ ...c, question: 'still open?' })), /KL-005: an agreed case keeps its open question in the agreed note/);
+  assert.throws(editing('KL-024', (c) => ({ ...c, question: 'still open?' })), /KL-024: a decided case keeps no open question/);
+  // A pinned difference needs a determined case to differ from.
+  assert.throws(editing('KL-024', asUndetermined), /KL-024: a divergence is pinned on an undetermined case/);
+});
+
+test('a decided case is checked like any other, and the report counts it apart from doc and agreed ones', () => {
+  const decidedIds = corpus.cases.filter(restsOnDecision).map((c) => c.id);
+  assert.deepEqual(decidedIds, ['KL-024']);
+  assert.equal(decidedIds.filter((id) => corpus.cases.find((c) => c.id === id).basis.some((b) => b.type === 'agreed')).length, 0);
+
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
+  assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
+  assert.equal(report.decided.cases, decidedIds.length);
+  // KL-024 is pinned as a web difference, so fullResults leaves it unverified on the web.
+  assert.deepEqual(report.decided.pass, { android: 1, ios: 1, web: 0 });
+  assert.equal(report.decided.passOnAllThree, 0);
+  const text = renderText(report);
+  assert.match(text, /, 0 on a decision basis$/m);
+  assert.match(text, /^decision basis: 1 cases .* pass android 1, ios 1, web 0$/m);
+  assert.match(text, /^KL-024 .*\[decision\]$/m);
+
+  // The web result pinned for KL-024 is a fail, any other wrong result is a fail, and the pin belongs to
+  // web alone. A result equal to the expected one while the pin remains is unverified (`classify`).
+  const kl024 = corpus.cases.find((c) => c.id === 'KL-024');
+  assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: kl024.known.web.actual } })).get('KL-024').status, 'fail');
+  assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: SOME_RESULT } })).get('KL-024').status, 'fail');
+  assert.equal(judge(canonical, 'android', fullResults('android', { 'KL-024': { status: 'fail', actual: kl024.known.web.actual } })).get('KL-024').status, 'fail');
 });
 
 test('sound assets regenerate to the same bytes', () => {
@@ -143,8 +179,9 @@ test('a platform that ran another corpus or other input is unverified', () => {
 
 test('an undetermined case is never a pass, whether the claim comes with a result or without one', () => {
   for (const actual of [SOME_RESULT, undefined, null]) {
-    const claimed = judge(canonical, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual } }));
+    const claimed = judge(withUndetermined, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual } }));
     assert.equal(claimed.get(undetermined.id).status, 'unverified');
+    assert.equal(judge(canonical, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual: determined.expected } })).get(undetermined.id).status, 'pass');
   }
 });
 
