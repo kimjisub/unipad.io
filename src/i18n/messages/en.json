@@ -402,6 +402,7 @@
       "midiFailed": "MIDI connection failed.",
       "midiDisconnected": "MIDI disconnected.",
       "downloaded": "Downloaded: {title}",
+      "packNotFound": "Pack not found on server.",
       "downloadedPackMissing": "Downloaded pack not found. Please refresh.",
       "sharedPackDownloading": "Downloading shared pack...",
       "sharedPackMissing": "Shared pack not found in store.",

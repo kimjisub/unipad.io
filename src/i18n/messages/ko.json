@@ -402,6 +402,7 @@
       "midiFailed": "MIDI 연결에 실패했습니다.",
       "midiDisconnected": "MIDI 연결을 해제했습니다.",
       "downloaded": "받았습니다: {title}",
+      "packNotFound": "서버에서 팩을 찾을 수 없습니다.",
       "downloadedPackMissing": "받은 팩을 찾지 못했습니다. 새로고침해 주세요.",
       "sharedPackDownloading": "공유된 팩을 받는 중...",
       "sharedPackMissing": "공유된 팩이 스토어에 없습니다.",
