@@ -142,7 +142,7 @@ Seven, from the five cases where the platforms gave different results and the ex
 decided (README there, "Decided behaviour"). Each is pinned until the platform's own fix removes it.
 
 - **INF-007, Android and iOS:** an `info` line without `=` records a format warning. `info.mdx` now says
-  the line is ignored; the web already ignores it without a warning.
+  the line is ignored without a warning; the web already does so.
 - **INF-010, Android and iOS:** `buttonX=abc` is read as 0 and the pack opens without a pad column (two
   or three warnings). `info.mdx` now says loading is aborted; the web already refuses the pack.
 - **INF-015, iOS:** `info.json` is read when there is no `info` file, and the pack opens. The docs

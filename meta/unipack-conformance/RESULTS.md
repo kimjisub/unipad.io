@@ -49,7 +49,7 @@ unverified, and no difference was pinned.
 - **The five cases have an expected result.** The maintainers chose one where the platforms disagreed:
   - INF-007: an `info` line without `=` is ignored, with no warning. Added to `info.mdx`.
   - INF-010: a `buttonX` or `buttonY` that is not an integer (for example `abc`) refuses the pack. Added
-    to `info.mdx`. A value of 0 or less still only warns (INF-009).
+    to `info.mdx`. A value of 0 still only warns (INF-009).
   - INF-015: `info.json` in place of `info` refuses the pack. `info.mdx` already names only `info`.
   - KS-018: a keySound saved as UTF-16 with a byte order mark is read normally. Added to `key-sound.mdx`
     ("UTF-8, or UTF-16 with a byte order mark").
