@@ -1,44 +1,37 @@
 # Results (2026-10-12, Korea time)
 
-Corpus `72064eeab90f…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 94c34eb7 and
-unipad-ios 5f1046bc (the head commits of unipad-android PR #193 and unipad-ios PR #121, which copy this
-corpus into each app and are not merged yet; the same commits as `copies.json`, which a later change moves
-to their merge commits) and unipad.io 3dff4cd. Regenerate this table with `report.mjs` (README, "Running it"). It
-describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
-compatibility is not known.
+Corpus `4ae6a72cb475…` (sha256 of `corpus.json`), 133 cases, based on unipad-android aa93be99 and
+unipad-ios 4828fc2b (the head commits of the app pull requests that copy this corpus and fix the iOS
+`info` parser; not merged yet, and the same commits as `copies.json`, which is moved to their merge
+commits after they merge) and this unipad.io change. Regenerate this table with `report.mjs` (README,
+"Running it"). It describes these 133 cases only; it does not show that every UniPack is compatible, and
+100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 2 | 0 | 0 | 0 | 2026-10-12 09:20:08 |
-| iOS | 123 | 3 | 0 | 0 | 6 | 2026-10-12 09:34:02 |
-| Web | 130 | 2 | 0 | 0 | 0 | 2026-10-12 09:16:39 |
+| Android | 130 | 3 | 0 | 0 | 0 | 2026-10-12 12:16:21 |
+| iOS | 127 | 0 | 0 | 0 | 6 | 2026-10-12 12:49:48 |
+| Web | 131 | 2 | 0 | 0 | 0 | 2026-10-12 12:15:48 |
 
-Pass on all three platforms: 121 of 132, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
-the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1). Formats exercised: info,
-keySound, keyLED, autoPlay (both spellings of every command), the colour palette, the sound, LED and
-autoPlay runners, an 8 x 8 grid, an MP3 sound, and lights that loop while autoPlay plays (see README for
-the list, and what was not exercised).
+Pass on all three platforms: 122 of 133, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1).
 
-- **Fail, 7 pinned:** the five cases whose expected result was decided after the platforms disagreed
-  (README, "Decided behaviour"), on each platform that does not give it yet. Android: INF-007, INF-010.
-  iOS: INF-007, INF-010, INF-015. Web: KS-018, KL-024. Each is pinned in `divergences.json` with the
-  observed result and its cause; the platform suites stay green while a pinned result is unchanged and go
-  red when it changes or disappears, so each platform's fix has to remove its own pins
-  (`meta/PARITY.md`, "Open differences found by the corpus").
-- **Decision basis, 1:** KL-024 (an LED event outside the pad grid is kept as written and skipped when
-  lit). No doc states it; the `decision` basis names who decided and why. INF-007, INF-010, INF-015 and
-  KS-018 rest on the format docs.
-- **Agreed basis, 17:** INF-011, INF-012, KS-015, KS-017, KL-003, KL-005, KL-006, KL-007, KL-M07,
-  KL-020, KL-023, KL-025, AP-004, AP-M10, AP-022, RUN-L-008 and RP-002 expect what all three platforms
-  did (README, "Agreed behaviour"). A pass there shows that no platform changed, not that the
-  behaviour is right. INF-012 is held at `squareButton` true although info.mdx gives false.
-- **Unverified, iOS only (6):** RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 (the iOS `AutoPlayRunner`
-  reads the wall clock and sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared
-  by the main screen after the play screen is left, a screen-level step the harness does not drive). None
-  of the six is known to fail on iOS; they are not measured. No case is undetermined.
-- A pass on the runner cases (RUN-*) shows each platform at the seam described in README, "What each
-  harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
-  screen. No pack of the corpus has been opened in a running app on any platform yet.
+- **Fail, 5 pinned:** Android: INF-007, INF-010, INF-016. Web: KS-018, KL-024. Each is pinned in
+  `divergences.json` with the observed result and its cause; each platform's fix removes its own pins.
+- **Unverified, iOS only (6):** RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004, RUN-L-006 and RUN-L-007, as
+  before (README, "What each harness measures").
+
+## Changes after the iOS `info` fix
+
+The previous canonical corpus SHA256 was `72064eeab90f…` (132 cases).
+
+- **iOS gives the decided result for INF-007, INF-010 and INF-015.** It skips an `info` line without
+  `=` without a warning, refuses a pack whose grid size is not an integer, and no longer reads
+  `info.json`. Its three pins were removed.
+- **INF-016 was added:** `buttonY=abc` refuses the pack, like `buttonX=abc` in INF-010, so a fix of
+  `buttonX` alone no longer passes. iOS and the web pass it; Android opens the pack with `buttonY` 0 and
+  is pinned.
+- The other 132 input fingerprints, `palette.json` and the assets are unchanged.
 
 ## Changes after the decided expectations
 

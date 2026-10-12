@@ -116,8 +116,8 @@ because all three apps start from true.
 
 **Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
 choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
-other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-010 (a `buttonX` that
-is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
+other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-010 and INF-016 (a
+`buttonX` or a `buttonY` that is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
 keySound with a byte order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names
 who decided and when and whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as
 written and skipped when lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
