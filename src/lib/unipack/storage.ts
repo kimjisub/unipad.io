@@ -130,21 +130,26 @@ export async function saveStoreUniPack(
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_UNIPACKS, 'readwrite');
+    let requestError: unknown;
     transaction.oncomplete = () => {
       db.close();
       resolve(record.id);
     };
     transaction.onabort = () => {
       db.close();
-      reject(transaction.error ?? new DOMException('Saving the pack was aborted.', 'AbortError'));
+      reject(transaction.error ?? requestError ?? new DOMException('Saving the pack was aborted.', 'AbortError'));
     };
     try {
       const store = transaction.objectStore(STORE_UNIPACKS);
       store.put(record);
       for (const id of previousIds) store.delete(id);
     } catch (error) {
-      transaction.abort();
-      reject(error);
+      requestError = error;
+      try {
+        transaction.abort();
+      } catch {
+        // Already aborted; onabort rejects.
+      }
     }
   });
 }
