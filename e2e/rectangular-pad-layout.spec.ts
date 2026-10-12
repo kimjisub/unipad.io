@@ -12,6 +12,8 @@ const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements =
   const rect = element.getBoundingClientRect();
   return { position: element.getAttribute('data-pad')!, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 }));
+// A press shows within a frame or two; the default first retry after 100 ms adds up over every edge press.
+const quickPoll = { intervals: [16, 32, 64, 100] };
 const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
   .evaluateAll(elements => elements.map(element => element.getAttribute('data-pad')));
 async function record(page: Page, info: TestInfo, name: string) {
@@ -23,17 +25,23 @@ async function record(page: Page, info: TestInfo, name: string) {
   });
 }
 
+// Each test decodes a two-chain pack and presses up to 17 edge pads with trusted mouse input. On a busy
+// shared machine one browser round trip can take 300 ms, which put the 8x8 tests at 20-28 s of the 30 s default.
+test.describe.configure({ timeout: 60_000 });
+
 for (const screen of screens) {
   for (const shape of [{ rows: 8, cols: 8 }, { rows: 3, cols: 4 }]) {
     test.describe(`${screen.name}: ${shape.cols}x${shape.rows}`, () => {
       test.use({ viewport: screen.viewport });
-      test('square and rectangular pads fit and play every bottom and right edge', async ({ page }, info) => {
-        for (const square of [true, false]) {
+      for (const square of [true, false]) {
+        const label = square ? 'square' : 'rectangular';
+        test(`${label} pads fit and play every bottom and right edge`, async ({ page }, info) => {
           await loadInputPack(page, shape.rows, shape.cols, square);
           await expect.poll(async () => (await bounds(page))[0].width).toBeGreaterThan(1);
-          const label = square ? 'square' : 'rectangular';
           await record(page, info, `${label}-before-input`);
-          for (const r of await bounds(page)) {
+          // Pressing a pad never moves the layout; the hit test below still checks each point at press time.
+          const pads = await bounds(page);
+          for (const r of pads) {
             expect(r.x, `${label} ${r.position} left edge`).toBeGreaterThanOrEqual(0);
             expect(r.y, `${label} ${r.position} top edge`).toBeGreaterThanOrEqual(0);
             expect(r.x + r.width, `${label} ${r.position} right edge`).toBeLessThanOrEqual(screen.viewport.width);
@@ -48,27 +56,27 @@ for (const screen of screens) {
             ...Array.from({ length: shape.rows - 1 }, (_, row) => ({ position: `${row},${lastCol}`, x: 1, y: 0.5 })),
           ];
           for (const [index, location] of locations.entries()) {
-            const r = (await bounds(page)).find(r => r.position === location.position)!;
+            const r = pads.find(r => r.position === location.position)!;
             // Native mouse input two CSS pixels inside the outer edges; never scroll a pad.
             const point = { x: r.x + 2 + (r.width - 4) * location.x, y: r.y + 2 + (r.height - 4) * location.y };
             expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-pad]')?.getAttribute('data-pad'), point)).toBe(location.position);
             await page.mouse.move(point.x, point.y);
             await page.mouse.down();
-            await expect.poll(() => lit(page)).toEqual([location.position]);
+            await expect.poll(() => lit(page), quickPoll).toEqual([location.position]);
             const audio = await page.evaluate(() => window.browserProbe.audio);
             expect(audio.starts).toHaveLength(index + 1);
             expect(audio.starts[index].duration).toBeCloseTo(duration(shape.rows, shape.cols, location.position), 4);
             expect(audio.starts[index].loop).toBe(true);
             await page.mouse.up();
-            await expect.poll(() => lit(page)).toEqual([]);
-            await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual(Array.from({ length: index + 1 }, (_, i) => i + 1));
+            await expect.poll(() => lit(page), quickPoll).toEqual([]);
+            await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops), quickPoll).toEqual(Array.from({ length: index + 1 }, (_, i) => i + 1));
           }
           const events = await page.evaluate(() => window.inputBoundaryEvents.filter(event => event.type === 'pointerdown'));
           expect(events).toHaveLength(locations.length);
           expect(events.every(event => event.trusted && event.pointerType === 'mouse')).toBe(true);
           await record(page, info, `${label}-after-release`);
-        }
-      });
+        });
+      }
     });
   }
 }
