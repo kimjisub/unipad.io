@@ -46,14 +46,16 @@ for (const locale of ['en', 'ko']) for (const [width, height] of [[1440, 900], [
       await load(page, baseURL, locale, 'e2e/fixtures/basic.uni');
 
       // A pad held while the settings open is released, not left sounding.
+      const pressed = await page.evaluate(() => window.browserProbe.midi.messages.length);
       await page.keyboard.down('1');
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
       await settingsButton(page).click();
       await expect(settings(page)).toBeVisible();
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
       await page.keyboard.up('1');
-      // Its key LED animation runs on after the release and turns pad 0,1 off 1.2 s later.
-      await expect(page.locator('[data-pad="0,1"] div[style*="background-color"]')).toHaveCount(0);
+      // Its key LED animation runs on after the release and turns pad 0,1 off 1.2 s after the press;
+      // wait for that note-off on the device so it is not counted as a key acting behind the dialog.
+      await expect.poll(() => page.evaluate((from) => window.browserProbe.midi.messages.slice(from), pressed), { timeout: 5000 }).toContainEqual([0x80, 82, 0]);
 
       await settings(page).getByRole('heading', { name: t.launchpad.title }).click();
       await expect(page.locator('body')).toBeFocused();
