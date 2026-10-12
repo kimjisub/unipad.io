@@ -302,10 +302,11 @@ export async function downloadStoreItem(
   const directUrl = getStoreDownloadUrl(item);
   let response: Response | null = null;
   let lastError: unknown = null;
-  // Set when the proxy refused the URL, so a failing direct fetch is reported as that refusal.
+  // Set when this attempt's proxy refused the URL, so a failing direct fetch is reported as that refusal.
   let proxyRejectedStatus: number | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    proxyRejectedStatus = null;
     try {
       response = await fetch(proxyUrl, {
         method: 'GET',

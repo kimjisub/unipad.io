@@ -79,6 +79,12 @@ test('a proxy refusal falls back to the direct URL and reports its status', asyn
     await downloadErrorType([status(403), new TypeError('Failed to fetch'), status(403), new TypeError('Failed to fetch')]),
     'http_403',
   );
+
+  // A refusal on the first attempt does not label a retry whose proxy request never connected.
+  assert.equal(
+    await downloadErrorType([status(403), new TypeError('Failed to fetch'), new TypeError('Failed to fetch')]),
+    'network',
+  );
 });
 
 test('a fetch that keeps throwing is a network failure, with the message people saw before', async () => {
