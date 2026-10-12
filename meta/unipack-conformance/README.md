@@ -96,12 +96,22 @@ Each case is reported per platform as exactly one of:
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
 | `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`), or the case is `undetermined` (below). Never counted as a pass. |
 
-A case is `determined` only when a format doc (`content/docs/en/unipack`) or an intent stated in a
+A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
 platforms still run it, the observed results are printed side by side, and it is `unverified` on every
 platform until someone decides. `basis[].type` says which: `doc` (checked to exist at build time),
-`intent` (a commit or test that states it), `reference` (the Android implementation, for the palette).
-Expected results are never taken from what the three parsers agree on.
+`intent` (a commit or test that states it), `reference` (the Android implementation, for the palette),
+`agreed` (below).
+
+**Agreed behaviour.** When an undetermined case gives the same result on Android, iOS and the web, that
+result is held as the expected one with an `agreed` basis, whose `ref` names the runs it was observed in
+and whose `note` keeps the open question. It does not say the behaviour is right; it makes a change on
+any one platform show up as a `fail` instead of passing unnoticed. A doc or an intent that decides the
+case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
+own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
+disagree stays undetermined; the expected result is never taken from two platforms against the third.
+INF-012 is held at `squareButton` true although info.mdx gives false as the default, because all three
+apps start from true.
 
 A case can also name a platform whose harness cannot observe it (`unobserved`, with the reason). That
 platform does not run the case and reports it as `unverified`; the others are judged as usual. Today:
@@ -123,7 +133,7 @@ virtual clock) and RUN-L-006 and RUN-L-007 on iOS (leaving the play screen, see 
   "fingerprint": "...",      // sha256 of the files, formula below
   "expectation": "determined",   // or "undetermined" (then "question" and no "expected")
   "expected": { ... },
-  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],
+  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],   // or agreed, see Statuses
   "scenario": [ ... ],       // run layer only
   "known": { "ios": { "status": "fail", "actual": { ... }, "note": "..." } },  // from divergences.json
   "unobserved": { "ios": "why the iOS harness cannot observe this case" }
@@ -287,7 +297,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
 - shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
   started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
-  `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are run but undetermined.
+  `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are held on an agreed basis.
 - palette: the 128 colours.
 
 ## What is not covered
@@ -306,4 +316,5 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - Encodings other than UTF-8 and UTF-16 with BOM (legacy Korean encodings).
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
-- `info.json`, and every `undetermined` case: observed only.
+- `info.json`, and every `undetermined` case (INF-007, INF-010, INF-015, KS-018, KL-024): observed only.
+- Whether an `agreed` result is the right behaviour: it is only what the three platforms did.

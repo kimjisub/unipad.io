@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildCases } from './cases.mjs';
-import { buildAssets, fingerprint, SCHEMA, sha256 } from './lib.mjs';
+import { buildAssets, fingerprint, restsOnAgreement, SCHEMA, sha256 } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../..');
@@ -16,11 +16,12 @@ const read = (name) => JSON.parse(readFileSync(join(here, name), 'utf8'));
 const PLATFORMS = ['android', 'ios', 'web'];
 const STATUSES = ['fail', 'unsupported', 'intended-difference'];
 
-export function buildCorpus() {
+/** `makeCases` is the case list to build from, `buildCases` unless a test hands in an edited one. */
+export function buildCorpus(makeCases = buildCases) {
   const palette = read('palette.json');
   const divergences = existsSync(join(here, 'divergences.json')) ? read('divergences.json') : {};
   const assets = buildAssets();
-  const cases = buildCases(palette);
+  const cases = makeCases(palette);
 
   const seen = new Set();
   const problems = [];
@@ -29,10 +30,12 @@ export function buildCorpus() {
     seen.add(c.id);
     if (c.expectation === 'determined') {
       if (!c.expected) problems.push(`${c.id}: determined without expected`);
-      // A reference basis (another implementation) only stands for the palette, which no doc lists.
-      if (!c.basis?.some((b) => b.type === 'doc' || b.type === 'intent' || (c.layer === 'palette' && b.type === 'reference'))) {
-        problems.push(`${c.id}: determined without a doc or intent basis`);
+      // A reference basis (another implementation) only stands for the palette, which no doc lists. An
+      // agreed basis stands for what the three platforms did where nothing else decides.
+      if (!c.basis?.some((b) => b.type === 'doc' || b.type === 'intent' || b.type === 'agreed' || (c.layer === 'palette' && b.type === 'reference'))) {
+        problems.push(`${c.id}: determined without a doc, intent or agreed basis`);
       }
+      if (restsOnAgreement(c) && c.question) problems.push(`${c.id}: an agreed case keeps its open question in the agreed note`);
     } else if (!c.question) {
       problems.push(`${c.id}: undetermined without the open question`);
     }

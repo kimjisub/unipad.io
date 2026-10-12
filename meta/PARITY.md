@@ -138,9 +138,22 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **Web names non-numeric values differently.** Non-numeric autoPlay values and keyLED file-name fields are reported as `range` instead of `format` (AP-M01..M09, AP-M11, KL-N01..N05). The line or file is dropped by all three; only the message differs.
+None pinned. Five cases stay undetermined because the platforms give different results and nothing
+decides which is right: INF-007 (an info line without `=`), INF-010 (`buttonX=abc`), INF-015
+(`info.json` in place of `info`), KS-018 (a UTF-16 keySound) and KL-024 (a keyLED event outside the pad
+grid).
 
 ### Resolved differences found by the corpus
+
+- **AP-M01..M09, AP-M11, KL-N01..N05: the web now calls a value that is not a whole number a format
+  error.** The web parser reported a non-numeric autoPlay value or keyLED file-name field as a range
+  error (`autoPlay: [on a 1] coordinate is incorrect`, `keyLed: [a 1 1] chain is incorrect`); Android
+  and iOS report `format is incorrect`. All three dropped the line or file, so only the warning text
+  differed. The web now writes `autoPlay: [on a 1] format is incorrect` and `keyLed: [a 1 1] format is
+  incorrect`; a number outside the pack is still a range error. The 15 web pins were removed; the input
+  fingerprints are unchanged. The previous corpus SHA256 was
+  `c30e75b9985e2fbb591ada9da3fac0a5437515ebe8a90e8f95ff8679066283d8`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 
 - **KL-M05: the web now rejects an x coordinate with trailing letters.** The previous web result lit pad (0,0)
   for `o 1b 1 FF0000`: `parseInt` stopped at the letter. [unipad.io PR #37](https://github.com/kimjisub/unipad.io/pull/37),
@@ -187,10 +200,10 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 ### Documentation that disagrees with the code
 
 - `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
-- `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012).
+- `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012, held at true on an agreed basis until the docs or the apps change).
 - Only iOS reads `info.json` (INF-015).
-- Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings. KL-003 and AP-004 are undetermined on the same basis as the unknown-command cases; agreement between parsers is not a warning expectation.
-- `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, undetermined).
+- Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings; all three record one range error each (KL-003, AP-004). The warning is held on an agreed basis, not as documented behaviour.
+- `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, held on an agreed basis).
 
 ## Slide across pads
 
