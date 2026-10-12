@@ -72,24 +72,23 @@ function tx<T>(
 
 // UniPack operations
 
-export async function saveUniPack(
-  zipData: ArrayBuffer,
-  info: {
-    title: string;
-    producerName: string;
-    buttonX: number;
-    buttonY: number;
-    chain: number;
-    keyLedExist?: boolean;
-    autoPlayExist?: boolean;
-    soundCount?: number;
-    ledCount?: number;
-    storeCode?: string;
-  },
-): Promise<string> {
-  const id = `${info.title}_${Date.now()}`;
-  const record: StoredUniPack = {
-    id,
+export interface UniPackInfo {
+  title: string;
+  producerName: string;
+  buttonX: number;
+  buttonY: number;
+  chain: number;
+  keyLedExist?: boolean;
+  autoPlayExist?: boolean;
+  soundCount?: number;
+  ledCount?: number;
+  storeCode?: string;
+}
+
+function createUniPackRecord(zipData: ArrayBuffer, info: UniPackInfo): StoredUniPack {
+  const now = Date.now();
+  return {
+    id: `${info.title}_${now}`,
     storeCode: info.storeCode,
     title: info.title,
     producerName: info.producerName,
@@ -102,11 +101,57 @@ export async function saveUniPack(
     ledCount: info.ledCount ?? 0,
     openCount: 0,
     zipData,
-    addedAt: Date.now(),
-    lastOpenedAt: Date.now(),
+    addedAt: now,
+    lastOpenedAt: now,
   };
+}
+
+export async function saveUniPack(zipData: ArrayBuffer, info: UniPackInfo): Promise<string> {
+  const record = createUniPackRecord(zipData, info);
   await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
-  return id;
+  return record.id;
+}
+
+/**
+ * Saves a store download in place of any earlier copy of the same store pack.
+ *
+ * The new record is written and the earlier copies are deleted in one transaction, so
+ * when the write fails (for example, browser storage is full) nothing is deleted and
+ * the copy the user already had stays.
+ */
+export async function saveStoreUniPack(
+  zipData: ArrayBuffer,
+  info: UniPackInfo & { storeCode: string },
+): Promise<string> {
+  const previousIds = (await listUniPacks())
+    .filter((pack) => pack.storeCode === info.storeCode)
+    .map((pack) => pack.id);
+  const record = createUniPackRecord(zipData, info);
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_UNIPACKS, 'readwrite');
+    let requestError: unknown;
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(record.id);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? requestError ?? new DOMException('Saving the pack was aborted.', 'AbortError'));
+    };
+    try {
+      const store = transaction.objectStore(STORE_UNIPACKS);
+      store.put(record);
+      for (const id of previousIds) store.delete(id);
+    } catch (error) {
+      requestError = error;
+      try {
+        transaction.abort();
+      } catch {
+        // Already aborted; onabort rejects.
+      }
+    }
+  });
 }
 
 export async function getUniPack(id: string): Promise<StoredUniPack | undefined> {
