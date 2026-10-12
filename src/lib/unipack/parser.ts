@@ -27,6 +27,17 @@ function roundLedIndex(token: string | undefined): number | null {
 }
 
 /**
+ * The 0-based pad column of a keyLED line, or null for `0`, whose -1 is the round LED address. A column
+ * outside the grid is kept as written: the LED runner skips it when it is lit, as Android and iOS do, so a
+ * pack that lights positions beyond its grid opens without a warning per line. A non-number is NaN and is
+ * reported by the caller's format check.
+ */
+function padLedX(token: string | undefined): number | null {
+  const x = strictInt(token) - 1;
+  return x === -1 ? null : x;
+}
+
+/**
  * The colour tokens of a logo line, read as iOS reads them: `o l color`, `o l auto velocity`, and the forms
  * with a placeholder where other lines have y, `o l _ color` and `o l _ color|auto velocity`.
  */
@@ -182,7 +193,7 @@ async function parseInfo(
     return null;
   }
 
-  const text = await file.async('text');
+  const text = await readText(file);
   const info: UniPackInfo = {
     title: '',
     producerName: '',
@@ -266,7 +277,7 @@ async function parseKeySoundFromFile(
   soundFiles: Map<string, ArrayBuffer>,
   errors: string[],
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
-  const text = await file.async('text');
+  const text = await readText(file);
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -337,6 +348,17 @@ async function parseKeySoundFromFile(
   }
 
   return { soundTable: table, soundFiles };
+}
+
+/**
+ * A pack's text file as Android and iOS read it: UTF-16 when it starts with a byte order mark (Windows
+ * Notepad's "Unicode"), UTF-8 otherwise. The mark itself is not part of the text.
+ */
+async function readText(file: JSZip.JSZipObject): Promise<string> {
+  const bytes = await file.async('uint8array');
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes);
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 /** \r\n, lone \r (classic Mac) and \n; splitting on '\n' alone made a CR-only file one line. */
@@ -446,7 +468,7 @@ async function parseKeyLed(
       continue;
     }
 
-    const text = await file.async('text');
+    const text = await readText(file);
     const ledEvents: LedEvent[] = [];
 
     for (const line of splitLines(text)) {
@@ -476,13 +498,13 @@ async function parseKeyLed(
               ledY = LOGO_FUNCTION_KEY;
               colorTokens = logoColorTokens(split);
             } else {
-              ledX = strictInt(xToken) - 1;
-              ledY = strictInt(split[2]) - 1;
-              // Validate pad coordinates before -1 can be treated as a round LED address.
-              if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+              const padX = padLedX(xToken);
+              if (padX === null) {
                 errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
                 continue;
               }
+              ledX = padX;
+              ledY = strictInt(split[2]) - 1;
               colorTokens = split.slice(3);
             }
 
@@ -525,12 +547,13 @@ async function parseKeyLed(
               ledX = -1;
               ledY = LOGO_FUNCTION_KEY;
             } else {
-              ledX = strictInt(xToken) - 1;
-              ledY = strictInt(split[2]) - 1;
-              if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+              const padX = padLedX(xToken);
+              if (padX === null) {
                 errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
                 continue;
               }
+              ledX = padX;
+              ledY = strictInt(split[2]) - 1;
             }
             if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -586,7 +609,7 @@ async function parseAutoPlay(
   const file = getFile(zip, prefix, 'autoPlay') || getFile(zip, prefix, 'autoplay');
   if (!file) return null;
 
-  const text = await file.async('text');
+  const text = await readText(file);
   const elements: AutoPlayElement[] = [];
   const map: number[][] = Array.from({ length: info.buttonX }, () =>
     Array.from({ length: info.buttonY }, () => 0),
