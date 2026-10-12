@@ -170,7 +170,13 @@ export function loaded(over = {}) {
 
 export const refused = () => ({ loaded: false });
 
-// Basis entries. `doc` is checked against content/docs/en/unipack at build time.
+// Basis entries. `doc` is checked against content/docs/en/unipack at build time. `agreed` is no
+// statement of what is right: no doc or intent decides the case, and the three platforms gave the same
+// result when it was observed (`ref`), so that result is held to catch a change on any one of them.
 export const doc = (file, note) => ({ type: 'doc', ref: `content/docs/en/unipack/${file}`, note });
 export const intent = (ref, note) => ({ type: 'intent', ref, note });
 export const reference = (ref, note) => ({ type: 'reference', ref, note });
+export const agreed = (ref, note) => ({ type: 'agreed', ref, note });
+
+/** A case whose expected result is only what the three platforms agreed on (an `agreed` basis). */
+export const restsOnAgreement = (c) => (c.basis ?? []).some((b) => b.type === 'agreed');
