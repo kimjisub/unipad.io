@@ -141,7 +141,7 @@ export function renderText(report) {
   for (const p of PLATFORMS) out.push(`${p.padEnd(9)}${STATUSES.map((s) => String(report.summary[p][s]).padStart(20)).join('')}`);
   out.push('');
   out.push(`pass on all three platforms: ${report.passOnAllThree} of ${report.cases} cases, ${report.agreed.passOnAllThree} of them on an agreed basis`);
-  out.push(`agreed basis: ${report.agreed.cases} cases hold what Android, iOS and the web did where no doc or stated intent decides; pass ${PLATFORMS.map((p) => `${p} ${report.agreed.pass[p]}`).join(', ')}`);
+  out.push(`agreed basis: ${report.agreed.cases} cases hold what Android, iOS and the web all did, not what a doc or a stated intent decides; pass ${PLATFORMS.map((p) => `${p} ${report.agreed.pass[p]}`).join(', ')}`);
   out.push('This is a result for the cases in this corpus only. It does not show that every UniPack is compatible.');
   out.push('');
   const short = { pass: 'pass', fail: 'FAIL', unsupported: 'UNSUPP', 'intended-difference': 'INTENDED', unverified: '-' };

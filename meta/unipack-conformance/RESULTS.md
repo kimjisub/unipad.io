@@ -1,35 +1,64 @@
-# Results (2026-10-11, Korea time)
+# Results (2026-10-12, Korea time)
 
-Corpus `c30e75b9985e…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 1899614f,
-unipad-ios c6a6107 and unipad.io f8f27e0 plus the real-pack shape cases below. Regenerate this table
-with `report.mjs` (README, "Running it"). It describes these 132 cases only; it does not show that every
-UniPack is compatible, and 100% compatibility is not known.
+Corpus `aa16cb34a0cf…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 4d31dbf1 and
+unipad-ios c7203bb9 (their main, with this corpus copied in as in unipad-android PR #191 and unipad-ios
+PR #118) and unipad.io e5d85f6. Regenerate this table with `report.mjs` (README, "Running it"). It
+describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
+compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 110 | 0 | 0 | 0 | 22 | 2026-10-10 22:56:39 |
-| iOS | 104 | 0 | 0 | 0 | 28 | 2026-10-10 23:33:47 |
-| Web | 95 | 15 | 0 | 0 | 22 | 2026-10-10 23:04:55 |
+| Android | 127 | 0 | 0 | 0 | 5 | 2026-10-12 04:06:57 |
+| iOS | 121 | 0 | 0 | 0 | 11 | 2026-10-12 04:17:49 |
+| Web | 127 | 0 | 0 | 0 | 5 | 2026-10-12 04:08:13 |
 
-Pass on all three platforms: 89 of 132. Formats exercised: info, keySound, keyLED, autoPlay (both
-spellings of every command), the colour palette, the sound, LED and autoPlay runners, an 8 x 8 grid, an
-MP3 sound, and lights that loop while autoPlay plays (see README for the list, and what was not
-exercised).
+Pass on all three platforms: 121 of 132, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+the 17). Formats exercised: info, keySound, keyLED, autoPlay (both spellings of every command), the
+colour palette, the sound, LED and autoPlay runners, an 8 x 8 grid, an MP3 sound, and lights that loop
+while autoPlay plays (see README for the list, and what was not exercised).
 
-- **Unverified, 22 on every platform:** cases where no doc or stated intent decides the expected result
-  (`undetermined`). Their observed results agree on all three platforms for 17 of them and differ for 5
-  (INF-007, INF-010, INF-015, KS-018, KL-024).
+- **Unverified, 5 on every platform:** the cases whose observed results differ between the platforms
+  and where no doc or stated intent decides the expected result (`undetermined`): INF-007, INF-010,
+  INF-015, KS-018 and KL-024.
+- **Agreed basis, 17:** INF-011, INF-012, KS-015, KS-017, KL-003, KL-005, KL-006, KL-007, KL-M07,
+  KL-020, KL-023, KL-025, AP-004, AP-M10, AP-022, RUN-L-008 and RP-002 expect what all three platforms
+  did (README, "Agreed behaviour"). A pass there shows that no platform changed, not that the
+  behaviour is right. INF-012 is held at `squareButton` true although info.mdx gives false.
 - **Unverified, iOS only (6):** RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 (the iOS `AutoPlayRunner`
   reads the wall clock and sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared
   by the main screen after the play screen is left, a screen-level step the harness does not drive). None
   of the six is known to fail on iOS; they are not measured.
 - **Fail** means the platform's result differs from the expected one. Each is pinned in
   `divergences.json` with the observed result and its cause; the platform suites stay green while a
-  pinned result is unchanged and go red when it changes or disappears. The 15 web differences are listed
-  in `meta/PARITY.md`, "Open differences found by the corpus", and each becomes a separate narrow fix.
+  pinned result is unchanged and go red when it changes or disappears. No difference is pinned now
+  (`meta/PARITY.md`, "Open differences found by the corpus").
 - A pass on the runner cases (RUN-*) shows each platform at the seam described in README, "What each
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
+
+## Changes after the web format-warning fix and the agreed expectations
+
+The previous canonical corpus SHA256 was
+`c30e75b9985e2fbb591ada9da3fac0a5437515ebe8a90e8f95ff8679066283d8`. On it the web passed 95 cases and
+failed 15 pinned ones, every platform left 22 undetermined cases unverified, and 89 of 132 passed on
+all three platforms.
+
+- **The 15 web differences are gone.** KL-N01..N05 (a keyLED file name whose chain, x, y or loop is not
+  a whole number) and AP-M01..M09, AP-M11 (an autoPlay line whose coordinate, chain or delay is not a
+  whole number) were dropped by all three platforms, but the web reported a range error
+  (`keyLed: [a 1 1] chain is incorrect`, `autoPlay: [on a 1] coordinate is incorrect`) where Android
+  and iOS report a format error. `parser.ts` now reports `… format is incorrect` for a value that is not
+  a whole number; a number outside the pack is still a range error. The 15 web pins were removed from
+  `divergences.json`, and the web now passes all 15.
+- **17 of the 22 undetermined cases are held on an agreed basis.** On the `c30e75b9…` corpus all three
+  platforms gave the same result for each of them; that result is now the expected one with an `agreed`
+  basis, and every platform passes all 17 on the new corpus. This replaces the earlier rule, recorded
+  under "Changes after the independent review" and "Changes from the first run" below, that left KL-003,
+  AP-004, KL-M07, AP-M10, KL-025 and AP-022 undetermined because agreement does not establish an
+  expected warning. The open question stays in each case's `basis[].note`.
+- **5 cases stay undetermined:** INF-007, INF-010, INF-015, KS-018 and KL-024, whose platforms disagree.
+- The 132 input fingerprints, `palette.json` and the assets are unchanged. The Android and iOS copies
+  were synchronized to `aa16cb34…` (`sync.mjs --check` passes against both pull request copies).
 
 ## Changes after the real-pack shape cases
 
@@ -168,6 +197,17 @@ review. What changed, and why:
   test log given in place of a result file.
 
 ## How the checks were run
+
+On 2026-10-12 (corpus `aa16cb34a0cf…`):
+
+| Platform | Command | Result |
+|---|---|---|
+| Web | `pnpm test:unipack` | 300 tests pass; the tooling subprocess runs 23 tests |
+| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` | `BUILD SUCCESSFUL`, every case and check passes |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests` (simulator, warnings as errors) | exit 0, 132 corpus cases included |
+
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash. The new parser
+tests fail 17 of 300 on the previous `parser.ts` (unipad.io 83632e6) and all pass on e5d85f6.
 
 On 2026-10-11 (corpus `c30e75b9985e…`):
 
