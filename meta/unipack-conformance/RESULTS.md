@@ -1,19 +1,19 @@
 # Results (2026-10-12, Korea time)
 
-Corpus `72064eeab90f…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 94c34eb7 and
-unipad-ios 5f1046bc (the head commits of unipad-android PR #193 and unipad-ios PR #121, which copy this
-corpus into each app and are not merged yet; the same commits as `copies.json`, which a later change moves
-to their merge commits) and unipad.io 3dff4cd. Regenerate this table with `report.mjs` (README, "Running it"). It
+Corpus `72064eeab90f…` (sha256 of `corpus.json`), 132 cases, run on unipad-android 7859c691 and
+unipad-ios aa7188a (the main merge commits of unipad-android PR #193 and unipad-ios PR #121, whose
+corpus copies are byte for byte those of the pull request heads in `copies.json`) and unipad.io main
+f3c4b81 with the report change described below. Regenerate this table with `report.mjs` (README, "Running it"). It
 describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
 compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 2 | 0 | 0 | 0 | 2026-10-12 09:20:08 |
-| iOS | 123 | 3 | 0 | 0 | 6 | 2026-10-12 09:34:02 |
-| Web | 130 | 2 | 0 | 0 | 0 | 2026-10-12 09:16:39 |
+| Android | 130 | 2 | 0 | 0 | 0 | 2026-10-12 12:44:57 |
+| iOS | 129 | 3 | 0 | 0 | 0 | 2026-10-12 13:10:16 |
+| Web | 130 | 2 | 0 | 0 | 0 | 2026-10-12 13:10:56 |
 
-Pass on all three platforms: 121 of 132, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+Pass on all three platforms: 127 of 132, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
 the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1). Formats exercised: info,
 keySound, keyLED, autoPlay (both spellings of every command), the colour palette, the sound, LED and
 autoPlay runners, an 8 x 8 grid, an MP3 sound, and lights that loop while autoPlay plays (see README for
@@ -32,13 +32,31 @@ the list, and what was not exercised).
   KL-020, KL-023, KL-025, AP-004, AP-M10, AP-022, RUN-L-008 and RP-002 expect what all three platforms
   did (README, "Agreed behaviour"). A pass there shows that no platform changed, not that the
   behaviour is right. INF-012 is held at `squareButton` true although info.mdx gives false.
-- **Unverified, iOS only (6):** RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 (the iOS `AutoPlayRunner`
-  reads the wall clock and sleeps in real time), RUN-L-006 and RUN-L-007 (on iOS the lights are cleared
-  by the main screen after the play screen is left, a screen-level step the harness does not drive). None
-  of the six is known to fail on iOS; they are not measured. No case is undetermined.
+- **No case is unverified or undetermined.** RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004, RUN-L-006 and
+  RUN-L-007 pass on iOS from the results its harness recorded (below). On iOS, leaving the play screen is
+  observed up to the main screen's clear call to the MIDI driver, not what a physical Launchpad receives.
 - A pass on the runner cases (RUN-*) shows each platform at the seam described in README, "What each
   harness measures". It does not show real sound, real timing, a real Launchpad, or what a user sees on
   screen. No pack of the corpus has been opened in a running app on any platform yet.
+
+## Changes after iOS observed the six exit and autoPlay cases
+
+On the same corpus the previous table left RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004, RUN-L-006 and
+RUN-L-007 unverified on iOS, and 121 of 132 passed on all three platforms.
+
+- **The iOS harness records a result for the six.** It drives `AutoPlayRunner` on a virtual clock (the
+  runner's clock and sleep are passed in; the app keeps the real ones) and, at `stop`, runs the main
+  screen's step that takes the MIDI controller back (`MainViewModel.setupMidiController` →
+  `MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver. A harness that
+  skips that step or the autoPlay stop fails its own checks.
+- **`report.mjs` judges those results.** It used to return unverified for any case the corpus marks
+  `unobserved` for a platform, before looking at the result. The reason now applies only while the
+  platform records no result; a recorded result is compared with the expected one like any other. With
+  the previous `report.mjs` the same three result files give iOS 123 pass and 6 unverified; with this one
+  129 pass. All six iOS results equal the expected ones, with the corpus input fingerprints.
+- The corpus still marks the six `unobserved` on iOS, and the iOS harness still lists them as observable
+  despite that mark. The corpus, its expected results and the pinned differences are unchanged.
+- Not checked: what a physical Launchpad shows after leaving the play screen, real sound and real timing.
 
 ## Changes after the decided expectations
 
@@ -223,6 +241,17 @@ review. What changed, and why:
   test log given in place of a result file.
 
 ## How the checks were run
+
+On 2026-10-12, after the iOS observation of the six (corpus `72064eeab90f…`):
+
+| Platform | Command | Result |
+|---|---|---|
+| Web | `pnpm test:unipack` | 300 tests pass |
+| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` on 7859c691 | BUILD SUCCESSFUL; 132 case tests + 10 checks that can fail run, none fail; 130 pass, INF-007 and INF-010 fail as pinned |
+| iOS | `xcodebuild build-for-testing` (Debug, generic iOS Simulator, warnings as errors) on aa7188a, then `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test-without-building -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests -parallel-testing-enabled NO` (iPhone 17 Pro simulator, iOS 27.0, Xcode 27.0) | TEST EXECUTE SUCCEEDED, 26 tests pass, 132 corpus cases included, read from the test bundle; 129 pass, INF-007, INF-010 and INF-015 fail as pinned |
+
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash.
+`sync.mjs --check` passes against the two app checkouts.
 
 On 2026-10-12 (corpus `72064eeab90f…`):
 
