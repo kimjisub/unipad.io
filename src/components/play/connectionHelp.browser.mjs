@@ -91,12 +91,12 @@ try {
       const storage = await page.evaluate(() => ({ ...localStorage }));
       const writes = await page.evaluate(() => window.helpWrites.length);
       const help = page.getByRole('dialog', { name: helpName, exact: true });
+      const autoPlay = page.getByRole('button', { name: locale === 'en' ? 'Play mode: Auto' : '연주 모드: 자동', exact: true });
       if (process.env.REGRESSION_CASE !== 'reverse-tab') {
         await entry.focus();
         await page.keyboard.press('Space');
         if (captures) await page.screenshot({ path: join(captures, `entry-space-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
         await expect(help).toBeVisible();
-        const autoPlay = page.getByRole('button', { name: locale === 'en' ? 'Play mode: Auto' : '연주 모드: 자동', exact: true });
         await expect(autoPlay.first()).toBeAttached();
         await expect(autoPlay.and(page.locator('[aria-pressed="true"]'))).toHaveCount(0);
         if (process.env.REGRESSION_CASE === 'entry-space') {
@@ -111,6 +111,30 @@ try {
       await expect(close).toBeFocused();
       await expect(help).toContainText(locale === 'en' ? 'Selected model: Auto Detect' : '선택한 기종: 자동 감지');
       await expect(help.getByRole('button')).toHaveCount(1);
+      // Clicking text or the backdrop drops focus to the body; player keys must still stay out.
+      const outside = {
+        title: () => help.getByRole('heading', { level: 2 }).click(),
+        model: () => help.getByText(locale === 'en' ? 'Selected model: Auto Detect' : '선택한 기종: 자동 감지').click(),
+        backdrop: () => page.mouse.click(4, 4),
+      };
+      for (const [target, click] of Object.entries(outside)) {
+        await click();
+        expect(await help.evaluate(dialog => dialog.contains(document.activeElement)), `${target} click leaves focus outside the help`).toBe(false);
+        await page.keyboard.press('Space');
+        await page.keyboard.down('q');
+        await page.waitForTimeout(500);
+        if (captures) await page.screenshot({ path: join(captures, `outside-focus-${target}-${process.env.CAPTURE_PHASE ?? 'after'}-${locale}-${width}.png`) });
+        await expect(autoPlay.and(page.locator('[aria-pressed="true"]')), `Space after ${target} click must not start auto-play`).toHaveCount(0);
+        await expect(page.locator('[data-pad="1,0"] img[src="/theme/btn_.png"]'), `q after ${target} click must not press a pad`).toHaveCount(0);
+        await page.keyboard.up('q');
+        await expect(help).toBeVisible();
+      }
+      if (process.env.REGRESSION_CASE === 'outside-focus') {
+        console.log('PASS player keys after title, model line and backdrop clicks stay out of the player');
+        await context.close();
+        continue;
+      }
+      await close.focus();
       await page.keyboard.press('Tab');
       await expect(help.getByRole('region')).toBeFocused();
       await page.keyboard.press('Tab');

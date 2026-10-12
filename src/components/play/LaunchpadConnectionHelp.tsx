@@ -70,6 +70,10 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
           event.preventDefault();
           first?.focus();
         }
+      } else if (!dialogRef.current?.contains(event.target as Node)) {
+        // Clicking the title, model line or backdrop leaves focus on the body,
+        // outside the dialog's own guard; keep player shortcuts from acting behind the help.
+        event.stopImmediatePropagation();
       }
     };
     window.addEventListener('popstate', pop);

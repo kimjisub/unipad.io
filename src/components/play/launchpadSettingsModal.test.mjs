@@ -192,6 +192,30 @@ test('help keyboard input does not reach the background player shortcuts', () =>
   assert.equal(backgroundKeys, 0, 'reading/activating help must not play pads or toggle auto-play');
 });
 
+// Clicking the help title, model line or backdrop leaves focus on the body,
+// outside the dialog's own key guard.
+test('player keys pressed while focus left the open help do not reach the background player', () => {
+  const view = render(wrapped());
+  openHelp(view);
+  document.activeElement.blur();
+  assert.equal(document.activeElement === document.body, true);
+  const keys = [];
+  const background = event => keys.push(`${event.type}:${event.key}`);
+  window.addEventListener('keydown', background);
+  window.addEventListener('keyup', background);
+  try {
+    fireEvent.keyDown(document.body, { key: ' ', code: 'Space' });
+    fireEvent.keyDown(document.body, { key: 'q', code: 'KeyQ' });
+    fireEvent.keyDown(document.body, { key: 'F1', code: 'F1' });
+    fireEvent.keyDown(document.body, { key: 'a', code: 'KeyA', altKey: true });
+    fireEvent.keyUp(document.body, { key: 'q', code: 'KeyQ' });
+    assert.deepEqual(keys, ['keyup:q'], 'only key releases reach the player so held pads still turn off');
+    assert.ok(view.getByRole('dialog', { name: 'Connection and light help' }));
+  } finally {
+    window.removeEventListener('keydown', background);
+    window.removeEventListener('keyup', background);
+  }
+});
 
 test('help entry keyboard activation preserves the native button action and stops player shortcuts', () => {
   const view = render(wrapped());
