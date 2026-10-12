@@ -146,22 +146,6 @@ export async function fetchStoreItemsResult(): Promise<StoreItemsResult> {
   }
 }
 
-export async function fetchStoreCount(): Promise<number> {
-  const services = await initFirebaseServices();
-  const db = services?.database;
-  if (!db) return loadCachedStoreCount();
-
-  try {
-    const snapshot = await get(ref(db, 'storeCount'));
-    const value = Number(snapshot.val() ?? 0);
-    const resolved = Number.isFinite(value) ? value : 0;
-    saveCachedStoreCount(resolved);
-    return resolved;
-  } catch {
-    return loadCachedStoreCount();
-  }
-}
-
 export async function subscribeStoreItems(
   onItems: (items: StoreItem[]) => void,
   onError?: (message: string) => void,
@@ -196,13 +180,13 @@ export async function subscribeStoreItems(
 }
 
 export async function subscribeStoreCount(
-  onCount: (count: number) => void,
+  onCount: (count: number, fromCache: boolean) => void,
   onError?: (message: string) => void,
 ): Promise<StoreUnsubscribe> {
+  onCount(loadCachedStoreCount(), true);
   const services = await initFirebaseServices();
   const db = services?.database;
   if (!db) {
-    onCount(loadCachedStoreCount());
     onError?.('Firebase Database is not available.');
     return () => {};
   }
@@ -214,7 +198,7 @@ export async function subscribeStoreCount(
       const value = Number(snapshot.val() ?? 0);
       const resolved = Number.isFinite(value) ? value : 0;
       saveCachedStoreCount(resolved);
-      onCount(resolved);
+      onCount(resolved, false);
     },
     (error) => {
       onError?.(error?.message || 'Failed to subscribe store count.');
