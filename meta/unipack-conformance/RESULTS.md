@@ -2,8 +2,8 @@
 
 Corpus `72064eeab90f…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 94c34eb7 and
 unipad-ios 5f1046bc (the head commits of unipad-android PR #193 and unipad-ios PR #121, which copy this
-corpus onto their main at 53bfc448 and cdf83a66; the same commits as `copies.json`) and unipad.io
-43f2e62. Regenerate this table with `report.mjs` (README, "Running it"). It
+corpus into each app and are not merged yet; the same commits as `copies.json`, which a later change moves
+to their merge commits) and unipad.io 3dff4cd. Regenerate this table with `report.mjs` (README, "Running it"). It
 describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
 compatibility is not known.
 
@@ -48,8 +48,8 @@ unverified, and no difference was pinned.
 
 - **The five cases have an expected result.** The maintainers chose one where the platforms disagreed:
   - INF-007: an `info` line without `=` is ignored, with no warning. Added to `info.mdx`.
-  - INF-010: a `buttonX` or `buttonY` that is not a whole number of 1 or more refuses the pack. Added to
-    `info.mdx`.
+  - INF-010: a `buttonX` or `buttonY` that is not an integer (for example `abc`) refuses the pack. Added
+    to `info.mdx`. A value of 0 or less still only warns (INF-009).
   - INF-015: `info.json` in place of `info` refuses the pack. `info.mdx` already names only `info`.
   - KS-018: a keySound saved as UTF-16 with a byte order mark is read normally. Added to `key-sound.mdx`
     ("UTF-8, or UTF-16 with a byte order mark").

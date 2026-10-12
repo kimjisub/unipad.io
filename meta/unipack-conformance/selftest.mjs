@@ -124,8 +124,8 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.match(text, /^decision basis: 1 cases .* pass android 1, ios 1, web 0$/m);
   assert.match(text, /^KL-024 .*\[decision\]$/m);
 
-  // The web result pinned for KL-024 is a fail; a web result equal to the expected one is a pass the
-  // pin no longer accounts for, and any other result is a fail.
+  // The web result pinned for KL-024 is a fail, any other wrong result is a fail, and the pin belongs to
+  // web alone. A result equal to the expected one while the pin remains is unverified (`classify`).
   const kl024 = corpus.cases.find((c) => c.id === 'KL-024');
   assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: kl024.known.web.actual } })).get('KL-024').status, 'fail');
   assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: SOME_RESULT } })).get('KL-024').status, 'fail');
