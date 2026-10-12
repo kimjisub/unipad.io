@@ -1,0 +1,67 @@
+name: Windows playback
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-playback-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playback:
+    name: Windows playback (${{ matrix.project }})
+    runs-on: windows-2025
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, chrome, msedge]
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-browser-test.firebaseio.com'
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'unipad-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+      NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+      - name: Set up pnpm
+        run: npm install --global (node -p "require('./package.json').packageManager")
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Install Chromium
+        if: matrix.project == 'chromium'
+        run: pnpm exec playwright install chromium
+      # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
+      - name: Check playback
+        run: pnpm exec playwright test e2e/play.spec.ts --project=${{ matrix.project }}
+      - name: Save playback results, skip reasons and failure traces
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-playback-${{ matrix.project }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Summarize results
+        if: always()
+        run: |
+          node scripts/playback-summary.mjs >> $env:GITHUB_STEP_SUMMARY

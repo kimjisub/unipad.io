@@ -16,7 +16,8 @@ async function loadPack(page: Page) {
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual([{ sysex: true }]);
+  const supportsMidi = await page.evaluate(() => window.browserProbe.midi.supported);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
 }
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
@@ -59,6 +60,63 @@ test('keyboard down/up reaches the mapped pad and ignores repeated keydown', asy
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
 });
 
+test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page }, info) => {
+  await loadPack(page);
+  const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
+  await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  let playingRms: number | null = null;
+  await expect.poll(async () => {
+    playingRms = await rms();
+    return playingRms;
+  }, 'the held pad must produce a nonzero post-volume audio signal').toBeGreaterThan(0.001);
+  await page.mouse.up();
+  await expect.poll(rms, 'release must silence the output').toBe(0);
+  const releasedRms = await rms();
+
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.locator('input[type=range][max="7"]').fill('0');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.keyboard.down('q');
+  await expect.poll(() => starts(page)).toBe(2);
+  // Still playing a looping source: a pre-volume probe would incorrectly report sound.
+  await expect.poll(rms, 'zero application volume must silence a running source').toBe(0);
+  const mutedRms = await rms();
+  await page.keyboard.up('q');
+  await info.attach('output-signal', {
+    body: JSON.stringify({ playingRms, releasedRms, mutedRms,
+      measurement: 'RMS after application output gain, before native audio destination',
+      humanListening: false }),
+    contentType: 'application/json',
+  });
+});
+
+test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
+  await page.keyboard.down('1');
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => starts(page)).toBe(1);
+  const chain = page.getByRole('button', { name: 'Chain 10', exact: true });
+  await chain.click();
+  await expect(chain.locator('div[style*="background-color"]')).toHaveCount(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+  await page.keyboard.up('1');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  await page.keyboard.down('q');
+  await expect.poll(() => starts(page)).toBe(2);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+  await page.keyboard.up('q');
+  await expect(page).not.toHaveURL(/pack=/);
+});
+
 test('auto-play starts, pauses without advancing, resumes, and stops', async ({ page }) => {
   await loadPack(page);
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
@@ -84,6 +142,8 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
 });
 
 test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnects', async ({ page }) => {
+  await page.goto('/play');
+  test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
   test.slow(); // Pack import plus repeated connection changes can exhaust a short test's setup budget.
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();

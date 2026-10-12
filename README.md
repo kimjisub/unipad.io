@@ -57,7 +57,7 @@ pnpm exec tsc --noEmit
 pnpm lint
 pnpm test
 pnpm build
-pnpm exec playwright install --with-deps chromium
+pnpm exec playwright install --with-deps chromium webkit firefox
 pnpm test:e2e
 ```
 
@@ -68,8 +68,12 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The browser tests
-(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
+**Web CI**: install, type check, lint, unit tests and build. The full browser suite
+(`pnpm test:e2e`) runs locally before pushing. A separate **Windows playback**
+workflow runs only `play.spec.ts` on Windows 2025 with Chromium and the installed
+Chrome and Edge channels; failures fail their jobs, with no retries.
+Its three job names are candidates for required checks after review; configuring
+branch protection is separate from adding the jobs. It also runs after a merge to `main`. GitHub records each step's
 duration; the job summary records elapsed time from setup through verification.
 Required-check configuration is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
@@ -132,16 +136,36 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 | Keyboard input | Automatic | Physical Q key mapping, release and repeat suppression |
 | keyLed | Automatic | Red/green overlays on a different pad and timed removal |
 | Auto-play | Automatic | Start, pause with frozen progress/no new notes, resume, stop and loop-source cleanup |
-| Web MIDI | Partial | Fake `requestMIDIAccess`, input/output names, auto-detected X profile, init SysEx, note input/release, exact LED on/off bytes, disconnect/reconnect |
-| Audible sound quality | Unavailable in headless CI | Real decode, buffer duration and original Web Audio start/stop calls are observed; Chromium output is muted. Speaker output, latency and perceived quality require listening |
+| Web MIDI | Native API capability check; explicitly skipped as not applicable when absent | Fake `requestMIDIAccess`, input/output names, auto-detected X profile, init SysEx, note input/release, exact LED on/off bytes, disconnect/reconnect |
+| Audio output signal | Automatic on all three engines and Windows channels | An analyser after the application output gain measures nonzero RMS on a held pad, silence after release, and silence at zero volume despite a running source |
+| Audible sound quality | Unverified | No person listened. Speaker output, latency and perceived quality are not established by the signal measurement |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
 
 No test-only application hooks are added.
-The browser probes wrap native Web Audio calls without changing their behavior.
+The browser probes observe native decoding and start/stop calls, and insert a
+transparent analyser between the application output gain and the native destination.
+No audio mock, forced context resume or mute launch flag is used. The signal test
+attaches its measured RMS with `humanListening: false`. Web MIDI is mocked only
+when the native API exists; unsupported engines keep their real unsupported path.
 Auto-play checks wait across the fixture's next-note deadline to prove that
 pause and stop produce no further playback requests.
 Each test uses fresh browser storage. Uncaught page errors fail the suite.
 Tests have zero retries and `test.only` is forbidden.
+
+`play.spec.ts` covers import/reload, pointer and keyboard input, keyLed, chain
+changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
+It runs on Chromium, WebKit and Firefox locally, alongside the existing portable
+page/layout tests. Native multi-touch CDP tests remain Chromium-only.
+On Windows, reproduce the smoke jobs with:
+
+```bash
+pnpm exec playwright test e2e/play.spec.ts --project=chromium --project=chrome --project=msedge
+node scripts/playback-summary.mjs
+```
+
+The list/HTML reports and `test-results/results.json` retain skip counts and
+reasons. Windows uploads them, signal attachments and failure traces for 14 days,
+and writes counts and measurement limits to the job summary.
 
 On failure, traces and screenshots remain in `test-results/` and the HTML
 report is in `playwright-report/`. Open a trace with

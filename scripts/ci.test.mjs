@@ -34,11 +34,24 @@ test('the aggregate test command includes all existing test formats and tooling 
   }
 });
 
-test('browser checks run locally, not in CI', () => {
+test('long browser suites run locally and Windows runs the shared playback smoke tests', () => {
   const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  const windows = readFileSync(new URL('.github/workflows/playback-windows.yml', root), 'utf8');
   const readme = readFileSync(new URL('README.md', root), 'utf8');
   assert.doesNotMatch(workflow, /playwright|test:e2e/);
+  assert.match(windows, /runs-on: windows-2025/);
+  assert.ok(windows.includes('pnpm exec playwright test e2e/play.spec.ts'));
+  assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
+});
+
+test('WebKit and Firefox include the shared playback tests', async () => {
+  const { default: config } = await import('../playwright.config.ts');
+  for (const engine of ['webkit', 'firefox']) {
+    const project = config.projects.find(project => project.name === engine);
+    assert.ok(project, `${engine} must be tested`);
+    assert.ok(project.testMatch.includes('play.spec.ts'), `${engine} must run playback`);
+  }
 });
 
 test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {
