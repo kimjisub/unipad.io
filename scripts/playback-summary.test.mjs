@@ -14,7 +14,7 @@ test('playback summary retains nested skip counts and reasons and fails on faile
     const report = {
       stats: { expected: 8, unexpected: 0, skipped: 1, flaky: 0 }, errors: [],
       suites: [{ suites: [{ specs: [{ title: 'Web MIDI', tests: [{
-        projectName: 'webkit', status: 'skipped',
+        projectName: 'webkit', status: 'skipped', expectedStatus: 'skipped', results: [{ status: 'skipped' }],
         annotations: [{ type: 'skip', description: 'Not applicable: no native Web MIDI API' }],
       }] }] }] }],
     };
@@ -24,7 +24,7 @@ test('playback summary retains nested skip counts and reasons and fails on faile
     };
     const passing = run();
     assert.equal(passing.status, 0, passing.stderr);
-    assert.match(passing.stdout, /Passed: 8; failed: 0; skipped: 1; flaky: 0/);
+    assert.match(passing.stdout, /Passed: 8; failed: 0; skipped: 1; not run: 0; interrupted: 0; flaky: 0/);
     assert.match(passing.stdout, /webkit: Web MIDI: Not applicable: no native Web MIDI API/);
     assert.match(passing.stdout, /No person listened/);
     report.stats.unexpected = 1;
@@ -35,6 +35,18 @@ test('playback summary retains nested skip counts and reasons and fails on faile
     report.stats.flaky = 0;
     report.errors.push({ message: 'The web server failed to start' });
     assert.equal(run().status, 1);
+    report.errors = [];
+    const skipped = report.suites[0].suites[0].specs[0].tests[0];
+    skipped.expectedStatus = 'passed';
+    skipped.annotations = [];
+    skipped.results = [];
+    const notRun = run();
+    assert.equal(notRun.status, 1);
+    assert.match(notRun.stdout, /skipped: 0; not run: 1; interrupted: 0/);
+    skipped.results = [{ status: 'interrupted' }];
+    const interrupted = run();
+    assert.equal(interrupted.status, 1);
+    assert.match(interrupted.stdout, /skipped: 0; not run: 0; interrupted: 1/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

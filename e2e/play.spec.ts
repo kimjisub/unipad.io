@@ -60,7 +60,7 @@ test('keyboard down/up reaches the mapped pad and ignores repeated keydown', asy
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
 });
 
-test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page }, info) => {
+test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
   await loadPack(page);
   const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
   await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
@@ -71,20 +71,26 @@ test('pad audio reaches the output after volume control and becomes silent on re
     playingRms = await rms();
     return playingRms;
   }, 'the held pad must produce a nonzero post-volume audio signal').toBeGreaterThan(0.001);
+  // Preserve the positive measurement even if a later control check fails.
+  await info.attach('output-signal', {
+    body: JSON.stringify({ playingRms, browser: info.project.name, browserVersion: browser.version(),
+      measurement: 'RMS after application output gain, before native audio destination', humanListening: false }),
+    contentType: 'application/json',
+  });
   await page.mouse.up();
   await expect.poll(rms, 'release must silence the output').toBe(0);
   const releasedRms = await rms();
 
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.locator('input[type=range][max="7"]').fill('0');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Close menu', exact: true }).click();
   await page.keyboard.down('q');
   await expect.poll(() => starts(page)).toBe(2);
   // Still playing a looping source: a pre-volume probe would incorrectly report sound.
   await expect.poll(rms, 'zero application volume must silence a running source').toBe(0);
   const mutedRms = await rms();
   await page.keyboard.up('q');
-  await info.attach('output-signal', {
+  await info.attach('output-signal-controls', {
     body: JSON.stringify({ playingRms, releasedRms, mutedRms,
       measurement: 'RMS after application output gain, before native audio destination',
       humanListening: false }),

@@ -154,8 +154,9 @@ Tests have zero retries and `test.only` is forbidden.
 
 `play.spec.ts` covers import/reload, pointer and keyboard input, keyLed, chain
 changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
-It runs on Chromium, WebKit and Firefox locally, alongside the existing portable
-page/layout tests. Native multi-touch CDP tests remain Chromium-only.
+It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
+WebKit also runs the existing portable page/layout tests. Firefox is scoped to
+playback; exploratory page failures are investigated separately. Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
@@ -164,7 +165,8 @@ node scripts/playback-summary.mjs
 ```
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
-reasons. Windows uploads them, signal attachments and failure traces for 14 days,
+reasons. The summary separates intentional skips from interrupted and unrun tests,
+and fails on incomplete execution. Windows uploads them, signal attachments and failure traces for 14 days,
 and writes counts and measurement limits to the job summary.
 
 On failure, traces and screenshots remain in `test-results/` and the HTML

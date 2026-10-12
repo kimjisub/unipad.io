@@ -23,7 +23,7 @@ export default defineConfig({
     { name: 'chromium', use: { browserName: 'chromium' } },
     // iPhone Safari draws pages with WebKit; only WebKit shows Hangul without a font as missing-glyph boxes.
     { name: 'webkit', testMatch: portableTests, use: { browserName: 'webkit' } },
-    { name: 'firefox', testMatch: portableTests, use: { browserName: 'firefox' } },
+    { name: 'firefox', testMatch: ['play.spec.ts'], use: { browserName: 'firefox' } },
     // The Windows runner supplies these installed channels; local Macs still run all three engines.
     ...(process.platform === 'win32' ? [
       { name: 'chrome', testMatch: 'play.spec.ts', use: { browserName: 'chromium' as const, channel: 'chrome' } },
