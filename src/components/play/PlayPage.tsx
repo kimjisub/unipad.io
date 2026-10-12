@@ -13,6 +13,7 @@ import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
+import { describeStoreError } from './storeError';
 import {
   parseUniPack,
   saveUniPack,
@@ -180,17 +181,6 @@ export function PlayPage() {
       setToast(null);
       toastTimerRef.current = null;
     }, 2000);
-  }, []);
-
-  const normalizeStoreError = useCallback((error: unknown): string => {
-    const raw = error instanceof Error ? error.message : String(error);
-    if (/aborted|canceled/i.test(raw)) return 'Download canceled.';
-    if (/HTTP 403|Host not allowed/i.test(raw)) return 'Download source is blocked by server policy.';
-    if (/HTTP 404/i.test(raw)) return 'Pack not found on server.';
-    if (/HTTP 5\d\d/i.test(raw)) return 'Store server is temporarily unavailable.';
-    if (/Network error/i.test(raw)) return 'Network error. Please check your connection.';
-    if (/Invalid UniPack|parse/i.test(raw)) return 'Downloaded file is not a valid UniPack.';
-    return raw;
   }, []);
 
   const trackStoreEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
@@ -783,19 +773,20 @@ export function PlayPage() {
       trackStoreEvent('store_download_success', { code: item.code });
       showToast(tToast('downloaded', { title: item.title }));
     } catch (error) {
-      const message = normalizeStoreError(error);
-      setStoreError(message);
+      const { message, toastKey } = describeStoreError(error);
+      const shownMessage = toastKey ? tToast(toastKey) : message;
+      setStoreError(shownMessage);
       setFailedStoreCode(item.code);
       const failParams = storeDownloadFailParams(error, controller.signal.aborted);
       if (failParams) {
         trackStoreEvent('store_download_fail', { code: item.code, message, ...failParams });
       }
-      showToast(message);
+      showToast(shownMessage);
     } finally {
       storeDownloadAbortRef.current = null;
       setDownloadingStoreCode(null);
     }
-  }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, tToast, trackStoreEvent]);
+  }, [downloadingStoreCode, loadStoreItems, refreshLists, showToast, tToast, trackStoreEvent]);
 
   /**
    * Carry out an install the person approved from a shared link.
