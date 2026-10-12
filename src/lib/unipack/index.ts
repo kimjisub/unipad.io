@@ -15,6 +15,7 @@ export type { ThemeAssets, ThemeMetadata, ThemeColors } from './ThemeManager';
 export type * from './types';
 export {
   saveUniPack,
+  saveStoreUniPack,
   getUniPack,
   listUniPacks,
   deleteUniPack,

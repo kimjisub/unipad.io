@@ -16,6 +16,7 @@ import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import {
   parseUniPack,
   saveUniPack,
+  saveStoreUniPack,
   getUniPack,
   listUniPacks,
   deleteUniPack,
@@ -766,22 +767,14 @@ export function PlayPage() {
       }, controller.signal);
       const parsed = await runStoreDownloadStep('invalid_pack', () => parseUniPack(zipData.slice(0)));
 
-      await runStoreDownloadStep('storage', async () => {
-        const packs = await listUniPacks();
-        const existing = packs.find((p) => p.storeCode === item.code);
-        if (existing) {
-          await deleteUniPack(existing.id);
-        }
-
-        await saveUniPack(zipData, {
-          ...parsed.info,
-          keyLedExist: parsed.keyLedExist,
-          autoPlayExist: parsed.autoPlayExist,
-          soundCount: parsed.soundCount,
-          ledCount: parsed.ledCount,
-          storeCode: item.code,
-        });
-      });
+      await runStoreDownloadStep('storage', () => saveStoreUniPack(zipData, {
+        ...parsed.info,
+        keyLedExist: parsed.keyLedExist,
+        autoPlayExist: parsed.autoPlayExist,
+        soundCount: parsed.soundCount,
+        ledCount: parsed.ledCount,
+        storeCode: item.code,
+      }));
 
       await refreshLists();
       await loadStoreItems();
