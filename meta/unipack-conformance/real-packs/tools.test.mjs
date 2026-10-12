@@ -4,14 +4,14 @@
 //   node --test meta/unipack-conformance/real-packs/tools.test.mjs (part of `pnpm test`)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { fingerprint } from '../lib.mjs';
 import { comparePacks, partsOf, summarize, verdictOf } from './compare.mjs';
 import { describePack, folderFingerprint, listPacks } from './packs.mjs';
-import { sameAsServer, unzipPack } from './store.mjs';
+import { bringPack, sameAsServer, unzipPack } from './store.mjs';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'real-packs-selftest-'));
 
@@ -128,6 +128,100 @@ test('unzipping unwraps single top folders past __MACOSX and refuses an entry ou
     writeFileSync(join(dir, 'b.zip'), await bad.generateAsync({ type: 'nodebuffer' }));
     await assert.rejects(unzipPack(join(dir, 'b.zip'), join(dir, 'out2', 'inner')), /outside the pack folder/);
     assert.deepEqual(readdirSync(dir).sort(), ['a.zip', 'b.zip', 'out', 'out2']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** A kept zip of one small pack in `archive` as `<code>.zip`, and a stand-in for the file server. */
+async function keptCopy(archive, code) {
+  const zip = new JSZip();
+  zip.file('info', 'title=x');
+  const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+  writeFileSync(join(archive, `${code}.zip`), bytes);
+  return bytes;
+}
+
+test('a failed download leaves the record of the served file alone, so the next run downloads again', async () => {
+  const dir = scratch();
+  try {
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    const bytes = await keptCopy(archive, 'p');
+    const heads = { p: { size: bytes.length, etag: '"old"' } };
+    const served = { status: 200, size: bytes.length, etag: '"new"' };
+    let downloads = 0;
+    const net = { head: async () => served, download: async () => { downloads++; throw new Error('HTTP 503'); } };
+    const item = { URL: 'https://example.invalid/p.zip', code: 'p' };
+
+    const first = await bringPack({ key: '0001', item, archive, work: dir, heads, net });
+    assert.equal(first.copy.action, 'download-failed');
+    assert.equal(first.unzip, null);
+    assert.deepEqual(heads.p, { size: bytes.length, etag: '"old"' });
+    const second = await bringPack({ key: '0001', item, archive, work: dir, heads, net });
+    assert.equal(second.copy.action, 'download-failed');
+    assert.equal(downloads, 2);
+
+    const reused = await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net });
+    assert.equal(reused.copy.action, 'reused');
+    assert.equal(reused.unzip.ok, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a pack not unzipped in this run keeps no folder from an earlier run, and compare does not read it', async () => {
+  const dir = scratch();
+  try {
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    await keptCopy(archive, 'p');
+    const item = { URL: 'https://example.invalid/p.zip', code: 'p' };
+    const ok = { head: async (url) => ({ status: 200, size: readFileSync(join(archive, 'p.zip')).length, etag: null, url }), download: async () => 0 };
+    const gone = { head: async () => ({ status: 404, size: null, etag: null }), download: async () => 0 };
+
+    await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: ok });
+    assert.ok(existsSync(join(dir, 'packs', 'store_0001', 'info')));
+    const record = await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: gone });
+    assert.equal(record.copy.action, 'not-served');
+    assert.equal(existsSync(join(dir, 'packs', 'store_0001')), false);
+
+    const results = join(dir, 'results');
+    for (const p of ['android', 'ios', 'web']) {
+      mkdirSync(join(results, p), { recursive: true });
+      writeFileSync(join(results, p, 'store_0001.json'), JSON.stringify({ platform: p, id: 'store_0001', actual: PACK }));
+    }
+    const [row] = comparePacks({ resultsDir: results, ids: ['store_0001'], stages: { packs: [record] } });
+    assert.deepEqual(row, { id: 'store_0001', verdict: 'not-read', stages: { head: 404, copy: 'not-served', unzip: null } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a list code that is not a plain file name is never used as a path', async () => {
+  const dir = scratch();
+  try {
+    const net = { head: async () => { throw new Error('asked the server'); }, download: async () => { throw new Error('downloaded'); } };
+    const record = await bringPack({ key: '0001', item: { URL: 'https://example.invalid/x.zip', code: '../x' }, archive: dir, work: dir, heads: {}, net });
+    assert.equal(record.copy.action, 'invalid-code');
+    assert.equal((await bringPack({ key: '0002', item: null, archive: dir, work: dir, heads: {}, net })).copy.action, 'no-url');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a broken result file fails that pack only, and a pack without a title still summarizes', () => {
+  const dir = scratch();
+  try {
+    for (const p of ['android', 'ios', 'web']) mkdirSync(join(dir, p));
+    const untitled = copy(PACK);
+    delete untitled.info.title;
+    for (const p of ['android', 'ios']) writeFileSync(join(dir, p, 'p1.json'), JSON.stringify({ platform: p, id: 'p1', actual: untitled }));
+    writeFileSync(join(dir, 'web', 'p1.json'), '{"platform":"web",');
+    const [row] = comparePacks({ resultsDir: dir, ids: ['p1'] });
+    assert.equal(row.verdict, 'failed');
+    assert.match(row.failed.web, /^unreadable result/);
+    assert.equal(typeof row.summary.android.info.titleHash, 'string');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -9,7 +9,9 @@
 // A copy in --archive is reused when the server reports the same size (and the same ETag, once one has
 // been recorded in <archive>/heads.json); otherwise the file is downloaded into --archive first. Packs
 // are unzipped into <work>/packs/<id>, id = "store_" + the list key, and the steps go to
-// <work>/stages.json. --offline skips HEAD and uses the kept copies as they are (the stages say so).
+// <work>/stages.json; a pack not unzipped in this run keeps no folder from an earlier one, and
+// heads.json changes only for a copy that was reused or downloaded. --offline skips HEAD and uses the
+// kept copies as they are (the stages say so).
 // The packs and stages.json stay on the machine that ran this; see README.md.
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
@@ -34,10 +36,19 @@ async function readList(source) {
   return JSON.parse(readFileSync(source, 'utf8'));
 }
 
+/** A path part with its escapes decoded, or as written when it holds a bare `%`. */
+function decodeOrKeep(part) {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 /** The URL with its path re-encoded, as the store's own downloader requests it. */
 function requestUrl(url) {
   const u = new URL(url);
-  u.pathname = u.pathname.split('/').map((part) => encodeURIComponent(decodeURIComponent(part))).join('/');
+  u.pathname = u.pathname.split('/').map((part) => encodeURIComponent(decodeOrKeep(part))).join('/');
   return u.toString();
 }
 
@@ -87,6 +98,7 @@ export async function unzipPack(zipPath, dir) {
     if (content.length !== 1 || !content[0].isDirectory()) break;
     const inner = join(dir, content[0].name);
     const moved = `${dir}.unwrap`;
+    rmSync(moved, { recursive: true, force: true });
     renameSync(inner, moved);
     rmSync(dir, { recursive: true, force: true });
     renameSync(moved, dir);
@@ -101,6 +113,56 @@ export function sameAsServer(copySize, recorded, served) {
   return !recorded?.etag || !served.etag || recorded.etag === served.etag;
 }
 
+/** A list code becomes a file name in --archive: one plain name, never a path. */
+const CODE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
+const READABLE = ['reused', 'downloaded', 'reused-unchecked'];
+
+/**
+ * One list entry through every step. `heads` (the archive's record of what the server served) is
+ * updated only when the kept copy is that file: reused, or downloaded just now. The pack folder of an
+ * earlier run is removed first, so a pack not unzipped this time leaves nothing for the runners to read.
+ */
+export async function bringPack({ key, item, archive, work, heads, offline = false, net = { head, download } }) {
+  const id = storeId(key);
+  const packDir = join(work, 'packs', id);
+  rmSync(packDir, { recursive: true, force: true });
+  const url = item?.URL ?? item?.url ?? null;
+  const code = item?.code ?? null;
+  const record = { id, key, code, url, head: null, copy: null, unzip: null };
+  if (!url || !code) { record.copy = { action: 'no-url' }; return record; }
+  if (!CODE_PATTERN.test(code)) { record.copy = { action: 'invalid-code' }; return record; }
+
+  const zipPath = join(archive, `${code}.zip`);
+  const copySize = existsSync(zipPath) ? statSync(zipPath).size : null;
+  if (offline) {
+    record.copy = copySize === null ? { action: 'missing' } : { action: 'reused-unchecked', size: copySize };
+  } else {
+    record.head = await net.head(url);
+    if (record.head.status !== 200) {
+      record.copy = { action: 'not-served' };
+    } else if (copySize !== null && sameAsServer(copySize, heads[code], record.head)) {
+      record.copy = { action: 'reused', size: copySize };
+    } else {
+      try {
+        record.copy = { action: 'downloaded', size: await net.download(url, zipPath), previousSize: copySize };
+      } catch (error) {
+        record.copy = { action: 'download-failed', error: String(error?.message ?? error) };
+      }
+    }
+    if (record.copy.action === 'reused' || record.copy.action === 'downloaded') {
+      heads[code] = { size: record.head.size, etag: record.head.etag, lastModified: record.head.lastModified, checkedAt: new Date().toISOString() };
+    }
+  }
+  if (!READABLE.includes(record.copy.action)) return record;
+  try {
+    record.unzip = await unzipPack(zipPath, packDir);
+  } catch (error) {
+    rmSync(packDir, { recursive: true, force: true });
+    record.unzip = { ok: false, error: String(error?.message ?? error) };
+  }
+  return record;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (typeof args.archive !== 'string' || typeof args.work !== 'string') {
@@ -109,6 +171,8 @@ async function main() {
   const listSource = typeof args.list === 'string' ? args.list : STORE_LIST_URL;
   const list = await readList(listSource);
   const only = onlyIds(args);
+  const unknown = (only ?? []).filter((k) => !Object.hasOwn(list, k));
+  if (unknown.length > 0) throw new Error(`not in the store list: ${unknown.join(', ')}`);
   const keys = Object.keys(list).filter((k) => !only || only.includes(k));
   const headsPath = join(args.archive, 'heads.json');
   const heads = existsSync(headsPath) ? JSON.parse(readFileSync(headsPath, 'utf8')) : {};
@@ -116,40 +180,10 @@ async function main() {
 
   const packs = [];
   for (const key of keys) {
-    const item = list[key];
-    const id = storeId(key);
-    const url = item.URL ?? item.url ?? null;
-    const record = { id, key, code: item.code ?? null, url, head: null, copy: null, unzip: null };
+    const record = await bringPack({ key, item: list[key], archive: args.archive, work: args.work, heads, offline: args.offline === true });
     packs.push(record);
-    if (!url || !item.code) { record.copy = { action: 'no-url' }; continue; }
-
-    const zipPath = join(args.archive, `${item.code}.zip`);
-    const copySize = existsSync(zipPath) ? statSync(zipPath).size : null;
-    if (args.offline) {
-      record.copy = copySize === null ? { action: 'missing' } : { action: 'reused-unchecked', size: copySize };
-    } else {
-      record.head = await head(url);
-      if (record.head.status !== 200) {
-        record.copy = { action: 'not-served' };
-      } else if (copySize !== null && sameAsServer(copySize, heads[item.code], record.head)) {
-        record.copy = { action: 'reused', size: copySize };
-      } else {
-        try {
-          record.copy = { action: 'downloaded', size: await download(url, zipPath), previousSize: copySize };
-        } catch (error) {
-          record.copy = { action: 'download-failed', error: String(error?.message ?? error) };
-        }
-      }
-      if (record.head.status === 200) heads[item.code] = { size: record.head.size, etag: record.head.etag, lastModified: record.head.lastModified, checkedAt: new Date().toISOString() };
-    }
-    if (!['reused', 'downloaded', 'reused-unchecked'].includes(record.copy.action)) continue;
-    try {
-      record.unzip = await unzipPack(zipPath, join(args.work, 'packs', id));
-    } catch (error) {
-      rmSync(join(args.work, 'packs', id), { recursive: true, force: true });
-      record.unzip = { ok: false, error: String(error?.message ?? error) };
-    }
-    console.log(`${id} ${record.head?.status ?? '-'} ${record.copy.action} ${record.unzip.ok ? 'unzipped' : `unzip failed: ${record.unzip.error}`}`);
+    const unzip = record.unzip === null ? 'not unzipped' : record.unzip.ok ? 'unzipped' : `unzip failed: ${record.unzip.error}`;
+    console.log(`${record.id} ${record.head?.status ?? '-'} ${record.copy.action} ${unzip}`);
   }
 
   if (!args.offline) writeFileSync(headsPath, `${JSON.stringify(heads, null, 2)}\n`);
@@ -157,9 +191,10 @@ async function main() {
   const summary = {
     listed: packs.length,
     served: count((p) => p.head?.status === 200),
-    notServed: count((p) => p.copy?.action === 'not-served' || p.copy?.action === 'no-url'),
+    notServed: count((p) => ['not-served', 'no-url', 'invalid-code'].includes(p.copy?.action)),
     reused: count((p) => p.copy?.action === 'reused' || p.copy?.action === 'reused-unchecked'),
     downloaded: count((p) => p.copy?.action === 'downloaded'),
+    downloadFailed: count((p) => p.copy?.action === 'download-failed'),
     downloadedBytes: packs.reduce((n, p) => n + (p.copy?.action === 'downloaded' ? p.copy.size : 0), 0),
     unzipped: count((p) => p.unzip?.ok === true),
     unzipFailed: count((p) => p.unzip?.ok === false),

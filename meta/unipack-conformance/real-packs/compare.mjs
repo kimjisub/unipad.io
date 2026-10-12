@@ -6,7 +6,8 @@
 //
 // --results holds android/, ios/ and web/ as the runners write them. Each pack is "same" when the three
 // results are identical, "different" (naming the parts that differ) when all three read it but
-// disagree, and "failed" when a platform has no result or its runner threw. The printed table and the
+// disagree, and "failed" when a platform has no result or its runner threw. With --stages every pack of
+// that run is a row, and one it did not unzip is "not-read" (its step says why). The printed table and the
 // JSON carry the pack id, its fingerprint and counts only: no title, producer or file content.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -19,7 +20,7 @@ export const PLATFORMS = ['android', 'ios', 'web'];
 /** The parts of a normalized parse result compared one by one, in the order they are reported. */
 export const PARTS = ['loaded', 'info', 'keySound', 'keyLed', 'autoPlay', 'errors'];
 
-const digest = (value) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex').slice(0, 16);
+const digest = (value) => createHash('sha256').update(JSON.stringify(canonical(value ?? null))).digest('hex').slice(0, 16);
 
 /** The value with object keys sorted, so the same result always serializes the same way. */
 function canonical(value) {
@@ -74,7 +75,12 @@ export function summarize(actual) {
 function readResult(resultsDir, platform, id) {
   const path = join(resultsDir, platform, `${id}.json`);
   if (!existsSync(path)) return { error: 'no result' };
-  const record = JSON.parse(readFileSync(path, 'utf8'));
+  let record;
+  try {
+    record = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    return { error: `unreadable result: ${error.message}` };
+  }
   if (record.platform !== platform || record.id !== id) return { error: `the file says ${record.platform}/${record.id}` };
   return record.error !== undefined ? { error: record.error.split('\n')[0] } : { actual: record.actual };
 }
@@ -99,6 +105,10 @@ export function verdictOf(results) {
 
 export function comparePacks({ resultsDir, ids, packsDir = null, stages = null }) {
   return ids.map((id) => {
+    const stage = stages?.packs.find((p) => p.id === id);
+    const stageRow = stage ? { head: stage.head?.status ?? null, copy: stage.copy?.action ?? null, unzip: stage.unzip?.ok ?? null } : null;
+    // A pack the stages say was not unzipped in this run is not read, whatever results an earlier run left.
+    if (stages && stage?.unzip?.ok !== true) return { id, verdict: 'not-read', stages: stageRow };
     const results = Object.fromEntries(PLATFORMS.map((p) => [p, readResult(resultsDir, p, id)]));
     const row = { id, ...verdictOf(results) };
     if (packsDir) {
@@ -106,8 +116,7 @@ export function comparePacks({ resultsDir, ids, packsDir = null, stages = null }
       row.fingerprint = folderFingerprint(root);
       row.pack = describePack(root);
     }
-    const stage = stages?.packs.find((p) => p.id === id);
-    if (stage) row.stages = { head: stage.head?.status ?? null, copy: stage.copy?.action ?? null, unzip: stage.unzip?.ok ?? null };
+    if (stageRow) row.stages = stageRow;
     row.summary = Object.fromEntries(PLATFORMS.map((p) => [p, results[p].actual ? summarize(results[p].actual) : null]));
     return row;
   });
@@ -127,16 +136,18 @@ function main() {
   if (typeof args.results !== 'string') throw new Error('usage: compare.mjs --results <dir> [--packs <dir>] [--stages <file>] [--only <ids>] [--json <file>]');
   const only = onlyIds(args);
   const packsDir = typeof args.packs === 'string' ? args.packs : null;
-  const ids = only ?? (packsDir ? listPacks(packsDir).map((p) => p.id) : idsIn(args.results));
   const stages = typeof args.stages === 'string' ? JSON.parse(readFileSync(args.stages, 'utf8')) : null;
+  const ids = stages ? stages.packs.map((p) => p.id).filter((id) => !only || only.includes(id))
+    : packsDir ? listPacks(packsDir, only).map((p) => p.id) : (only ?? idsIn(args.results));
   const rows = comparePacks({ resultsDir: args.results, ids, packsDir, stages });
 
   const count = (v) => rows.filter((r) => r.verdict === v).length;
-  const totals = { packs: rows.length, same: count('same'), different: count('different'), failed: count('failed') };
+  const totals = { packs: rows.length, same: count('same'), different: count('different'), failed: count('failed'), notRead: count('not-read') };
   const byParts = countBy(rows.filter((r) => r.verdict === 'different').map((r) => r.differing.map((part) => `${part}:${r.odd[part]}`).join(' ')));
   for (const r of rows) {
     const detail = r.verdict === 'different' ? r.differing.map((part) => `${part}(${r.odd[part]})`).join(' ')
-      : r.verdict === 'failed' ? Object.keys(r.failed).join(' ') : '';
+      : r.verdict === 'failed' ? Object.keys(r.failed).join(' ')
+        : r.verdict === 'not-read' ? (r.stages?.copy ?? '') : '';
     console.log(`${r.id}\t${r.verdict}\t${detail}`);
   }
   console.log(JSON.stringify({ totals, byParts }));

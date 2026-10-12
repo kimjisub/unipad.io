@@ -74,6 +74,16 @@ the kept copy was reused or downloaded, and the unzip (files, single top folders
 import does, or the error). It names the store code and URL and stays on the machine that ran it; the
 comparison output does not.
 
+What a run trusts from an earlier one:
+
+- `<archive>/heads.json` keeps the size and ETag of the file the server served when a kept copy was last
+  reused or downloaded. It changes only then, so a download that fails leaves the old record and the
+  next run tries again instead of taking the old copy for the new file.
+- `<work>/packs/<id>` is removed before each pack is brought in. A pack that is not served, not
+  downloaded or not unzipped in this run has no folder, so the runners cannot read an earlier one.
+- With `--stages`, `compare.mjs` lists every pack of that run and reports one that was not unzipped as
+  `not-read` with its step, whatever results an earlier run left in `--results`.
+
 ## Limits
 
 - A pack is read from a folder on the machine running the tests, so file lookups follow that machine's
