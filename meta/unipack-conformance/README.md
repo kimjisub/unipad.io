@@ -101,7 +101,8 @@ platform's own commit history or tests names the expected result. Otherwise it i
 platforms still run it, the observed results are printed side by side, and it is `unverified` on every
 platform until someone decides. `basis[].type` says which: `doc` (checked to exist at build time),
 `intent` (a commit or test that states it), `reference` (the Android implementation, for the palette),
-`agreed` (below).
+`agreed` and `decision` (below). No case is undetermined today; the harnesses' own checks make one from a
+determined case to show that it is never a pass.
 
 **Agreed behaviour.** When an undetermined case gives the same result on Android, iOS and the web, that
 result is held as the expected one with an `agreed` basis, whose `ref` names the runs it was observed in
@@ -109,9 +110,19 @@ and whose `note` keeps the open question. It does not say the behaviour is right
 any one platform show up as a `fail` instead of passing unnoticed. A doc or an intent that decides the
 case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
 own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
-disagree stays undetermined; the expected result is never taken from two platforms against the third.
-INF-012 is held at `squareButton` true although info.mdx gives false as the default, because all three
-apps start from true.
+disagree is never given the result of two platforms against the third; it stays undetermined until it
+is decided (below). INF-012 is held at `squareButton` true although info.mdx gives false as the default,
+because all three apps start from true.
+
+**Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
+choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
+other: INF-007 (an `info` line without `=` is ignored), INF-010 (a `buttonX` that is not an integer
+refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16 keySound with a byte
+order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names who decided and when and
+whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as written and skipped when
+lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
+`--json`). Each platform that does not give the decided result yet is pinned in `divergences.json`, so
+its suite stays green until its own fix removes the pin.
 
 A case can also name a platform whose harness cannot observe it (`unobserved`, with the reason). That
 platform does not run the case and reports it as `unverified`; the others are judged as usual. Today:
@@ -133,7 +144,7 @@ virtual clock) and RUN-L-006 and RUN-L-007 on iOS (leaving the play screen, see 
   "fingerprint": "...",      // sha256 of the files, formula below
   "expectation": "determined",   // or "undetermined" (then "question" and no "expected")
   "expected": { ... },
-  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],   // or agreed, see Statuses
+  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],   // or agreed / decision, see Statuses
   "scenario": [ ... ],       // run layer only
   "known": { "ios": { "status": "fail", "actual": { ... }, "note": "..." } },  // from divergences.json
   "unobserved": { "ios": "why the iOS harness cannot observe this case" }
@@ -290,7 +301,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 
 ## What is covered
 
-- info: every key, whitespace, unknown keys, chain range 1..24, missing required files, missing title/producer, zero and non-numeric sizes.
+- info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
 - keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
@@ -316,5 +327,4 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - Encodings other than UTF-8 and UTF-16 with BOM (legacy Korean encodings).
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
-- `info.json`, and every `undetermined` case (INF-007, INF-010, INF-015, KS-018, KL-024): observed only.
 - Whether an `agreed` result is the right behaviour: it is only what the three platforms did.
