@@ -10,7 +10,8 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
-import { ASSET_GENERATORS, buildAssets, fingerprint, sha256, startsWithMpegFrame } from './lib.mjs';
+import { buildCases } from './cases.mjs';
+import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, sha256, startsWithMpegFrame } from './lib.mjs';
 import { buildReport, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
 import { resolveCommits } from './copies.mjs';
 import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
@@ -64,25 +65,42 @@ test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
   assert.ok(!startsWithMpegFrame(ASSET_GENERATORS['tone-440'].make()));
 });
 
-test('ignored or skipped lines do not establish an undocumented warning expectation', () => {
-  const built = buildCorpus();
+test('a warning no doc asks for is expected only on an agreed basis, and the report counts it apart', () => {
+  const agreedIds = corpus.cases.filter(restsOnAgreement).map((c) => c.id);
   for (const id of ['KL-003', 'AP-004', 'KL-M07', 'AP-M10']) {
-    const c = built.cases.find((entry) => entry.id === id);
-    assert.equal(c.expectation, 'undetermined', id);
-    assert.equal(c.expected, undefined, id);
-    assert.match(c.question, /warn/, id);
-    for (const platform of PLATFORMS) {
-      const results = fullResults(platform, { [id]: { status: 'pass', actual: SOME_RESULT } });
-      assert.equal(judge(canonical, platform, results).get(id).status, 'unverified', `${id}/${platform}`);
-    }
+    const c = corpus.cases.find((entry) => entry.id === id);
+    assert.ok(agreedIds.includes(id), id);
+    assert.equal(c.expectation, 'determined', id);
+    assert.match(c.basis.find((b) => b.type === 'agreed').note, /warn/, id);
   }
+
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
+  const agreedRows = report.rows.filter((r) => r.agreed).map((r) => r.id);
+  assert.deepEqual(agreedRows, agreedIds);
+  assert.equal(report.agreed.cases, agreedIds.length);
+  assert.equal(report.agreed.passOnAllThree, agreedIds.length);
+  assert.ok(report.passOnAllThree > report.agreed.passOnAllThree);
+  const text = renderText(report);
+  assert.match(text, new RegExp(`, ${agreedIds.length} of them on an agreed basis`));
+  assert.match(text, new RegExp(`^${agreedIds[0]} .*\\[agreed\\]$`, 'm'));
+
+  // An agreed expected result is checked like any other: a platform that changes its result fails.
+  const changed = fullResults('web', { [agreedIds[0]]: { status: 'fail', actual: SOME_RESULT } });
+  assert.equal(judge(canonical, 'web', changed).get(agreedIds[0]).status, 'fail');
+});
+
+test('a determined case needs a doc, intent or agreed basis, and an agreed one no open question', () => {
+  const editing = (id, edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === id ? edit(structuredClone(c)) : c)));
+  assert.doesNotThrow(editing('KL-005', (c) => c));
+  assert.throws(editing('KL-005', (c) => ({ ...c, basis: [] })), /KL-005: determined without a doc, intent or agreed basis/);
+  assert.throws(editing('KL-005', (c) => ({ ...c, question: 'still open?' })), /KL-005: an agreed case keeps its open question in the agreed note/);
 });
 
 test('sound assets regenerate to the same bytes', () => {
   assert.deepEqual(buildAssets(), corpus.assets);
 });
 
-test('case ids are unique and every determined case has a doc, intent or reference basis', () => {
+test('case ids are unique and every determined case has a doc, intent, agreed or reference basis', () => {
   assert.equal(new Set(corpus.cases.map((c) => c.id)).size, corpus.cases.length);
   for (const c of corpus.cases) {
     if (c.expectation === 'determined') assert.ok(c.basis.length > 0 && c.expected !== undefined, c.id);
