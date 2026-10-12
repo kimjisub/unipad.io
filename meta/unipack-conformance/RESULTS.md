@@ -2,8 +2,8 @@
 
 Corpus `aa16cb34a0cf…` (sha256 of `corpus.json`), 132 cases, based on unipad-android 88e40439 and
 unipad-ios 003d71ba (the head commits of unipad-android PR #191 and unipad-ios PR #118, which copy this
-corpus onto their main at 4d31dbfd and c7203bb9; the same commits as `copies.json`) and unipad.io
-e5d85f6. Regenerate this table with `report.mjs` (README, "Running it"). It
+corpus onto their main at 4d31dbfd and c7203bb9, and were merged into main as 53bfc448 and fdc40620, the
+commits `copies.json` names) and unipad.io e5d85f6. Regenerate this table with `report.mjs` (README, "Running it"). It
 describes these 132 cases only; it does not show that every UniPack is compatible, and 100%
 compatibility is not known.
 
