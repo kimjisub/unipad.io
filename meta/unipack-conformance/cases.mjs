@@ -1,14 +1,19 @@
 // The case list. Each case is one small pack (input files) with the result every platform is expected
 // to produce. Expected results come from the format docs (content/docs/en/unipack) and from intent
-// stated in the platforms' own commit history and tests, never from what the three parsers happen to
-// return. Where neither says what should happen the case is `undetermined`: the platforms still run it
-// and the observed results are printed, but it can only ever be reported as unverified.
-import { ap, anim, cell, doc, ev, intent, ledCell, lines, loaded, pack, q, reference, refused, STD_INFO } from './lib.mjs';
+// stated in the platforms' own commit history and tests. Where neither says what should happen the
+// case is `undetermined`: the platforms still run it and the observed results are printed, but it can
+// only ever be reported as unverified. An undetermined case on which Android, iOS and the web all gave
+// the same result holds that result as expected on an `agreed` basis (AGREED below), which the report
+// counts apart from the cases a doc or an intent decides; a later doc or intent replaces it. Where the
+// platforms differed and no doc decides, the maintainers' choice is held on a `decision` basis, also
+// counted apart.
+import { agreed, ap, anim, cell, decision, doc, ev, intent, ledCell, lines, loaded, pack, q, reference, refused, STD_INFO } from './lib.mjs';
 
 const ANDROID_PARITY = intent('unipad-android 2298d635 (#63), unipad-ios 17b1ecc (#6), unipad.io 5721b4c', 'parsers were aligned to Android\'s strictness on purpose: a line Android rejects is rejected everywhere');
 const WHITESPACE = intent('unipad-android 22a45925', 'parser whitespace and line-break tolerance for packs written by other tools (Unitor)');
 const VEL4 = intent('unipad.io src/lib/unipack/logoLed.test.ts, unipad-android UniPackFolderLogoLedTest', 'a hex-only `on` line carries velocity 4; the docs do not state the default');
 const LOGO = intent('unipad-ios #10, unipad-android #114, unipad.io #32', 'keyLED `l` lines address the logo as circle index 32 in every platform (the docs still say "not supported, ignored")');
+const AGREED = (note) => agreed('android, ios and web results of corpus c30e75b9 (2026-10-10)', note);
 const ROUND = intent('unipad-android UniPackFolderLogoLedTest, unipad.io logoLed.test.ts', '`mc`/`*` numbers outside 1..32 are dropped so that index 32 never lights the logo');
 
 // Why the iOS harness reports a case as unverified instead of a result (`unobserved`).
@@ -64,9 +69,10 @@ export function buildCases(palette) {
     basis: [doc('info.mdx', 'leading/trailing whitespace is ignored'), intent('unipad-android UniPackFolderMissingFileTest createStorePack', 'store packs carry extra info keys such as PackTool and must open')],
   });
   add({
-    id: 'INF-007', area: 'info', title: 'a line without = in info', expectation: 'undetermined',
+    id: 'INF-007', area: 'info', title: 'a line without = in info is ignored',
     files: pack({ info: lines('title=Conformance', 'producerName=UniPad Conformance', 'this line has no equals sign', 'buttonX=4', 'buttonY=3', 'chain=2', 'squareButton=true') }),
-    question: 'The docs say lines are key=value but not what a line without = does. Android and iOS record a warning, the web parser ignores it silently.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [doc('info.mdx', 'A line without = is ignored, without a warning')],
   });
   add({
     id: 'INF-008', area: 'info', title: 'title and producerName missing only warn',
@@ -81,19 +87,22 @@ export function buildCases(palette) {
     basis: [doc('info.mdx', 'A warning is raised if buttonX, buttonY, or chain is 0'), doc('key-sound.mdx', 'Lines with out-of-range coordinates are skipped with a warning')],
   });
   add({
-    id: 'INF-010', area: 'info', title: 'buttonX that is not a number', expectation: 'undetermined',
+    id: 'INF-010', area: 'info', title: 'buttonX that is not a number aborts loading',
     files: pack({ info: STD_INFO.replace('buttonX=4', 'buttonX=abc') }),
-    question: 'The docs say only "1 or more". Whether "abc" is a warning (treated as 0) or a refusal is not stated.',
+    expected: refused(),
+    basis: [doc('info.mdx', 'Loading is aborted if buttonX or buttonY is not an integer')],
   });
   add({
-    id: 'INF-011', area: 'info', title: 'a 65 x 65 grid', expectation: 'undetermined',
+    id: 'INF-011', area: 'info', title: 'a 65 x 65 grid is refused',
     files: pack({ info: STD_INFO.replace('buttonX=4', 'buttonX=65').replace('buttonY=3', 'buttonY=65') }),
-    question: 'All three parsers refuse a grid above 64, an allocation guard that is not in the docs ("1 or more").',
+    expected: refused(),
+    basis: [AGREED('All three parsers refuse a grid above 64, an allocation guard that is not in the docs ("1 or more").')],
   });
   add({
-    id: 'INF-012', area: 'info', title: 'squareButton left out', expectation: 'undetermined',
+    id: 'INF-012', area: 'info', title: 'squareButton left out reads as true',
     files: pack({ info: lines('title=Conformance', 'producerName=UniPad Conformance', 'buttonX=4', 'buttonY=3', 'chain=2') }),
-    question: 'The docs say the default is false; Android, iOS and the web parser all start from true.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [AGREED('info.mdx gives false as the default, but Android, iOS and the web parser all start from true. Held at true until the docs or the apps change.')],
   });
   add({
     id: 'INF-013', area: 'info', title: 'no info file refuses the pack',
@@ -108,9 +117,10 @@ export function buildCases(palette) {
     basis: [doc('key-sound.mdx', 'The keySound file maps sound files to each button'), intent('UniPackFolder.kt / UniPackFolder.swift / parser.ts', 'a pack without keySound is a critical error on every platform')],
   });
   add({
-    id: 'INF-015', area: 'info', title: 'info.json instead of info', expectation: 'undetermined',
+    id: 'INF-015', area: 'info', title: 'info.json instead of info refuses the pack',
     files: pack({ info: null, extra: [{ path: 'info.json', text: '{"title":"Conformance","producerName":"UniPad Conformance","buttonX":4,"buttonY":3,"chain":2,"squareButton":true}' }] }),
-    question: 'Only iOS reads info.json; the format docs describe the key=value `info` file only.',
+    expected: refused(),
+    basis: [doc('info.mdx', 'the metadata is the key=value `info` file; there is no other info format, so the pack has no info, as in INF-013')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -207,9 +217,10 @@ export function buildCases(palette) {
     basis: [WHITESPACE],
   });
   add({
-    id: 'KS-015', area: 'keySound', title: 'lines that look like comments', expectation: 'undetermined',
+    id: 'KS-015', area: 'keySound', title: 'lines that look like comments',
     files: pack({ keySound: lines('# note', '// note', '; one two three', '1 1 1 a.wav') }),
-    question: 'The format has no comment syntax. Two-token lines fall under "fewer than 3 columns are ignored"; a longer one is a format error.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])], errors: ['keySound:format'] }),
+    basis: [AGREED('The format has no comment syntax. Two-token lines fall under "fewer than 3 columns are ignored"; a longer one is a format error.')],
   });
   add({
     id: 'KS-016', area: 'keySound', title: 'UTF-8 byte order mark before the first line',
@@ -218,14 +229,16 @@ export function buildCases(palette) {
     basis: [intent('unipad-ios UniPackFolder.swift readTextFile, unipad-android UniPackFolder.kt bomAwareReader', 'a BOM from Windows Notepad must not cost the first line')],
   });
   add({
-    id: 'KS-017', area: 'keySound', title: 'a lone carriage return between lines', expectation: 'undetermined',
+    id: 'KS-017', area: 'keySound', title: 'a lone carriage return between lines',
     files: pack({ keySound: '1 1 1 a.wav\r1 1 2 b.wav' }),
-    question: 'The docs say nothing about classic-Mac line ends; the web parser splits on them explicitly, the apps rely on their line readers.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 0, 1, [q('b.wav')])] }),
+    basis: [AGREED('The docs say nothing about classic-Mac line ends; the web parser splits on them explicitly, the apps rely on their line readers.')],
   });
   add({
-    id: 'KS-018', area: 'keySound', title: 'a UTF-16 little-endian keySound with a byte order mark', expectation: 'undetermined',
+    id: 'KS-018', area: 'keySound', title: 'a UTF-16 little-endian keySound with a byte order mark',
     files: pack({ keySound: { base64: Buffer.from('﻿1 1 1 a.wav\n', 'utf16le').toString('base64') } }),
-    question: 'Android and iOS decode UTF-16 by its BOM; the docs and the web parser do not mention it.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [doc('key-sound.mdx', 'The file is UTF-8, or UTF-16 that starts with a byte order mark')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -245,10 +258,13 @@ export function buildCases(palette) {
     basis: [doc('key-led.mdx', 'File Naming Convention: loop default 1, 0 = infinite loop')],
   });
   add({
-    id: 'KL-003', area: 'keyLed', title: 'file names one past each end of chain, x and y are ignored', expectation: 'undetermined',
+    id: 'KL-003', area: 'keyLed', title: 'file names one past each end of chain, x and y are ignored',
     ...led({ '0 1 1': 'f 1 1', '3 1 1': 'f 1 1', '1 5 1': 'f 1 1', '1 1 4': 'f 1 1' }),
-    question: 'key-led.mdx says files with out-of-range coordinates in the file name are ignored; whether each ignored file records a warning is not stated. The same warning-evidence rule as KL-M07.',
-    basis: [doc('key-led.mdx', 'Files with out-of-range coordinates in the file name are ignored')],
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, errors: Array(4).fill('keyLed:range') }),
+    basis: [
+      doc('key-led.mdx', 'Files with out-of-range coordinates in the file name are ignored'),
+      AGREED('Whether each ignored file records a warning is not stated; all three record one range warning per file.'),
+    ],
   });
   add({
     id: 'KL-004', area: 'keyLed', title: 'files for one pad queue in file name order',
@@ -257,9 +273,10 @@ export function buildCases(palette) {
     basis: [doc('key-led.mdx', 'Mapping multiple files to the same coordinate creates a circular queue'), intent('unipad.io parser.ts (sort comment), unipad-android UniPackFolder.kt', 'the queue follows file name order, lower-cased')],
   });
   add({
-    id: 'KL-005', area: 'keyLed', title: 'a negative loop count in the file name', expectation: 'undetermined',
+    id: 'KL-005', area: 'keyLed', title: 'a negative loop count in the file name',
     ...led({ '1 1 1 -1': 'f 1 1' }),
-    question: 'The docs say a warning is logged; whether the file is dropped is not stated.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, errors: ['keyLed:range'] }),
+    basis: [AGREED('The docs say a warning is logged; whether the file is dropped is not stated. All three drop it with a range warning.')],
   });
   const badLedNames = [
     ['N01', 'chain is not a number', 'a 1 1'],
@@ -277,15 +294,16 @@ export function buildCases(palette) {
     });
   }
   add({
-    id: 'KL-006', area: 'keyLed', title: 'a stray file whose name has fewer than 3 columns', expectation: 'undetermined',
+    id: 'KL-006', area: 'keyLed', title: 'a stray file whose name has fewer than 3 columns',
     ...led({ '1 1': 'f 1 1', 'readme.txt': 'hello' }),
-    question: 'The keyLED docs describe the name as "chain x y [loop]" but not what a file that is not a mapping means; the parsers skip it silently.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true }),
+    basis: [AGREED('The keyLED docs describe the name as "chain x y [loop]" but not what a file that is not a mapping means; the parsers skip it silently.')],
   });
   add({
     id: 'KL-007', area: 'keyLed', title: 'the keyLed folder is empty of mappings but present',
     ...led({ '1 1': 'f 1 1' }),
-    expectation: 'undetermined',
-    question: 'Whether an existing keyLED folder with no valid file counts as "has LED animations" is not stated.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true }),
+    basis: [AGREED('Whether an existing keyLED folder with no valid file counts as "has LED animations" is not stated; all three say it exists.')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -358,14 +376,19 @@ export function buildCases(palette) {
     });
   }
   add({
-    id: 'KL-M07', area: 'keyLed', title: 'malformed event: an unknown command', expectation: 'undetermined',
+    id: 'KL-M07', area: 'keyLed', title: 'malformed event: an unknown command',
     ...led({ '1 1 1': lines('bogus 1 1', 'f 1 1') }),
-    question: 'key-led.mdx says unrecognized commands are skipped; whether the skip is recorded as a warning is not stated. The same open question as KL-025.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.off(0, 0)])])], errors: ['keyLed:format'] }),
+    basis: [
+      doc('key-led.mdx', 'Unrecognized commands are skipped'),
+      AGREED('Whether the skip is recorded as a warning is not stated; all three record a format warning. The same as KL-025.'),
+    ],
   });
   add({
-    id: 'KL-020', area: 'keyLed', title: 'velocity above 127 next to a hex colour', expectation: 'undetermined',
+    id: 'KL-020', area: 'keyLed', title: 'velocity above 127 next to a hex colour',
     ...led({ '1 1 1': 'o 1 1 FF0000 200' }),
-    question: 'The docs give 0~127 for velocity; no parser rejects a hex line with a larger one (the drivers clamp it later).',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(0, 0, 'ffff0000', 200)])])] }),
+    basis: [AGREED('The docs give 0~127 for velocity; no parser rejects a hex line with a larger one (the drivers clamp it later).')],
   });
   add({
     id: 'KL-021', area: 'keyLed', title: 'an empty keyLED file still registers an animation',
@@ -380,19 +403,25 @@ export function buildCases(palette) {
     basis: [WHITESPACE],
   });
   add({
-    id: 'KL-023', area: 'keyLed', title: 'a chain event that names a chain the pack does not have', expectation: 'undetermined',
+    id: 'KL-023', area: 'keyLed', title: 'a chain event that names a chain the pack does not have',
     ...led({ '1 1 1': 'c 9' }),
-    question: 'The docs do not say whether a keyLED `chain` beyond the pack\'s chain count is a warning or kept as written.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.chain(8)])])] }),
+    basis: [AGREED('The docs do not say whether a keyLED `chain` beyond the pack\'s chain count is a warning or kept as written; all three keep it as written.')],
   });
   add({
-    id: 'KL-024', area: 'keyLed', title: 'an LED event outside the pad grid', expectation: 'undetermined',
+    id: 'KL-024', area: 'keyLed', title: 'an LED event outside the pad grid is kept as written',
     ...led({ '1 1 1': 'o 9 9 FF0000' }),
-    question: 'The docs do not say whether coordinates inside a keyLED file are range-checked when parsing.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(8, 8, 'ffff0000')])])] }),
+    basis: [decision('maintainers, 2026-10-12', 'The docs do not say whether coordinates inside a keyLED file are range-checked when parsing. Packs do light positions outside their grid, and a warning per line gives the user nothing to act on: the line is kept as written, without a warning, and skipped when it is lit.')],
   });
   add({
-    id: 'KL-025', area: 'keyLed', title: 'a comment-like line inside a keyLED file', expectation: 'undetermined',
+    id: 'KL-025', area: 'keyLed', title: 'a comment-like line inside a keyLED file',
     ...led({ '1 1 1': lines('# note', 'f 1 1') }),
-    question: 'There is no comment syntax in the format; key-led.mdx says unrecognized commands are skipped, whether with a warning is not stated. The same open question as KL-M07.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.off(0, 0)])])], errors: ['keyLed:format'] }),
+    basis: [
+      doc('key-led.mdx', 'Unrecognized commands are skipped'),
+      AGREED('There is no comment syntax in the format, and whether the skip warns is not stated; all three record a format warning. The same as KL-M07.'),
+    ],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -419,10 +448,13 @@ export function buildCases(palette) {
     basis: [doc('auto-play.mdx', 'If a sound has a wormhole set, executing on will automatically switch to that chain')],
   });
   add({
-    id: 'AP-004', area: 'autoPlay', title: 'coordinates and chains outside the pack are skipped', expectation: 'undetermined',
+    id: 'AP-004', area: 'autoPlay', title: 'coordinates and chains outside the pack are skipped',
     ...play(lines('on 5 1', 'on 1 4', 'on 0 1', 'chain 3', 'chain 0', 'off 5 5', 'touch 9 9')),
-    question: 'auto-play.mdx says lines with out-of-range coordinates are skipped; whether each skipped line records a warning is not stated. The same warning-evidence rule as AP-M10.',
-    basis: [doc('auto-play.mdx', 'Lines with out-of-range coordinates are skipped')],
+    expected: loaded(withSounds({ autoPlay: [], errors: Array(7).fill('autoPlay:range') })),
+    basis: [
+      doc('auto-play.mdx', 'Lines with out-of-range coordinates are skipped'),
+      AGREED('Whether each skipped line records a warning is not stated; all three record one range warning per line.'),
+    ],
   });
   add({
     id: 'AP-005', area: 'autoPlay', title: 'every command in its short spelling: o, f, t, c and d',
@@ -451,9 +483,10 @@ export function buildCases(palette) {
     });
   }
   add({
-    id: 'AP-M10', area: 'autoPlay', title: 'malformed line: an unknown command', expectation: 'undetermined',
+    id: 'AP-M10', area: 'autoPlay', title: 'malformed line: an unknown command',
     ...play(lines('bogus 1 1', 'on 1 1')),
-    question: 'auto-play.mdx lists the commands but does not say what a line starting with another word does, neither that it is skipped nor whether it warns (key-led.mdx says "skipped", for keyLED files only). The same open question as AP-022.',
+    expected: loaded(withSounds({ autoPlay: [ap.on(0, 0, 0, 0)], errors: ['autoPlay:format'] })),
+    basis: [AGREED('auto-play.mdx lists the commands but does not say what a line starting with another word does (key-led.mdx says "skipped", for keyLED files only); all three skip it with a format warning. The same as AP-022.')],
   });
   add({
     id: 'AP-020', area: 'autoPlay', title: 'an empty autoPlay file exists with no elements',
@@ -468,9 +501,10 @@ export function buildCases(palette) {
     basis: [WHITESPACE],
   });
   add({
-    id: 'AP-022', area: 'autoPlay', title: 'a comment-like line in autoPlay', expectation: 'undetermined',
+    id: 'AP-022', area: 'autoPlay', title: 'a comment-like line in autoPlay',
     ...play(lines('# start', 'on 1 1')),
-    question: 'There is no comment syntax in the format, and auto-play.mdx does not say what a line starting with an unknown word does (key-led.mdx says "skipped", for keyLED files only). The same open question as AP-M10.',
+    expected: loaded(withSounds({ autoPlay: [ap.on(0, 0, 0, 0)], errors: ['autoPlay:format'] })),
+    basis: [AGREED('There is no comment syntax in the format, and auto-play.mdx does not say what a line starting with an unknown word does; all three skip it with a format warning. The same as AP-M10.')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -560,12 +594,11 @@ export function buildCases(palette) {
     [[['ledOn', -1, 0, GREEN, 4]], [['ledOff', -1, 0]], []],
     [intent('unipad-android 3e5a2fd6 (#101), unipad.io 8019666 (#32)', 'LEDs still lit are cleared on exit and no stale light is sent afterwards')],
     { unobserved: { ios: IOS_EXIT } });
-  run('RUN-L-008', 'led', 'pressing a pad again while its animation plays', [
-    ...ledPack('1 1 1 0', lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40')),
-  ],
-  [press(0, 0), advance(20), observe, release(0, 0), press(0, 0), advance(20), observe],
-  [],
-  [], { expectation: 'undetermined', question: 'Whether a re-press restarts the lights with an off in between, or without, is not stated; the runners are expected to agree but no doc or note says so.' });
+  run('RUN-L-008', 'led', 'pressing a pad again while its animation plays restarts it after an off',
+    ledPack('1 1 1 0', lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40')),
+    [press(0, 0), advance(20), observe, release(0, 0), press(0, 0), advance(20), observe],
+    [[['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0], ['ledOn', 0, 0, RED, 4]]],
+    [AGREED('Whether a re-press restarts the lights with an off in between, or without, is not stated; all three runners send the off first.')]);
 
   const autoFiles = pack({ keySound: lines('1 1 1 a.wav', '2 1 1 b.wav'), autoPlay: lines('on 1 1', 'delay 100', 'off 1 1', 'delay 100', 'touch 2 1') });
   run('RUN-A-001', 'autoPlay', 'autoPlay presses and releases on its delays',
@@ -611,9 +644,10 @@ export function buildCases(palette) {
     ],
   });
   add({
-    id: 'RP-002', area: 'realPack', title: 'two keyLED files for one pad whose names have a fifth part', expectation: 'undetermined',
+    id: 'RP-002', area: 'realPack', title: 'two keyLED files for one pad whose names have a fifth part',
     ...led({ '1 1 1 1 a': 'o 1 1 FF0000', '1 1 1 1 b': 'o 1 1 00FF00' }),
-    question: 'key-led.mdx names a file "chain x y [loop]" and gives a fifth part no meaning, yet packs made by other tools name several files for one pad this way. Whether such a file is read, and in which order the two queue, is not stated (KL-004 states the order only for names that are mappings).',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(0, 0, 'ffff0000')]), anim(1, [ev.on(0, 0, 'ff00ff00')])])] }),
+    basis: [AGREED('key-led.mdx names a file "chain x y [loop]" and gives a fifth part no meaning, yet packs made by other tools name several files for one pad this way. All three read both files and queue them in name order (KL-004 states the order only for names that are mappings).'), VEL4],
   });
   add({
     id: 'RP-003', area: 'realPack', title: 'an MP3 sound keeps its file, coordinate, loop and wormhole',

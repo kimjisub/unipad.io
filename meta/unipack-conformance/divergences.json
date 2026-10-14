@@ -1,574 +1,4 @@
 {
-  "AP-M01": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M02": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M03": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M04": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M05": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M06": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M07": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M08": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M09": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
-  "AP-M11": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          },
-          {
-            "c": 1,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "b.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": [
-          [
-            "on",
-            0,
-            0,
-            0,
-            0
-          ]
-        ],
-        "errors": [
-          "autoPlay:range"
-        ]
-      },
-      "note": "The web parser reports a non-numeric autoPlay value as `range` (`coordinate|chain|delay is incorrect`); Android and iOS report `format`. The line is dropped by all three (unipad.io parser.ts parseAutoPlay)."
-    }
-  },
   "KL-012": {},
   "KL-014": {},
   "KL-M05": {},
@@ -577,8 +7,8 @@
   "KL-M13": {},
   "KL-M17": {},
   "KL-M18": {},
-  "KL-N01": {
-    "web": {
+  "INF-007": {
+    "android": {
       "status": "fail",
       "actual": {
         "loaded": true,
@@ -593,66 +23,113 @@
         "sounds": [
           {
             "c": 0,
-            "x": 3,
-            "y": 2,
+            "x": 0,
+            "y": 0,
             "queue": [
               {
-                "file": "c.wav",
+                "file": "a.wav",
                 "loop": 0,
                 "wormhole": -1
               }
             ]
           }
         ],
-        "keyLedExist": true,
+        "keyLedExist": false,
         "leds": [],
         "autoPlay": null,
         "errors": [
-          "keyLed:range"
+          "info:format"
         ]
       },
-      "note": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed)."
+      "note": "Android records a format warning (`info: … format is incorrect`) for the line without `=`; the pack opens and plays the same."
+    },
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:format"
+        ]
+      },
+      "note": "iOS records a format warning for the line without `=`; the pack opens and plays the same."
     }
   },
-  "KL-N02": {
-    "web": {
+  "INF-010": {
+    "android": {
       "status": "fail",
       "actual": {
         "loaded": true,
         "info": {
           "title": "Conformance",
           "producerName": "UniPad Conformance",
-          "buttonX": 4,
+          "buttonX": 0,
           "buttonY": 3,
           "chain": 2,
           "squareButton": true
         },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 3,
-            "y": 2,
-            "queue": [
-              {
-                "file": "c.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": true,
+        "sounds": [],
+        "keyLedExist": false,
         "leds": [],
         "autoPlay": null,
         "errors": [
-          "keyLed:range"
+          "info:format",
+          "info:missing-field",
+          "keySound:range"
         ]
       },
-      "note": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed)."
+      "note": "Android reads `abc` as 0 and opens the pack without a pad column: a format warning, buttonX missing, and the keySound line out of range."
+    },
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 0,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:missing-field",
+          "keySound:range"
+        ]
+      },
+      "note": "iOS reads `abc` as 0 and opens the pack without a pad column: buttonX missing, and the keySound line out of range."
     }
   },
-  "KL-N03": {
-    "web": {
+  "INF-015": {
+    "ios": {
       "status": "fail",
       "actual": {
         "loaded": true,
@@ -667,28 +144,26 @@
         "sounds": [
           {
             "c": 0,
-            "x": 3,
-            "y": 2,
+            "x": 0,
+            "y": 0,
             "queue": [
               {
-                "file": "c.wav",
+                "file": "a.wav",
                 "loop": 0,
                 "wormhole": -1
               }
             ]
           }
         ],
-        "keyLedExist": true,
+        "keyLedExist": false,
         "leds": [],
         "autoPlay": null,
-        "errors": [
-          "keyLed:range"
-        ]
+        "errors": []
       },
-      "note": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed)."
+      "note": "iOS reads `info.json` when there is no `info` file and opens the pack."
     }
   },
-  "KL-N04": {
+  "KS-018": {
     "web": {
       "status": "fail",
       "actual": {
@@ -701,31 +176,18 @@
           "chain": 2,
           "squareButton": true
         },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 3,
-            "y": 2,
-            "queue": [
-              {
-                "file": "c.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
-            ]
-          }
-        ],
-        "keyLedExist": true,
+        "sounds": [],
+        "keyLedExist": false,
         "leds": [],
         "autoPlay": null,
         "errors": [
-          "keyLed:range"
+          "keySound:format"
         ]
       },
-      "note": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed)."
+      "note": "The web parser reads the file as UTF-8, so the UTF-16 line is not a keySound line: one format warning, and the pack has no sound."
     }
   },
-  "KL-N05": {
+  "KL-024": {
     "web": {
       "status": "fail",
       "actual": {
@@ -753,13 +215,25 @@
           }
         ],
         "keyLedExist": true,
-        "leds": [],
+        "leds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "loop": 1,
+                "events": []
+              }
+            ]
+          }
+        ],
         "autoPlay": null,
         "errors": [
-          "keyLed:range"
+          "keyLed:format"
         ]
       },
-      "note": "The web parser reports a non-numeric keyLed file name field as `range` (`<field> is incorrect`); Android and iOS report `format`. The file is dropped by all three (parser.ts parseKeyLed)."
+      "note": "The web parser drops an LED event outside the pad grid when it reads the file and records a format warning for each such line."
     }
   }
 }

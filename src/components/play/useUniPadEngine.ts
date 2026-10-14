@@ -161,6 +161,8 @@ export function useUniPadEngine() {
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
+  // A dialog over the player owns the keyboard; see setKeyboardBlocked.
+  const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
   const toggleAutoPlayRef = useRef<() => void>(() => {});
   const toggleFeedbackLightRef = useRef<() => void>(() => {});
@@ -453,6 +455,19 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [updatePadVisual, scheduleFlush]);
 
+  const releaseKeyboardPads = useCallback(() => {
+    for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
+    pressedKeysRef.current.clear();
+  }, [padTouchOff]);
+
+  /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
+   *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
+   *  opens are released, since their keyup may land in the dialog. */
+  const setKeyboardBlocked = useCallback((blocked: boolean) => {
+    keyboardBlockedRef.current = blocked;
+    if (blocked) releaseKeyboardPads();
+  }, [releaseKeyboardPads]);
+
   // Keyboard input handler
   useEffect(() => {
     const unipack = unipackRef.current;
@@ -460,13 +475,8 @@ export function useUniPadEngine() {
 
     const { buttonX, buttonY } = unipack.info;
 
-    const releaseAllKeys = () => {
-      for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
-      pressedKeysRef.current.clear();
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (e.repeat || keyboardBlockedRef.current) return;
       // Alt/Ctrl/Meta chords belong to PlayPage's shortcuts (alt+a = autoPlay); on Windows/Linux
       // Alt+A still reports key 'a' and used to press pad [2,0] as well.
       if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -504,21 +514,21 @@ export function useUniPadEngine() {
 
     // Alt-Tab or a hidden tab swallows the keyup; without this the pad (and an infinite-loop
     // sample) stayed on.
-    const handleBlur = () => releaseAllKeys();
-    const handleVisibility = () => { if (document.hidden) releaseAllKeys(); };
+    const handleBlur = () => releaseKeyboardPads();
+    const handleVisibility = () => { if (document.hidden) releaseKeyboardPads(); };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      releaseAllKeys();
+      releaseKeyboardPads();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, userPadTouchOn, padTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, padTouchOff, setChain]);
 
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
@@ -1449,6 +1459,7 @@ export function useUniPadEngine() {
     connectMidi,
     disconnectMidi,
     setMidiUiContext,
+    setKeyboardBlocked,
     setVolumeLevel,
     resumeAudio: () => soundEngineRef.current?.resume(),
     startAutoMapping,

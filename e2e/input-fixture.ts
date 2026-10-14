@@ -13,6 +13,10 @@ export const duration = (rows: number, cols: number, position: string, chain = 1
   return (100 + (chain - 1) * rows * cols + row * cols + col) / 1000;
 };
 
+// Waits here and in the edge tests check state, not speed: a busy shared machine has stalled one browser
+// round trip for 5-10 s, past the 5 s default.
+export const stateTimeout = 15_000;
+
 const observedPages = new WeakSet<Page>();
 
 export async function loadInputPack(page: Page, rows = 8, cols = 8, square = true) {
@@ -60,7 +64,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     name: 'input-boundaries.uni', mimeType: 'application/zip',
     buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
   });
-  await expect(page.locator('[data-pad]')).toHaveCount(rows * cols);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(rows * cols * 2);
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('[data-pad]')).toHaveCount(rows * cols, { timeout: stateTimeout });
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length), { timeout: stateTimeout }).toBe(rows * cols * 2);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: stateTimeout });
 }

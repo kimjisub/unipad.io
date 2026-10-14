@@ -123,9 +123,11 @@ describe('the checks can fail', () => {
   });
 
   test('an undetermined case is never counted as a pass', async () => {
-    const c = corpus.cases.find((x) => x.expectation === 'undetermined');
-    assert.ok(c);
-    assert.equal(classify(c, await actualFor(c, corpus)).status, 'unverified');
+    const { expected, ...open } = byId('KS-001');
+    const c: CorpusCase = { ...open, expectation: 'undetermined', question: 'still open?' };
+    const actual = await actualFor(c, corpus);
+    assert.deepEqual(actual, expected);
+    assert.equal(classify(c, actual).status, 'unverified');
   });
 
   test('a case the corpus says this platform cannot observe is unverified and is not run', async () => {
