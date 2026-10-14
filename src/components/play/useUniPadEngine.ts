@@ -19,6 +19,7 @@ import {
   releaseThemeUrls,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
@@ -184,6 +185,7 @@ export function useUniPadEngine() {
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
+  const playerHoldsRef = useRef(new PlayerHolds());
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
@@ -472,6 +474,7 @@ export function useUniPadEngine() {
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
   const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     usageTracker.padPressed(source);
+    playerHoldsRef.current.press(x, y);
     padTouchOn(x, y, input);
   }, [usageTracker, padTouchOn]);
 
@@ -504,10 +507,16 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, scheduleFlush]);
 
-  const releaseKeyboardPads = useCallback(() => {
-    for (const [code, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1], keyInput(code));
-    pressedKeysRef.current.clear();
+  /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
+  const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
+    const releasesAutoPlay = playerHoldsRef.current.release(x, y);
+    padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
+
+  const releaseKeyboardPads = useCallback(() => {
+    for (const [code, pad] of pressedKeysRef.current) userPadTouchOff(pad[0], pad[1], keyInput(code));
+    pressedKeysRef.current.clear();
+  }, [userPadTouchOff]);
 
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
@@ -557,7 +566,7 @@ export function useUniPadEngine() {
       const pad = pressedKeysRef.current.get(e.code);
       if (pad) {
         pressedKeysRef.current.delete(e.code);
-        padTouchOff(pad[0], pad[1], keyInput(e.code));
+        userPadTouchOff(pad[0], pad[1], keyInput(e.code));
       }
     };
 
@@ -577,16 +586,13 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, padTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, setChain]);
 
+  /** Releases every pad the player is not holding, which includes each pad autoplay still holds. */
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    for (let x = 0; x < unipack.info.buttonX; x++) {
-      for (let y = 0; y < unipack.info.buttonY; y++) {
-        padTouchOff(x, y);
-      }
-    }
+    playerHoldsRef.current.releaseOthers(unipack.info.buttonX, unipack.info.buttonY, padTouchOff);
   }, [padTouchOff]);
 
   const ledInit = useCallback(() => {
@@ -719,6 +725,8 @@ export function useUniPadEngine() {
         feedbackLight: !unipack?.keyLedExist,
       }));
     } else {
+      // Guide and step practice do not press pads, so autoplay would never release what it holds.
+      if (currentMode === 'autoPlay') padInit();
       applyModeFlags(runner, mode);
       runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
@@ -792,6 +800,7 @@ export function useUniPadEngine() {
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
@@ -916,7 +925,10 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOn: (x: number, y: number) => {
+            playerHoldsRef.current.autoPlayPressed(x, y);
+            padTouchOn(x, y, AUTO_PLAY_INPUT);
+          },
           onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
@@ -1081,7 +1093,7 @@ export function useUniPadEngine() {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
           if (pressed) userPadTouchOn(x, y, 'midi', MIDI_INPUT);
-          else padTouchOff(x, y, MIDI_INPUT);
+          else userPadTouchOff(x, y, MIDI_INPUT);
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
@@ -1151,6 +1163,7 @@ export function useUniPadEngine() {
     usageTracker,
     padTouchOn,
     userPadTouchOn,
+    userPadTouchOff,
     padTouchOff,
     refreshPad,
     refreshChain,
@@ -1269,6 +1282,7 @@ export function useUniPadEngine() {
   const unload = useCallback(() => {
     usageTracker.unloaded();
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
@@ -1466,7 +1480,7 @@ export function useUniPadEngine() {
     loadUniPack,
     unload,
     padTouchOn: screenPadTouchOn,
-    padTouchOff,
+    padTouchOff: userPadTouchOff,
     setChain,
     playMode,
     switchPlayMode,
