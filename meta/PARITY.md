@@ -138,15 +138,14 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-Seven, from the five cases where the platforms gave different results and the expected result was then
+Five, from the cases where the platforms gave different results and the expected result was then
 decided (README there, "Decided behaviour"). Each is pinned until the platform's own fix removes it.
 
-- **INF-007, Android and iOS:** an `info` line without `=` records a format warning. `info.mdx` now says
-  the line is ignored without a warning; the web already does so.
-- **INF-010, Android and iOS:** `buttonX=abc` is read as 0 and the pack opens without a pad column (two
-  or three warnings). `info.mdx` now says loading is aborted; the web already refuses the pack.
-- **INF-015, iOS:** `info.json` is read when there is no `info` file, and the pack opens. The docs
-  describe the `info` file only; Android and the web refuse the pack.
+- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
+  the line is ignored without a warning; iOS and the web already do so.
+- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
+  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
+  pack.
 - **KS-018, web:** a UTF-16 keySound with a byte order mark is read as UTF-8, so no line is understood
   and the pack has no sound. `key-sound.mdx` now names UTF-16 with a byte order mark; Android and iOS
   read it.
@@ -156,6 +155,10 @@ decided (README there, "Decided behaviour"). Each is pinned until the platform's
 
 ### Resolved differences found by the corpus
 
+- **INF-007, INF-010, INF-015, INF-016: iOS reads `info` as the docs say.** iOS skips an `info` line
+  without `=` without a warning, refuses a pack whose `buttonX` or `buttonY` is not an integer instead of
+  opening it with no pads, and no longer reads `info.json` when there is no `info` file. Its three pins
+  were removed; INF-016 (`buttonY=abc`) was added so that a fix of `buttonX` alone no longer passes.
 - **AP-M01..M09, AP-M11, KL-N01..N05: the web now calls a value that is not a whole number a format
   error.** The web parser reported a non-numeric autoPlay value or keyLED file-name field as a range
   error (`autoPlay: [on a 1] coordinate is incorrect`, `keyLed: [a 1 1] chain is incorrect`); Android
