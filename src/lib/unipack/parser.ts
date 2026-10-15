@@ -423,19 +423,25 @@ async function parseKeyLed(
       continue;
     }
 
-    if (isNaN(c) || c < 0 || c >= info.chain) {
+    // A field that is not a whole number is a format error, as Android and iOS report it; only a
+    // number outside the pack is a range error.
+    if (![c, x, y, loop].every(Number.isFinite)) {
+      errors.push(`keyLed: [${fileName}] format is incorrect`);
+      continue;
+    }
+    if (c < 0 || c >= info.chain) {
       errors.push(`keyLed: [${fileName}] chain is incorrect`);
       continue;
     }
-    if (isNaN(x) || x < 0 || x >= info.buttonX) {
+    if (x < 0 || x >= info.buttonX) {
       errors.push(`keyLed: [${fileName}] x is incorrect`);
       continue;
     }
-    if (isNaN(y) || y < 0 || y >= info.buttonY) {
+    if (y < 0 || y >= info.buttonY) {
       errors.push(`keyLed: [${fileName}] y is incorrect`);
       continue;
     }
-    if (isNaN(loop) || loop < 0) {
+    if (loop < 0) {
       errors.push(`keyLed: [${fileName}] loop is incorrect`);
       continue;
     }
@@ -606,6 +612,8 @@ async function parseAutoPlay(
       switch (option) {
         // NaN passes every `< 0 || >= n` comparison, so `o x 3` used to reach map[NaN][y] and throw
         // out of the whole parse, and a NaN delay stalled autoPlay forever. Android drops the line.
+        // A value that is not a whole number is a format error, as Android and iOS report it; only a
+        // number outside the pack is a range error.
         case 'on':
         case 'o':
         case 'off':
@@ -614,7 +622,11 @@ async function parseAutoPlay(
         case 't':
           x = strictInt(split[1]) - 1;
           y = strictInt(split[2]) - 1;
-          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
+            continue;
+          }
+          if (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
             errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
             continue;
           }
@@ -622,7 +634,11 @@ async function parseAutoPlay(
         case 'chain':
         case 'c':
           chain = strictInt(split[1]) - 1;
-          if (!Number.isFinite(chain) || chain < 0 || chain >= info.chain) {
+          if (!Number.isFinite(chain)) {
+            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
+            continue;
+          }
+          if (chain < 0 || chain >= info.chain) {
             errors.push(`autoPlay: [${trimmed}] chain is incorrect`);
             continue;
           }
@@ -631,7 +647,7 @@ async function parseAutoPlay(
         case 'd':
           delay = strictInt(split[1]);
           if (!Number.isFinite(delay)) {
-            errors.push(`autoPlay: [${trimmed}] delay is incorrect`);
+            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
             continue;
           }
           break;

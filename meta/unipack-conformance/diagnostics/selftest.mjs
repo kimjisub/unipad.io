@@ -22,6 +22,13 @@ test('a missing value, letters, a decimal or characters after the digits are a f
   ]);
 });
 
+test('the parser\'s own "format is incorrect" for an autoPlay line or keyLed file name is read the same way', () => {
+  for (const raw of ['autoPlay: [on a 1] format is incorrect', 'autoPlay: [c z] format is incorrect', 'autoPlay: [d 1.5] format is incorrect',
+    'keyLed: [1 b 1] format is incorrect', 'keyLed: [1 1 1 1.5] format is incorrect']) assert.equal(causeOf(raw), FORMAT, raw);
+  assert.deepEqual(classifyWarning({ raw: 'keyLed: [1 1 1 x] format is incorrect', pack: PACK }).tokens.map((t) => t.problem), [null, null, null, 'not-a-number']);
+  assert.deepEqual(classifyWarning({ raw: 'keyLed: [1 1 x] format is incorrect', pack: PACK }).tokens.map((t) => t.position), [0, 1, 2]);
+});
+
 test('a format failure needs no pack size, so a missing one does not hide it', () => {
   assert.equal(causeOf('keyLed: [1 b 1] x is incorrect', null), FORMAT);
 });
@@ -53,6 +60,9 @@ test('what the warning and the pack size cannot decide is insufficient informati
     'autoPlay: [on 1 1] coordinate is incorrect': 'does not explain',
     'autoPlay: [delay 10] delay is incorrect': 'does not explain',
     'keyLed: [1 1 1 c] coordinate is incorrect': 'has no coordinate',
+    'keyLed: [1 [2] 1] format is incorrect': 'bracket',
+    'autoPlay: [on 99999999999 1] format is incorrect': '32-bit',
+    'autoPlay: [on 1 1] format is incorrect': 'does not explain',
   };
   for (const [raw, reason] of Object.entries(cases)) {
     const result = classifyWarning({ raw, pack: PACK });
@@ -66,7 +76,10 @@ test('what the warning and the pack size cannot decide is insufficient informati
 });
 
 test('warnings that are not about a number are left alone', () => {
-  for (const raw of ['autoPlay: [bogus 1 1] format is incorrect', 'keySound: [1 1 1 x.wav] sound was not found', 'info: chain out of range', "info doesn't exist"]) {
+  for (const raw of [
+    'autoPlay: [bogus 1 1] format is incorrect', 'keyLed: [1 1 1].[o 1 x] format is incorrect', 'keySound: [1 1 1] format is incorrect',
+    'keySound: [1 1 1 x.wav] sound was not found', 'info: chain out of range', "info doesn't exist",
+  ]) {
     assert.equal(causeOf(raw), NOT_A_NUMBER_WARNING, raw);
   }
 });

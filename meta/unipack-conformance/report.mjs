@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { restsOnAgreement, restsOnDecision } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PLATFORMS = ['android', 'ios', 'web'];
@@ -61,10 +62,12 @@ export function classify(c, actual, platform) {
 function verdict(c, r, platform) {
   const unverified = (detail) => ({ status: 'unverified', detail, actual: r.actual ?? undefined });
   if (c.expectation === 'undetermined') return unverified(`no doc or stated intent decides this: ${c.question}`);
-  const unobserved = c.unobserved?.[platform];
-  if (unobserved) return unverified(unobserved);
   if (!STATUSES.includes(r.status)) return unverified(`${platform} reported the unknown status ${r.status}`);
+  // A harness can come to observe a case the corpus still marks `unobserved`; the reason holds only
+  // while the platform records no result for it.
   if (r.actual == null) {
+    const unobserved = c.unobserved?.[platform];
+    if (unobserved) return unverified(unobserved);
     return unverified(r.status === 'unverified'
       ? r.detail || `${platform} recorded no result for this case`
       : `${platform} reported ${r.status} without the result it is based on`);
@@ -96,7 +99,7 @@ export function judge({ corpus, sha256 }, platform, results) {
 export function buildReport(canonical, results) {
   const judged = Object.fromEntries(PLATFORMS.map((p) => [p, judge(canonical, p, results[p])]));
   const rows = canonical.corpus.cases.map((c) => {
-    const row = { id: c.id, layer: c.layer, area: c.area, title: c.title, expectation: c.expectation };
+    const row = { id: c.id, layer: c.layer, area: c.area, title: c.title, expectation: c.expectation, agreed: restsOnAgreement(c), decided: restsOnDecision(c) };
     for (const p of PLATFORMS) row[p] = judged[p].get(c.id);
     const actuals = PLATFORMS.map((p) => row[p].actual).filter((a) => a != null);
     if (c.expectation === 'undetermined' && actuals.length === PLATFORMS.length) {
@@ -105,6 +108,17 @@ export function buildReport(canonical, results) {
     return row;
   });
   const summary = Object.fromEntries(PLATFORMS.map((p) => [p, Object.fromEntries(STATUSES.map((s) => [s, rows.filter((r) => r[p].status === s).length]))]));
+  const passOnAllThree = rows.filter((r) => PLATFORMS.every((p) => r[p].status === 'pass'));
+  // Cases whose expected result is only what the platforms agreed on, or what the maintainers decided,
+  // counted apart from the ones a doc or an intent decides.
+  const apart = (key) => {
+    const marked = rows.filter((r) => r[key]);
+    return {
+      cases: marked.length,
+      pass: Object.fromEntries(PLATFORMS.map((p) => [p, marked.filter((r) => r[p].status === 'pass').length])),
+      passOnAllThree: passOnAllThree.filter((r) => r[key]).length,
+    };
+  };
   // When each result file was written and whether that run asserted, so a stale or record-only file shows.
   const runs = Object.fromEntries(PLATFORMS.map((p) => [p, results[p] ? { generatedAt: results[p].generatedAt ?? null, assertions: results[p].assertions ?? null } : null]));
   return {
@@ -112,7 +126,9 @@ export function buildReport(canonical, results) {
     cases: rows.length,
     runs,
     summary,
-    passOnAllThree: rows.filter((r) => PLATFORMS.every((p) => r[p].status === 'pass')).length,
+    passOnAllThree: passOnAllThree.length,
+    agreed: apart('agreed'),
+    decided: apart('decided'),
     rows,
   };
 }
@@ -129,14 +145,17 @@ export function renderText(report) {
   out.push(`${'platform'.padEnd(9)}${STATUSES.map((s) => s.padStart(20)).join('')}`);
   for (const p of PLATFORMS) out.push(`${p.padEnd(9)}${STATUSES.map((s) => String(report.summary[p][s]).padStart(20)).join('')}`);
   out.push('');
-  out.push(`pass on all three platforms: ${report.passOnAllThree} of ${report.cases} cases`);
+  const passes = (counted) => PLATFORMS.map((p) => `${p} ${counted.pass[p]}`).join(', ');
+  out.push(`pass on all three platforms: ${report.passOnAllThree} of ${report.cases} cases, ${report.agreed.passOnAllThree} of them on an agreed basis, ${report.decided.passOnAllThree} on a decision basis`);
+  out.push(`agreed basis: ${report.agreed.cases} cases hold what Android, iOS and the web all did, mostly where no doc decides (README, "Agreed behaviour", names the one that goes against a doc); pass ${passes(report.agreed)}`);
+  out.push(`decision basis: ${report.decided.cases} cases hold what the maintainers chose where the platforms differed and no doc decides; pass ${passes(report.decided)}`);
   out.push('This is a result for the cases in this corpus only. It does not show that every UniPack is compatible.');
   out.push('');
   const short = { pass: 'pass', fail: 'FAIL', unsupported: 'UNSUPP', 'intended-difference': 'INTENDED', unverified: '-' };
   out.push(`${'case'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}title`);
   for (const r of report.rows) {
     const cells = PLATFORMS.map((p) => short[r[p].status].padEnd(10)).join('');
-    const tail = r.observed ? ` [undetermined: observed results ${r.observed}]` : r.expectation === 'undetermined' ? ' [undetermined]' : '';
+    const tail = r.observed ? ` [undetermined: observed results ${r.observed}]` : r.expectation === 'undetermined' ? ' [undetermined]' : r.agreed ? ' [agreed]' : r.decided ? ' [decision]' : '';
     out.push(`${r.id.padEnd(11)}${cells}${r.title}${tail}`);
   }
   const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => r[p].status !== 'pass' && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));

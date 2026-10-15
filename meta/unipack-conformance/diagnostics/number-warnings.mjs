@@ -1,6 +1,7 @@
-// Explains the web parser's number warnings ("<section>: [<input>] <field> is incorrect") as a format
-// failure, a range failure, or neither for lack of information. It reads only the warning text and the
-// pack size the parser checked it against: never a case id, an expected result or a pinned difference.
+// Explains the web parser's number warnings ("<section>: [<input>] <field> is incorrect", and "format is
+// incorrect" for an autoPlay line or keyLed file name) as a format failure, a range failure, or neither
+// for lack of information. It reads only the warning text and the pack size the parser checked it
+// against: never a case id, an expected result or a pinned difference.
 // See README.md in this folder.
 //
 //   node meta/unipack-conformance/diagnostics/number-warnings.mjs <web-warnings.json> [--out <file>]
@@ -19,27 +20,41 @@ export const NOT_A_NUMBER_WARNING = 'not-a-number-warning';
 /** Android reads these numbers into a 32-bit Int and the web into a double, so beyond it they disagree. */
 const INT32_MAX = 2 ** 31 - 1;
 
-const WARNING = /^(autoPlay|keyLed|keySound): \[(.*)\] (coordinate|chain|delay|x|y|loop) is incorrect$/s;
+const WARNING = /^(autoPlay|keyLed|keySound): \[(.*)\] (coordinate|chain|delay|x|y|loop|format) is incorrect$/s;
 
 // For each warning, the commands that can raise it (autoPlay only) and the tokens of the bracketed input
 // it checks: their position, and the inclusive range a value must be in, either fixed or 1..pack[size].
+// PAD is the chain, x and y a keyLed file name and a keySound line start with. `format` names no field,
+// so its tokens are those of the autoPlay command, or every number of a keyLed file name (the loop only
+// when the name has one).
 const COORDINATE = [{ index: 1, size: 'buttonX' }, { index: 2, size: 'buttonY' }];
+const CHAIN = [{ index: 1, size: 'chain' }];
+const DELAY = [{ index: 1, min: -Infinity }];
+const PAD = [{ index: 0, size: 'chain' }, { index: 1, size: 'buttonX' }, { index: 2, size: 'buttonY' }];
+const LED_LOOP = { index: 3, min: 0 };
+const AUTOPLAY_COMMANDS = new Map([
+  ['on', COORDINATE], ['o', COORDINATE], ['off', COORDINATE], ['f', COORDINATE], ['touch', COORDINATE], ['t', COORDINATE],
+  ['chain', CHAIN], ['c', CHAIN], ['delay', DELAY], ['d', DELAY],
+]);
+const commandsTaking = (slots) => [...AUTOPLAY_COMMANDS].filter(([, s]) => s === slots).map(([command]) => command);
 const FIELDS = {
   autoPlay: {
-    coordinate: { commands: ['on', 'o', 'off', 'f', 'touch', 't'], slots: COORDINATE },
-    chain: { commands: ['chain', 'c'], slots: [{ index: 1, size: 'chain' }] },
-    delay: { commands: ['delay', 'd'], slots: [{ index: 1, min: -Infinity }] },
+    coordinate: { commands: commandsTaking(COORDINATE), slots: COORDINATE },
+    chain: { commands: commandsTaking(CHAIN), slots: CHAIN },
+    delay: { commands: commandsTaking(DELAY), slots: DELAY },
+    format: { slotsFor: (parts) => AUTOPLAY_COMMANDS.get(parts[0]) },
   },
   keyLed: {
-    chain: { slots: [{ index: 0, size: 'chain' }] },
-    x: { slots: [{ index: 1, size: 'buttonX' }] },
-    y: { slots: [{ index: 2, size: 'buttonY' }] },
-    loop: { slots: [{ index: 3, min: 0 }] },
+    chain: { slots: [PAD[0]] },
+    x: { slots: [PAD[1]] },
+    y: { slots: [PAD[2]] },
+    loop: { slots: [LED_LOOP] },
+    format: { slotsFor: (parts) => (parts.length > 3 ? [...PAD, LED_LOOP] : PAD) },
   },
   keySound: {
-    chain: { slots: [{ index: 0, size: 'chain' }] },
-    x: { slots: [{ index: 1, size: 'buttonX' }] },
-    y: { slots: [{ index: 2, size: 'buttonY' }] },
+    chain: { slots: [PAD[0]] },
+    x: { slots: [PAD[1]] },
+    y: { slots: [PAD[2]] },
   },
 };
 
@@ -70,6 +85,9 @@ export function classifyWarning({ raw, pack }) {
   const [, section, input, field] = match;
   const rule = FIELDS[section][field];
   const base = { section, field };
+  // keySound's format warning also covers a missing sound name, and a keyLed `[file].[line]` one is about
+  // a line inside the file: neither is about the numbers checked here.
+  if (field === 'format' && (!rule || input.includes('].['))) return { cause: NOT_A_NUMBER_WARNING, reason: `not a number warning of ${section}` };
   if (!rule) return { ...base, cause: INSUFFICIENT, reason: `${section} has no ${field} to check`, tokens: [] };
   if (/[[\]]/.test(input)) return { ...base, cause: INSUFFICIENT, reason: 'the input contains a bracket, so where it ends is ambiguous', tokens: [] };
 
@@ -77,13 +95,15 @@ export function classifyWarning({ raw, pack }) {
   if (rule.commands && !rule.commands.includes(parts[0])) {
     return { ...base, cause: INSUFFICIENT, reason: `"${parts[0]}" is not a command that takes a ${field}`, tokens: [] };
   }
+  const slots = rule.slots ?? rule.slotsFor(parts);
+  if (!slots) return { cause: NOT_A_NUMBER_WARNING, reason: `"${parts[0]}" is not a command that takes a number` };
 
-  const tokens = rule.slots.map((slot) => ({ position: slot.index, value: parts[slot.index] ?? null, problem: tokenProblem(parts[slot.index]) }));
+  const tokens = slots.map((slot) => ({ position: slot.index, value: parts[slot.index] ?? null, problem: tokenProblem(parts[slot.index]) }));
   const report = (cause, reason) => ({ ...base, cause, reason, tokens });
 
   if (tokens.some((t) => FORMAT_PROBLEMS.has(t.problem))) return report(FORMAT, 'a value is missing or is not a complete integer');
   if (tokens.some((t) => t.problem === 'too-large')) return report(INSUFFICIENT, 'an integer past the 32-bit range, which the platforms convert differently');
-  for (const [i, slot] of rule.slots.entries()) {
+  for (const [i, slot] of slots.entries()) {
     const range = bounds(slot, pack);
     if (!range) return report(INSUFFICIENT, `the pack has no usable ${slot.size} (absent, or not a positive integer)`);
     const n = Number(tokens[i].value);

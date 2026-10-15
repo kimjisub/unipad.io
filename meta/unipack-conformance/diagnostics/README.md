@@ -1,11 +1,12 @@
 # Warning diagnostics
 
 The normalized result keeps a warning only as `section:kind` (see "Error kinds" in
-[../README.md](../README.md)), and that kind comes from the end of the sentence. A number the parser
-could not read and a number outside the pack end the same way (`autoPlay: [on a 1] coordinate is
-incorrect`, `autoPlay: [on 5 1] coordinate is incorrect`), so the web reports both as `range` while
-Android and iOS report the first as `format`. This folder keeps what the parser actually wrote and
-explains each number warning from it, **next to** the normalized result, never in place of it.
+[../README.md](../README.md)), and that kind comes from the end of the sentence, that is from how the
+parser chose to word it. The web parser once ended a number it could not read and a number outside the
+pack the same way (`autoPlay: [on a 1] coordinate is incorrect`, `autoPlay: [on 5 1] coordinate is
+incorrect`), so both counted as `range` while Android and iOS called the first `format`. This folder
+keeps what the parser actually wrote and explains each number warning from its input, **next to** the
+normalized result, never in place of it, so such a wording is noticed rather than trusted.
 
 Nothing here changes `errors`, a case's status, `web.json`, `divergences.json` or `corpus.json`. The
 explanation is not a sound, light or input result, and a warning explained as `format` is not a pass.
@@ -52,17 +53,20 @@ copied to the output for the reader only.
 
 It handles `<section>: [<input>] <field> is incorrect`, takes the tokens of the bracketed input that the
 named field uses (autoPlay `coordinate` x y, `chain`, `delay`; keyLed file name chain, x, y, loop; keySound
-chain, x, y), and reports one of
+chain, x, y), and reports one of the causes below. `format is incorrect` names no field, so for it the
+tokens are those the autoPlay command takes (`on`/`off`/`touch` x y, `chain`, `delay`) or every number of
+the keyLed file name.
 
 | cause | when |
 |---|---|
 | `format` | a token the field needs is missing, a decimal, letters, or digits followed by other characters. The pack size is not needed. |
 | `range` | every token is an integer within 32 bits and one is outside the pack: 1..`chain`, 1..`buttonX`, 1..`buttonY`, or a keyLed loop below 0. |
 | `insufficient-information` | the warning and the pack cannot decide it: a bracket inside the input (where it ends is ambiguous), a command that does not take the field, an integer past 32 bits (Android reads an Int, the web a double), a pack with no usable size for the field, or valid in-range integers that do not explain the warning. |
-| `not-a-number-warning` | any other warning (`format is incorrect`, missing files and fields, `out of range`); left alone. |
+| `not-a-number-warning` | any other warning, left alone: `format is incorrect` for an autoPlay command that takes no number, for a line inside a keyLed file (`[file].[line]`) or for a keySound line (which also covers a missing sound name); missing files and fields; `out of range`. |
 
 Each number warning also lists its `tokens` (`position`, `value`, `problem`: `missing`, `decimal`,
 `trailing-characters`, `not-a-number`, `too-large`, `out-of-range` or `null`) and a `reason`.
 
-The same sentence end is not turned into `format` as a whole: `keyLed: [1 b 1] x is incorrect` is
-`format` and `keyLed: [1 5 1] x is incorrect` is `range`.
+The cause comes from the input, not the sentence end: `keyLed: [1 b 1] x is incorrect` is `format` and
+`keyLed: [1 5 1] x is incorrect` is `range`, and `autoPlay: [on 1 1] format is incorrect` (a sentence
+the input does not explain) is `insufficient-information`.

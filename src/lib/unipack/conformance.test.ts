@@ -7,13 +7,13 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
 import {
-  actualFor, capturedCase, classify, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL, resultFor,
-  verifyFingerprint, warningCaptureFile,
+  actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL,
+  resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
 } from './conformanceHarness';
 
 const { corpus, sha256 } = loadCorpus();
@@ -63,6 +63,17 @@ describe('cases', () => {
 // A check that cannot fail proves nothing: each of these breaks one thing the cases above rely on and
 // requires the comparison to notice.
 describe('the checks can fail', () => {
+  test('a copy of corpus.json that does not hash to its corpus.sha256, or has none, is refused', () => {
+    const bytes = readFileSync(corpusPath());
+    const digest = readFileSync(join(dirname(corpusPath()), 'corpus.sha256'), 'utf8');
+    assert.equal(verifyCorpusDigest(bytes, digest), sha256);
+    const changed = Buffer.from(bytes);
+    changed[changed.indexOf('KS-001')] ^= 1;
+    assert.throws(() => verifyCorpusDigest(changed, digest), /hashes to/);
+    assert.throws(() => verifyCorpusDigest(bytes, null), /corpus\.sha256 is missing/);
+    assert.throws(() => verifyCorpusDigest(bytes, digest.trim()), /not one/);
+  });
+
   test('a changed input file no longer matches the case fingerprint', () => {
     const c = byId('KS-001');
     const altered: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'keySound' ? { ...f, text: `${f.text}\n1 2 2 c.wav` } : f)) };
@@ -101,6 +112,13 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(c, corpus, noLed)).status, 'fail');
   });
 
+  test('autoPlay presses that do not reach the pads fail a toPads case', async () => {
+    const c = byId('RUN-RP-003');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const notForwarded: CorpusCase = { ...c, scenario: c.scenario!.map((s) => (s.do === 'autoplay' ? { do: 'autoplay' } : s)) };
+    assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
+  });
+
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
     const c = { ...byId('KS-001'), known: { [PLATFORM]: { status: 'fail' as const, actual: { loaded: false }, note: 'pinned' } } };
     assert.equal(classify(c, c.expected as Json).unexpected, true);
@@ -109,9 +127,11 @@ describe('the checks can fail', () => {
   });
 
   test('an undetermined case is never counted as a pass', async () => {
-    const c = corpus.cases.find((x) => x.expectation === 'undetermined');
-    assert.ok(c);
-    assert.equal(classify(c, await actualFor(c, corpus)).status, 'unverified');
+    const { expected, ...open } = byId('KS-001');
+    const c: CorpusCase = { ...open, expectation: 'undetermined', question: 'still open?' };
+    const actual = await actualFor(c, corpus);
+    assert.deepEqual(actual, expected);
+    assert.equal(classify(c, actual).status, 'unverified');
   });
 
   test('a case the corpus says this platform cannot observe is unverified and is not run', async () => {
@@ -125,7 +145,7 @@ describe('the checks can fail', () => {
 // them (meta/unipack-conformance/diagnostics). The tool sees each warning and the pack size only; these
 // checks run it on warnings this parser wrote, for corpus cases and for inputs changed under new ids.
 describe('raw warnings and their number cause', () => {
-  // Non-numeric autoPlay values and keyLed file names: Android and iOS report `format`, the web `range`.
+  // Non-numeric autoPlay values and keyLed file names, which every platform reports as `format`.
   const NON_NUMERIC = ['AP-M01', 'AP-M02', 'AP-M03', 'AP-M04', 'AP-M05', 'AP-M06', 'AP-M07', 'AP-M08', 'AP-M09', 'AP-M11', 'KL-N01', 'KL-N02', 'KL-N03', 'KL-N04', 'KL-N05'];
 
   const variant = (id: string, from: string, change: (f: CorpusFile) => CorpusFile): CorpusCase => ({ ...byId(from), id, files: byId(from).files.map(change) });
@@ -155,7 +175,7 @@ describe('raw warnings and their number cause', () => {
     }
   }
 
-  test('each non-numeric case keeps the warning as written, its pinned web result, and is explained as a format failure', async () => {
+  test('each non-numeric case keeps the warning as written and its result, and is explained as a format failure', async () => {
     const causes = await causesOf(NON_NUMERIC.map(byId));
     assert.deepEqual(causes.map((w) => w.id), NON_NUMERIC);
     for (const id of NON_NUMERIC) {
@@ -163,11 +183,11 @@ describe('raw warnings and their number cause', () => {
       const { actual, capture, outcome } = await resultFor(c, corpus);
       const input = id.startsWith('AP') ? c.files.find((f) => f.path === 'autoPlay')!.text!.split('\n')[0] : c.files.find((f) => f.path.startsWith('keyLed/'))!.path.slice('keyLed/'.length);
       assert.equal(capture?.warnings?.length, 1, id);
-      assert.ok(capture!.warnings![0].includes(`: [${input}] `) && capture!.warnings![0].endsWith(' is incorrect'), `${id}: ${capture!.warnings![0]}`);
+      assert.ok(capture!.warnings![0].includes(`: [${input}] `) && capture!.warnings![0].endsWith(' format is incorrect'), `${id}: ${capture!.warnings![0]}`);
       assert.equal(causes.find((w) => w.id === id)?.raw, capture!.warnings![0], `${id}: the tool got the warning as written`);
       assert.equal(causes.find((w) => w.id === id)?.cause, 'format', id);
-      assert.deepEqual((actual as { errors: Json }).errors, [`${id.startsWith('AP') ? 'autoPlay' : 'keyLed'}:range`], `${id}: the normalized result is unchanged`);
-      assert.deepEqual(outcome, { status: 'fail', unexpected: false, detail: c.known![PLATFORM].note }, `${id}: still the pinned difference`);
+      assert.deepEqual((actual as { errors: Json }).errors, [`${id.startsWith('AP') ? 'autoPlay' : 'keyLed'}:format`], `${id}: the normalized result is unchanged`);
+      assert.equal(outcome.status, 'pass', `${id}: ${outcome.detail}`);
     }
   });
 
@@ -183,9 +203,7 @@ describe('raw warnings and their number cause', () => {
     const outside = [
       autoPlayLine('RANGE-1', 'on 5 1'), autoPlayLine('RANGE-2', 'chain 3'), keyLedName('RANGE-3', '3 1 1'), keyLedName('RANGE-4', '1 5 1'), keyLedName('RANGE-5', '1 1 1 -1'),
     ];
-    const causes = await causesOf(outside);
-    assert.deepEqual(causes.map((w) => [w.id, w.cause]), outside.map((c) => [c.id, 'range']));
-    assert.ok(causes.every((w) => / is incorrect$/.test(w.raw)), 'the same sentence end as the format failures');
+    assert.deepEqual((await causesOf(outside)).map((w) => [w.id, w.cause]), outside.map((c) => [c.id, 'range']));
   });
 
   test('a bracket in the input, an integer past 32 bits or an unknown pack size is insufficient information', async () => {
@@ -194,14 +212,6 @@ describe('raw warnings and their number cause', () => {
     const withoutPack = (record: { pack: Json }) => { record.pack = null; };
     const causes = await causesOf([autoPlayLine('NOPACK-1', 'on 5 1'), autoPlayLine('NOPACK-2', 'on a 1')], withoutPack);
     assert.deepEqual(causes.map((w) => [w.id, w.cause]), [['NOPACK-1', 'insufficient-information'], ['NOPACK-2', 'format']]);
-  });
-
-  test('ignored lines with an undecided warning expectation stay unverified', async () => {
-    for (const id of ['KL-003', 'AP-004']) {
-      const c = byId(id);
-      assert.equal(c.expectation, 'undetermined');
-      assert.equal((await resultFor(c, corpus)).outcome.status, 'unverified');
-    }
   });
 });
 

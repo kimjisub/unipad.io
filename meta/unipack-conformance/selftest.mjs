@@ -4,15 +4,17 @@
 // src/lib/unipack/conformance.test.ts). Alone: node --test meta/unipack-conformance/selftest.mjs
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { buildCorpus, serialize } from './build-corpus.mjs';
-import { buildAssets, fingerprint } from './lib.mjs';
+import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
+import { buildCases } from './cases.mjs';
+import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDecision, sha256, startsWithMpegFrame } from './lib.mjs';
 import { buildReport, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
-import { COPY_PATHS, differences } from './sync.mjs';
+import { resolveCommits } from './copies.mjs';
+import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const canonical = loadCanonical();
@@ -48,32 +50,93 @@ function logOf(platform) {
 
 const plain = corpus.cases.filter((c) => c.expectation === 'determined' && !c.known && !c.unobserved);
 const [determined, another] = plain;
-const undetermined = corpus.cases.find((c) => c.expectation === 'undetermined');
+/** `c` as an undetermined case: an open question in place of its expected result and basis. */
+function asUndetermined(c) {
+  const open = { ...c, expectation: 'undetermined', question: 'still open?' };
+  delete open.expected;
+  delete open.basis;
+  return open;
+}
+// The corpus may have no undetermined case, so one is made from a determined one.
+const undetermined = asUndetermined(determined);
+const withUndetermined = { ...canonical, corpus: { ...corpus, cases: corpus.cases.map((c) => (c.id === undetermined.id ? undetermined : c)) } };
 const statusesOf = (judged) => [...new Set([...judged.values()].map((v) => v.status))];
 
-test('corpus.json is what the sources build', () => {
-  assert.equal(readFileSync(join(here, 'corpus.json'), 'utf8'), serialize(buildCorpus()));
+test('corpus.json is what the sources build, and corpus.sha256 is its hash', () => {
+  const text = serialize(buildCorpus());
+  assert.equal(readFileSync(join(here, 'corpus.json'), 'utf8'), text);
+  assert.equal(readFileSync(join(here, 'corpus.sha256'), 'utf8'), digestLine(Buffer.from(text)));
 });
 
-test('ignored or skipped lines do not establish an undocumented warning expectation', () => {
-  const built = buildCorpus();
+test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
+  const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
+  assert.ok(startsWithMpegFrame(mp3));
+  assert.ok(!startsWithMpegFrame(ASSET_GENERATORS['tone-440'].make()));
+});
+
+test('a warning no doc asks for is expected only on an agreed basis, and the report counts it apart', () => {
+  const agreedIds = corpus.cases.filter(restsOnAgreement).map((c) => c.id);
   for (const id of ['KL-003', 'AP-004', 'KL-M07', 'AP-M10']) {
-    const c = built.cases.find((entry) => entry.id === id);
-    assert.equal(c.expectation, 'undetermined', id);
-    assert.equal(c.expected, undefined, id);
-    assert.match(c.question, /warn/, id);
-    for (const platform of PLATFORMS) {
-      const results = fullResults(platform, { [id]: { status: 'pass', actual: SOME_RESULT } });
-      assert.equal(judge(canonical, platform, results).get(id).status, 'unverified', `${id}/${platform}`);
-    }
+    const c = corpus.cases.find((entry) => entry.id === id);
+    assert.ok(agreedIds.includes(id), id);
+    assert.equal(c.expectation, 'determined', id);
+    assert.match(c.basis.find((b) => b.type === 'agreed').note, /warn/, id);
   }
+
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
+  const agreedRows = report.rows.filter((r) => r.agreed).map((r) => r.id);
+  assert.deepEqual(agreedRows, agreedIds);
+  assert.equal(report.agreed.cases, agreedIds.length);
+  assert.equal(report.agreed.passOnAllThree, agreedIds.length);
+  assert.ok(report.passOnAllThree > report.agreed.passOnAllThree);
+  const text = renderText(report);
+  assert.match(text, new RegExp(`, ${agreedIds.length} of them on an agreed basis`));
+  assert.match(text, new RegExp(`^${agreedIds[0]} .*\\[agreed\\]$`, 'm'));
+
+  // An agreed expected result is checked like any other: a platform that changes its result fails.
+  const changed = fullResults('web', { [agreedIds[0]]: { status: 'fail', actual: SOME_RESULT } });
+  assert.equal(judge(canonical, 'web', changed).get(agreedIds[0]).status, 'fail');
+});
+
+test('a determined case needs a doc, intent, agreed or decision basis, and an agreed or decided one no open question', () => {
+  const editing = (id, edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === id ? edit(structuredClone(c)) : c)));
+  assert.doesNotThrow(editing('KL-005', (c) => c));
+  assert.throws(editing('KL-005', (c) => ({ ...c, basis: [] })), /KL-005: determined without a doc, intent, agreed or decision basis/);
+  assert.throws(editing('KL-005', (c) => ({ ...c, question: 'still open?' })), /KL-005: an agreed case keeps its open question in the agreed note/);
+  assert.throws(editing('KL-024', (c) => ({ ...c, question: 'still open?' })), /KL-024: a decided case keeps no open question/);
+  // A pinned difference needs a determined case to differ from.
+  assert.throws(editing('KL-024', asUndetermined), /KL-024: a divergence is pinned on an undetermined case/);
+});
+
+test('a decided case is checked like any other, and the report counts it apart from doc and agreed ones', () => {
+  const decidedIds = corpus.cases.filter(restsOnDecision).map((c) => c.id);
+  assert.deepEqual(decidedIds, ['KL-024']);
+  assert.equal(decidedIds.filter((id) => corpus.cases.find((c) => c.id === id).basis.some((b) => b.type === 'agreed')).length, 0);
+
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
+  assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
+  assert.equal(report.decided.cases, decidedIds.length);
+  // KL-024 is pinned as a web difference, so fullResults leaves it unverified on the web.
+  assert.deepEqual(report.decided.pass, { android: 1, ios: 1, web: 0 });
+  assert.equal(report.decided.passOnAllThree, 0);
+  const text = renderText(report);
+  assert.match(text, /, 0 on a decision basis$/m);
+  assert.match(text, /^decision basis: 1 cases .* pass android 1, ios 1, web 0$/m);
+  assert.match(text, /^KL-024 .*\[decision\]$/m);
+
+  // The web result pinned for KL-024 is a fail, any other wrong result is a fail, and the pin belongs to
+  // web alone. A result equal to the expected one while the pin remains is unverified (`classify`).
+  const kl024 = corpus.cases.find((c) => c.id === 'KL-024');
+  assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: kl024.known.web.actual } })).get('KL-024').status, 'fail');
+  assert.equal(judge(canonical, 'web', fullResults('web', { 'KL-024': { status: 'fail', actual: SOME_RESULT } })).get('KL-024').status, 'fail');
+  assert.equal(judge(canonical, 'android', fullResults('android', { 'KL-024': { status: 'fail', actual: kl024.known.web.actual } })).get('KL-024').status, 'fail');
 });
 
 test('sound assets regenerate to the same bytes', () => {
   assert.deepEqual(buildAssets(), corpus.assets);
 });
 
-test('case ids are unique and every determined case has a doc, intent or reference basis', () => {
+test('case ids are unique and every determined case has a doc, intent, agreed or reference basis', () => {
   assert.equal(new Set(corpus.cases.map((c) => c.id)).size, corpus.cases.length);
   for (const c of corpus.cases) {
     if (c.expectation === 'determined') assert.ok(c.basis.length > 0 && c.expected !== undefined, c.id);
@@ -116,8 +179,9 @@ test('a platform that ran another corpus or other input is unverified', () => {
 
 test('an undetermined case is never a pass, whether the claim comes with a result or without one', () => {
   for (const actual of [SOME_RESULT, undefined, null]) {
-    const claimed = judge(canonical, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual } }));
+    const claimed = judge(withUndetermined, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual } }));
     assert.equal(claimed.get(undetermined.id).status, 'unverified');
+    assert.equal(judge(canonical, 'web', fullResults('web', { [undetermined.id]: { status: 'pass', actual: determined.expected } })).get(undetermined.id).status, 'pass');
   }
 });
 
@@ -185,14 +249,36 @@ test('a case the platform could not drive is unverified with its own reason', ()
   assert.equal(seen.detail, 'the audio engine is not usable here');
 });
 
-test('a case the corpus says a platform cannot observe is unverified there even if it claims a pass', () => {
-  const c = corpus.cases.find((x) => x.unobserved?.ios && !x.unobserved.android);
-  assert.ok(c, 'the corpus has a case iOS cannot observe');
-  const claim = { [c.id]: { status: 'pass', actual: c.expected } };
-  const ios = judge(canonical, 'ios', fullResults('ios', claim)).get(c.id);
-  assert.equal(ios.status, 'unverified');
-  assert.equal(ios.detail, c.unobserved.ios);
-  assert.equal(judge(canonical, 'android', fullResults('android', claim)).get(c.id).status, 'pass');
+const unobservedOnIos = corpus.cases.filter((x) => x.unobserved?.ios && !x.unobserved.android);
+
+test('a case the corpus says a platform cannot observe is unverified there, with that reason, while it records no result', () => {
+  assert.ok(unobservedOnIos.length > 0, 'the corpus has a case iOS cannot observe');
+  for (const c of unobservedOnIos) {
+    for (const over of [{}, { status: 'pass', actual: null }, { status: 'pass', actual: undefined }]) {
+      const ios = judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+      assert.equal(ios.status, 'unverified', c.id);
+      assert.equal(ios.detail, c.unobserved.ios, c.id);
+    }
+    assert.equal(judge(canonical, 'android', fullResults('android', { [c.id]: { status: 'pass', actual: c.expected } })).get(c.id).status, 'pass');
+  }
+});
+
+test('a result recorded for a case the corpus says a platform cannot observe is judged like any other', () => {
+  for (const c of unobservedOnIos) {
+    const judged = (over) => judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+    assert.equal(judged({ status: 'pass', actual: c.expected }).status, 'pass', c.id);
+    assert.deepEqual(judged({ status: 'pass', actual: c.expected }).actual, c.expected, c.id);
+    assert.equal(judged({ status: 'fail', actual: SOME_RESULT }).status, 'fail', c.id);
+    assert.match(judged({ status: 'pass', actual: SOME_RESULT }).detail, /classifies as fail/, c.id);
+    assert.equal(judged({ status: 'pass', actual: c.expected, fingerprint: '0'.repeat(64) }).status, 'unverified', c.id);
+  }
+  const passing = fullResults('ios', Object.fromEntries(unobservedOnIos.map((c) => [c.id, { status: 'pass', actual: c.expected }])));
+  const otherCorpus = judge(canonical, 'ios', { ...passing, corpusSha256: 'f'.repeat(64) });
+  const missing = judge(canonical, 'ios', { ...passing, cases: passing.cases.filter((r) => !unobservedOnIos.some((c) => c.id === r.id)) });
+  for (const c of unobservedOnIos) {
+    assert.equal(otherCorpus.get(c.id).status, 'unverified', c.id);
+    assert.equal(missing.get(c.id).status, 'unverified', c.id);
+  }
 });
 
 test('a pinned difference is reported with its pinned status, and stops being one when it disappears', () => {
@@ -223,19 +309,69 @@ test('the table says when a result file was written and whether that run asserte
   assert.match(text, /\nios\s+no results given\n/);
 });
 
-test('the sync check notices a missing or drifted copy', () => {
+// What each harness checks before it runs a case: the corpus.json it read hashes to its corpus.sha256.
+const copyIsSelfConsistent = (dir) => readFileSync(join(dir, 'corpus.sha256'), 'utf8') === digestLine(readFileSync(join(dir, 'corpus.json')));
+
+test('the sync check fails on a drifted, missing or outdated copy and passes once it is restored', () => {
   const root = mkdtempSync(join(tmpdir(), 'unipack-sync-'));
+  const dir = join(root, COPY_DIRS.android);
+  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, ...args], { encoding: 'utf8' });
+  const restore = () => { for (const name of COPIED_FILES) writeFileSync(join(dir, name), readFileSync(join(here, name))); };
   try {
-    assert.equal(differences({ android: root }).length, 1);
-    const target = join(root, COPY_PATHS.android);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, readFileSync(join(here, 'corpus.json')));
+    assert.equal(differences({ android: root }).length, COPIED_FILES.length);
+    assert.equal(sync().status, 0);
     assert.deepEqual(differences({ android: root }), []);
-    writeFileSync(target, `${readFileSync(target, 'utf8')} `);
-    assert.equal(differences({ android: root }).length, 1);
+
+    // 1. one byte of the copy changed: the copy no longer matches its hash, and the sync check fails
+    const bytes = readFileSync(join(dir, 'corpus.json'));
+    bytes[bytes.indexOf('KS-001')] ^= 1;
+    writeFileSync(join(dir, 'corpus.json'), bytes);
+    assert.equal(copyIsSelfConsistent(dir), false);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 2. corpus.sha256 missing
+    rmSync(join(dir, 'corpus.sha256'));
+    assert.match(differences({ android: root }).join('\n'), /corpus\.sha256 is missing/);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 3. an older corpus.json together with its own hash: the app's check passes, the sync check does not
+    const older = serialize({ ...corpus, cases: corpus.cases.slice(0, -1) });
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(Buffer.from(older)));
+    assert.equal(copyIsSelfConsistent(dir), true);
+    assert.equal(differences({ android: root }).length, 2);
+    assert.equal(sync('--check').status, 1);
+    restore();
+
+    // 4. restored
+    assert.equal(copyIsSelfConsistent(dir), true);
+    assert.deepEqual(differences({ android: root }), []);
+    assert.equal(sync('--check').status, 0);
+    assert.equal(sha256(readFileSync(join(dir, 'corpus.json'))), canonical.sha256);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('copies.json pins the app copies CI compares to full commit hashes only', () => {
+  const a = 'a'.repeat(40);
+  const b = 'b'.repeat(40);
+  const pins = JSON.stringify({ android: a, ios: b });
+  assert.deepEqual(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8')), JSON.parse(readFileSync(join(here, 'copies.json'), 'utf8')));
+  assert.deepEqual(resolveCommits(pins), { android: a, ios: b });
+  assert.deepEqual(resolveCommits(pins, { android: '', ios: 'c'.repeat(40) }), { android: a, ios: 'c'.repeat(40) });
+  for (const commit of ['main', a.slice(0, 7), `${a}0`, a.toUpperCase(), `refs/heads/${a}`]) {
+    assert.throws(() => resolveCommits(JSON.stringify({ android: commit, ios: b })), /full 40-character commit/, commit);
+    assert.throws(() => resolveCommits(pins, { ios: commit }), /full 40-character commit/, commit);
+  }
+  assert.throws(() => resolveCommits(JSON.stringify({ android: a })), /exactly android and ios/);
+  assert.throws(() => resolveCommits(JSON.stringify({ android: a, ios: b, web: a })), /exactly android and ios/);
+  assert.throws(() => resolveCommits('[]'), /must be an object/);
+  const cli = spawnSync(process.execPath, [join(here, 'copies.mjs'), '--ios', 'main'], { encoding: 'utf8' });
+  assert.equal(cli.status, 1);
+  assert.match(cli.stderr, /ios: "main" is not a full 40-character commit hash/);
 });
 
 test('report rows cover every platform', () => {
