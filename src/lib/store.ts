@@ -224,6 +224,75 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Why a store download did not end with a saved pack. Sent as the `error_type` parameter of
+ * `store_download_fail`, so the values are categorical and must stay stable.
+ */
+export type StoreDownloadErrorType =
+  | 'network'
+  | 'http_403'
+  | 'http_404'
+  | 'http_5xx'
+  | 'http_other'
+  | 'invalid_pack'
+  | 'storage'
+  | 'other';
+
+/** A store download failure that knows its `StoreDownloadErrorType`; the message is what people see. */
+export class StoreDownloadError extends Error {
+  readonly type: StoreDownloadErrorType;
+
+  constructor(type: StoreDownloadErrorType, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'StoreDownloadError';
+    this.type = type;
+  }
+}
+
+export function httpStatusErrorType(status: number): StoreDownloadErrorType {
+  if (status === 403) return 'http_403';
+  if (status === 404) return 'http_404';
+  if (status >= 500 && status <= 599) return 'http_5xx';
+  return 'http_other';
+}
+
+export function storeDownloadErrorType(error: unknown): StoreDownloadErrorType {
+  return error instanceof StoreDownloadError ? error.type : 'other';
+}
+
+/**
+ * Runs one step after the download (reading the pack, saving it) and tags what it throws
+ * with `type`, keeping the original message.
+ */
+export async function runStoreDownloadStep<T>(
+  type: StoreDownloadErrorType,
+  step: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await step();
+  } catch (error) {
+    if (error instanceof StoreDownloadError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new StoreDownloadError(type, message, { cause: error });
+  }
+}
+
+/**
+ * Analytics parameters for a download that threw, or null when the person canceled it:
+ * a cancel is counted by `store_download_cancel` alone, not as a failure.
+ */
+export function storeDownloadFailParams(
+  error: unknown,
+  canceled: boolean,
+): { error_type: StoreDownloadErrorType } | null {
+  if (canceled) return null;
+  return { error_type: storeDownloadErrorType(error) };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export async function downloadStoreItem(
   item: StoreItem,
   onProgress?: (percent: number) => void,
@@ -233,8 +302,11 @@ export async function downloadStoreItem(
   const directUrl = getStoreDownloadUrl(item);
   let response: Response | null = null;
   let lastError: unknown = null;
+  // Set when this attempt's proxy refused the URL, so a failing direct fetch is reported as that refusal.
+  let proxyRejectedStatus: number | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    proxyRejectedStatus = null;
     try {
       response = await fetch(proxyUrl, {
         method: 'GET',
@@ -247,6 +319,7 @@ export async function downloadStoreItem(
       }
       if ([400, 401, 403].includes(response.status)) {
         // Fallback to direct download if proxy rejects host/url.
+        proxyRejectedStatus = response.status;
         response = await fetch(directUrl, {
           method: 'GET',
           signal,
@@ -255,7 +328,7 @@ export async function downloadStoreItem(
       }
       break;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         throw new Error('Download was canceled.');
       }
       lastError = error;
@@ -265,19 +338,43 @@ export async function downloadStoreItem(
       }
       const message =
         error instanceof Error ? error.message : String(error);
-      throw new Error(`Network error while downloading store item: ${message}`);
+      throw new StoreDownloadError(
+        proxyRejectedStatus === null ? 'network' : httpStatusErrorType(proxyRejectedStatus),
+        `Network error while downloading store item: ${message}`,
+        { cause: error },
+      );
     }
   }
 
   if (!response) {
     const message = lastError instanceof Error ? lastError.message : 'Unknown network error';
-    throw new Error(`Store download failed: ${message}`);
+    throw new StoreDownloadError('network', `Store download failed: ${message}`);
   }
 
   if (!response.ok) {
-    throw new Error(`Store download failed (HTTP ${response.status}).`);
+    throw new StoreDownloadError(
+      httpStatusErrorType(response.status),
+      `Store download failed (HTTP ${response.status}).`,
+    );
   }
 
+  try {
+    return await readStoreResponse(response, onProgress);
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error('Download was canceled.');
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new StoreDownloadError('network', `Network error while downloading store item: ${message}`, {
+      cause: error,
+    });
+  }
+}
+
+async function readStoreResponse(
+  response: Response,
+  onProgress?: (percent: number) => void,
+): Promise<ArrayBuffer> {
   const total = Number(response.headers.get('content-length') ?? 0);
   const reader = response.body?.getReader();
   if (!reader) {
