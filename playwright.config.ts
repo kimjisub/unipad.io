@@ -12,8 +12,6 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3184',
     headless: true,
-    // Chromium also adds this flag by default in headless mode.
-    launchOptions: { ignoreDefaultArgs: ['--mute-audio'] },
     viewport: { width: 1280, height: 800 },
     serviceWorkers: 'block',
     trace: 'retain-on-failure',
@@ -23,7 +21,8 @@ export default defineConfig({
     { name: 'chromium', use: { browserName: 'chromium' } },
     // iPhone Safari draws pages with WebKit; only WebKit shows Hangul without a font as missing-glyph boxes.
     { name: 'webkit', testMatch: portableTests, use: { browserName: 'webkit' } },
-    { name: 'firefox', timeout: 90_000, testMatch: ['play.spec.ts'], use: { browserName: 'firefox' } },
+    // Scales only the device stream after the Web Audio graph, so the analyser still measures the signal.
+    { name: 'firefox', timeout: 90_000, testMatch: ['play.spec.ts'], use: { browserName: 'firefox', launchOptions: { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } } },
     // The Windows runner supplies these installed channels; local Macs still run all three engines.
     ...(process.platform === 'win32' ? [
       { name: 'chrome', testMatch: 'play.spec.ts', use: { browserName: 'chromium' as const, channel: 'chrome' } },

@@ -72,10 +72,10 @@ Every pull request (including drafts) runs the fixed **Web checks** job in
 (`pnpm test:e2e`) runs locally before pushing. A separate **Windows playback**
 workflow runs only `play.spec.ts` on Windows 2025 with Chromium and the installed
 Chrome and Edge channels; failures fail their jobs, with no retries.
-Its three job names are candidates for required checks after review; configuring
-branch protection is separate from adding the jobs. It also runs after a merge to `main`. GitHub records each step's
-duration; the job summary records elapsed time from setup through verification.
-Required-check configuration is a separate step after this workflow is merged.
+The Windows playback workflow also runs after a merge to `main`. GitHub records each
+step's duration; the job summary records elapsed time from setup through verification.
+Its three job names are candidates for required checks; configuring branch protection
+is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
 
 The workflow uses deliberately fake Firebase public configuration with `.invalid`
@@ -144,7 +144,10 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
 transparent analyser between the application output gain and the native destination.
-No audio mock, forced context resume or mute launch flag is used. The signal test
+No audio mock or forced context resume is used. Device output stays silent where the
+engine allows it without touching the graph: Chromium keeps its default headless
+`--mute-audio`, and Firefox sets `media.volume_scale` to 0, which scales only the
+device stream. WebKit has no such switch, so its pad sound can reach the speakers. The signal test
 attaches its measured RMS with `humanListening: false`. Web MIDI is mocked only
 when the native API exists; unsupported engines keep their real unsupported path.
 Auto-play checks wait across the fixture's next-note deadline to prove that
