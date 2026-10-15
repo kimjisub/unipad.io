@@ -146,6 +146,54 @@ test('autoplay pressing pads is not recorded as a player pad press', async ({ pa
   await expect.poll(() => analyticsEvents(page).then(events => events.filter(e => e.name === 'pad_press'))).toEqual([{ name: 'pad_press', inputSource: 'screen' }]);
 });
 
+const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.messages);
+const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
+
+async function connectLaunchpadAndClear(page: Page) {
+  await expect.poll(() => midiMessages(page)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+}
+
+// Android and iOS light a pressed pad red (velocity 3) on the launchpad as well as on screen.
+test('the press light reaches the launchpad when it is on', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect(pressed(page, '0,0')).toHaveCount(0);
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+});
+
+test('a pressed pad sends nothing to the launchpad while the press light is off', async ({ page }) => {
+  await loadPack(page);
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => starts(page)).toBe(1);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  expect(await padNoteMessages(page, 81)).toEqual([]);
+});
+
+test('with the pack lights and the press light off, no pad light reaches the launchpad', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'LED', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  const padNotes = (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] % 10 >= 1 && m[1] % 10 <= 8 && m[1] >= 11 && m[1] <= 88);
+  expect(padNotes).toEqual([]);
+});
+
 // Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
 // right of the menu, 61 px right of the screen's centre line on every landscape screen, and with
 // the menu hidden it centred the pads together with the chain column, half a column to the left,
