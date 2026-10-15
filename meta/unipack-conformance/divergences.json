@@ -1,0 +1,239 @@
+{
+  "KL-012": {},
+  "KL-014": {},
+  "KL-M05": {},
+  "KL-M11": {},
+  "KL-M12": {},
+  "KL-M13": {},
+  "KL-M17": {},
+  "KL-M18": {},
+  "INF-007": {
+    "android": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:format"
+        ]
+      },
+      "note": "Android records a format warning (`info: … format is incorrect`) for the line without `=`; the pack opens and plays the same."
+    },
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:format"
+        ]
+      },
+      "note": "iOS records a format warning for the line without `=`; the pack opens and plays the same."
+    }
+  },
+  "INF-010": {
+    "android": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 0,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:format",
+          "info:missing-field",
+          "keySound:range"
+        ]
+      },
+      "note": "Android reads `abc` as 0 and opens the pack without a pad column: a format warning, buttonX missing, and the keySound line out of range."
+    },
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 0,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "info:missing-field",
+          "keySound:range"
+        ]
+      },
+      "note": "iOS reads `abc` as 0 and opens the pack without a pad column: buttonX missing, and the keySound line out of range."
+    }
+  },
+  "INF-015": {
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "file": "a.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      },
+      "note": "iOS reads `info.json` when there is no `info` file and opens the pack."
+    }
+  },
+  "KS-018": {
+    "web": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": [
+          "keySound:format"
+        ]
+      },
+      "note": "The web parser reads the file as UTF-8, so the UTF-16 line is not a keySound line: one format warning, and the pack has no sound."
+    }
+  },
+  "KL-024": {
+    "web": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "loop": 1,
+                "events": []
+              }
+            ]
+          }
+        ],
+        "autoPlay": null,
+        "errors": [
+          "keyLed:format"
+        ]
+      },
+      "note": "The web parser drops an LED event outside the pad grid when it reads the file and records a format warning for each such line."
+    }
+  }
+}

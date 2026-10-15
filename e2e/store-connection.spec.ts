@@ -98,13 +98,15 @@ test('ends a stalled shared pack download and retries it', async ({ page, contex
   });
   await page.goto('/play?code=browser-pack');
   await page.getByRole('alertdialog', { name: 'Confirm install', exact: true }).getByRole('button', { name: 'Install', exact: true }).click();
+  const row = page.getByRole('dialog', { name: 'Store', exact: true }).locator('[data-store-code="browser-pack"]');
   try {
-    await expect(page.getByRole('dialog', { name: 'Store', exact: true }).getByText(/Cannot connect to the download/)).toBeVisible({ timeout: 6500 });
+    await expect(page.getByText(/Cannot connect to the download/)).toBeVisible({ timeout: 6500 });
+    await expect(row.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   } finally {
     await testInfo.attach('stalled-shared-download', { body: await page.screenshot(), contentType: 'image/png' });
   }
   stalled = false;
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await row.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('button', { name: /Play Downloaded Pack/ })).toBeVisible();
 });
 

@@ -22,7 +22,6 @@ interface StoreModalProps {
   preferredCode?: string | null;
   onClose: () => void;
   onReload: () => void;
-  onRetry?: () => void;
   onDownload: (item: StoreItem) => void;
   onRetryFailed: (item: StoreItem) => void;
   onPlayDownloaded: (item: StoreItem) => void;
@@ -45,7 +44,6 @@ export function StoreModal({
   preferredCode = null,
   onClose,
   onReload,
-  onRetry = onReload,
   onDownload,
   onRetryFailed,
   onPlayDownloaded,
@@ -308,7 +306,7 @@ export function StoreModal({
                   <p className="text-sm text-red-300">{error}</p>
                   <button
                     className="px-4 py-1.5 rounded-lg text-xs text-white/70 bg-white/[0.06] hover:bg-white/10 transition-colors"
-                    onClick={onRetry}
+                    onClick={onReload}
                   >
                     {tCommon('retry')}
                   </button>
