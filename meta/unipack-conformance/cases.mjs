@@ -118,6 +118,12 @@ export function buildCases(palette) {
     expected: refused(),
     basis: [doc('info.mdx', 'the metadata is the key=value `info` file; there is no other info format, so the pack has no info, as in INF-013')],
   });
+  add({
+    id: 'INF-016', area: 'info', title: 'buttonY that is not a number aborts loading',
+    files: pack({ info: STD_INFO.replace('buttonY=3', 'buttonY=abc') }),
+    expected: refused(),
+    basis: [doc('info.mdx', 'Loading is aborted if buttonX or buttonY is not an integer')],
+  });
 
   // ---------------------------------------------------------------------------------------------
   // keySound

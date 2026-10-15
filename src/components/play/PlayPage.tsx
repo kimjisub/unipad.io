@@ -84,6 +84,7 @@ export function PlayPage() {
     connectMidi,
     disconnectMidi,
     setMidiUiContext,
+    setKeyboardBlocked,
     setVolumeLevel,
     resumeAudio,
     startAutoMapping,
@@ -581,6 +582,10 @@ export function PlayPage() {
     prevRecordingRef.current = state.recording;
   }, [state.recording, showToast, tToast]);
 
+  // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
+  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null;
+  useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
+
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
   useEffect(() => {
     if (!state.loaded) return;
@@ -601,6 +606,7 @@ export function PlayPage() {
         }
         return;
       }
+      if (dialogOpen) return;
 
       // Android function key equivalents (Backtick + number)
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -622,7 +628,7 @@ export function PlayPage() {
     state.loaded, state.hideUI, state.criticalError,
     toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
     toggleWatermark, toggleProLightMode, toggleRecording,
-    errorDialogShown, launchpadSettingsOpen, optionPanelOpen,
+    errorDialogShown, launchpadSettingsOpen, optionPanelOpen, dialogOpen,
   ]);
 
   useEffect(() => {

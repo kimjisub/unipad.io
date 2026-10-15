@@ -15,3 +15,14 @@ test('chain and pressed channels retain their shared priority and public numeric
     assert.equal(channels.get(x, y)?.channel, Channel.LED);
   }
 });
+
+test('remove reports whether the channel held a light', () => {
+  const channels = new ChannelManager(1, 1);
+  for (const [x, y] of [[0, 0], [-1, 0]]) {
+    assert.equal(channels.remove(x, y, Channel.PRESSED), false);
+    channels.add(x, y, Channel.PRESSED, -1, 3);
+    assert.equal(channels.remove(x, y, Channel.PRESSED), true);
+    assert.equal(channels.remove(x, y, Channel.PRESSED), false);
+  }
+  assert.equal(channels.remove(5, 5, Channel.LED), false);
+});
