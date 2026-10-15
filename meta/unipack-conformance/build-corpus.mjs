@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildCases } from './cases.mjs';
-import { buildAssets, fingerprint, restsOnAgreement, SCHEMA, sha256 } from './lib.mjs';
+import { buildAssets, fingerprint, restsOnAgreement, restsOnDecision, SCHEMA, sha256 } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../..');
@@ -31,11 +31,13 @@ export function buildCorpus(makeCases = buildCases) {
     if (c.expectation === 'determined') {
       if (!c.expected) problems.push(`${c.id}: determined without expected`);
       // A reference basis (another implementation) only stands for the palette, which no doc lists. An
-      // agreed basis stands for what the three platforms did where nothing else decides.
-      if (!c.basis?.some((b) => b.type === 'doc' || b.type === 'intent' || b.type === 'agreed' || (c.layer === 'palette' && b.type === 'reference'))) {
-        problems.push(`${c.id}: determined without a doc, intent or agreed basis`);
+      // agreed basis stands for what the three platforms did where nothing else decides, a decision basis
+      // for what the maintainers chose where they differed.
+      if (!c.basis?.some((b) => ['doc', 'intent', 'agreed', 'decision'].includes(b.type) || (c.layer === 'palette' && b.type === 'reference'))) {
+        problems.push(`${c.id}: determined without a doc, intent, agreed or decision basis`);
       }
       if (restsOnAgreement(c) && c.question) problems.push(`${c.id}: an agreed case keeps its open question in the agreed note`);
+      if (restsOnDecision(c) && c.question) problems.push(`${c.id}: a decided case keeps no open question`);
     } else if (!c.question) {
       problems.push(`${c.id}: undetermined without the open question`);
     }

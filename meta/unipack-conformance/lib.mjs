@@ -173,10 +173,16 @@ export const refused = () => ({ loaded: false });
 // Basis entries. `doc` is checked against content/docs/en/unipack at build time. `agreed` is no
 // statement of what is right: no doc or intent decides the case, and the three platforms gave the same
 // result when it was observed (`ref`), so that result is held to catch a change on any one of them.
+// `decision` is a result the maintainers chose where the platforms differed and no doc decides; the
+// platforms that do not give it yet are pinned in divergences.json until they are changed.
 export const doc = (file, note) => ({ type: 'doc', ref: `content/docs/en/unipack/${file}`, note });
 export const intent = (ref, note) => ({ type: 'intent', ref, note });
 export const reference = (ref, note) => ({ type: 'reference', ref, note });
 export const agreed = (ref, note) => ({ type: 'agreed', ref, note });
+export const decision = (ref, note) => ({ type: 'decision', ref, note });
 
+const restsOn = (type) => (c) => (c.basis ?? []).some((b) => b.type === type);
 /** A case whose expected result is only what the three platforms agreed on (an `agreed` basis). */
-export const restsOnAgreement = (c) => (c.basis ?? []).some((b) => b.type === 'agreed');
+export const restsOnAgreement = restsOn('agreed');
+/** A case whose expected result is a maintainers' decision that no doc states (a `decision` basis). */
+export const restsOnDecision = restsOn('decision');

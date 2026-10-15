@@ -4,8 +4,10 @@
 // case is `undetermined`: the platforms still run it and the observed results are printed, but it can
 // only ever be reported as unverified. An undetermined case on which Android, iOS and the web all gave
 // the same result holds that result as expected on an `agreed` basis (AGREED below), which the report
-// counts apart from the cases a doc or an intent decides; a later doc or intent replaces it.
-import { agreed, ap, anim, cell, doc, ev, intent, ledCell, lines, loaded, pack, q, reference, refused, STD_INFO } from './lib.mjs';
+// counts apart from the cases a doc or an intent decides; a later doc or intent replaces it. Where the
+// platforms differed and no doc decides, the maintainers' choice is held on a `decision` basis, also
+// counted apart.
+import { agreed, ap, anim, cell, decision, doc, ev, intent, ledCell, lines, loaded, pack, q, reference, refused, STD_INFO } from './lib.mjs';
 
 const ANDROID_PARITY = intent('unipad-android 2298d635 (#63), unipad-ios 17b1ecc (#6), unipad.io 5721b4c', 'parsers were aligned to Android\'s strictness on purpose: a line Android rejects is rejected everywhere');
 const WHITESPACE = intent('unipad-android 22a45925', 'parser whitespace and line-break tolerance for packs written by other tools (Unitor)');
@@ -67,9 +69,10 @@ export function buildCases(palette) {
     basis: [doc('info.mdx', 'leading/trailing whitespace is ignored'), intent('unipad-android UniPackFolderMissingFileTest createStorePack', 'store packs carry extra info keys such as PackTool and must open')],
   });
   add({
-    id: 'INF-007', area: 'info', title: 'a line without = in info', expectation: 'undetermined',
+    id: 'INF-007', area: 'info', title: 'a line without = in info is ignored',
     files: pack({ info: lines('title=Conformance', 'producerName=UniPad Conformance', 'this line has no equals sign', 'buttonX=4', 'buttonY=3', 'chain=2', 'squareButton=true') }),
-    question: 'The docs say lines are key=value but not what a line without = does. Android and iOS record a warning, the web parser ignores it silently.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [doc('info.mdx', 'A line without = is ignored, without a warning')],
   });
   add({
     id: 'INF-008', area: 'info', title: 'title and producerName missing only warn',
@@ -84,9 +87,10 @@ export function buildCases(palette) {
     basis: [doc('info.mdx', 'A warning is raised if buttonX, buttonY, or chain is 0'), doc('key-sound.mdx', 'Lines with out-of-range coordinates are skipped with a warning')],
   });
   add({
-    id: 'INF-010', area: 'info', title: 'buttonX that is not a number', expectation: 'undetermined',
+    id: 'INF-010', area: 'info', title: 'buttonX that is not a number aborts loading',
     files: pack({ info: STD_INFO.replace('buttonX=4', 'buttonX=abc') }),
-    question: 'The docs say only "1 or more". Whether "abc" is a warning (treated as 0) or a refusal is not stated.',
+    expected: refused(),
+    basis: [doc('info.mdx', 'Loading is aborted if buttonX or buttonY is not an integer')],
   });
   add({
     id: 'INF-011', area: 'info', title: 'a 65 x 65 grid is refused',
@@ -113,9 +117,16 @@ export function buildCases(palette) {
     basis: [doc('key-sound.mdx', 'The keySound file maps sound files to each button'), intent('UniPackFolder.kt / UniPackFolder.swift / parser.ts', 'a pack without keySound is a critical error on every platform')],
   });
   add({
-    id: 'INF-015', area: 'info', title: 'info.json instead of info', expectation: 'undetermined',
+    id: 'INF-015', area: 'info', title: 'info.json instead of info refuses the pack',
     files: pack({ info: null, extra: [{ path: 'info.json', text: '{"title":"Conformance","producerName":"UniPad Conformance","buttonX":4,"buttonY":3,"chain":2,"squareButton":true}' }] }),
-    question: 'Only iOS reads info.json; the format docs describe the key=value `info` file only.',
+    expected: refused(),
+    basis: [doc('info.mdx', 'the metadata is the key=value `info` file; there is no other info format, so the pack has no info, as in INF-013')],
+  });
+  add({
+    id: 'INF-016', area: 'info', title: 'buttonY that is not a number aborts loading',
+    files: pack({ info: STD_INFO.replace('buttonY=3', 'buttonY=abc') }),
+    expected: refused(),
+    basis: [doc('info.mdx', 'Loading is aborted if buttonX or buttonY is not an integer')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -230,9 +241,10 @@ export function buildCases(palette) {
     basis: [AGREED('The docs say nothing about classic-Mac line ends; the web parser splits on them explicitly, the apps rely on their line readers.')],
   });
   add({
-    id: 'KS-018', area: 'keySound', title: 'a UTF-16 little-endian keySound with a byte order mark', expectation: 'undetermined',
+    id: 'KS-018', area: 'keySound', title: 'a UTF-16 little-endian keySound with a byte order mark',
     files: pack({ keySound: { base64: Buffer.from('﻿1 1 1 a.wav\n', 'utf16le').toString('base64') } }),
-    question: 'Android and iOS decode UTF-16 by its BOM; the docs and the web parser do not mention it.',
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
+    basis: [doc('key-sound.mdx', 'The file is UTF-8, or UTF-16 that starts with a byte order mark')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -403,9 +415,10 @@ export function buildCases(palette) {
     basis: [AGREED('The docs do not say whether a keyLED `chain` beyond the pack\'s chain count is a warning or kept as written; all three keep it as written.')],
   });
   add({
-    id: 'KL-024', area: 'keyLed', title: 'an LED event outside the pad grid', expectation: 'undetermined',
+    id: 'KL-024', area: 'keyLed', title: 'an LED event outside the pad grid is kept as written',
     ...led({ '1 1 1': 'o 9 9 FF0000' }),
-    question: 'The docs do not say whether coordinates inside a keyLED file are range-checked when parsing.',
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(8, 8, 'ffff0000')])])] }),
+    basis: [decision('maintainers, 2026-10-12', 'The docs do not say whether coordinates inside a keyLED file are range-checked when parsing. Packs do light positions outside their grid, and a warning per line gives the user nothing to act on: the line is kept as written, without a warning, and skipped when it is lit.')],
   });
   add({
     id: 'KL-025', area: 'keyLed', title: 'a comment-like line inside a keyLED file',

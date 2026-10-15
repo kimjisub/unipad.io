@@ -25,6 +25,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
 | `selftest.mjs` | Tests of the tooling itself: `corpus.json` and `corpus.sha256` are what the sources build, what `report.mjs` may and may not count, and which copies `sync.mjs --check` refuses. `pnpm test:unipack` runs it. |
+| `diagnostics/` | The web parser's warnings as written, and a separate tool that explains its number warnings as format or range. It never changes a result or a status. See its README. |
 
 ## Running it
 
@@ -70,7 +71,8 @@ cross-checked. A case is **unverified, never a pass,** when
   `UNIPACK-CONFORMANCE` lines carry the claimed status only, so a log given in place of the JSON file
   makes every case of that platform unverified;
 - the status the platform wrote is not the one its result earns;
-- the case is `undetermined`, or the corpus says the platform cannot observe it (`unobserved`).
+- the case is `undetermined`, or the corpus says the platform cannot observe it (`unobserved`) and the
+  platform recorded no result for it.
 
 The table starts with when each result file was written (`generatedAt`) and whether that run asserted,
 so an old file or a record-only one is visible.
@@ -94,14 +96,15 @@ Each case is reported per platform as exactly one of:
 | `fail` | It does not, and nothing in the corpus calls that intended. Pinned in `divergences.json` when it is a known difference, so the suite stays green while the report shows it. |
 | `unsupported` | The platform does not support this format. Pinned like `fail`, with the observed result. |
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
-| `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`), or the case is `undetermined` (below). Never counted as a pass. |
+| `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`) and recorded no result for it, or the case is `undetermined` (below). Never counted as a pass. |
 
 A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
 platforms still run it, the observed results are printed side by side, and it is `unverified` on every
 platform until someone decides. `basis[].type` says which: `doc` (checked to exist at build time),
 `intent` (a commit or test that states it), `reference` (the Android implementation, for the palette),
-`agreed` (below).
+`agreed` and `decision` (below). No case is undetermined today; the harnesses' own checks make one from a
+determined case to show that it is never a pass.
 
 **Agreed behaviour.** When an undetermined case gives the same result on Android, iOS and the web, that
 result is held as the expected one with an `agreed` basis, whose `ref` names the runs it was observed in
@@ -109,14 +112,27 @@ and whose `note` keeps the open question. It does not say the behaviour is right
 any one platform show up as a `fail` instead of passing unnoticed. A doc or an intent that decides the
 case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
 own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
-disagree stays undetermined; the expected result is never taken from two platforms against the third.
-INF-012 is held at `squareButton` true although info.mdx gives false as the default, because all three
-apps start from true.
+disagree is never given the result of two platforms against the third; it stays undetermined until it
+is decided (below). INF-012 is held at `squareButton` true although info.mdx gives false as the default,
+because all three apps start from true.
 
-A case can also name a platform whose harness cannot observe it (`unobserved`, with the reason). That
-platform does not run the case and reports it as `unverified`; the others are judged as usual. Today:
-RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 on iOS (the autoPlay runner cannot be driven on a
-virtual clock) and RUN-L-006 and RUN-L-007 on iOS (leaving the play screen, see `stop` below).
+**Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
+choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
+other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-010 and INF-016 (a
+`buttonX` or a `buttonY` that is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
+keySound with a byte order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names
+who decided and when and whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as
+written and skipped when lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
+`--json`). Each platform that does not give the decided result yet is pinned in `divergences.json`, so
+its suite stays green until its own fix removes the pin.
+
+A case can also name a platform whose harness cannot observe it (`unobserved`, with the reason). While
+that platform records no result for the case, the case is `unverified` there with that reason; the
+others are judged as usual. A result the platform does record is judged like any other, so a harness
+that has come to observe the case is not hidden behind the old reason: equal to the expected result is a
+pass, anything else a fail. The corpus still names RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the
+autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen) as unobserved on
+iOS; the iOS harness now records results for all six (see `stop` and autoPlay below).
 
 ## Case format
 
@@ -133,7 +149,7 @@ virtual clock) and RUN-L-006 and RUN-L-007 on iOS (leaving the play screen, see 
   "fingerprint": "...",      // sha256 of the files, formula below
   "expectation": "determined",   // or "undetermined" (then "question" and no "expected")
   "expected": { ... },
-  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],   // or agreed, see Statuses
+  "basis": [ { "type": "doc", "ref": "content/docs/en/unipack/key-sound.mdx", "note": "..." } ],   // or agreed / decision, see Statuses
   "scenario": [ ... ],       // run layer only
   "known": { "ios": { "status": "fail", "actual": { ... }, "note": "..." } },  // from divergences.json
   "unobserved": { "ios": "why the iOS harness cannot observe this case" }
@@ -220,8 +236,8 @@ this seam":
 | Sound | `SoundRunner` with a recording stand-in for the native (Oboe) engine; a sound event is a `play` call the runner made | the real `SoundEngine` on `AVAudioEngine` (nothing is replaced); a sound event is the head of the pad's queue read just before a press that raised `playsStarted`, not what the engine played | `SoundEngine` with a recording stand-in for Web Audio; a sound event is a started buffer source |
 | Lights | what the play screen would draw: `PlayActivityViewModel` with a `ChannelManager`, read at `UiCallback` | `LedRunner.Listener` batches, the runner alone | `LedRunnerListener` calls, the runner alone |
 | Round and logo lights | measured with **Pro light mode on**. The play screen starts with it off, where the LED channel's round and logo lights are hidden (`PlayActivityViewModel.proLightMode`); that default is not measured | no such setting in the runner | no such setting in the runner |
-| `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | not observed (RUN-L-006, RUN-L-007 are `unobserved`): iOS clears the Launchpad when the main screen takes the MIDI controller back, a screen-level step this harness does not drive | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
-| autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | not observed (wall clock) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
+| `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | `AutoPlayRunner.stop()`, `LedRunner.stop()`, `SoundEngine.destroy()`, then the main screen's step that takes the MIDI controller back (`MainViewModel.setupMidiController` → `MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver; the clear call is observed, not what a physical Launchpad receives | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
+| autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | `AutoPlayRunner` on the virtual clock (its clock and sleep are passed in by the harness) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
 | MP3 | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for any bytes |
 
 The reset of every pad's queue position when the chain changes is done by the play screens (Android
@@ -246,9 +262,10 @@ its fingerprint; a changed expected coordinate turns a pass into a fail; a chang
 expected result fails; a parser stand-in that sees none of the case fails; an LED runner whose `eventOn`
 is a no-op fails a run case; a pinned difference that stops happening (or changes) is an unexpected
 result; an undetermined case never counts as a pass; a case marked `unobserved` for the platform is
-unverified and is not run. `selftest.mjs` does the same for `report.mjs`: a pass claimed without a
-result, a pass claimed on an undetermined case, results handed in under another platform's name and an
-iOS log given as `--android` all have to come out unverified.
+unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
+without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
+iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
+`unobserved` is judged from that result.
 
 ## Keeping the copies in step
 
@@ -290,7 +307,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 
 ## What is covered
 
-- info: every key, whitespace, unknown keys, chain range 1..24, missing required files, missing title/producer, zero and non-numeric sizes.
+- info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
 - keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
@@ -316,5 +333,4 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - Encodings other than UTF-8 and UTF-16 with BOM (legacy Korean encodings).
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
-- `info.json`, and every `undetermined` case (INF-007, INF-010, INF-015, KS-018, KL-024): observed only.
 - Whether an `agreed` result is the right behaviour: it is only what the three platforms did.

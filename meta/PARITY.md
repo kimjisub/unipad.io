@@ -138,13 +138,27 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-None pinned. Five cases stay undetermined because the platforms give different results and nothing
-decides which is right: INF-007 (an info line without `=`), INF-010 (`buttonX=abc`), INF-015
-(`info.json` in place of `info`), KS-018 (a UTF-16 keySound) and KL-024 (a keyLED event outside the pad
-grid).
+Five, from the cases where the platforms gave different results and the expected result was then
+decided (README there, "Decided behaviour"). Each is pinned until the platform's own fix removes it.
+
+- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
+  the line is ignored without a warning; iOS and the web already do so.
+- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
+  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
+  pack.
+- **KS-018, web:** a UTF-16 keySound with a byte order mark is read as UTF-8, so no line is understood
+  and the pack has no sound. `key-sound.mdx` now names UTF-16 with a byte order mark; Android and iOS
+  read it.
+- **KL-024, web:** a keyLED event outside the pad grid is dropped when the file is read, with a format
+  warning for each such line. Decided: keep it as written, without a warning, and skip it when it is lit,
+  as Android and iOS do.
 
 ### Resolved differences found by the corpus
 
+- **INF-007, INF-010, INF-015, INF-016: iOS reads `info` as the docs say.** iOS skips an `info` line
+  without `=` without a warning, refuses a pack whose `buttonX` or `buttonY` is not an integer instead of
+  opening it with no pads, and no longer reads `info.json` when there is no `info` file. Its three pins
+  were removed; INF-016 (`buttonY=abc`) was added so that a fix of `buttonX` alone no longer passes.
 - **AP-M01..M09, AP-M11, KL-N01..N05: the web now calls a value that is not a whole number a format
   error.** The web parser reported a non-numeric autoPlay value or keyLED file-name field as a range
   error (`autoPlay: [on a 1] coordinate is incorrect`, `keyLed: [a 1 1] chain is incorrect`); Android
@@ -201,7 +215,6 @@ grid).
 
 - `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
 - `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012, held at true on an agreed basis until the docs or the apps change).
-- Only iOS reads `info.json` (INF-015).
 - Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings; all three record one range error each (KL-003, AP-004). The warning is held on an agreed basis, not as documented behaviour.
 - `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, held on an agreed basis).
 
