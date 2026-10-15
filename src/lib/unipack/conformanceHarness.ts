@@ -2,6 +2,7 @@
 // parser and runners. Android and iOS run the same corpus through their own parsers and runners; each
 // harness turns what its code did into the normalized result the corpus states and never sees the
 // expected side. See meta/unipack-conformance/README.md.
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -196,22 +197,74 @@ export interface Deps {
 
 export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine };
 
-/** The parsed pack, or null when the parser refuses it. Also used for real packs (meta/unipack-conformance/real-packs). */
-export async function parseOrRefuse(zip: ArrayBuffer, deps: Deps = REAL): Promise<UniPackData | null> {
+/** The parsed pack, or why the parser refused it. Also used for real packs (meta/unipack-conformance/real-packs). */
+export async function parseOrRefuse(zip: ArrayBuffer, deps: Deps = REAL): Promise<{ pack: UniPackData } | { refused: string }> {
   try {
-    return await deps.parse(zip);
+    return { pack: await deps.parse(zip) };
   } catch (error) {
     // The web parser throws for a pack it refuses; anything else is a bug the case must surface.
-    if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return null;
+    if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return { refused: error.message };
     throw error;
   }
 }
 
+/**
+ * The parser's warnings exactly as it wrote them, before normalizeError reduces them to `section:kind`,
+ * with the pack size they were checked against. A refused pack has no warnings to read (the parser
+ * throws), only the refusal. Kept apart from the normalized result, which it never changes; see
+ * meta/unipack-conformance/diagnostics/README.md.
+ */
+export interface WarningCapture {
+  warnings: string[] | null;
+  pack: { buttonX: number; buttonY: number; chain: number } | null;
+  refused: string | null;
+}
+
+export interface Observation { actual: Json; capture: WarningCapture | null }
+
+export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
+  if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
+  const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
+  if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
+  const { pack } = parsed;
+  const capture: WarningCapture = {
+    warnings: [...pack.errors], pack: { buttonX: pack.info.buttonX, buttonY: pack.info.buttonY, chain: pack.info.chain }, refused: null,
+  };
+  const actual = c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  return { actual, capture };
+}
+
 export async function actualFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Json> {
-  if (c.layer === 'palette') return { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) };
-  const pack = await parseOrRefuse(await zipOf(c, corpus), deps);
-  if (!pack) return { loaded: false };
-  return c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  return (await observe(c, corpus, deps)).actual;
+}
+
+export const WARNING_CAPTURE_KIND = 'unipack-conformance-raw-warnings';
+
+/** One case of the raw warning file: its input files as text where they are text, and what the parser wrote. */
+export function capturedCase(c: CorpusCase, corpus: Corpus, capture: WarningCapture): Json {
+  const inputs = c.files.map((f): Json => (f.text !== undefined ? { path: f.path, text: f.text } : { path: f.path, bytes: fileBytes(f, corpus).length }));
+  return { id: c.id, fingerprint: c.fingerprint, layer: c.layer, inputs, warnings: capture.warnings, pack: capture.pack, refused: capture.refused };
+}
+
+function sourceRevision(): Json {
+  const git = (...args: string[]) => spawnSync('git', args, { encoding: 'utf8' });
+  const head = git('rev-parse', 'HEAD');
+  if (head.status !== 0) return { commit: null, uncommittedChanges: null };
+  const status = git('status', '--porcelain');
+  return { commit: head.stdout.trim(), uncommittedChanges: status.status === 0 ? status.stdout.trim() !== '' : null };
+}
+
+/** The file meta/unipack-conformance/diagnostics/number-warnings.mjs reads. */
+export function warningCaptureFile(cases: Json[], corpusSha256: string): Json {
+  return {
+    kind: WARNING_CAPTURE_KIND,
+    platform: PLATFORM,
+    corpusSha256,
+    generatedAt: new Date().toISOString(),
+    source: sourceRevision(),
+    method: 'collected at run time: parseUniPack (src/lib/unipack/parser.ts) read a zip of each case\'s files, and UniPackData.errors was copied as written, before normalizeError',
+    cases,
+  };
 }
 
 /** A virtual clock for every timer the runners use: window.setTimeout, setTimeout and performance.now. */
@@ -384,11 +437,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
 // ---------------------------------------------------------------------------------------------
 
 /** What this platform reports for a case: its result and status, or why the case is not observed here. */
-export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<{ actual: Json; outcome: Outcome }> {
+export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation & { outcome: Outcome }> {
   const unobserved = c.unobserved?.[PLATFORM];
-  if (unobserved) return { actual: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
-  const actual = await actualFor(c, corpus, deps);
-  return { actual, outcome: classify(c, actual) };
+  if (unobserved) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
+  const { actual, capture } = await observe(c, corpus, deps);
+  return { actual, capture, outcome: classify(c, actual) };
 }
 
 export function classify(c: CorpusCase, actual: Json, platform: string = PLATFORM): Outcome {

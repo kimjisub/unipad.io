@@ -23,8 +23,8 @@ async function zipFolder(root) {
 
 async function resultOf(root) {
   try {
-    const pack = await parseOrRefuse(await zipFolder(root));
-    return { actual: pack ? parseResult(pack) : { loaded: false } };
+    const parsed = await parseOrRefuse(await zipFolder(root));
+    return { actual: 'pack' in parsed ? parseResult(parsed.pack) : { loaded: false } };
   } catch (error) {
     return { error: String(error?.stack ?? error) };
   }
