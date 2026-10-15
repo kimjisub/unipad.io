@@ -2,7 +2,8 @@ import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
   audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[] };
-  midi: { requests: MIDIOptions[]; messages: number[][]; emit: (data: number[]) => void };
+  /** `messages` reach the launchpad output, `synthMessages` the synthesizer Windows always lists. */
+  midi: { requests: MIDIOptions[]; messages: number[][]; synthMessages: number[][]; emit: (data: number[]) => void };
 }
 
 declare global {
@@ -37,7 +38,7 @@ export { expect };
 export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
       const audio: BrowserProbe['audio'] = { decoded: [], starts: [], stops: [] };
-      const midi: BrowserProbe['midi'] = { requests: [], messages: [], emit: () => {} };
+      const midi: BrowserProbe['midi'] = { requests: [], messages: [], synthMessages: [], emit: () => {} };
       window.browserProbe = { audio, midi };
       // Observe real Web Audio decoding/playback; keep all original calls intact.
       const decode = AudioContext.prototype.decodeAudioData;
@@ -63,7 +64,8 @@ export async function installBrowserProbe(page: Page) {
       };
       const input = { id: 'test-input', name: 'Launchpad X Test Input', onmidimessage: null as ((event: { data: Uint8Array }) => void) | null };
       const output = { id: 'test-output', name: 'Launchpad X Test Output', send: (data: number[]) => midi.messages.push(Array.from(data)) };
-      const access = { inputs: new Map([[input.id, input]]), outputs: new Map([[output.id, output]]), onstatechange: null };
+      const synth = { id: 'test-synth', name: 'Microsoft GS Wavetable Synth', send: (data: number[]) => midi.synthMessages.push(Array.from(data)) };
+      const access = { inputs: new Map([[input.id, input]]), outputs: new Map([[output.id, output], [synth.id, synth]]), onstatechange: null };
       midi.emit = data => {
         if (!input.onmidimessage) throw new Error('No MIDI input listener attached');
         input.onmidimessage({ data: new Uint8Array(data) });

@@ -602,12 +602,23 @@ export class MidiConnection {
    *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
   private sendToOutputs(message: number[]): void {
     for (const output of this.outputs) {
+      if (!this.receivesLights(output)) continue;
       try {
         output.send(message);
       } catch (err) {
         console.warn('MIDI send failed', err);
       }
     }
+  }
+
+  /** On Auto, light messages go only to outputs named as a lit controller. Android and iOS connect
+   *  any other device with a driver that sends nothing, while a synthesizer (Microsoft GS
+   *  Wavetable Synth) or a virtual cable into a music program plays every light as a note.
+   *  A model picked by hand still applies to every output, as before. */
+  private receivesLights(output: MIDIOutput): boolean {
+    if (this.requestedProfile !== 'auto') return true;
+    const profile = this.resolveProfile(output.name ?? '', 'auto');
+    return profile !== 'none' && profile !== 'master_keyboard';
   }
 
   sendPadLed(x: number, y: number, velocity: number): void {
