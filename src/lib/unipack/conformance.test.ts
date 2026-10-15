@@ -147,10 +147,18 @@ describe('the checks can fail', () => {
 describe('raw warnings and their number cause', () => {
   // Non-numeric autoPlay values and keyLed file names, which every platform reports as `format`.
   const NON_NUMERIC = ['AP-M01', 'AP-M02', 'AP-M03', 'AP-M04', 'AP-M05', 'AP-M06', 'AP-M07', 'AP-M08', 'AP-M09', 'AP-M11', 'KL-N01', 'KL-N02', 'KL-N03', 'KL-N04', 'KL-N05'];
+  // Non-numeric keySound chain, x, y, loop and wormhole values.
+  const KEY_SOUND_NON_NUMERIC = ['KS-M01', 'KS-M02', 'KS-M03', 'KS-M04', 'KS-M05', 'KS-M06', 'KS-M07', 'KS-M08'];
+  const SECTION_OF: Record<string, string> = { AP: 'autoPlay', KL: 'keyLed', KS: 'keySound' };
+  /** The bracketed input of the case's warning: the first line of its autoPlay or keySound, or its keyLed file name. */
+  const inputOf = (c: CorpusCase) => (c.id.startsWith('KL')
+    ? c.files.find((f) => f.path.startsWith('keyLed/'))!.path.slice('keyLed/'.length)
+    : c.files.find((f) => f.path === SECTION_OF[c.id.slice(0, 2)])!.text!.split('\n')[0]);
 
   const variant = (id: string, from: string, change: (f: CorpusFile) => CorpusFile): CorpusCase => ({ ...byId(from), id, files: byId(from).files.map(change) });
   const autoPlayLine = (id: string, line: string) => variant(id, 'AP-M01', (f) => (f.path === 'autoPlay' ? { ...f, text: `${line}\non 1 1` } : f));
   const keyLedName = (id: string, name: string) => variant(id, 'KL-N01', (f) => (f.path.startsWith('keyLed/') ? { ...f, path: `keyLed/${name}` } : f));
+  const keySoundLine = (id: string, line: string) => variant(id, 'KS-M01', (f) => (f.path === 'keySound' ? { ...f, text: `${line}\n1 1 2 b.wav` } : f));
 
   interface Cause { id: string; raw: string; cause: string }
   /** Runs the parser on each case and hands what it wrote to the diagnostics tool, as a file, like a user would. */
@@ -175,26 +183,29 @@ describe('raw warnings and their number cause', () => {
     }
   }
 
-  test('each non-numeric case keeps the warning as written and its result, and is explained as a format failure', async () => {
-    const causes = await causesOf(NON_NUMERIC.map(byId));
-    assert.deepEqual(causes.map((w) => w.id), NON_NUMERIC);
-    for (const id of NON_NUMERIC) {
-      const c = byId(id);
-      const { actual, capture, outcome } = await resultFor(c, corpus);
-      const input = id.startsWith('AP') ? c.files.find((f) => f.path === 'autoPlay')!.text!.split('\n')[0] : c.files.find((f) => f.path.startsWith('keyLed/'))!.path.slice('keyLed/'.length);
-      assert.equal(capture?.warnings?.length, 1, id);
-      assert.ok(capture!.warnings![0].includes(`: [${input}] `) && capture!.warnings![0].endsWith(' format is incorrect'), `${id}: ${capture!.warnings![0]}`);
-      assert.equal(causes.find((w) => w.id === id)?.raw, capture!.warnings![0], `${id}: the tool got the warning as written`);
-      assert.equal(causes.find((w) => w.id === id)?.cause, 'format', id);
-      assert.deepEqual((actual as { errors: Json }).errors, [`${id.startsWith('AP') ? 'autoPlay' : 'keyLed'}:format`], `${id}: the normalized result is unchanged`);
-      assert.equal(outcome.status, 'pass', `${id}: ${outcome.detail}`);
-    }
-  });
+  for (const [name, ids] of [['each non-numeric case', NON_NUMERIC], ['each non-numeric keySound case', KEY_SOUND_NON_NUMERIC]] as const) {
+    test(`${name} keeps the warning as written and its result, and is explained as a format failure`, async () => {
+      const causes = await causesOf(ids.map(byId));
+      assert.deepEqual(causes.map((w) => w.id), ids);
+      for (const id of ids) {
+        const c = byId(id);
+        const { actual, capture, outcome } = await resultFor(c, corpus);
+        assert.equal(capture?.warnings?.length, 1, id);
+        assert.equal(capture!.warnings![0], `${SECTION_OF[id.slice(0, 2)]}: [${inputOf(c)}] format is incorrect`, id);
+        assert.equal(causes.find((w) => w.id === id)?.raw, capture!.warnings![0], `${id}: the tool got the warning as written`);
+        assert.equal(causes.find((w) => w.id === id)?.cause, 'format', id);
+        assert.deepEqual((actual as { errors: Json }).errors, [`${SECTION_OF[id.slice(0, 2)]}:format`], `${id}: the normalized result is unchanged`);
+        assert.equal(outcome.status, 'pass', `${id}: ${outcome.detail}`);
+      }
+    });
+  }
 
   test('the same inputs under other ids, and other non-numeric values, are a format failure too', async () => {
     const changed = [
       autoPlayLine('ALT-1', 'touch 2 q'), autoPlayLine('ALT-2', 'o 2'), autoPlayLine('ALT-3', 'd 2.5'), autoPlayLine('ALT-4', 'c 1x'),
       keyLedName('ALT-5', '2 x 1'), keyLedName('ALT-6', '1 1 z'), keyLedName('ALT-7', '1 1 1 0.5'), { ...byId('AP-M01'), id: 'ALT-8' },
+      keySoundLine('ALT-9', 'q 2 1 a.wav'), keySoundLine('ALT-10', '2 1 1.0 a.wav'), keySoundLine('ALT-11', '1 2 1 a.wav x'),
+      keySoundLine('ALT-12', '1 1 1 a.wav 1 2z'), keySoundLine('ALT-13', '1 2e 1 b.wav'), { ...byId('KS-M06'), id: 'ALT-14' },
     ];
     assert.deepEqual((await causesOf(changed)).map((w) => [w.id, w.cause]), changed.map((c) => [c.id, 'format']));
   });
@@ -202,16 +213,22 @@ describe('raw warnings and their number cause', () => {
   test('a valid integer outside the pack stays a range failure', async () => {
     const outside = [
       autoPlayLine('RANGE-1', 'on 5 1'), autoPlayLine('RANGE-2', 'chain 3'), keyLedName('RANGE-3', '3 1 1'), keyLedName('RANGE-4', '1 5 1'), keyLedName('RANGE-5', '1 1 1 -1'),
+      keySoundLine('RANGE-6', '3 1 1 a.wav'), keySoundLine('RANGE-7', '1 5 1 a.wav'),
     ];
     assert.deepEqual((await causesOf(outside)).map((w) => [w.id, w.cause]), outside.map((c) => [c.id, 'range']));
   });
 
   test('a bracket in the input, an integer past 32 bits or an unknown pack size is insufficient information', async () => {
-    const unclear = [keyLedName('UNCLEAR-1', '1 [2] 1'), autoPlayLine('UNCLEAR-2', 'on 99999999999 1')];
+    const unclear = [keyLedName('UNCLEAR-1', '1 [2] 1'), autoPlayLine('UNCLEAR-2', 'on 99999999999 1'), keySoundLine('UNCLEAR-3', '1 [2] 1 a.wav')];
     assert.deepEqual((await causesOf(unclear)).map((w) => [w.id, w.cause]), unclear.map((c) => [c.id, 'insufficient-information']));
     const withoutPack = (record: { pack: Json }) => { record.pack = null; };
-    const causes = await causesOf([autoPlayLine('NOPACK-1', 'on 5 1'), autoPlayLine('NOPACK-2', 'on a 1')], withoutPack);
-    assert.deepEqual(causes.map((w) => [w.id, w.cause]), [['NOPACK-1', 'insufficient-information'], ['NOPACK-2', 'format']]);
+    const causes = await causesOf([autoPlayLine('NOPACK-1', 'on 5 1'), autoPlayLine('NOPACK-2', 'on a 1'), keySoundLine('NOPACK-3', '1 1 1 a.wav q')], withoutPack);
+    assert.deepEqual(causes.map((w) => [w.id, w.cause]), [['NOPACK-1', 'insufficient-information'], ['NOPACK-2', 'format'], ['NOPACK-3', 'format']]);
+  });
+
+  test('a keySound line with no sound name is not a number warning, whatever the case id', async () => {
+    const short = [byId('KS-006'), keySoundLine('SHORT-1', '1 2 1'), keySoundLine('SHORT-2', '2 1 3')];
+    assert.deepEqual((await causesOf(short)).map((w) => [w.id, w.cause]), short.map((c) => [c.id, 'not-a-number-warning']));
   });
 });
 

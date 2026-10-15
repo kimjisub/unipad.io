@@ -1,5 +1,5 @@
 // Explains the web parser's number warnings ("<section>: [<input>] <field> is incorrect", and "format is
-// incorrect" for an autoPlay line or keyLed file name) as a format failure, a range failure, or neither
+// incorrect" for an autoPlay line, keyLed file name or keySound line) as a format failure, a range failure, or neither
 // for lack of information. It reads only the warning text and the pack size the parser checked it
 // against: never a case id, an expected result or a pinned difference.
 // See README.md in this folder.
@@ -18,6 +18,7 @@ export const INSUFFICIENT = 'insufficient-information';
 export const NOT_A_NUMBER_WARNING = 'not-a-number-warning';
 
 /** Android reads these numbers into a 32-bit Int and the web into a double, so beyond it they disagree. */
+const INT32_MIN = -(2 ** 31);
 const INT32_MAX = 2 ** 31 - 1;
 
 const WARNING = /^(autoPlay|keyLed|keySound): \[(.*)\] (coordinate|chain|delay|x|y|loop|format) is incorrect$/s;
@@ -25,13 +26,16 @@ const WARNING = /^(autoPlay|keyLed|keySound): \[(.*)\] (coordinate|chain|delay|x
 // For each warning, the commands that can raise it (autoPlay only) and the tokens of the bracketed input
 // it checks: their position, and the inclusive range a value must be in, either fixed or 1..pack[size].
 // PAD is the chain, x and y a keyLed file name and a keySound line start with. `format` names no field,
-// so its tokens are those of the autoPlay command, or every number of a keyLed file name (the loop only
-// when the name has one).
+// so its tokens are those of the autoPlay command, every number of a keyLed file name (the loop only
+// when the name has one), or every number of a keySound line (the loop and wormhole after the sound name
+// only when the line has them).
 const COORDINATE = [{ index: 1, size: 'buttonX' }, { index: 2, size: 'buttonY' }];
 const CHAIN = [{ index: 1, size: 'chain' }];
 const DELAY = [{ index: 1, min: -Infinity }];
 const PAD = [{ index: 0, size: 'chain' }, { index: 1, size: 'buttonX' }, { index: 2, size: 'buttonY' }];
 const LED_LOOP = { index: 3, min: 0 };
+const SOUND_LOOP = { index: 4, min: -Infinity };
+const SOUND_WORMHOLE = { index: 5, min: -Infinity };
 const AUTOPLAY_COMMANDS = new Map([
   ['on', COORDINATE], ['o', COORDINATE], ['off', COORDINATE], ['f', COORDINATE], ['touch', COORDINATE], ['t', COORDINATE],
   ['chain', CHAIN], ['c', CHAIN], ['delay', DELAY], ['d', DELAY],
@@ -55,13 +59,18 @@ const FIELDS = {
     chain: { slots: [PAD[0]] },
     x: { slots: [PAD[1]] },
     y: { slots: [PAD[2]] },
+    format: {
+      slotsFor: (parts) => [...PAD, SOUND_LOOP, SOUND_WORMHOLE].filter((slot) => slot.index < Math.max(parts.length, 3)),
+      // The same warning covers a line with no sound name, which says nothing about its numbers.
+      otherCause: (parts) => (parts.length < 4 ? 'a keySound line with no sound name' : null),
+    },
   },
 };
 
 /** What is wrong with one token, read the way the parser reads it (a complete integer only). */
 function tokenProblem(value) {
   if (value === undefined) return 'missing';
-  if (/^[+-]?\d+$/.test(value)) return Math.abs(Number(value)) > INT32_MAX ? 'too-large' : null;
+  if (/^[+-]?\d+$/.test(value)) return Number(value) < INT32_MIN || Number(value) > INT32_MAX ? 'too-large' : null;
   if (/^[+-]?\d*\.\d+$/.test(value)) return 'decimal';
   if (/^[+-]?\d+\D/.test(value)) return 'trailing-characters';
   return 'not-a-number';
@@ -85,9 +94,8 @@ export function classifyWarning({ raw, pack }) {
   const [, section, input, field] = match;
   const rule = FIELDS[section][field];
   const base = { section, field };
-  // keySound's format warning also covers a missing sound name, and a keyLed `[file].[line]` one is about
-  // a line inside the file: neither is about the numbers checked here.
-  if (field === 'format' && (!rule || input.includes('].['))) return { cause: NOT_A_NUMBER_WARNING, reason: `not a number warning of ${section}` };
+  // A keyLed `[file].[line]` format warning is about a line inside the file, not the numbers checked here.
+  if (field === 'format' && section === 'keyLed' && input.includes('].[')) return { cause: NOT_A_NUMBER_WARNING, reason: 'a warning about a line inside a keyLed file' };
   if (!rule) return { ...base, cause: INSUFFICIENT, reason: `${section} has no ${field} to check`, tokens: [] };
   if (/[[\]]/.test(input)) return { ...base, cause: INSUFFICIENT, reason: 'the input contains a bracket, so where it ends is ambiguous', tokens: [] };
 
@@ -102,7 +110,11 @@ export function classifyWarning({ raw, pack }) {
   const report = (cause, reason) => ({ ...base, cause, reason, tokens });
 
   if (tokens.some((t) => FORMAT_PROBLEMS.has(t.problem))) return report(FORMAT, 'a value is missing or is not a complete integer');
+  const other = rule.otherCause?.(parts);
+  if (other) return { cause: NOT_A_NUMBER_WARNING, reason: other };
   if (tokens.some((t) => t.problem === 'too-large')) return report(INSUFFICIENT, 'an integer past the 32-bit range, which the platforms convert differently');
+  // The parser names the field of an integer outside the pack, so for "format" an in-range check explains nothing.
+  if (field === 'format') return report(INSUFFICIENT, 'every value is a valid integer, so the input does not explain a format warning');
   for (const [i, slot] of slots.entries()) {
     const range = bounds(slot, pack);
     if (!range) return report(INSUFFICIENT, `the pack has no usable ${slot.size} (absent, or not a positive integer)`);

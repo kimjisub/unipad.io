@@ -36,7 +36,7 @@ Written by the web conformance run next to `web.json`, from the same parser call
 | Field | What it is |
 |---|---|
 | `method` | How the warnings were collected: the web parser read a zip of each case's files at run time, and its warnings were copied as written, before `normalizeError`. Text rebuilt from an older source is never put here. |
-| `source` | `commit`: the checked-out commit; `uncommittedChanges`: whether the working tree differed from it. `null` when git was not available. |
+| `source` | `commit`: the checked-out commit; `uncommittedChanges`: whether the working tree differed from it. `null` where git could not tell. |
 | `corpusSha256` | The corpus the run read, as in `web.json`. |
 | `cases[].inputs` | The case's files: `text` for text files, `bytes` (length) for sounds. |
 | `cases[].warnings` | The parser's warnings, as written and in order. `null` when the pack was refused. |
@@ -54,19 +54,22 @@ copied to the output for the reader only.
 It handles `<section>: [<input>] <field> is incorrect`, takes the tokens of the bracketed input that the
 named field uses (autoPlay `coordinate` x y, `chain`, `delay`; keyLed file name chain, x, y, loop; keySound
 chain, x, y), and reports one of the causes below. `format is incorrect` names no field, so for it the
-tokens are those the autoPlay command takes (`on`/`off`/`touch` x y, `chain`, `delay`) or every number of
-the keyLed file name.
+tokens are those the autoPlay command takes (`on`/`off`/`touch` x y, `chain`, `delay`), every number of
+the keyLed file name, or every number of the keySound line (chain, x, y, and the loop and wormhole after
+the sound name when the line has them).
 
 | cause | when |
 |---|---|
 | `format` | a token the field needs is missing, a decimal, letters, or digits followed by other characters. The pack size is not needed. |
-| `range` | every token is an integer within 32 bits and one is outside the pack: 1..`chain`, 1..`buttonX`, 1..`buttonY`, or a keyLed loop below 0. |
-| `insufficient-information` | the warning and the pack cannot decide it: a bracket inside the input (where it ends is ambiguous), a command that does not take the field, an integer past 32 bits (Android reads an Int, the web a double), a pack with no usable size for the field, or valid in-range integers that do not explain the warning. |
-| `not-a-number-warning` | any other warning, left alone: `format is incorrect` for an autoPlay command that takes no number, for a line inside a keyLed file (`[file].[line]`) or for a keySound line (which also covers a missing sound name); missing files and fields; `out of range`. |
+| `range` | a field warning (`coordinate`, `chain`, `x`, `y`, `loop`) whose tokens are all integers within 32 bits (-2147483648..2147483647), one outside the pack: 1..`chain`, 1..`buttonX`, 1..`buttonY`, or a keyLed loop below 0. Never `format is incorrect`: the parser names the field of such a value. |
+| `insufficient-information` | the warning and the pack cannot decide it: a bracket inside the input (where it ends is ambiguous), a command that does not take the field, an integer past 32 bits (Android reads an Int, the web a double), a pack with no usable size for the field, or valid integers that do not explain the warning (in range, or for `format is incorrect` at all). |
+| `not-a-number-warning` | any other warning, left alone: `format is incorrect` for an autoPlay command that takes no number, for a line inside a keyLed file (`[file].[line]`), or for a keySound line with no sound name (`[1 1 1]`) whose numbers are integers; missing files and fields; `out of range`. |
 
 Each number warning also lists its `tokens` (`position`, `value`, `problem`: `missing`, `decimal`,
 `trailing-characters`, `not-a-number`, `too-large`, `out-of-range` or `null`) and a `reason`.
 
 The cause comes from the input, not the sentence end: `keyLed: [1 b 1] x is incorrect` is `format` and
 `keyLed: [1 5 1] x is incorrect` is `range`, and `autoPlay: [on 1 1] format is incorrect` (a sentence
-the input does not explain) is `insufficient-information`.
+the input does not explain) is `insufficient-information`. Likewise `keySound: [x 1 1 a.wav] format is
+incorrect` is `format`, while `keySound: [1 1 1] format is incorrect` (no sound name) is
+`not-a-number-warning`.

@@ -22,11 +22,22 @@ test('a missing value, letters, a decimal or characters after the digits are a f
   ]);
 });
 
-test('the parser\'s own "format is incorrect" for an autoPlay line or keyLed file name is read the same way', () => {
+test('the parser\'s own "format is incorrect" for an autoPlay line, keyLed file name or keySound line is read the same way', () => {
   for (const raw of ['autoPlay: [on a 1] format is incorrect', 'autoPlay: [c z] format is incorrect', 'autoPlay: [d 1.5] format is incorrect',
     'keyLed: [1 b 1] format is incorrect', 'keyLed: [1 1 1 1.5] format is incorrect']) assert.equal(causeOf(raw), FORMAT, raw);
   assert.deepEqual(classifyWarning({ raw: 'keyLed: [1 1 1 x] format is incorrect', pack: PACK }).tokens.map((t) => t.problem), [null, null, null, 'not-a-number']);
   assert.deepEqual(classifyWarning({ raw: 'keyLed: [1 1 x] format is incorrect', pack: PACK }).tokens.map((t) => t.position), [0, 1, 2]);
+  for (const raw of ['keySound: [x 1 1 a.wav] format is incorrect', 'keySound: [1.5 1 1 a.wav] format is incorrect', 'keySound: [1 1abc 1 a.wav] format is incorrect',
+    'keySound: [1 1 1 a.wav q] format is incorrect', 'keySound: [1 1 1 a.wav 1 w] format is incorrect', 'keySound: [1 a 1] format is incorrect']) assert.equal(causeOf(raw), FORMAT, raw);
+  // The sound name is not a number; the loop and wormhole are read only when the line has them.
+  assert.deepEqual(classifyWarning({ raw: 'keySound: [1 1 1 a.wav 2.5] format is incorrect', pack: PACK }).tokens.map((t) => [t.position, t.problem]), [[0, null], [1, null], [2, null], [4, 'decimal']]);
+  assert.deepEqual(classifyWarning({ raw: 'keySound: [1 1 1 a.wav 1 w] format is incorrect', pack: PACK }).tokens.map((t) => t.position), [0, 1, 2, 4, 5]);
+});
+
+test('"format is incorrect" is never a range failure: the parser words an integer outside the pack by its field', () => {
+  for (const raw of ['autoPlay: [on 5 1] format is incorrect', 'keyLed: [3 1 1] format is incorrect', 'keySound: [1 5 1 a.wav] format is incorrect']) {
+    assert.equal(causeOf(raw), INSUFFICIENT, raw);
+  }
 });
 
 test('a format failure needs no pack size, so a missing one does not hide it', () => {
@@ -36,6 +47,13 @@ test('a format failure needs no pack size, so a missing one does not hide it', (
 test('a valid integer outside the pack stays a range failure', () => {
   for (const raw of ['autoPlay: [on 5 1] coordinate is incorrect', 'autoPlay: [chain 3] chain is incorrect', 'keyLed: [3 1 1] chain is incorrect',
     'keyLed: [1 5 1] x is incorrect', 'keyLed: [1 1 1 -1] loop is incorrect', 'keySound: [1 1 4 a.wav] y is incorrect']) assert.equal(causeOf(raw), RANGE, raw);
+});
+
+test('the 32-bit range is -2147483648..2147483647, both ends included', () => {
+  assert.equal(causeOf('keyLed: [1 1 1 -2147483648] loop is incorrect'), RANGE);
+  assert.equal(causeOf('keyLed: [1 1 1 -2147483649] loop is incorrect'), INSUFFICIENT);
+  assert.equal(causeOf('autoPlay: [on 2147483647 1] coordinate is incorrect'), RANGE);
+  assert.equal(causeOf('autoPlay: [on 2147483648 1] coordinate is incorrect'), INSUFFICIENT);
 });
 
 test('the same sentence end is format or range depending on the input, not on the words', () => {
@@ -77,7 +95,7 @@ test('what the warning and the pack size cannot decide is insufficient informati
 
 test('warnings that are not about a number are left alone', () => {
   for (const raw of [
-    'autoPlay: [bogus 1 1] format is incorrect', 'keyLed: [1 1 1].[o 1 x] format is incorrect', 'keySound: [1 1 1] format is incorrect',
+    'autoPlay: [bogus 1 1] format is incorrect', 'keyLed: [1 1 1].[o 1 x] format is incorrect', 'keySound: [1 1 1] format is incorrect', 'keySound: [2 4 3] format is incorrect',
     'keySound: [1 1 1 x.wav] sound was not found', 'info: chain out of range', "info doesn't exist",
   ]) {
     assert.equal(causeOf(raw), NOT_A_NUMBER_WARNING, raw);

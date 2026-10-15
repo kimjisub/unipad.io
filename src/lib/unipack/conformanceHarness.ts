@@ -249,7 +249,8 @@ function sourceRevision(): Json {
   const git = (...args: string[]) => spawnSync('git', args, { encoding: 'utf8' });
   const head = git('rev-parse', 'HEAD');
   if (head.status !== 0) return { commit: null, uncommittedChanges: null };
-  return { commit: head.stdout.trim(), uncommittedChanges: git('status', '--porcelain').stdout.trim() !== '' };
+  const status = git('status', '--porcelain');
+  return { commit: head.stdout.trim(), uncommittedChanges: status.status === 0 ? status.stdout.trim() !== '' : null };
 }
 
 /** The file meta/unipack-conformance/diagnostics/number-warnings.mjs reads. */
