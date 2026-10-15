@@ -20,6 +20,13 @@ async function loadPack(page: Page) {
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
 }
 
+// Launchpad tests need the browser's own Web MIDI API (WebKit has none); there they are
+// skipped as not applicable so the skip shows in the results instead of a failure.
+async function skipWithoutWebMidi(page: Page) {
+  await page.goto('/play');
+  test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
+}
+
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
   await loadPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
@@ -148,8 +155,7 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
 });
 
 test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnects', async ({ page }) => {
-  await page.goto('/play');
-  test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
+  await skipWithoutWebMidi(page);
   test.setTimeout(90_000); // Keep connection checks bounded even on projects with a longer setup budget.
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
@@ -188,6 +194,7 @@ async function connectLaunchpadAndClear(page: Page) {
 
 // Android and iOS light a pressed pad red (velocity 3) on the launchpad as well as on screen.
 test('the press light reaches the launchpad when it is on', async ({ page }) => {
+  await skipWithoutWebMidi(page);
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await connectLaunchpadAndClear(page);
@@ -202,6 +209,7 @@ test('the press light reaches the launchpad when it is on', async ({ page }) => 
 });
 
 test('a pressed pad sends nothing to the launchpad while the press light is off', async ({ page }) => {
+  await skipWithoutWebMidi(page);
   await loadPack(page);
   await connectLaunchpadAndClear(page);
   await pad(page, '0,0').hover();
@@ -214,6 +222,7 @@ test('a pressed pad sends nothing to the launchpad while the press light is off'
 });
 
 test('with the pack lights and the press light off, no pad light reaches the launchpad', async ({ page }) => {
+  await skipWithoutWebMidi(page);
   await loadPack(page);
   await page.getByRole('button', { name: 'LED', exact: true }).click();
   await connectLaunchpadAndClear(page);
