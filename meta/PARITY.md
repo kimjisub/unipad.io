@@ -141,18 +141,16 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-Three, all Android, from three of the cases where the platforms gave different results and the
-expected result was then decided (README there, "Decided behaviour"). Each is pinned until the
-platform's own fix removes it.
-
-- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
-  the line is ignored without a warning; iOS and the web already do so.
-- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
-  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
-  pack.
+None. The last three, all Android, were fixed (below); a new difference found by the corpus is pinned
+here until the platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **INF-007, INF-010, INF-016: Android reads `info` as the docs say.** Android skips an `info` line
+  without `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pads. A repeated grid size key uses
+  its last value, as on the web. Its three pins were removed; the input fingerprints are unchanged. The
+  previous corpus SHA256 was `4a67dbe1e91930816e58816490ae1522c4b7ed300a2b8a5f028bb0a281d61381`.
 - **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
   plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
   The web already used the file whose whole path under `sounds/` differs only in case; iOS left those
