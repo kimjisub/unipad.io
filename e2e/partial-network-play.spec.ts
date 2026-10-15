@@ -1,0 +1,109 @@
+import { type Page, type Route, type TestInfo } from '@playwright/test';
+import { test, expect } from './browser';
+import { connectStore } from './database';
+import { importSavedPack, playFirstPad } from './saved-packs';
+
+// The saved list, opening a saved pack and quitting back to the list read only browser storage.
+// Each case breaks one part of the network, or leaves every request unanswered, and walks that path.
+
+const PACK_NAME = 'Browser Test Pack by UniPad Tests';
+const DATABASE_HOST = /firebaseio\.com|firebasedatabase\.app/;
+const ANALYTICS_HOST = /(^|\.)(googletagmanager|google-analytics)\.com$/;
+
+async function capture(page: Page, testInfo: TestInfo, name: string) {
+  await testInfo.attach(name, { body: await page.screenshot({ path: testInfo.outputPath(`${name}.png`) }), contentType: 'image/png' });
+}
+
+/** Opens the saved list, plays the saved pack's first pad, then quits from the menu back to the list. */
+async function playSavedPackAndQuit(page: Page, testInfo: TestInfo) {
+  const saved = page.getByRole('option', { name: PACK_NAME, exact: true });
+  const pads = page.locator('[data-pad]');
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  try {
+    await expect(saved).toBeVisible({ timeout: 5000 });
+  } finally {
+    await capture(page, testInfo, '1-saved-list');
+  }
+  await saved.press('Enter');
+  await expect(pads).toHaveCount(64);
+  await capture(page, testInfo, '2-pack-opened');
+  await playFirstPad(page);
+  await capture(page, testInfo, '3-first-pad-played');
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(pads).toHaveCount(0);
+  await expect(saved).toBeVisible();
+  await capture(page, testInfo, '4-back-to-saved-list');
+}
+
+/**
+ * The database requests the page makes. After a socket fails the SDK reconnects over HTTP long
+ * polling on the next page load, so both ways of reaching it are recorded.
+ */
+function watchDatabase(page: Page) {
+  const contacts: string[] = [];
+  page.on('request', request => { if (DATABASE_HOST.test(request.url())) contacts.push(request.url()); });
+  page.on('websocket', socket => { if (DATABASE_HOST.test(socket.url())) contacts.push(socket.url()); });
+  return contacts;
+}
+
+test('plays a saved pack and quits to the list when only the store database fails', async ({ page }, testInfo) => {
+  await importSavedPack(page);
+  const database = watchDatabase(page);
+  await playSavedPackAndQuit(page, testInfo);
+  // The build has a database to reach, so the store really failed rather than never being tried.
+  await expect.poll(() => database.length).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: /^Store/ })).toHaveText('Store');
+});
+
+test('plays a saved pack and quits to the list when only analytics fails', async ({ page, context }, testInfo) => {
+  const database = await connectStore(context);
+  await page.goto('/play');
+  await database.publish(42);
+  const store = page.getByRole('button', { name: /^Store/ });
+  await expect(store).toContainText('42');
+  await importSavedPack(page);
+
+  const failed: string[] = [];
+  const delivered: string[] = [];
+  page.on('requestfailed', request => {
+    if (ANALYTICS_HOST.test(new URL(request.url()).hostname)) failed.push(request.url());
+  });
+  page.on('requestfinished', request => {
+    if (ANALYTICS_HOST.test(new URL(request.url()).hostname)) delivered.push(request.url());
+  });
+  await context.route(url => ANALYTICS_HOST.test(url.hostname), route => route.abort('internetdisconnected'));
+
+  await playSavedPackAndQuit(page, testInfo);
+  // The database still answers on the reopened page.
+  await database.publish(43);
+  await expect(store).toContainText('43');
+  await expect.poll(() => failed.some(url => new URL(url).hostname === 'www.googletagmanager.com')).toBe(true);
+  expect(delivered).toEqual([]);
+  await testInfo.attach('failed-analytics-requests', { body: JSON.stringify(failed, null, 2), contentType: 'application/json' });
+});
+
+test('plays a saved pack and quits to the list when no external request is ever answered', async ({ page, context, baseURL }, testInfo) => {
+  await importSavedPack(page);
+
+  const held: Route[] = [];
+  // The shared setup's fake installation token lets the SDK go on to its configuration requests,
+  // which are then held; every other external request is held from the start.
+  await context.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.origin === baseURL || url.hostname === 'firebaseinstallations.googleapis.com') return route.fallback();
+    held.push(route);
+  });
+  // Accepted and left silent: no handshake ever arrives.
+  await context.routeWebSocket(/.*/, () => {});
+  const database = watchDatabase(page);
+
+  await playSavedPackAndQuit(page, testInfo);
+  const heldUrls = () => held.map(route => route.request().url());
+  // The configuration request is still unanswered after every step above.
+  expect(heldUrls().some(url => new URL(url).hostname === 'firebaseremoteconfig.googleapis.com')).toBe(true);
+  // The SDK reaches the database only after its 10 s configuration timeout; it gets no answer either.
+  await expect.poll(() => database.length, { timeout: 20000 }).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: /^Store/ })).toHaveText('Store');
+  await testInfo.attach('held-requests', { body: JSON.stringify(heldUrls(), null, 2), contentType: 'application/json' });
+});
