@@ -62,10 +62,12 @@ export function classify(c, actual, platform) {
 function verdict(c, r, platform) {
   const unverified = (detail) => ({ status: 'unverified', detail, actual: r.actual ?? undefined });
   if (c.expectation === 'undetermined') return unverified(`no doc or stated intent decides this: ${c.question}`);
-  const unobserved = c.unobserved?.[platform];
-  if (unobserved) return unverified(unobserved);
   if (!STATUSES.includes(r.status)) return unverified(`${platform} reported the unknown status ${r.status}`);
+  // A harness can come to observe a case the corpus still marks `unobserved`; the reason holds only
+  // while the platform records no result for it.
   if (r.actual == null) {
+    const unobserved = c.unobserved?.[platform];
+    if (unobserved) return unverified(unobserved);
     return unverified(r.status === 'unverified'
       ? r.detail || `${platform} recorded no result for this case`
       : `${platform} reported ${r.status} without the result it is based on`);

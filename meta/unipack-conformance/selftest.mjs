@@ -249,14 +249,36 @@ test('a case the platform could not drive is unverified with its own reason', ()
   assert.equal(seen.detail, 'the audio engine is not usable here');
 });
 
-test('a case the corpus says a platform cannot observe is unverified there even if it claims a pass', () => {
-  const c = corpus.cases.find((x) => x.unobserved?.ios && !x.unobserved.android);
-  assert.ok(c, 'the corpus has a case iOS cannot observe');
-  const claim = { [c.id]: { status: 'pass', actual: c.expected } };
-  const ios = judge(canonical, 'ios', fullResults('ios', claim)).get(c.id);
-  assert.equal(ios.status, 'unverified');
-  assert.equal(ios.detail, c.unobserved.ios);
-  assert.equal(judge(canonical, 'android', fullResults('android', claim)).get(c.id).status, 'pass');
+const unobservedOnIos = corpus.cases.filter((x) => x.unobserved?.ios && !x.unobserved.android);
+
+test('a case the corpus says a platform cannot observe is unverified there, with that reason, while it records no result', () => {
+  assert.ok(unobservedOnIos.length > 0, 'the corpus has a case iOS cannot observe');
+  for (const c of unobservedOnIos) {
+    for (const over of [{}, { status: 'pass', actual: null }, { status: 'pass', actual: undefined }]) {
+      const ios = judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+      assert.equal(ios.status, 'unverified', c.id);
+      assert.equal(ios.detail, c.unobserved.ios, c.id);
+    }
+    assert.equal(judge(canonical, 'android', fullResults('android', { [c.id]: { status: 'pass', actual: c.expected } })).get(c.id).status, 'pass');
+  }
+});
+
+test('a result recorded for a case the corpus says a platform cannot observe is judged like any other', () => {
+  for (const c of unobservedOnIos) {
+    const judged = (over) => judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+    assert.equal(judged({ status: 'pass', actual: c.expected }).status, 'pass', c.id);
+    assert.deepEqual(judged({ status: 'pass', actual: c.expected }).actual, c.expected, c.id);
+    assert.equal(judged({ status: 'fail', actual: SOME_RESULT }).status, 'fail', c.id);
+    assert.match(judged({ status: 'pass', actual: SOME_RESULT }).detail, /classifies as fail/, c.id);
+    assert.equal(judged({ status: 'pass', actual: c.expected, fingerprint: '0'.repeat(64) }).status, 'unverified', c.id);
+  }
+  const passing = fullResults('ios', Object.fromEntries(unobservedOnIos.map((c) => [c.id, { status: 'pass', actual: c.expected }])));
+  const otherCorpus = judge(canonical, 'ios', { ...passing, corpusSha256: 'f'.repeat(64) });
+  const missing = judge(canonical, 'ios', { ...passing, cases: passing.cases.filter((r) => !unobservedOnIos.some((c) => c.id === r.id)) });
+  for (const c of unobservedOnIos) {
+    assert.equal(otherCorpus.get(c.id).status, 'unverified', c.id);
+    assert.equal(missing.get(c.id).status, 'unverified', c.id);
+  }
 });
 
 test('a pinned difference is reported with its pinned status, and stops being one when it disappears', () => {
