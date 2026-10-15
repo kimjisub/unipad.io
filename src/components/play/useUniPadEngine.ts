@@ -341,23 +341,27 @@ export function useUniPadEngine() {
     }
   }, [flushVisualState]);
 
-  const refreshChainVisuals = useCallback(() => {
+  /** Redraws every round button and the logo after a channel is shown or hidden on them, as
+   *  Android's chainBtnsRefresh: the selected chain from the ninth on sits on the bottom and left
+   *  columns, and pack lights can sit on any of them. */
+  const refreshAllChains = useCallback(() => {
     // chainStates holds circle indices (the selected chain sits at c + CHAIN_INDEX_OFFSET), so a
     // loop over chain indices refreshed the top row and left the chain bar stale.
     for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
-      updateChainVisual(i);
+      refreshChain(i);
     }
+    refreshChain(LOGO_FUNCTION_KEY);
     scheduleFlush();
-  }, [scheduleFlush, updateChainVisual]);
+  }, [refreshChain, scheduleFlush]);
 
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
-    const current = stateRef.current;
-    if (!cm) return;
-    cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !current.watermark);
-    refreshChainVisuals();
+    if (cm) {
+      cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !stateRef.current.watermark);
+      refreshAllChains();
+    }
     syncMidiFunctionLeds();
-  }, [refreshChainVisuals, syncMidiFunctionLeds]);
+  }, [refreshAllChains, syncMidiFunctionLeds]);
 
   useEffect(() => {
     applyChainSelectionVisibility();
@@ -1216,11 +1220,11 @@ export function useUniPadEngine() {
       const next = !prev.proLightMode;
       if (cm) {
         cm.setCirIgnore(Channel.LED, !next);
-        midiRef.current?.sendFunctionKeyLed(LOGO_FUNCTION_KEY, roundLedCode(cm, LOGO_FUNCTION_KEY));
+        refreshAllChains();
       }
       return { ...prev, proLightMode: next };
     });
-  }, []);
+  }, [refreshAllChains]);
   toggleProLightModeRef.current = toggleProLightMode;
 
   const toggleTraceLog = useCallback(() => {
@@ -1321,9 +1325,8 @@ export function useUniPadEngine() {
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
-    syncMidiFunctionLeds();
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility, syncMidiFunctionLeds]);
+  }, [applyChainSelectionVisibility]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {

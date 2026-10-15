@@ -164,12 +164,14 @@ test('with the pack lights and the press light off, no pad light reaches the lau
 
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.
-async function roundLightPack() {
+async function roundLightPack(chains = 2, keyLeds: Record<string, string> = {
+  '1 1 1 1': 'o mc 9 a 5\nd 1000\nf mc 9\n',
+  '1 2 1 1': 'o mc 10 a 21\nd 1000\nf mc 10\n',
+}) {
   const zip = await JSZip.loadAsync(await readFile(pack));
-  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=2'));
+  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', `chain=${chains}`));
   zip.remove('keyLED');
-  zip.file('keyLED/1 1 1 1', 'o mc 9 a 5\nd 1000\nf mc 9\n');
-  zip.file('keyLED/1 2 1 1', 'o mc 10 a 21\nd 1000\nf mc 10\n');
+  for (const [name, script] of Object.entries(keyLeds)) zip.file(`keyLED/${name}`, script);
   return { name: 'round-lights.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
 }
 
@@ -199,9 +201,10 @@ test('in Pro light mode a pack light shows on a round button and turns off when 
   await loadPack(page, await roundLightPack());
   await connectLaunchpadAndClear(page);
   await page.keyboard.press('Alt+p');
-  // A changed setting redraws the chain column with the selected chain's light still on.
-  await expect.poll(() => roundLightMessages(page, 79)).toEqual([[0xb0, 79, 0]]);
-  expect(await roundLightMessages(page, 89)).toEqual([[0xb0, 89, 3]]);
+  // Turning Pro light mode on redraws the round buttons, and the changed setting the chain column,
+  // both with the selected chain's light still on.
+  await expect.poll(() => roundLightMessages(page, 79)).toEqual([[0xb0, 79, 0], [0xb0, 79, 0]]);
+  expect(await roundLightMessages(page, 89)).toEqual([[0xb0, 89, 3], [0xb0, 89, 3]]);
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
   await tapPad(page, '0,0', 1);
   await expect.poll(() => roundLightMessages(page, 89)).toEqual([[0xb0, 89, 3], [0xb0, 89, 3]]);
@@ -217,12 +220,35 @@ test('switching chains moves the chain light on the launchpad', async ({ page })
   expect(await roundLightMessages(page, 89)).toEqual([[0xb0, 89, 0]]);
 });
 
+// From the ninth chain on, the chain light sits on the bottom row (the tenth on CC 7), and hiding
+// it redraws every round button as Android's chainBtnsRefresh does.
+test('hiding the chain light turns it off on the launchpad from the ninth chain on', async ({ page }) => {
+  await loadPack(page, await roundLightPack(12));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('F10');
+  await expect.poll(() => roundLightMessages(page, 7)).toEqual([[0xb0, 7, 3]]);
+  await page.keyboard.press('Alt+w');
+  await expect.poll(async () => (await roundLightMessages(page, 7)).at(-1)).toEqual([0xb0, 7, 0]);
+});
+
+// Outside Pro light mode pack lights stay off the round buttons, so turning it off clears a pack
+// light still on one (round button 20 is CC 5).
+test('turning Pro light mode off clears a pack light left on a round button', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 20 a 5\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await tapPad(page, '0,0', 1);
+  await expect.poll(async () => (await roundLightMessages(page, 5)).at(-1)).toEqual([0xb0, 5, 5]);
+  await page.keyboard.press('Alt+p');
+  await expect.poll(async () => (await roundLightMessages(page, 5)).at(-1)).toEqual([0xb0, 5, 0]);
+});
+
 // The open option panel shows the volume on the chain column; a pack light ending there leaves it.
 test('a pack light ending under the open option panel leaves its volume lights', async ({ page }) => {
   await loadPack(page, await roundLightPack());
   await connectLaunchpadAndClear(page);
   await page.keyboard.press('Alt+p');
-  await expect.poll(() => roundLightMessages(page, 79)).toEqual([[0xb0, 79, 0]]);
+  await expect.poll(() => roundLightMessages(page, 79)).toEqual([[0xb0, 79, 0], [0xb0, 79, 0]]);
   await tapPad(page, '1,0', 1);
   await expect.poll(() => roundLightMessages(page, 79)).toContainEqual([0xb0, 79, 21]);
   await page.keyboard.press('Escape');
