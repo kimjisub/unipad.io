@@ -5,18 +5,32 @@ import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 
 const root = new URL('../', import.meta.url);
+const read = path => readFileSync(new URL(path, root), 'utf8');
+const setupAction = './.github/actions/setup-web';
+
+// The text of one job in the workflow, up to the next job at the same indentation.
+function job(workflow, id) {
+  const start = workflow.indexOf(`\n  ${id}:\n`);
+  assert.ok(start >= 0, `job ${id} must exist`);
+  const end = workflow.slice(start + 1).search(/\n {2}[\w-]+:\n/);
+  return end < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + end);
+}
 
 test('pull requests run the same complete verification sequence documented for local use', () => {
-  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
-  const readme = readFileSync(new URL('README.md', root), 'utf8');
-  const commands = ['pnpm install --frozen-lockfile', 'pnpm exec tsc --noEmit', 'pnpm lint', 'pnpm test', 'pnpm build'];
+  const workflow = read('.github/workflows/ci.yml');
+  const readme = read('README.md');
+  const checks = job(workflow, 'checks');
+  const commands = ['pnpm exec tsc --noEmit', 'pnpm lint', 'pnpm test', 'pnpm build'];
   assert.match(workflow, /pull_request:/);
-  assert.match(workflow, /name: Web checks/);
+  assert.match(checks, /name: Web checks/);
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /secrets\.|continue-on-error|pull_request_target/);
-  let position = -1;
+  assert.match(read(`${setupAction}/action.yml`), /run: pnpm install --frozen-lockfile/);
+  assert.ok(readme.includes('pnpm install --frozen-lockfile'), 'pnpm install --frozen-lockfile must be documented');
+  let position = checks.indexOf(`uses: ${setupAction}`);
+  assert.ok(position >= 0, 'dependencies must be installed first');
   for (const command of commands) {
-    const next = workflow.indexOf(`run: ${command}`);
+    const next = checks.indexOf(`run: ${command}`);
     assert.ok(next > position, `${command} must run in order`);
     assert.ok(readme.includes(command), `${command} must be documented`);
     position = next;
@@ -34,10 +48,28 @@ test('the aggregate test command includes all existing test formats and tooling 
   }
 });
 
-test('browser checks run locally, not in CI', () => {
-  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
-  const readme = readFileSync(new URL('README.md', root), 'utf8');
-  assert.doesNotMatch(workflow, /playwright|test:e2e/);
+test('CI runs the playback and offline saved-pack browser tests in Chromium, apart from Web checks', () => {
+  const workflow = read('.github/workflows/ci.yml');
+  const readme = read('README.md');
+  const browser = job(workflow, 'browser-playback');
+  assert.doesNotMatch(job(workflow, 'checks'), /playwright|test:e2e/);
+  assert.match(browser, /NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https:\/\/unipad-browser-test\.firebaseio\.com'/);
+  const steps = [
+    `uses: ${setupAction}`,
+    'run: pnpm exec playwright install --with-deps chromium',
+    'run: pnpm build',
+    'run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts',
+    'uses: actions/upload-artifact@',
+  ];
+  let position = -1;
+  for (const step of steps) {
+    const next = browser.indexOf(step);
+    assert.ok(next > position, `${step} must run in order`);
+    position = next;
+  }
+  assert.match(browser, /if: failure\(\)\n\s+uses: actions\/upload-artifact@/);
+  for (const folder of ['playwright-report/', 'test-results/']) assert.ok(browser.includes(folder), `${folder} must be uploaded`);
+  for (const spec of ['e2e/play.spec.ts', 'e2e/offline-play.spec.ts']) assert.ok(read(spec), `${spec} must exist`);
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 

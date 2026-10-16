@@ -68,9 +68,13 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The browser tests
-(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
-duration; the job summary records elapsed time from setup through verification.
+**Web CI**: install, type check, lint, unit tests and build. A separate
+**Browser playback tests** job builds with the browser-test configuration below and
+runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+uploads the Playwright report and traces as an artifact. It is not a required check
+yet. The other browser tests do not run in CI; run `pnpm test:e2e` locally before
+pushing. Both jobs also run after a merge to `main`. GitHub records each step's
+duration; each job summary records elapsed time from setup through verification.
 Required-check configuration is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
 

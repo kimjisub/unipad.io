@@ -69,7 +69,7 @@
     },
     "integration": {
       "title": "Powerful Integration",
-      "description": "Connect a real Launchpad via USB and the app recognizes it instantly. Web MIDI support brings hardware play to the browser too.",
+      "description": "Launchpad settings are available on Android, iPhone/iPad and the web. Browser connections require Web MIDI support and permission.",
       "tags": "USB · MIDI · Launchpad"
     },
     "theme": {
@@ -127,7 +127,7 @@
       },
       "2": {
         "q": "Can I use a real Launchpad?",
-        "a": "Yes! Connect your Launchpad via USB on Android, or use Web MIDI in your browser. The app automatically detects and maps your hardware."
+        "a": "UniPad has Launchpad model settings on Android, iPhone/iPad and the web. To try a USB connection, connect your Launchpad with a USB cable, then choose your model in the Launchpad settings. Your phone may need an adapter for its port. In a browser, a secure connection (HTTPS), Web MIDI support and your permission are required. Physical Launchpad connections with UniPad have not yet been verified, so we cannot confirm which phone, cable and Launchpad combinations work."
       },
       "3": {
         "q": "How do I create custom skins?",
@@ -139,7 +139,7 @@
       },
       "5": {
         "q": "What's the difference between the Web and Android versions?",
-        "a": "Core features are the same. The Web version works instantly in your browser with no install, while the Android app offers lower audio latency and USB Launchpad support."
+        "a": "The Web version runs in your browser without installing an app. The Android version is an app you install on your device. Both have Launchpad model settings, as does the iPhone/iPad app. Browser connections require a secure connection (HTTPS), Web MIDI support and your permission. Physical Launchpad connections with UniPad have not yet been verified."
       },
       "6": {
         "q": "Can I create my own UniPack?",
