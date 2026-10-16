@@ -354,6 +354,44 @@ test('a pack light ending under the open option panel leaves its volume lights',
   await expect.poll(async () => (await roundLightMessages(page, 79)).at(-1)).toEqual([0xb0, 79, 0]);
 });
 
+// The watermark lights the top row's buttons 5 to 8 (button 5 is CC 95) and, as in Android and
+// iOS, outranks a pack light there, so a pack light passing over it leaves the watermark on.
+test('a pack light ending on a watermark button leaves the watermark light on the launchpad', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 5 a 5\nd 1000\nf mc 5\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await expect.poll(async () => (await roundLightMessages(page, 95)).at(-1)).toEqual([0xb0, 95, 61]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await tapPad(page, '0,0', 1);
+  await expect.poll(() => roundLightMessages(page, 95)).toEqual([[0xb0, 95, 61], [0xb0, 95, 61]]);
+});
+
+test('with the watermark off, a pack light on the top row turns off when it ends', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 5 a 5\nd 1000\nf mc 5\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await page.keyboard.press('Alt+w');
+  await expect.poll(async () => (await roundLightMessages(page, 95)).at(-1)).toEqual([0xb0, 95, 0]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await tapPad(page, '0,0', 1);
+  await expect.poll(() => roundLightMessages(page, 95)).toEqual([[0xb0, 95, 5], [0xb0, 95, 0]]);
+});
+
+// The open option panel shows its settings on the top row (button 8, CC 98, is the quit light);
+// a pack light ending there leaves it, and closing the panel brings the watermark back.
+test('a pack light ending under the open option panel leaves its top-row lights', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 8 a 21\nd 1000\nf mc 8\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await tapPad(page, '0,0', 1);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 5]);
+  await page.waitForTimeout(1500);
+  expect((await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 5]);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 40]);
+});
+
 // Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
 // right of the menu, 61 px right of the screen's centre line on every landscape screen, and with
 // the menu hidden it centred the pads together with the chain column, half a column to the left,
