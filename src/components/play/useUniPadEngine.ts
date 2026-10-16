@@ -33,10 +33,13 @@ import type {
 
 const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
+/** The open option panel shows its settings on the top row and its volume on the chain column. */
+const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
 
-/** The logo is sent from its channel, so it stays dark outside Pro light mode as on Android and iOS. */
-function logoLedCode(cm: ChannelManager): number {
-  return cm.get(-1, LOGO_FUNCTION_KEY)?.code ?? 0;
+/** A round button or the logo shows its highest-priority light on the launchpad (Android's
+ *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
+function roundLedCode(cm: ChannelManager, index: number): number {
+  return cm.get(-1, index)?.code ?? 0;
 }
 
 /** A pad shows its highest-priority light on the launchpad, as on screen (Android's setLedLaunchpad). */
@@ -219,11 +222,16 @@ export function useUniPadEngine() {
       midi.sendFunctionKeyLed(i, topBar[i] ?? 0);
     }
 
+    const cm = channelManagerRef.current;
     const volumeLevel = volumeLevelRef.current;
     const volumeRangeStart = 8 - volumeLevel;
     for (let i = 0; i < 8; i++) {
-      const velocity = midiOptionPanelOpenRef.current && i >= volumeRangeStart && i <= 7 ? LED_BLUE : 0;
-      midi.sendFunctionKeyLed(i + 8, velocity);
+      const c = i + CHAIN_INDEX_OFFSET;
+      if (midiOptionPanelOpenRef.current) {
+        midi.sendFunctionKeyLed(c, i >= volumeRangeStart ? LED_BLUE : 0);
+      } else {
+        midi.sendFunctionKeyLed(c, cm ? roundLedCode(cm, c) : 0);
+      }
     }
   }, []);
 
@@ -241,10 +249,9 @@ export function useUniPadEngine() {
     // The ring is addressed by circle index 0..31 (Android redrawAllLaunchpadLeds); the CHAIN
     // channel writes at c + CHAIN_INDEX_OFFSET, so reading chain indices found nothing.
     for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
-      const item = cm.get(-1, i);
-      midi.sendFunctionKeyLed(i, item ? item.code : 0);
+      midi.sendFunctionKeyLed(i, roundLedCode(cm, i));
     }
-    midi.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
+    midi.sendFunctionKeyLed(LOGO_FUNCTION_KEY, roundLedCode(cm, LOGO_FUNCTION_KEY));
     syncMidiFunctionLeds();
   }, [syncMidiFunctionLeds]);
 
@@ -305,6 +312,17 @@ export function useUniPadEngine() {
     }
   }, []);
 
+  /** Draws a round button's highest-priority light on screen and sends the same light to the
+   *  launchpad, as Android's setLedChain; every change to a round button's channels goes through
+   *  here. The open option panel keeps its buttons until syncMidiFunctionLeds redraws them. */
+  const refreshChain = useCallback((c: number) => {
+    const cm = channelManagerRef.current;
+    if (!cm) return;
+    updateChainVisual(c);
+    if (midiOptionPanelOpenRef.current && c < OPTION_PANEL_LED_COUNT) return;
+    midiRef.current?.sendFunctionKeyLed(c, roundLedCode(cm, c));
+  }, [updateChainVisual]);
+
   const flushVisualState = useCallback(() => {
     setState((prev) => ({
       ...prev,
@@ -323,22 +341,27 @@ export function useUniPadEngine() {
     }
   }, [flushVisualState]);
 
-  const refreshChainVisuals = useCallback(() => {
+  /** Redraws every round button and the logo after a channel is shown or hidden on them, as
+   *  Android's chainBtnsRefresh: the selected chain from the ninth on sits on the bottom and left
+   *  columns, and pack lights can sit on any of them. */
+  const refreshAllChains = useCallback(() => {
     // chainStates holds circle indices (the selected chain sits at c + CHAIN_INDEX_OFFSET), so a
     // loop over chain indices refreshed the top row and left the chain bar stale.
     for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
-      updateChainVisual(i);
+      refreshChain(i);
     }
+    refreshChain(LOGO_FUNCTION_KEY);
     scheduleFlush();
-  }, [scheduleFlush, updateChainVisual]);
+  }, [refreshChain, scheduleFlush]);
 
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
-    const current = stateRef.current;
-    if (!cm) return;
-    cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !current.watermark);
-    refreshChainVisuals();
-  }, [refreshChainVisuals]);
+    if (cm) {
+      cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !stateRef.current.watermark);
+      refreshAllChains();
+    }
+    syncMidiFunctionLeds();
+  }, [refreshAllChains, syncMidiFunctionLeds]);
 
   useEffect(() => {
     applyChainSelectionVisibility();
@@ -386,13 +409,13 @@ export function useUniPadEngine() {
     if (cm) {
       cm.remove(-1, prevChain + CHAIN_INDEX_OFFSET, Channel.CHAIN);
       cm.add(-1, c + CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
-      updateChainVisual(prevChain + CHAIN_INDEX_OFFSET);
-      updateChainVisual(c + CHAIN_INDEX_OFFSET);
+      refreshChain(prevChain + CHAIN_INDEX_OFFSET);
+      refreshChain(c + CHAIN_INDEX_OFFSET);
     }
 
     setState((prev) => ({ ...prev, chain: c }));
     scheduleFlush();
-  }, [updateChainVisual, scheduleFlush]);
+  }, [refreshChain, scheduleFlush]);
 
   const padTouchOn = useCallback((x: number, y: number) => {
     const se = soundEngineRef.current;
@@ -566,15 +589,10 @@ export function useUniPadEngine() {
     for (let c = 0; c < chainLedCount; c++) {
       if (lr) lr.eventOff(-1, c);
       cm.remove(-1, c, Channel.LED);
-      if (c < CIRCLE_ARRAY_SIZE) {
-        updateChainVisual(c);
-      } else {
-        // Ring slots 32..35 have no on-screen circle; they were left lit on the device.
-        midiRef.current?.sendFunctionKeyLed(c, 0);
-      }
+      refreshChain(c);
     }
     scheduleFlush();
-  }, [refreshPad, updateChainVisual, scheduleFlush]);
+  }, [refreshPad, refreshChain, scheduleFlush]);
 
   const autoPlayRemoveGuide = useCallback(() => {
     const unipack = unipackRef.current;
@@ -596,15 +614,13 @@ export function useUniPadEngine() {
     const cirLedCount = Math.max(unipack.info.chain + CHAIN_INDEX_OFFSET, 36);
     for (let cirIdx = 0; cirIdx < cirLedCount; cirIdx++) {
       cm.remove(-1, cirIdx, Channel.GUIDE);
-      const item = cm.get(-1, cirIdx);
-      midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
       if (chainStatesRef.current[cirIdx]) {
         chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: false };
       }
-      updateChainVisual(cirIdx);
+      refreshChain(cirIdx);
     }
     scheduleFlush();
-  }, [refreshPad, updateChainVisual, scheduleFlush]);
+  }, [refreshPad, refreshChain, scheduleFlush]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay') {
@@ -840,15 +856,13 @@ export function useUniPadEngine() {
         // sendChainLed added 8 and dropped indices above 7.
         onChainLedTurnOn: (c: number, color: number, velocity: number) => {
           cm.add(-1, c, Channel.LED, color, velocity);
-          updateChainVisual(c);
+          refreshChain(c);
           scheduleFlush();
-          midiRef.current?.sendFunctionKeyLed(c, c === LOGO_FUNCTION_KEY ? logoLedCode(cm) : velocity);
         },
         onChainLedTurnOff: (c: number) => {
           cm.remove(-1, c, Channel.LED);
-          updateChainVisual(c);
+          refreshChain(c);
           scheduleFlush();
-          midiRef.current?.sendFunctionKeyLed(c, 0);
         },
       };
 
@@ -926,9 +940,7 @@ export function useUniPadEngine() {
             if (chainStatesRef.current[cirIdx]) {
               chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: true };
             }
-            updateChainVisual(cirIdx);
-            const item = cm.get(-1, cirIdx);
-            midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
+            refreshChain(cirIdx);
             scheduleFlush();
           },
           onRemoveGuide: () => {
@@ -1127,7 +1139,7 @@ export function useUniPadEngine() {
     userPadTouchOn,
     padTouchOff,
     refreshPad,
-    updateChainVisual,
+    refreshChain,
     scheduleFlush,
     padInit,
     ledInit,
@@ -1213,11 +1225,11 @@ export function useUniPadEngine() {
       const next = !prev.proLightMode;
       if (cm) {
         cm.setCirIgnore(Channel.LED, !next);
-        midiRef.current?.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
+        refreshAllChains();
       }
       return { ...prev, proLightMode: next };
     });
-  }, []);
+  }, [refreshAllChains]);
   toggleProLightModeRef.current = toggleProLightMode;
 
   const toggleTraceLog = useCallback(() => {
@@ -1277,8 +1289,8 @@ export function useUniPadEngine() {
 
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
-    // Android and iOS re-initialise the driver at once; here the choice only took effect on the
-    // next connect.
+    // Applied at once as on Android and iOS; the connection then reports the model now in use
+    // through applyMidiStatus, which redraws the board on the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
@@ -1318,9 +1330,8 @@ export function useUniPadEngine() {
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
-    syncMidiFunctionLeds();
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility, syncMidiFunctionLeds]);
+  }, [applyChainSelectionVisibility]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {

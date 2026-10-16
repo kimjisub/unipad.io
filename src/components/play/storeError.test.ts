@@ -26,3 +26,10 @@ test('analytics keep the English message whatever the page language', () => {
   });
   assert.deepEqual(describeStoreError('something else'), { message: 'something else' });
 });
+
+test('a download that could not reach the server says so in the person\'s language', () => {
+  const failure = describeStoreError(new StoreDownloadError('network', 'Store connection timed out.'));
+  assert.deepEqual(failure, { message: 'Store connection timed out.', toastKey: 'downloadConnectionFailed' });
+  assert.match(toastMessages('en')[failure.toastKey!], /Cannot connect to the download source/);
+  assert.match(toastMessages('ko')[failure.toastKey!], /다운로드 서버에 연결할 수 없습니다/);
+});

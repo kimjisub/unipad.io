@@ -325,6 +325,7 @@ export function StoreModal({
                     {warning && (
                       <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-400/15 text-[10px] text-yellow-200">
                         {warning}
+                        <button className="ml-2 underline" onClick={onReload}>{tCommon('retry')}</button>
                       </div>
                     )}
                     <div className="space-y-2">

@@ -260,6 +260,7 @@
       "confirmDeletionAriaLabel": "삭제 확인"
     },
     "store": {
+      "connectionFailed": "스토어에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
       "title": "스토어",
       "ariaLabel": "스토어",
       "loading": "스토어를 불러오는 중...",
@@ -338,7 +339,7 @@
       "typeLabel": "런치패드 기종",
       "autoDetect": "자동 감지",
       "noInitSysEx": "초기화 SysEx 없음",
-      "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종 변경은 다음 MIDI 연결부터 적용됩니다.",
+      "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종을 바꾸면 이미 연결된 장치에 바로 적용돼요.",
       "connecting": "연결 중...",
       "reconnect": "다시 연결",
       "connect": "연결",
@@ -403,6 +404,7 @@
       "midiDisconnected": "MIDI 연결을 해제했습니다.",
       "downloaded": "받았습니다: {title}",
       "packNotFound": "서버에서 팩을 찾을 수 없습니다.",
+      "downloadConnectionFailed": "다운로드 서버에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
       "downloadedPackMissing": "받은 팩을 찾지 못했습니다. 새로고침해 주세요.",
       "sharedPackDownloading": "공유된 팩을 받는 중...",
       "sharedPackMissing": "공유된 팩이 스토어에 없습니다.",
