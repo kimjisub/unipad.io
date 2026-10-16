@@ -119,6 +119,29 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
   });
 
+  test('leaving out what the play screen does on a chain change fails a queue reset case', async () => {
+    const c = byId('RUN-S-012');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const clampOnly: Deps = { ...REAL, changeChain: (pack, next) => (Number.isInteger(next) ? Math.max(0, Math.min(next, pack.info.chain - 1)) : null) };
+    assert.equal(classify(c, await actualFor(c, corpus, clampOnly)).status, 'fail');
+  });
+
+  test('the decoder stand-in fails a sound that is not audio and nothing else', async () => {
+    const c = byId('RUN-S-001');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    assert.equal(classify(byId('RUN-RP-002'), await actualFor(byId('RUN-RP-002'), corpus)).status, 'pass');
+    const notAudio: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'sounds/a.wav' ? { ...f, asset: 'not-audio' } : f)) };
+    // a.wav heads the queue and does not decode, so no press makes a sound (the A-06 difference of RUN-S-007).
+    assert.deepEqual(await actualFor(notAudio, corpus), { checkpoints: [[]] });
+  });
+
+  test('a sound stop is reported only in a scenario that watches stops', async () => {
+    const c = byId('RUN-S-010');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const unwatched: CorpusCase = { ...c, scenario: c.scenario!.filter((s) => s.do !== 'watchStops') };
+    assert.equal(classify(c, await actualFor(unwatched, corpus)).status, 'fail');
+  });
+
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
     const c = { ...byId('KS-001'), known: { [PLATFORM]: { status: 'fail' as const, actual: { loaded: false }, note: 'pinned' } } };
     assert.equal(classify(c, c.expected as Json).unexpected, true);

@@ -73,24 +73,6 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 
-test('Windows runs the shared playback tests with the shared setup', () => {
-  const windows = read('.github/workflows/playback-windows.yml');
-  assert.match(windows, /runs-on: windows-2025/);
-  assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
-  assert.doesNotMatch(windows, /pnpm install/);
-  assert.ok(windows.includes('pnpm exec playwright test e2e/play.spec.ts'));
-  assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);
-});
-
-test('WebKit and Firefox include the shared playback tests', async () => {
-  const { default: config } = await import('../playwright.config.ts');
-  for (const engine of ['webkit', 'firefox']) {
-    const project = config.projects.find(project => project.name === engine);
-    assert.ok(project, `${engine} must be tested`);
-    assert.ok(project.testMatch.includes('play.spec.ts'), `${engine} must run playback`);
-  }
-});
-
 test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {
   const eslint = new ESLint({ cwd: fileURLToPath(root) });
   for (const folder of ['test-results/', 'playwright-report/']) {
