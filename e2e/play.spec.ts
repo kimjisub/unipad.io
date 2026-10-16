@@ -126,6 +126,11 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(dialog).toContainText('Disconnected');
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeDisabled();
+  // With nothing connected the choice waits for the next connect; no model is shown as in use.
+  await dialog.locator('select').selectOption('launchpad_mini_mk3');
+  await expect(dialog).toContainText('Requested Type: launchpad_mini_mk3');
+  await expect(dialog).toContainText('Resolved Type: none');
+  await dialog.locator('select').selectOption('auto');
   await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);

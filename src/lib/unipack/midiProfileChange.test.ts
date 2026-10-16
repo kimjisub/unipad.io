@@ -121,3 +121,31 @@ test('a connection with no output goes back to the Auto layout when Auto is chos
   press(11);
   assert.deepEqual(pads, [[0, 0]]);
 });
+
+test('choosing a model after disconnecting reports nothing and leaves no model in use', async (t) => {
+  const { midi, log, flush } = await connect(t);
+
+  midi.disconnect();
+  midi.setProfile('launchpad_mini_mk3');
+  flush();
+
+  assert.deepEqual(log, []);
+  assert.equal(midi.getStatus().resolvedProfile, 'none');
+  assert.equal(midi.getStatus().requestedProfile, 'launchpad_mini_mk3');
+});
+
+test('choosing a model in a browser without Web MIDI reports nothing and leaves no model in use', async (t) => {
+  const timers = installTimers(t);
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} });
+  t.after(() => { Reflect.deleteProperty(globalThis, 'navigator'); });
+  const statuses: string[] = [];
+  const midi = new MidiConnection();
+  const listener: MidiControllerListener = { onPadTouch: () => {}, onChainTouch: () => {}, onFunctionKey: () => {} };
+  assert.equal(await midi.connect(listener, { onStatusChange: (status) => { statuses.push(status.resolvedProfile); } }), false);
+
+  midi.setProfile('launchpad_mini_mk3');
+  timers.flush();
+
+  assert.deepEqual(statuses, []);
+  assert.equal(midi.getStatus().resolvedProfile, 'none');
+});

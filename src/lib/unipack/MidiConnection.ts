@@ -224,9 +224,15 @@ export class MidiConnection {
    * Applies a model at once, in the order of Android's MidiConnection.driver setter and iOS's
    * MidiManager.driver: the lights go off in the old model's layout, the new model's mode switch is
    * sent, and only after its last message is the status reported, so the listener redraws the board
-   * on a device already in its new mode and shows the model that is now in use.
+   * on a device already in its new mode and shows the model that is now in use. With no port at
+   * all (disconnected, or no Web MIDI) the choice is only kept for the next connect, so no model is
+   * shown as in use.
    */
   setProfile(profile: LaunchpadProfile): void {
+    if (!this.connected && this.outputs.length === 0) {
+      this.requestedProfile = profile;
+      return;
+    }
     if (this.connected) this.clearAllLeds();
     this.requestedProfile = profile;
     const lastInitDelay = this.sendInitSysExToAllOutputs();
