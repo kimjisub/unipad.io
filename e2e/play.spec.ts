@@ -97,9 +97,20 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
   await dialog.locator('select').selectOption('launchpad_mini_mk3');
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]);
+  await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
+  // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
+  const modelChange = await midiMessages(page);
+  const firstSysEx = modelChange.findIndex(m => m[0] === 0xf0);
+  expect(firstSysEx, 'lights go off before the mode switch').toBeGreaterThan(0);
+  expect(modelChange.slice(0, firstSysEx).every(m => m[2] === 0), 'only lights off before the mode switch').toBe(true);
+  expect(modelChange.slice(firstSysEx, firstSysEx + 2)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]]);
+  const redrawn = modelChange.slice(firstSysEx + 2);
+  expect(redrawn.filter(m => m[0] === 0xf0), 'one mode switch only').toEqual([]);
+  expect(new Set(redrawn.filter(m => (m[0] & 0xe0) === 0x80).map(m => m[1])).size, 'every pad redrawn').toBeGreaterThanOrEqual(64);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
   await dialog.locator('select').selectOption('auto');
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  await expect(dialog).toContainText('Resolved Type: launchpad_x');
+  expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);
   expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 81, 127]); });
@@ -115,6 +126,11 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(dialog).toContainText('Disconnected');
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeDisabled();
+  // With nothing connected the choice waits for the next connect; no model is shown as in use.
+  await dialog.locator('select').selectOption('launchpad_mini_mk3');
+  await expect(dialog).toContainText('Requested Type: launchpad_mini_mk3');
+  await expect(dialog).toContainText('Resolved Type: none');
+  await dialog.locator('select').selectOption('auto');
   await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);

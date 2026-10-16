@@ -1277,8 +1277,8 @@ export function useUniPadEngine() {
 
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
-    // Android and iOS re-initialise the driver at once; here the choice only took effect on the
-    // next connect.
+    // Applied at once as on Android and iOS; the connection then reports the model now in use
+    // through applyMidiStatus, which redraws the board on the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
