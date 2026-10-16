@@ -31,6 +31,7 @@ Mapping multiple files to the same coordinate creates a circular queue, just lik
 ## Event Syntax
 
 Write LED events one per line inside the file. Fields are separated by spaces.
+The text encoding follows the same rules as `keySound`.
 
 ### `on` — Turn LED On
 
@@ -43,7 +44,7 @@ Shorthand: `o`
 
 | Field | Description |
 |-------|-------------|
-| `x` | LED X coordinate, or `*` / `mc` (chain round LED) |
+| `x` | LED X coordinate, `*` / `mc` (chain round LED), or `l` (logo LED) |
 | `y` | LED Y coordinate |
 | `color` | 6-digit HEX color (e.g., `FF0000`) or `auto` / `a` |
 | `velocity` | MIDI velocity (0~127), required when using `auto` |
@@ -61,7 +62,7 @@ Shorthand: `o`
 | Token | Meaning |
 |-------|---------|
 | `*` or `mc` | Round (chain) LEDs on Launchpad top/sides |
-| `l` | Logo LED (not supported, ignored) |
+| `l` | Logo LED. Written without `y`: `on l FF0000`, `on l auto 72`, `off l` |
 
 ### `off` — Turn LED Off
 
@@ -69,7 +70,7 @@ Shorthand: `o`
 off x y
 ```
 
-Shorthand: `f`. You can use `*` / `mc` for the `x` position.
+Shorthand: `f`. You can use `*` / `mc` or `l` for the `x` position.
 
 ### `delay` — Wait
 
@@ -77,7 +78,7 @@ Shorthand: `f`. You can use `*` / `mc` for the `x` position.
 delay ms
 ```
 
-Shorthand: `d`. Waits the specified milliseconds before the next event.
+Shorthand: `d`. Waits the specified milliseconds before the next event. `delay 0` does not wait.
 
 ### `chain` — Switch Chain
 
@@ -86,6 +87,7 @@ chain chainNumber
 ```
 
 Shorthand: `c`. Switches chains during LED sequence execution.
+If the pack has no such chain, the nearest one is used (chain 1 or the last chain).
 
 ## Full Example
 
@@ -103,9 +105,16 @@ delay 100
 off * 1
 ```
 
+## Playback
+
+- Releasing the button stops an endless (`loop` 0) animation at once and turns off the LEDs it lit.
+- An animation that plays once or N times keeps running to its end after the button is released.
+- Pressing the same button again while its animation runs turns off that animation's LEDs and starts the next animation of the button from the beginning.
+
 <Callout title="Validation">
 - Files with out-of-range coordinates in the file name are ignored.
 - The `on` command requires either `color` (4 tokens) or `auto` + `velocity` (5 tokens).
 - Unrecognized commands are skipped.
+- An `on` or `off` line whose coordinates are outside the pad grid (0, negative, or greater than `buttonX` / `buttonY`) is kept without a warning and skipped when the animation plays; the other lines of the file still play.
 - A warning is logged if `loop` is negative.
 </Callout>

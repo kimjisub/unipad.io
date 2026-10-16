@@ -1,6 +1,8 @@
 The `info` file defines the metadata of a UniPack.
 Each line is written in `key=value` format, and leading/trailing whitespace is ignored.
 A line without `=` is ignored, without a warning.
+If a key appears more than once, the last value is used.
+The text encoding follows the same rules as `keySound`.
 
 ## Properties
 
@@ -8,10 +10,10 @@ A line without `=` is ignored, without a warning.
 |-----|------|----------|-------------|
 | `title` | string | O | UniPack title |
 | `producerName` | string | O | Creator name |
-| `buttonX` | int | O | Number of horizontal buttons (1 or more) |
-| `buttonY` | int | O | Number of vertical buttons (1 or more) |
+| `buttonX` | int | O | Number of horizontal buttons (**1~64**) |
+| `buttonY` | int | O | Number of vertical buttons (**1~64**) |
 | `chain` | int | O | Number of chains/banks (**1~24**) |
-| `squareButton` | boolean | | Square button mode (default: false) |
+| `squareButton` | boolean | | Square button mode (default: **true**). Only the exact value `true` turns it on; any other value (`false`, `True`, `1`) turns it off. |
 | `website` | string | | Creator website URL |
 
 ## Example
@@ -32,3 +34,4 @@ website=https://unipad.io
 - A warning is raised if `buttonX`, `buttonY`, or `chain` is 0.
 - Loading is **aborted** if `chain` is outside the 1~24 range.
 - Loading is **aborted** if `buttonX` or `buttonY` is not an integer (for example `abc`).
+- Loading is **aborted** if `buttonX` or `buttonY` is negative or greater than 64.

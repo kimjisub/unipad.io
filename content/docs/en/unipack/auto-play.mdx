@@ -1,5 +1,6 @@
 The `autoPlay` file defines the auto-play sequence.
 This data is used in auto-play mode and practice mode.
+The text encoding follows the same rules as `keySound`.
 
 ## Commands
 
@@ -15,8 +16,8 @@ This data is used in auto-play mode and practice mode.
 
 - Events are executed sequentially from top to bottom.
 - The `on` event plays the sound at the given coordinate and advances to the next sound in the circular queue.
-- If a sound has a **wormhole** set, executing `on` will automatically switch to that chain.
-- When switching chains via `chain`, all button circular queue counters are reset.
+- If a sound has a **wormhole** set, executing `on` or `touch` will automatically switch to that chain.
+- Whenever the chain changes — by `chain`, a wormhole, a `chain` event in an LED file, or the user — every button of that chain starts its circular queue from the first sound and LED again, even when the new chain is the same as before.
 
 ## Example
 
