@@ -260,6 +260,7 @@
       "confirmDeletionAriaLabel": "Confirm deletion"
     },
     "store": {
+      "connectionFailed": "Cannot connect to the store. Check your connection and try again.",
       "title": "Store",
       "ariaLabel": "Store",
       "loading": "Loading store...",
@@ -403,6 +404,7 @@
       "midiDisconnected": "MIDI disconnected.",
       "downloaded": "Downloaded: {title}",
       "packNotFound": "Pack not found on server.",
+      "downloadConnectionFailed": "Cannot connect to the download source. Check your connection and try again.",
       "downloadedPackMissing": "Downloaded pack not found. Please refresh.",
       "sharedPackDownloading": "Downloading shared pack...",
       "sharedPackMissing": "Shared pack not found in store.",
