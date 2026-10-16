@@ -19,6 +19,44 @@ export async function packZip(files: Record<string, string | Uint8Array>): Promi
   return zip.generateAsync({ type: 'arraybuffer' });
 }
 
+/**
+ * A stored (uncompressed) ZIP whose entry names are the given bytes with no UTF-8 mark, as an archiver
+ * on Korean Windows writes them. JSZip always marks or annotates a non-ASCII name as UTF-8, so it cannot
+ * write one. The CRC is left 0; JSZip does not check it unless asked to.
+ */
+export function rawNameZip(entries: [name: Uint8Array, data: Uint8Array | string][]): ArrayBuffer {
+  const chunks: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  const header = (fields: [number, 2 | 4][], name: Uint8Array) => {
+    const bytes = new Uint8Array(fields.reduce((n, [, size]) => n + size, 0) + name.length);
+    const view = new DataView(bytes.buffer);
+    let at = 0;
+    for (const [value, size] of fields) {
+      if (size === 2) view.setUint16(at, value, true); else view.setUint32(at, value, true);
+      at += size;
+    }
+    bytes.set(name, at);
+    return bytes;
+  };
+  for (const [name, content] of entries) {
+    const data = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+    // version, flags (no UTF-8 bit), method (stored), time, date, crc, sizes, name length, extra length
+    const common: [number, 2 | 4][] = [[10, 2], [0, 2], [0, 2], [0, 2], [0, 2], [0, 4], [data.length, 4], [data.length, 4], [name.length, 2], [0, 2]];
+    const local = header([[0x04034b50, 4], ...common], name);
+    central.push(header([[0x02014b50, 4], [20, 2], ...common, [0, 2], [0, 2], [0, 2], [0, 4], [offset, 4]], name));
+    chunks.push(local, data);
+    offset += local.length + data.length;
+  }
+  const centralSize = central.reduce((n, c) => n + c.length, 0);
+  const end = header([[0x06054b50, 4], [0, 2], [0, 2], [entries.length, 2], [entries.length, 2], [centralSize, 4], [offset, 4], [0, 2]], new Uint8Array());
+  const all = [...chunks, ...central, end];
+  const out = new Uint8Array(all.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of all) { out.set(c, at); at += c.length; }
+  return out.buffer;
+}
+
 /** A 2x2, two-chain pack with one sound, plus the given keyLed files (`name -> content`). */
 export async function parseWithLeds(leds: Record<string, string>): Promise<UniPackData> {
   const files: Record<string, string | Uint8Array> = {

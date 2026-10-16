@@ -55,7 +55,12 @@ export async function parseUniPack(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  const zip = await JSZip.loadAsync(zipData);
+  // A name the archive marks as UTF-8 is read as UTF-8 by JSZip itself; an unmarked name that is not
+  // valid UTF-8 comes from a Korean Windows archiver and is CP949. JSZip hands over a Uint8Array
+  // wherever typed arrays exist.
+  const zip = await JSZip.loadAsync(zipData, {
+    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
+  });
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
@@ -351,14 +356,24 @@ async function parseKeySoundFromFile(
 }
 
 /**
- * A pack's text file as Android and iOS read it: UTF-16 when it starts with a byte order mark (Windows
- * Notepad's "Unicode"), UTF-8 otherwise. The mark itself is not part of the text.
+ * A pack's text file: UTF-16 when it starts with a byte order mark (Windows Notepad's "Unicode"), else
+ * UTF-8, else CP949 (Korean Windows Notepad's "ANSI", which older Korean packs were saved in). Every text
+ * file of a pack is read the same way. A byte order mark is not part of the text.
  */
 async function readText(file: JSZip.JSZipObject): Promise<string> {
   const bytes = await file.async('uint8array');
   if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes);
   if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes);
-  return new TextDecoder('utf-8').decode(bytes);
+  return decodeUtf8OrCp949(bytes);
+}
+
+/** The WHATWG `euc-kr` decoder is CP949: EUC-KR with the Hangul syllables Windows added. */
+function decodeUtf8OrCp949(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('euc-kr').decode(bytes);
+  }
 }
 
 /** \r\n, lone \r (classic Mac) and \n; splitting on '\n' alone made a CR-only file one line. */
@@ -622,6 +637,21 @@ async function parseAutoPlay(
     return sounds[num % sounds.length];
   }
 
+  function switchChain(c: number): void {
+    currChain = c;
+    elements.push({ type: 'chain', c: currChain });
+    for (const row of map) row.fill(0);
+  }
+
+  /** `on` and `touch` press the pad: its sound advances, and a wormhole on it switches the chain. */
+  function press(x: number, y: number, touch: boolean): void {
+    elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
+    if (touch) elements.push({ type: 'off', x, y, currChain });
+    const sound = soundGet(currChain, x, y, map[x][y]);
+    map[x][y]++;
+    if (sound && sound.wormhole !== NO_WORMHOLE) switchChain(sound.wormhole);
+  }
+
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -685,32 +715,20 @@ async function parseAutoPlay(
 
     switch (option) {
       case 'on':
-      case 'o': {
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        const sound = soundGet(currChain, x, y, map[x][y]);
-        map[x][y]++;
-        if (sound && sound.wormhole !== NO_WORMHOLE) {
-          currChain = sound.wormhole;
-          elements.push({ type: 'chain', c: currChain });
-          for (const row of map) row.fill(0);
-        }
+      case 'o':
+        press(x, y, false);
         break;
-      }
       case 'off':
       case 'f':
         elements.push({ type: 'off', x, y, currChain });
         break;
       case 'touch':
       case 't':
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        elements.push({ type: 'off', x, y, currChain });
-        map[x][y]++;
+        press(x, y, true);
         break;
       case 'chain':
       case 'c':
-        currChain = chain;
-        elements.push({ type: 'chain', c: currChain });
-        for (const row of map) row.fill(0);
+        switchChain(chain);
         break;
       case 'delay':
       case 'd':

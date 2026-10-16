@@ -44,6 +44,18 @@ for (const order of ['le', 'be'] as const) {
   });
 }
 
+// 똠 is one of the Hangul syllables CP949 adds to EUC-KR (0x8C 0x63), so this needs the browser's CP949.
+test('a keySound saved in CP949 (Korean Windows Notepad "ANSI") plays', async ({ page }) => {
+  const tone = await (await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'))).file('sounds/tone.wav')!.async('uint8array');
+  const keySound = Uint8Array.from([...Buffer.from('1 1 1 '), 0x8C, 0x63, ...Buffer.from('.wav 0\r\n')]);
+  await loadBasicWith(page, { keySound, 'sounds/똠.wav': tone });
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+  await pressAndHold(page, '0,0');
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.mouse.up();
+});
+
 test('lights outside the pad grid open without warnings and light nothing', async ({ page }) => {
   await loadBasicWith(page, { 'keyLED/1 1 1 1': 'o 9 9 a 5\no 1 9 a 5\no 9 1 a 5\no 1 2 a 5\nd 5000\nf 9 9\nf 1 2' });
   await expect(page.getByRole('alertdialog')).toHaveCount(0);

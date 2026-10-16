@@ -5,8 +5,8 @@ export class SoundEngine {
   private gainNode: GainNode;
   private bufferCache = new Map<string, AudioBuffer>();
   private activeNodes = new Map<string, AudioBufferSourceNode>();
-  // The pad's current press owns the source selected at down time, independently of
-  // the current chain and the (already advanced) sound sequence.
+  // Each press (a pad and the input holding it) owns the source selected at down time,
+  // independently of the current chain and the (already advanced) sound sequence.
   private heldNodes = new Map<string, { key: string; node: AudioBufferSourceNode; infinite: boolean }>();
   private chainValue: () => number;
   private setChain: (c: number) => void;
@@ -125,11 +125,19 @@ export class SoundEngine {
     return `${chain}-${x}-${y}`;
   }
 
-  soundOn(x: number, y: number): void {
+  private pressKey(x: number, y: number, input: string): string {
+    return `${x}-${y}-${input}`;
+  }
+
+  /**
+   * `input` names what holds the pad (a pointer, a key); two inputs on one pad are two presses, so a
+   * release stops the endless sound its own press started even after the chain changed in between.
+   */
+  soundOn(x: number, y: number, input = ''): void {
     const chain = this.chainValue();
     const key = this.stopKey(chain, x, y);
-    const padKey = `${x}-${y}`;
-    this.heldNodes.delete(padKey);
+    const pressKey = this.pressKey(x, y, input);
+    this.heldNodes.delete(pressKey);
 
     // Stop currently playing sound for this pad
     const existing = this.activeNodes.get(key);
@@ -139,7 +147,14 @@ export class SoundEngine {
     }
 
     const sound = this.soundGet(chain, x, y);
-    if (!sound || !sound.audioBuffer) return;
+    if (!sound) return;
+    // A sound that could not be decoded is silent, but the pad still moves on to its next sound and
+    // follows its wormhole, so the rest of the pad's sequence plays as written.
+    this.soundPush(chain, x, y);
+    if (sound.wormhole !== NO_WORMHOLE) {
+      setTimeout(() => this.setChain(sound.wormhole), 100);
+    }
+    if (!sound.audioBuffer) return;
 
     const source = this.audioContext.createBufferSource();
     source.buffer = sound.audioBuffer;
@@ -152,30 +167,30 @@ export class SoundEngine {
       const stopTime = this.audioContext.currentTime + sound.audioBuffer.duration * (sound.loop + 1);
       source.stop(stopTime);
     }
-    this.soundPush(chain, x, y);
     this.activeNodes.set(key, source);
-    this.heldNodes.set(padKey, { key, node: source, infinite: sound.loop === -1 });
-    source.onended = () => this.forgetNode(key, padKey, source);
-
-    if (sound.wormhole !== NO_WORMHOLE) {
-      setTimeout(() => this.setChain(sound.wormhole), 100);
-    }
+    this.heldNodes.set(pressKey, { key, node: source, infinite: sound.loop === -1 });
+    source.onended = () => this.forgetNode(key, pressKey, source);
   }
 
-  soundOff(x: number, y: number): void {
-    const padKey = `${x}-${y}`;
-    const press = this.heldNodes.get(padKey);
-    this.heldNodes.delete(padKey);
-    if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) return;
-    try { press.node.stop(); } catch { /* already stopped */ }
-    this.activeNodes.delete(press.key);
+  /** Without `input`, every press of the pad is released. */
+  soundOff(x: number, y: number, input?: string): void {
+    const pressKeys = input === undefined
+      ? Array.from(this.heldNodes.keys()).filter((k) => k.startsWith(`${x}-${y}-`))
+      : [this.pressKey(x, y, input)];
+    for (const pressKey of pressKeys) {
+      const press = this.heldNodes.get(pressKey);
+      this.heldNodes.delete(pressKey);
+      if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) continue;
+      try { press.node.stop(); } catch { /* already stopped */ }
+      this.activeNodes.delete(press.key);
+    }
   }
 
   /** onended of an older node must not drop the newer node registered under the same key;
    *  it left an infinite-loop sample with nothing that could stop it. */
-  private forgetNode(key: string, padKey: string, source: AudioBufferSourceNode): void {
+  private forgetNode(key: string, pressKey: string, source: AudioBufferSourceNode): void {
     if (this.activeNodes.get(key) === source) this.activeNodes.delete(key);
-    if (this.heldNodes.get(padKey)?.node === source) this.heldNodes.delete(padKey);
+    if (this.heldNodes.get(pressKey)?.node === source) this.heldNodes.delete(pressKey);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {
