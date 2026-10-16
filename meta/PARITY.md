@@ -220,8 +220,6 @@ iOS now measures the six cases the corpus used to mark as not observable on iOS,
 
 ### Documentation that disagrees with the code
 
-- `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
-- `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012, held at true on an agreed basis until the docs or the apps change).
 - Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings; all three record one range error each (KL-003, AP-004). The warning is held on an agreed basis, not as documented behaviour.
 - `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, held on an agreed basis).
 
