@@ -130,9 +130,9 @@ A case can also name a platform whose harness cannot observe it (`unobserved`, w
 that platform records no result for the case, the case is `unverified` there with that reason; the
 others are judged as usual. A result the platform does record is judged like any other, so a harness
 that has come to observe the case is not hidden behind the old reason: equal to the expected result is a
-pass, anything else a fail. The corpus still names RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the
-autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen) as unobserved on
-iOS; the iOS harness now records results for all six (see `stop` and autoPlay below).
+pass, anything else a fail. No case is marked unobserved today. RUN-A-001, RUN-A-002, RUN-RP-003,
+RUN-RP-004 (the autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen)
+were, on iOS, until its harness came to record results for them (see `stop` and autoPlay below).
 
 ## Case format
 
