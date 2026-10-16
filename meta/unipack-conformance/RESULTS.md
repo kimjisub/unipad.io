@@ -1,9 +1,9 @@
 # Results (2026-10-16, Korea time)
 
 Corpus `3f1845257d22…` (sha256 of `corpus.json`), 133 cases, run on unipad-android d1e6c257 and
-unipad-ios 89286af (the head commits of the app pull requests that copy this corpus, each its main
-merged in; not merged yet, and the same commits as `copies.json`) and on this unipad.io branch, all on
-October 16. Regenerate this table with `report.mjs` (README, "Running it"). It describes these 133 cases
+unipad-ios 89286af6 (the head commits of the app pull requests that copy this corpus, each its main
+merged in, since merged as aa298a6e and 8b4c5d8e, the commits in `copies.json`) and on this unipad.io
+branch, all on October 16. Regenerate this table with `report.mjs` (README, "Running it"). It describes these 133 cases
 only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
@@ -261,11 +261,11 @@ On 2026-10-16, after dropping the iOS unobserved marks (corpus `3f1845257d22…`
 |---|---|---|
 | Web | `pnpm test:unipack` | 309 tests pass; `node --test meta/unipack-conformance/selftest.mjs`: 25 pass |
 | Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` on d1e6c257 | BUILD SUCCESSFUL; 130 pass, INF-007, INF-010 and INF-016 fail as pinned |
-| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests -parallel-testing-enabled NO UNIPAD_WARNINGS_AS_ERRORS=YES` on 89286af (iPhone 17 Pro simulator, iOS 27.0, Xcode 27.0) | TEST SUCCEEDED, 26 tests pass, 133 corpus cases included; 133 pass, RUN-L-006, RUN-L-007, RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 among them with recorded results |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests -parallel-testing-enabled NO UNIPAD_WARNINGS_AS_ERRORS=YES` on 89286af6 (iPhone 17 Pro simulator, iOS 27.0, Xcode 27.0) | TEST SUCCEEDED, 26 tests pass, 133 corpus cases included; 133 pass, RUN-L-006, RUN-L-007, RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 among them with recorded results |
 
 All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash.
-`build-corpus.mjs --check` passes, and `sync.mjs --check` passes against checkouts of the two commits in
-`copies.json`. With the `unobserved` check removed from `report.mjs`, `selftest.mjs` fails one test.
+`build-corpus.mjs --check` passes, and `sync.mjs --check` passes against checkouts of the two app merge
+commits in `copies.json`. With the `unobserved` check removed from `report.mjs`, `selftest.mjs` fails one test.
 
 On 2026-10-15, after merging the current default branch into the iOS info corpus change:
 
