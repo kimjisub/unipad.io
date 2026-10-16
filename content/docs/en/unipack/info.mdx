@@ -10,8 +10,8 @@ The text encoding follows the same rules as `keySound`.
 |-----|------|----------|-------------|
 | `title` | string | O | UniPack title |
 | `producerName` | string | O | Creator name |
-| `buttonX` | int | O | Number of horizontal buttons (**1~64**) |
-| `buttonY` | int | O | Number of vertical buttons (**1~64**) |
+| `buttonX` | int | O | Number of horizontal buttons (**1~64**; `0` loads with a warning) |
+| `buttonY` | int | O | Number of vertical buttons (**1~64**; `0` loads with a warning) |
 | `chain` | int | O | Number of chains/banks (**1~24**) |
 | `squareButton` | boolean | | Square button mode (default: **true**). Only the exact value `true` turns it on; any other value (`false`, `True`, `1`) turns it off. |
 | `website` | string | | Creator website URL |

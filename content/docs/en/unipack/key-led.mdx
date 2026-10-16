@@ -45,7 +45,7 @@ Shorthand: `o`
 | Field | Description |
 |-------|-------------|
 | `x` | LED X coordinate, `*` / `mc` (chain round LED), or `l` (logo LED) |
-| `y` | LED Y coordinate |
+| `y` | LED Y coordinate. For `l`, leave it out or write any value in its place (see Special Coordinates) |
 | `color` | 6-digit HEX color (e.g., `FF0000`) or `auto` / `a` |
 | `velocity` | MIDI velocity (0~127), required when using `auto` |
 
@@ -62,7 +62,7 @@ Shorthand: `o`
 | Token | Meaning |
 |-------|---------|
 | `*` or `mc` | Round (chain) LEDs on Launchpad top/sides |
-| `l` | Logo LED. Written without `y`: `on l FF0000`, `on l auto 72`, `off l` |
+| `l` | Logo LED. `y` can be left out: `on l FF0000`, `on l auto 72`, `off l`. Or any value can stand in the `y` position: `on l 0 FF0000`, `on l 0 FF0000 5`, `on l 0 auto 72`. To send a velocity with a HEX color, keep a value in the `y` position. |
 
 ### `off` — Turn LED Off
 
@@ -114,6 +114,7 @@ off * 1
 <Callout title="Validation">
 - Files with out-of-range coordinates in the file name are ignored.
 - The `on` command requires either `color` (4 tokens) or `auto` + `velocity` (5 tokens).
+  A logo line (`l`) without `y` is the exception: `on l FF0000` (3 tokens) and `on l auto 72` (4 tokens) are valid.
 - Unrecognized commands are skipped.
 - An `on` or `off` line whose coordinates are outside the pad grid (0, negative, or greater than `buttonX` / `buttonY`) is kept without a warning and skipped when the animation plays; the other lines of the file still play.
 - A warning is logged if `loop` is negative.
