@@ -93,6 +93,14 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect(dialog).toContainText('Input: Launchpad X Test Input');
   await expect(dialog).toContainText('Output: Launchpad X Test Output');
   await expect(dialog).toContainText('Resolved Type: launchpad_x');
+  // The hint promises what the model picker does: a connected device is re-initialised at once.
+  await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await dialog.locator('select').selectOption('launchpad_mini_mk3');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]);
+  await dialog.locator('select').selectOption('auto');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 81, 127]); });
   await expect(pressed(page, '0,0')).toBeVisible();

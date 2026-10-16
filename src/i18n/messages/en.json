@@ -338,7 +338,7 @@
       "typeLabel": "Launchpad Type",
       "autoDetect": "Auto Detect",
       "noInitSysEx": "No Init SysEx",
-      "typeHint": "Auto Detect uses the connected output name. Type change is applied on next MIDI connect.",
+      "typeHint": "Auto Detect uses the connected output name. Changing the model applies it immediately to devices that are already connected.",
       "connecting": "Connecting...",
       "reconnect": "Reconnect",
       "connect": "Connect",

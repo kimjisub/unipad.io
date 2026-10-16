@@ -338,7 +338,7 @@
       "typeLabel": "런치패드 기종",
       "autoDetect": "자동 감지",
       "noInitSysEx": "초기화 SysEx 없음",
-      "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종 변경은 다음 MIDI 연결부터 적용됩니다.",
+      "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종을 바꾸면 이미 연결된 장치에 바로 적용돼요.",
       "connecting": "연결 중...",
       "reconnect": "다시 연결",
       "connect": "연결",
