@@ -150,6 +150,14 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
+  plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
+  The web already used the file whose whole path under `sounds/` differs only in case; iOS left those
+  pads silent, and so did Android on storage that tells upper and lower case apart. Both now find the
+  file and report its stored name. A folder, or a file of that name in another folder, is still missing.
+  The four cases were added to the corpus; the previous corpus SHA256 was
+  `fe56df2756a063d3416bbd5b8219c84c73b61d2ae646805ac2a8ccbd8905efa2`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 - **KS-018, KL-024: the web now reads a UTF-16 text file with a byte order mark and keeps keyLED events
   outside the pad grid.** The web read every pack text file as UTF-8, so a keySound saved as UTF-16 (Windows
   Notepad's "Unicode") had no line it understood and the pack had no sound. It now reads `info`,
