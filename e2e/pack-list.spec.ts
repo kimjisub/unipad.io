@@ -109,7 +109,9 @@ test('Space selects the focused pack and Enter plays it', async ({ page }) => {
 
 test('rows hold no separate controls and the empty search result sits outside the list', async ({ page }) => {
   await openListWithThreePacks(page);
-  await option(page, first).click();
+  // The newest pack starts selected, so click another row to open its play strip.
+  await option(page, middle).click();
+  await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
   await expect(list(page).getByRole('button')).toHaveCount(0);
 
   await page.getByRole('textbox', { name: 'Search unipacks' }).fill('no pack has this name');
