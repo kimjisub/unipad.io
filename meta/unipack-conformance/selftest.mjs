@@ -23,15 +23,15 @@ const { corpus } = canonical;
 const SOME_RESULT = { loaded: true };
 
 /**
- * What a platform whose every result equals the expected one would write, with `over` applied per case
- * id. Undetermined cases and the ones the corpus says the platform cannot observe are unverified, as
- * the harnesses report them.
+ * What a platform whose every result equals the expected one would write for `cases`, with `over`
+ * applied per case id. Undetermined cases and the ones marked `unobserved` for the platform are
+ * unverified, as the harnesses report them.
  */
-function fullResults(platform, over = {}) {
+function fullResults(platform, over = {}, cases = corpus.cases) {
   return {
     platform,
     corpusSha256: canonical.sha256,
-    cases: corpus.cases.map((c) => {
+    cases: cases.map((c) => {
       const base = { id: c.id, fingerprint: c.fingerprint, detail: '' };
       if (c.expectation !== 'determined') return { ...base, status: 'unverified', actual: SOME_RESULT, ...over[c.id] };
       if (c.unobserved?.[platform]) return { ...base, status: 'unverified', actual: null, ...over[c.id] };
@@ -249,32 +249,35 @@ test('a case the platform could not drive is unverified with its own reason', ()
   assert.equal(seen.detail, 'the audio engine is not usable here');
 });
 
-const unobservedOnIos = corpus.cases.filter((x) => x.unobserved?.ios && !x.unobserved.android);
+// The corpus may mark no case `unobserved`, so a parse case and a run case are marked for iOS here.
+const IOS_REASON = 'not observable on iOS here';
+const unobservedOnIos = [determined, plain.find((c) => c.layer === 'run')].map((c) => ({ ...c, unobserved: { ios: IOS_REASON } }));
+const withUnobserved = { ...canonical, corpus: { ...corpus, cases: corpus.cases.map((c) => unobservedOnIos.find((u) => u.id === c.id) ?? c) } };
+const iosResults = (over) => fullResults('ios', over, withUnobserved.corpus.cases);
 
 test('a case the corpus says a platform cannot observe is unverified there, with that reason, while it records no result', () => {
-  assert.ok(unobservedOnIos.length > 0, 'the corpus has a case iOS cannot observe');
   for (const c of unobservedOnIos) {
     for (const over of [{}, { status: 'pass', actual: null }, { status: 'pass', actual: undefined }]) {
-      const ios = judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+      const ios = judge(withUnobserved, 'ios', iosResults({ [c.id]: over })).get(c.id);
       assert.equal(ios.status, 'unverified', c.id);
-      assert.equal(ios.detail, c.unobserved.ios, c.id);
+      assert.equal(ios.detail, IOS_REASON, c.id);
     }
-    assert.equal(judge(canonical, 'android', fullResults('android', { [c.id]: { status: 'pass', actual: c.expected } })).get(c.id).status, 'pass');
+    assert.equal(judge(withUnobserved, 'android', fullResults('android', { [c.id]: { status: 'pass', actual: c.expected } })).get(c.id).status, 'pass');
   }
 });
 
 test('a result recorded for a case the corpus says a platform cannot observe is judged like any other', () => {
   for (const c of unobservedOnIos) {
-    const judged = (over) => judge(canonical, 'ios', fullResults('ios', { [c.id]: over })).get(c.id);
+    const judged = (over) => judge(withUnobserved, 'ios', iosResults({ [c.id]: over })).get(c.id);
     assert.equal(judged({ status: 'pass', actual: c.expected }).status, 'pass', c.id);
     assert.deepEqual(judged({ status: 'pass', actual: c.expected }).actual, c.expected, c.id);
     assert.equal(judged({ status: 'fail', actual: SOME_RESULT }).status, 'fail', c.id);
     assert.match(judged({ status: 'pass', actual: SOME_RESULT }).detail, /classifies as fail/, c.id);
     assert.equal(judged({ status: 'pass', actual: c.expected, fingerprint: '0'.repeat(64) }).status, 'unverified', c.id);
   }
-  const passing = fullResults('ios', Object.fromEntries(unobservedOnIos.map((c) => [c.id, { status: 'pass', actual: c.expected }])));
-  const otherCorpus = judge(canonical, 'ios', { ...passing, corpusSha256: 'f'.repeat(64) });
-  const missing = judge(canonical, 'ios', { ...passing, cases: passing.cases.filter((r) => !unobservedOnIos.some((c) => c.id === r.id)) });
+  const passing = iosResults(Object.fromEntries(unobservedOnIos.map((c) => [c.id, { status: 'pass', actual: c.expected }])));
+  const otherCorpus = judge(withUnobserved, 'ios', { ...passing, corpusSha256: 'f'.repeat(64) });
+  const missing = judge(withUnobserved, 'ios', { ...passing, cases: passing.cases.filter((r) => !unobservedOnIos.some((c) => c.id === r.id)) });
   for (const c of unobservedOnIos) {
     assert.equal(otherCorpus.get(c.id).status, 'unverified', c.id);
     assert.equal(missing.get(c.id).status, 'unverified', c.id);
