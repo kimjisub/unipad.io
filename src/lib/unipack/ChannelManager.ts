@@ -67,13 +67,13 @@ export class ChannelManager {
     }
   }
 
-  remove(x: number, y: number, channel: Channel): void {
+  /** Returns whether the channel held a light there. */
+  remove(x: number, y: number, channel: Channel): boolean {
     const priority = this.channelPriority(channel);
-    if (x !== -1) {
-      if (this.btn[x]?.[y]) this.btn[x][y][priority] = null;
-    } else {
-      if (this.cir[y]) this.cir[y][priority] = null;
-    }
+    const slots = x !== -1 ? this.btn[x]?.[y] : this.cir[y];
+    if (!slots?.[priority]) return false;
+    slots[priority] = null;
+    return true;
   }
 
   setBtnIgnore(channel: Channel, ignore: boolean): void {
