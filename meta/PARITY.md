@@ -97,7 +97,7 @@ The ring shows the level the same way on all three (8 - level lit, blue).
 | Platform | Behaviour |
 |---|---|
 | Android, iOS | A pack whose sounds cannot be decoded shows "outOfCPU" and leaves the play screen. |
-| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. |
+| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. A sound that failed is silent in its own turn: the pad still moves on to its next sound and the sound's wormhole still switches the chain. |
 
 Deliberate: on the web a single unsupported codec should not cost the whole session, and there is
 no memory pressure to escape from.

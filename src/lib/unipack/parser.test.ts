@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAUNCHPAD_ARGB } from './colors';
 import { parseUniPack } from './parser';
-import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds } from './testUtils';
+import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds, rawNameZip } from './testUtils';
 
 describe('parseUniPack', () => {
   test('opens a complete pack wrapped in a top folder', async () => {
@@ -113,6 +113,66 @@ describe('parseUniPack', () => {
     }
   });
 
+  // Korean Windows Notepad's "ANSI" and Korean Windows archivers write CP949; bytes are spelled out
+  // because Node has no CP949 encoder.
+  describe('old Korean packs written in CP949', () => {
+    const cp949 = (...bytes: number[]) => new Uint8Array(bytes);
+    const HANGUL = cp949(0xC7, 0xD1, 0xB1, 0xDB); // 한글
+    const SORI_WAV = cp949(0xBC, 0xD2, 0xB8, 0xAE, 0x2E, 0x77, 0x61, 0x76); // 소리.wav
+    const join = (...parts: (string | Uint8Array)[]) => Uint8Array.from(parts.flatMap((p) => Array.from(typeof p === 'string' ? new TextEncoder().encode(p) : p)));
+
+    test('reads info, keySound, keyLed and autoPlay that are not UTF-8 as CP949', async () => {
+      const pack = await parseUniPack(await packZip({
+        info: join('title=', HANGUL, '\nproducerName=', HANGUL, '\nbuttonX=2\nbuttonY=2\nchain=2'),
+        keySound: join('1 1 1 ', SORI_WAV, '\n2 2 2 ', SORI_WAV),
+        'sounds/소리.wav': SILENT_WAV,
+        'keyLed/1 1 1': join('o 1 1 a 5 ', HANGUL, '\nf 1 1'),
+        autoPlay: join('o 1 1\nf 1 1\n', HANGUL),
+      }));
+
+      assert.equal(pack.info.title, '한글');
+      assert.equal(pack.info.producerName, '한글');
+      assert.equal(pack.soundCount, 2);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+      assert.deepEqual(pack.errors, [
+        'keyLed: [1 1 1].[o 1 1 a 5 한글] format is incorrect',
+        'autoPlay: [한글] format is incorrect',
+      ]);
+    });
+
+    test('reads a UTF-8 text file as UTF-8 even when it is also valid CP949', async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN.replace('title=Test', 'title=한글'),
+        keySound: KEYSOUND_1_1_1,
+        'sounds/a.wav': SILENT_WAV,
+      }));
+
+      assert.equal(pack.info.title, '한글');
+    });
+
+    test('reads a CP949 file name inside the archive that has no UTF-8 mark', async () => {
+      const pack = await parseUniPack(rawNameZip([
+        [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+        [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
+        [join('sounds/', SORI_WAV), SILENT_WAV],
+      ]));
+
+      assert.deepEqual(pack.errors, []);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+    });
+
+    test('reads an unmarked file name that is valid UTF-8 as UTF-8', async () => {
+      const pack = await parseUniPack(rawNameZip([
+        [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+        [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
+        [new TextEncoder().encode('sounds/소리.wav'), SILENT_WAV],
+      ]));
+
+      assert.deepEqual(pack.errors, []);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+    });
+  });
+
   describe('keyLed pad coordinates', () => {
     const validLines = 'o 1 1 FF0000\nf 1 1\non 2 2 a 5\noff 2 2';
     const validEvents = [
@@ -204,6 +264,28 @@ describe('parseUniPack', () => {
       ]);
       assert.deepEqual(pack.errors, ['autoPlay: [c 3] chain is incorrect']);
     });
+
+    // touch is on + off in one line, so its sound's wormhole moves the following lines as on does.
+    for (const command of ['o', 'on', 't', 'touch']) {
+      test(`moves autoPlay presses after \`${command}\` of a wormhole sound to that chain`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN,
+          keySound: '1 1 1 a.wav 1 2\n2 1 1 a.wav',
+          'sounds/a.wav': SILENT_WAV,
+          autoPlay: `${command} 1 1\nd 100\no 1 1`,
+        }));
+
+        const touch = command.startsWith('t');
+        assert.deepEqual(pack.errors, []);
+        assert.deepEqual(pack.autoPlay!.elements, [
+          { type: 'on', x: 0, y: 0, currChain: 0, num: 0 },
+          ...(touch ? [{ type: 'off', x: 0, y: 0, currChain: 0 }] : []),
+          { type: 'chain', c: 1 },
+          { type: 'delay', delay: 100 },
+          { type: 'on', x: 0, y: 0, currChain: 1, num: 0 },
+        ]);
+      });
+    }
   });
 
   // Android and iOS call a value that is not a whole number a format error and a number outside the

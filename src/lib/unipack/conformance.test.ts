@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
+import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
   actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL,
   resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
@@ -117,6 +118,22 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
     const notForwarded: CorpusCase = { ...c, scenario: c.scenario!.map((s) => (s.do === 'autoplay' ? { do: 'autoplay' } : s)) };
     assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
+  });
+
+  test('autoPlay and the player hold pads under different inputs, as on the play screen', async () => {
+    const c = byId('RUN-RP-003');
+    const withPlayer: CorpusCase = { ...c, scenario: [{ do: 'press', x: 1, y: 1 }, { do: 'release', x: 1, y: 1 }, ...c.scenario!] };
+    const calls: [string, string | undefined][] = [];
+    class RecordingSoundEngine extends SoundEngine {
+      soundOn(x: number, y: number, input?: string): void { calls.push(['on', input]); super.soundOn(x, y, input); }
+      soundOff(x: number, y: number, input?: string): void { calls.push(['off', input]); super.soundOff(x, y, input); }
+    }
+    await actualFor(withPlayer, corpus, { ...REAL, SoundEngine: RecordingSoundEngine });
+    const [playerOn, playerOff, autoOn, autoOff] = calls;
+    assert.equal(calls.length, 4);
+    assert.equal(typeof playerOn[1], 'string');
+    assert.notEqual(playerOn[1], AUTO_PLAY_INPUT);
+    assert.deepEqual([playerOff, autoOn, autoOff], [['off', playerOn[1]], ['on', AUTO_PLAY_INPUT], ['off', AUTO_PLAY_INPUT]]);
   });
 
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
