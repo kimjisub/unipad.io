@@ -68,9 +68,13 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The browser tests
-(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
-duration; the job summary records elapsed time from setup through verification.
+**Web CI**: install, type check, lint, unit tests and build. A separate
+**Browser playback tests** job builds with the browser-test configuration below and
+runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+uploads the Playwright report and traces as an artifact. It is not a required check
+yet. The other browser tests do not run in CI; run `pnpm test:e2e` locally before
+pushing. Both jobs also run after a merge to `main`. GitHub records each step's
+duration; each job summary records elapsed time from setup through verification.
 Required-check configuration is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
 
@@ -135,6 +139,15 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 | Web MIDI | Partial | Fake `requestMIDIAccess`, input/output names, auto-detected X profile, init SysEx, note input/release, exact LED on/off bytes, disconnect/reconnect |
 | Audible sound quality | Unavailable in headless CI | Real decode, buffer duration and original Web Audio start/stop calls are observed; Chromium output is muted. Speaker output, latency and perceived quality require listening |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
+
+`e2e/store-connection.spec.ts` keeps the real Firebase SDK and checks stalled
+responses, refused HTTP/WebSocket connections, cached lists and manual retries.
+It also checks a pending Firebase initialization, shared-link install confirmation
+on the pack list, successful install/playback and a stalled download with retry.
+Store lookup returns cached items or a connection message within five seconds;
+downloads stop after five seconds without incoming data, so longer transfers can
+continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
+fallbacks, progress across that idle limit, and cancellation.
 
 No test-only application hooks are added.
 The browser probes wrap native Web Audio calls without changing their behavior.

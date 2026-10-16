@@ -1,7 +1,7 @@
 import { storeDownloadErrorType } from '../../lib/store';
 
 /** Store download failures that have translated text under `play.toast`. */
-export type StoreErrorToastKey = 'packNotFound';
+export type StoreErrorToastKey = 'packNotFound' | 'downloadConnectionFailed';
 
 /**
  * A store download failure, classified. `message` stays in English so the failure
@@ -15,6 +15,7 @@ export interface StoreErrorDescription {
 
 export function describeStoreError(error: unknown): StoreErrorDescription {
   const raw = error instanceof Error ? error.message : String(error);
+  if (/timed out/i.test(raw)) return { message: 'Store connection timed out.', toastKey: 'downloadConnectionFailed' };
   if (/aborted|canceled/i.test(raw)) return { message: 'Download canceled.' };
   if (/HTTP 403|Host not allowed/i.test(raw)) return { message: 'Download source is blocked by server policy.' };
   if (storeDownloadErrorType(error) === 'http_404') return { message: 'Pack not found on server.', toastKey: 'packNotFound' };

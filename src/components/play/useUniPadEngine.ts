@@ -19,7 +19,7 @@ import {
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
-import { PlayUsageTracker } from '@/lib/analytics/usageEvents';
+import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 import type {
   UniPackData,
@@ -455,10 +455,15 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
-  const userPadTouchOn = useCallback((x: number, y: number) => {
-    usageTracker.padPressed();
+  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource) => {
+    usageTracker.padPressed(source);
     padTouchOn(x, y);
   }, [usageTracker, padTouchOn]);
+
+  /** A pad pressed on screen, by touch or mouse. */
+  const screenPadTouchOn = useCallback((x: number, y: number) => {
+    userPadTouchOn(x, y, 'screen');
+  }, [userPadTouchOn]);
 
   const padTouchOff = useCallback((x: number, y: number) => {
     const se = soundEngineRef.current;
@@ -528,7 +533,7 @@ export function useUniPadEngine() {
       if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
         pressedKeysRef.current.set(e.code, pad);
-        userPadTouchOn(pad[0], pad[1]);
+        userPadTouchOn(pad[0], pad[1], 'keyboard');
       }
     };
 
@@ -1061,7 +1066,7 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y);
+          if (pressed) userPadTouchOn(x, y, 'midi');
           else padTouchOff(x, y);
         },
         onChainTouch: (c: number) => {
@@ -1284,8 +1289,8 @@ export function useUniPadEngine() {
 
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
-    // Android and iOS re-initialise the driver at once; here the choice only took effect on the
-    // next connect.
+    // Applied at once as on Android and iOS; the connection then reports the model now in use
+    // through applyMidiStatus, which redraws the board on the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
@@ -1446,7 +1451,7 @@ export function useUniPadEngine() {
     state,
     loadUniPack,
     unload,
-    padTouchOn: userPadTouchOn,
+    padTouchOn: screenPadTouchOn,
     padTouchOff,
     setChain,
     playMode,
