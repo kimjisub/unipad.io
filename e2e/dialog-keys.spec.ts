@@ -43,6 +43,7 @@ for (const locale of ['en', 'ko']) for (const [width, height] of [[1440, 900], [
     const settings = (page: Page) => page.getByRole('dialog', { name: t.launchpad.title, exact: true });
 
     test('player keys stay off behind Launchpad settings and its help, and return after closing', async ({ page, baseURL }) => {
+      test.slow(); // Six 600 ms quiet windows and a 1.2 s LED wait: about 8 s idle, over 30 s on a busy machine.
       await load(page, baseURL, locale, 'e2e/fixtures/basic.uni');
 
       // A pad held while the settings open is released, not left sounding.
