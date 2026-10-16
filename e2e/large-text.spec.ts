@@ -53,6 +53,7 @@ async function waitUntilSettled(target: Locator) {
  * Waits until the scroll-to-top button has kept its place and full opacity, or stayed away, for several frames.
  * It is placed in the frame after a scroll, and a button that leaves fades out where it was.
  * Polls 'at rest', or what each frame showed (bottom/opacity of every button) so a failure tells why.
+ * One eight-frame sample can take longer than the default five-second poll budget in Chromium.
  */
 async function waitForButtonAtRest(page: Page) {
   await expect.poll(() => page.evaluate(() => new Promise<string>(resolve => {
@@ -67,7 +68,7 @@ async function waitForButtonAtRest(page: Page) {
       resolve(atRest ? 'at rest' : `scroll ${scrollY}: ${frames.join(' | ')}`);
     };
     requestAnimationFrame(() => requestAnimationFrame(step));
-  }))).toBe('at rest');
+  })), { timeout: 15_000 }).toBe('at rest');
 }
 
 async function scrollToFooter(page: Page) {
@@ -193,6 +194,9 @@ test.describe('the scroll-to-top button', () => {
 
   for (const { path, width, height, large } of cases) {
     test(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, browserName }) => {
+      // Scrolling a quarter of a short screen at a time takes about 30 steps through the tall start box and footer,
+      // each waiting at least eight frames; a busy machine draws a frame every 60-80ms, even on an empty page.
+      test.slow(height < 400, 'many scroll steps on a short screen');
       await page.setViewportSize({ width, height });
       if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
       await page.goto(path);

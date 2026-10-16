@@ -4,43 +4,60 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Compares the corpus copies at the given app commits; an empty input uses copies.json.
+  workflow_dispatch:
+    inputs:
+      android:
+        description: Full unipad-android commit whose corpus copy to compare (empty uses copies.json)
+        required: false
+        default: ''
+      ios:
+        description: Full unipad-ios commit whose corpus copy to compare (empty uses copies.json)
+        required: false
+        default: ''
+  # Weekly, the latest default branches of all three repositories, so a copy changed only in an app is noticed.
+  schedule:
+    - cron: '23 4 * * 1'
 
 permissions:
   contents: read
 
+# Deliberately fake public config: builds never need production credentials.
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'unipad-ci.invalid'
+  NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-ci.invalid'
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'unipad-ci-placeholder'
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'unipad-ci.invalid'
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+  NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
+  NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
+
 concurrency:
-  group: web-ci-${{ github.event.pull_request.number || github.ref }}
+  group: web-ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   checks:
     name: Web checks
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      NEXT_TELEMETRY_DISABLED: '1'
-      # Deliberately fake public config: builds never need production credentials.
-      NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'unipad-ci.invalid'
-      NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-ci.invalid'
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'unipad-ci-placeholder'
-      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'unipad-ci.invalid'
-      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
-      NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
-      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
     steps:
+      - name: Name the initial branch for checkout
+        run: git config --global init.defaultBranch main
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Record start time
         run: echo "CI_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 9.11.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24.15.0
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-web
+      # Fails on any known vulnerability in the production dependencies. The CVEs ignored in
+      # package.json (pnpm.auditConfig.ignoreCves) have no fix reachable today:
+      # - CVE-2026-101915, CVE-2026-101916 (@grpc/grpc-js): firebase, up to 13.0.0, pins
+      #   ~1.9.0 through @firebase/firestore, and the site never imports Firestore.
+      # Drop an entry once its upgrade path exists.
+      - name: Audit production dependencies
+        run: pnpm audit --prod
       - name: Type check
         run: pnpm exec tsc --noEmit
       - name: Lint
@@ -56,3 +73,116 @@ jobs:
             elapsed=$(( $(date +%s) - CI_STARTED_AT ))
             echo "Web checks: ${elapsed} seconds (including setup, install and verification)." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # Not a required check yet: it becomes one after a stable run of pull requests.
+  browser-playback:
+    name: Browser playback tests
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # A valid but unused hostname lets the SDK create a database client; the tests intercept every connection.
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-browser-test.firebaseio.com'
+    steps:
+      - name: Name the initial branch for checkout
+        run: git config --global init.defaultBranch main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record start time
+        run: echo "CI_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-web
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # Downloads Chromium only on a cache miss; the system libraries are installed every run.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build
+        run: pnpm build
+      - name: Test playback and offline saved packs
+        run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+      - name: Record elapsed time
+        if: always()
+        run: |
+          if [ -n "$CI_STARTED_AT" ]; then
+            elapsed=$(( $(date +%s) - CI_STARTED_AT ))
+            echo "Browser playback tests: ${elapsed} seconds (including setup, install, build and tests)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The UniPack conformance corpus is copied byte for byte into unipad-android and unipad-ios. Each app's
+  # own check catches a copy that does not match the corpus.sha256 beside it, but not an older corpus.json
+  # copied together with its own older hash; only this comparison with the canonical directory does.
+  unipack-copies:
+    name: UniPack corpus copies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Name the initial branch for checkout
+        run: git config --global init.defaultBranch main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+      - name: Choose the app commits to compare
+        id: commits
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          ANDROID_INPUT: ${{ inputs.android }}
+          IOS_INPUT: ${{ inputs.ios }}
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            ANDROID_INPUT=$(git ls-remote https://github.com/kimjisub/unipad-android.git HEAD | cut -f1)
+            IOS_INPUT=$(git ls-remote https://github.com/kimjisub/unipad-ios.git HEAD | cut -f1)
+            if [ -z "$ANDROID_INPUT" ] || [ -z "$IOS_INPUT" ]; then
+              echo "Could not read the default branch of an app repository." >&2
+              exit 1
+            fi
+          fi
+          node meta/unipack-conformance/copies.mjs --android "$ANDROID_INPUT" --ios "$IOS_INPUT" | tee -a "$GITHUB_OUTPUT"
+      - name: Check out the unipad-android copy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kimjisub/unipad-android
+          ref: ${{ steps.commits.outputs.android }}
+          path: copies/android
+          sparse-checkout: app/src/test/resources/unipack-conformance
+          persist-credentials: false
+      - name: Check out the unipad-ios copy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kimjisub/unipad-ios
+          ref: ${{ steps.commits.outputs.ios }}
+          path: copies/ios
+          sparse-checkout: unipadTests/UniPackConformance
+          persist-credentials: false
+      - name: Test the conformance tooling
+        run: node --test meta/unipack-conformance/selftest.mjs
+      - name: Check the corpus is what its sources build
+        run: node meta/unipack-conformance/build-corpus.mjs --check
+      - name: Compare the app copies with the corpus
+        run: node meta/unipack-conformance/sync.mjs --check --android copies/android --ios copies/ios
+      - name: Record the compared commits
+        if: always() && steps.commits.outcome == 'success'
+        env:
+          ANDROID_COMMIT: ${{ steps.commits.outputs.android }}
+          IOS_COMMIT: ${{ steps.commits.outputs.ios }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          echo "Corpus copies at unipad-android \`$ANDROID_COMMIT\` and unipad-ios \`$IOS_COMMIT\`, compared with \`$(sha256sum meta/unipack-conformance/corpus.json | cut -d' ' -f1)\`: $OUTCOME." >> "$GITHUB_STEP_SUMMARY"

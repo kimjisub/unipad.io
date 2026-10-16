@@ -149,4 +149,48 @@ describe('parseUniPack', () => {
       assert.deepEqual(pack.errors, ['autoPlay: [c 3] chain is incorrect']);
     });
   });
+
+  // Android and iOS call a value that is not a whole number a format error and a number outside the
+  // pack a range error; the warning a user sees says which.
+  describe('a keyLed file name with a malformed or out-of-range number', () => {
+    for (const name of ['a 1 1', '1 b 1', '1 1 c', '1 1 1 d', '1 1 1 1.5', `1 ${'9'.repeat(400)} 1`]) {
+      test(`[${name.slice(0, 20)}] is a format error`, async () => {
+        const pack = await parseWithLeds({ [name]: 'f 1 1' });
+
+        assert.deepEqual(pack.errors, [`keyLed: [${name}] format is incorrect`]);
+        assert.equal(pack.ledCount, 0);
+      });
+    }
+
+    for (const [name, field] of [['3 1 1', 'chain'], ['1 3 1', 'x'], ['1 1 0', 'y'], ['1 1 1 -1', 'loop']]) {
+      test(`[${name}] is still a ${field} range error`, async () => {
+        const pack = await parseWithLeds({ [name]: 'f 1 1' });
+
+        assert.deepEqual(pack.errors, [`keyLed: [${name}] ${field} is incorrect`]);
+      });
+    }
+  });
+
+  describe('an autoPlay line with a malformed or out-of-range number', () => {
+    const parseAutoPlay = async (autoPlay: string) => parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: KEYSOUND_1_1_1, 'sounds/a.wav': SILENT_WAV, autoPlay,
+    }));
+
+    for (const line of ['on a 1', 'on 1', 'off x y', 'touch 1', 'on 1 1b', `o ${'9'.repeat(400)} 1`, 'chain z', 'chain', 'delay x', 'delay', 'delay 1.5']) {
+      test(`[${line.slice(0, 20)}] is a format error and the next line is kept`, async () => {
+        const pack = await parseAutoPlay(`${line}\non 1 1`);
+
+        assert.deepEqual(pack.errors, [`autoPlay: [${line}] format is incorrect`]);
+        assert.deepEqual(pack.autoPlay!.elements, [{ type: 'on', x: 0, y: 0, currChain: 0, num: 0 }]);
+      });
+    }
+
+    for (const [line, field] of [['on 3 1', 'coordinate'], ['off 1 0', 'coordinate'], ['chain 0', 'chain']]) {
+      test(`[${line}] is still a ${field} range error`, async () => {
+        const pack = await parseAutoPlay(line);
+
+        assert.deepEqual(pack.errors, [`autoPlay: [${line}] ${field} is incorrect`]);
+      });
+    }
+  });
 });

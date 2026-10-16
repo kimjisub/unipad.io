@@ -68,9 +68,13 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The browser tests
-(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
-duration; the job summary records elapsed time from setup through verification.
+**Web CI**: install, type check, lint, unit tests and build. A separate
+**Browser playback tests** job builds with the browser-test configuration below and
+runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+uploads the Playwright report and traces as an artifact. It is not a required check
+yet. The other browser tests do not run in CI; run `pnpm test:e2e` locally before
+pushing. Both jobs also run after a merge to `main`. GitHub records each step's
+duration; each job summary records elapsed time from setup through verification.
 Required-check configuration is a separate step after this workflow is merged.
 Vercel deployment settings are unchanged.
 
@@ -94,20 +98,41 @@ pnpm build
 ### Browser playback checks
 
 `pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Build first with the fake
-Firebase configuration above. The suite supplies inert responses for Firebase analytics configuration and
+headless browser tests, then stops its server. Use the fake Firebase configuration
+above, with a syntactically valid, unused database hostname for these tests:
+
+```bash
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://unipad-browser-test.firebaseio.com pnpm build
+pnpm test:e2e
+```
+
+The database hostname lets the SDK initialize a database client; all connections
+are intercepted locally. Each offline test first requires a working database
+subscription, then imports a pack through the normal file input before blocking
+external requests and reopening the saved list. A build with the CI-only
+`https://unipad-ci.invalid` database URL fails these checks with a message
+pointing to the browser-build command above; it cannot silently pass as offline.
+The offline tests abort every external HTTP request and
+WebSocket, open a saved pack within five seconds, and check real audio start/stop
+calls. Separate tests supply realtime database messages to check the cached
+store badge is refreshed, and that the first delayed count does not announce
+old items after a store visit while a later increase still does.
+The suite supplies inert responses for Firebase analytics configuration and
 installation, blocks all other non-local HTTP requests and WebSocket
 connections, and never needs the store or analytics servers.
 
 The committed `e2e/fixtures/basic.uni` is an original 8×8, one-chain synthetic
 pack with a 100 ms PCM tone, two looping sound mappings, two LED scripts and
-a short auto-play sequence. Regenerate it with
-`node e2e/fixtures/generate.mjs`. There are no downloaded songs or assets.
+a short auto-play sequence. `e2e/fixtures/multi-touch.uni` uses the same tone
+on all 64 pads, each looping until released and without LED scripts, so every
+held finger shows as a lit pad and a started-but-not-stopped sound. Regenerate
+both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or assets.
 
 | Feature | Coverage | What is checked |
 | --- | --- | --- |
 | Import and local persistence | Automatic | File input, 64 pads, successful real WAV decoding, local pack URL and reload restore, no warnings or automatic sound |
 | Basic feature 3: pointer input and multiple contacts | Automatic | Press/release; two simultaneous screen contacts; second-finger chain selection; partial release; delayed chain move; cancellation, late duplicate release and repress |
+| Multi-touch play A–I | Automatic (synthetic touch) | Two and five pads together; taps beside a held pad; dragging one and two fingers across pads; lifting one of two fingers; touch cancel, hidden tab and lost window focus; loop held through a chain change (CR tests); a finger resting on the edge |
 | Keyboard input | Automatic | Physical Q key mapping, release and repeat suppression |
 | keyLed | Automatic | Red/green overlays on a different pad and timed removal |
 | Auto-play | Automatic | Start, pause with frozen progress/no new notes, resume, stop and loop-source cleanup |
@@ -115,7 +140,7 @@ a short auto-play sequence. Regenerate it with
 | Audible sound quality | Unavailable in headless CI | Real decode, buffer duration and original Web Audio start/stop calls are observed; Chromium output is muted. Speaker output, latency and perceived quality require listening |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
 
-No production application code or test-only application hooks are added.
+No test-only application hooks are added.
 The browser probes wrap native Web Audio calls without changing their behavior.
 Auto-play checks wait across the fixture's next-note deadline to prove that
 pause and stop produce no further playback requests.
@@ -156,3 +181,15 @@ The common corpus bytes/expectations and their SHA-256 manifest stay unchanged.
 These new results remain separate from the 124 historical parser cases, KS-003,
 and the 60 preserved result rows. Same-coordinate simultaneous ownership remains
 outside this change; existing input filtering and visual release rules are kept.
+
+### Multi-touch play checks (A–I)
+
+`e2e/multi-touch.spec.ts` imports `multi-touch.uni` and sends several touch
+contacts at once through Chromium's native touch dispatch, so the browser's own
+pointer events reach the `PadGrid` listeners. Each item is one test named after
+its letter (A–G, I); item H is the CR tests above. Both files run on a landscape
+phone (844×390) and a landscape tablet (1180×820) screen; `e2e/touch.ts` holds
+the shared touch helpers. Headless Chromium never hides the tab or blurs the
+window by itself, so test G sends the `visibilitychange` and `blur` events a
+browser sends when the notification shade or another app takes over. These are
+synthetic-input results; real fingers on a physical device are not certified.
