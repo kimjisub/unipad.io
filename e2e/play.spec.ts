@@ -112,6 +112,43 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
 });
 
+// CoreFW keeps the stock product name but names its ports "<model> (MIDI)", and plays and lights the
+// drum-rack layout on channel 1: pad 0,0 is note 64, pad 0,1 note 65 (its src/utils/layout.rs).
+test('a Launchpad running CoreFW is played and lit in its own layout', async ({ page }) => {
+  test.slow();
+  await page.addInitScript(() => {
+    const request = navigator.requestMIDIAccess.bind(navigator);
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+      configurable: true,
+      value: async (options: MIDIOptions) => {
+        const access = await request(options);
+        for (const port of [...access.inputs.values(), ...access.outputs.values()]) {
+          (port as { name: string }).name = 'LPX (MIDI)';
+        }
+        return access;
+      },
+    });
+  });
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await expect(dialog).toContainText('Output: LPX (MIDI)');
+  await expect(dialog).toContainText('Resolved Type: launchpad_corefw');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  expect((await midiMessages(page)).filter(m => m[0] === 0xf0), 'no stock mode switch').toEqual([]);
+
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 64, 127]); });
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect(led(page, '0,1')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
+  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 65, 5]);
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 64, 0]));
+  await expect(pressed(page, '0,0')).toHaveCount(0);
+  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3], [0x80, 64, 0]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x80, 65, 0]);
+});
+
 // Analytics calls are queued in gtag's dataLayer; the next event read after an input proves
 // that the input was handled, since the events pass through Firebase in order.
 const analyticsEvents = (page: Page) => page.evaluate(() =>
