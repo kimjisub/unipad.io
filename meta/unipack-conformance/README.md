@@ -308,7 +308,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 ## What is covered
 
 - info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
-- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, spaces, tabs, CRLF, BOM, UTF-16.
+- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
 - runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
@@ -320,7 +320,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 ## What is not covered
 
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
-- File and folder name case (`keyLED` vs `keyled`, `A.WAV` vs `a.wav`): it depends on the file system of the machine running the test.
+- File and folder name case other than sound names (`keyLED` vs `keyled`, `Sounds` vs `sounds`): it depends on the file system of the machine running the test. Sound names are covered because the expected result is the name the file is stored under: an app that opens `A.wav` on a file system that ignores case reports `A.wav`, not the stored `a.wav`, and fails. Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: they cannot both be written on such a file system, and the format does not say which one plays.
 - Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
 - Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
 - Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.

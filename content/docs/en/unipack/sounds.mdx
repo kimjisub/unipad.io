@@ -24,6 +24,7 @@ sounds/
 
 <Callout title="Notes">
 - Files are referenced by name in `keySound`, so paths and names must match exactly.
+- If no file has exactly that path, the player uses a file whose path differs only in upper and lower case (e.g., `End.wav` plays `sounds/END.wav`, `FX/Sweep.wav` plays `sounds/fx/sweep.wav`). A folder is never a sound. Still write names exactly as the files are named.
 - Subdirectories are supported (e.g., `fx/sweep.wav`).
 - For compatibility, use only **alphanumeric characters, hyphens, and underscores** in file names.
 - Maximum concurrent playback is **30 streams**.
