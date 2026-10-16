@@ -22,6 +22,8 @@ async function openList(page: Page, files: readonly PackFile[]) {
     await page.goto('/play');
     await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
     await expect(page.locator('[data-pad]')).toHaveCount(64);
+    // The import shows the pads before it saves the pack; the URL changes once it is saved.
+    await expect(page).toHaveURL(/\/play\?pack=.+/);
   }
   await page.goto('/play');
   await expect(list(page).getByRole('option')).toHaveCount(files.length);
