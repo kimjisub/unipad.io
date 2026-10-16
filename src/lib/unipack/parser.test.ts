@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAUNCHPAD_ARGB } from './colors';
 import { parseUniPack } from './parser';
+import { NO_WORMHOLE } from './types';
 import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds } from './testUtils';
 
 describe('parseUniPack', () => {
@@ -203,6 +204,28 @@ describe('parseUniPack', () => {
         { type: 'on', x: 0, y: 0, currChain: 1, num: 0 },
       ]);
       assert.deepEqual(pack.errors, ['autoPlay: [c 3] chain is incorrect']);
+    });
+
+    // A move to a chain the pack lacks made practice wait for a chain button that does not exist.
+    for (const [value, chain] of [['3', 1], ['40', 1], ['-2', 0]] as const) {
+      test(`moves a keySound wormhole of ${value} to the nearest chain the pack has, with a warning`, async () => {
+        const line = `1 1 1 a.wav 1 ${value}`;
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: line, 'sounds/a.wav': SILENT_WAV,
+        }));
+
+        assert.equal(pack.soundTable[0][0][0]![0].wormhole, chain);
+        assert.deepEqual(pack.errors, [`keySound: [${line}] wormhole is incorrect`]);
+      });
+    }
+
+    test('keeps a keySound wormhole of 0 as no chain move, without a warning', async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav 1 0', 'sounds/a.wav': SILENT_WAV,
+      }));
+
+      assert.equal(pack.soundTable[0][0][0]![0].wormhole, NO_WORMHOLE);
+      assert.deepEqual(pack.errors, []);
     });
   });
 

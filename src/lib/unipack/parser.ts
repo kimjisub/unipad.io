@@ -323,6 +323,13 @@ async function parseKeySoundFromFile(
       continue;
     }
 
+    // A move to a chain the pack lacks goes to the nearest one: the autoPlay order built from it
+    // otherwise made practice wait for a chain button that does not exist.
+    if (wormhole !== NO_WORMHOLE && (wormhole < 0 || wormhole >= info.chain)) {
+      errors.push(`keySound: [${trimmed}] wormhole is incorrect`);
+      wormhole = Math.max(0, Math.min(wormhole, info.chain - 1));
+    }
+
     // Find sound file in zip
     const soundPath = findSoundFile(zip, prefix, soundURL);
     if (!soundPath) {
