@@ -11,6 +11,7 @@ test('non-finite sound coordinates warn about format and the following sound sti
     name: 'numeric-warning.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toContainText(`[1 ${huge} 1 tone.wav 0] format is incorrect`);
   await expect(dialog).toContainText('1 issue');

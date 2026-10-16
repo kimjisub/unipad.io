@@ -290,21 +290,12 @@ async function parseKeySoundFromFile(
     const parts = trimmed.split(/\s+/);
     if (parts.length <= 2) continue;
 
-    let c: number, x: number, y: number;
+    const c = strictInt(parts[0]) - 1;
+    const x = strictInt(parts[1]) - 1;
+    const y = strictInt(parts[2]) - 1;
     const soundURL: string | undefined = parts[3];
-    let loop = 0;
-    let wormhole = NO_WORMHOLE;
-
-    try {
-      c = strictInt(parts[0]) - 1;
-      x = strictInt(parts[1]) - 1;
-      y = strictInt(parts[2]) - 1;
-      if (parts.length >= 5) loop = strictInt(parts[4]) - 1;
-      if (parts.length >= 6) wormhole = strictInt(parts[5]) - 1;
-    } catch {
-      errors.push(`keySound: [${trimmed}] format is incorrect`);
-      continue;
-    }
+    const loop = parts.length >= 5 ? strictInt(parts[4]) - 1 : 0;
+    const wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
 
     // Android records "format is incorrect" for a short or non-numeric line and keeps going;
     // here a 3-token line reached findSoundFile with undefined and threw out of the whole parse,
