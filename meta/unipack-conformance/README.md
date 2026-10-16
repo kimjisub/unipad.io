@@ -25,6 +25,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
 | `selftest.mjs` | Tests of the tooling itself: `corpus.json` and `corpus.sha256` are what the sources build, what `report.mjs` may and may not count, and which copies `sync.mjs --check` refuses. `pnpm test:unipack` runs it. |
+| `diagnostics/` | The web parser's warnings as written, and a separate tool that explains its number warnings as format or range. It never changes a result or a status. See its README. |
 
 ## Running it
 
@@ -112,13 +113,13 @@ any one platform show up as a `fail` instead of passing unnoticed. A doc or an i
 case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
 own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
 disagree is never given the result of two platforms against the third; it stays undetermined until it
-is decided (below). INF-012 is held at `squareButton` true although info.mdx gives false as the default,
-because all three apps start from true.
+is decided (below). INF-012 (`squareButton` true when it is not written) was held this way because all
+three apps start from true; info.mdx now gives the same default.
 
 **Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
 choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
-other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-010 (a `buttonX` that
-is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
+other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-010 and INF-016 (a
+`buttonX` or a `buttonY` that is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
 keySound with a byte order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names
 who decided and when and whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as
 written and skipped when lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
@@ -129,9 +130,9 @@ A case can also name a platform whose harness cannot observe it (`unobserved`, w
 that platform records no result for the case, the case is `unverified` there with that reason; the
 others are judged as usual. A result the platform does record is judged like any other, so a harness
 that has come to observe the case is not hidden behind the old reason: equal to the expected result is a
-pass, anything else a fail. The corpus still names RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the
-autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen) as unobserved on
-iOS; the iOS harness now records results for all six (see `stop` and autoPlay below).
+pass, anything else a fail. No case is marked unobserved today. RUN-A-001, RUN-A-002, RUN-RP-003,
+RUN-RP-004 (the autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen)
+were, on iOS, until its harness came to record results for them (see `stop` and autoPlay below).
 
 ## Case format
 
@@ -204,7 +205,7 @@ first `:` (`info`, `keySound`, `keyLed`, `autoPlay`) and kind one of
 | kind | messages |
 |---|---|
 | `format` | `format is incorrect`, `format is not found` |
-| `range` | `chain\|x\|y\|loop\|coordinate\|delay is incorrect`, `out of range` |
+| `range` | `chain\|x\|y\|loop\|coordinate is incorrect`, `out of range` |
 | `missing-file` | `sound was not found`, `sounds directory not found`, `doesn't exist` |
 | `missing-field` | `title\|producerName\|buttonX\|buttonY\|chain was missing` |
 | anything else | `other(<message>)`, so a new message shows up as a difference |
@@ -307,7 +308,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 ## What is covered
 
 - info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
-- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, spaces, tabs, CRLF, BOM, UTF-16.
+- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
 - runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
@@ -319,7 +320,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 ## What is not covered
 
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
-- File and folder name case (`keyLED` vs `keyled`, `A.WAV` vs `a.wav`): it depends on the file system of the machine running the test.
+- File and folder name case other than sound names (`keyLED` vs `keyled`, `Sounds` vs `sounds`): it depends on the file system of the machine running the test. Sound names are covered because the expected result is the name the file is stored under: an app that opens `A.wav` on a file system that ignores case reports `A.wav`, not the stored `a.wav`, and fails. Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: they cannot both be written on such a file system, and the format does not say which one plays.
 - Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
 - Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
 - Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.

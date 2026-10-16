@@ -14,11 +14,11 @@ const WHITESPACE = intent('unipad-android 22a45925', 'parser whitespace and line
 const VEL4 = intent('unipad.io src/lib/unipack/logoLed.test.ts, unipad-android UniPackFolderLogoLedTest', 'a hex-only `on` line carries velocity 4; the docs do not state the default');
 const LOGO = intent('unipad-ios #10, unipad-android #114, unipad.io #32', 'keyLED `l` lines address the logo as circle index 32 in every platform (the docs still say "not supported, ignored")');
 const AGREED = (note) => agreed('android, ios and web results of corpus c30e75b9 (2026-10-10)', note);
+const SOUND_CASE = [
+  doc('sounds.mdx', 'If no file has exactly that path, the player uses a file whose path differs only in upper and lower case. A folder is never a sound.'),
+  intent('unipad.io src/lib/unipack/parser.ts findSoundFile (5721b4c)', 'the whole path under sounds/ is compared without case, so official store packs that list End.wav for a file stored as END.wav play'),
+];
 const ROUND = intent('unipad-android UniPackFolderLogoLedTest, unipad.io logoLed.test.ts', '`mc`/`*` numbers outside 1..32 are dropped so that index 32 never lights the logo');
-
-// Why the iOS harness reports a case as unverified instead of a result (`unobserved`).
-const IOS_EXIT = 'Leaving the play screen is a screen-level step on iOS: the main screen clears the Launchpad when it takes the MIDI controller back (MainView onChange -> MainViewModel.setupMidiController -> MainMidiControllerAdapter.onAttach -> sendClearLed) and the on-screen pads go away with the play view. The iOS harness drives the runners alone, where LedRunner.stop() only cancels the loop, so what a user sees after leaving is not measured. Not checked on a real Launchpad either.';
-const IOS_WALL_CLOCK = 'The iOS AutoPlayRunner reads the wall clock and sleeps in real time (currentTimeMillis, Task.sleep), so a scenario cannot be driven on a virtual clock without a product change.';
 
 // A keySound that leaves the pad pressed in LED scenarios silent.
 const OTHER_PAD_SOUND = '1 4 3 c.wav';
@@ -121,6 +121,12 @@ export function buildCases(palette) {
     files: pack({ info: null, extra: [{ path: 'info.json', text: '{"title":"Conformance","producerName":"UniPad Conformance","buttonX":4,"buttonY":3,"chain":2,"squareButton":true}' }] }),
     expected: refused(),
     basis: [doc('info.mdx', 'the metadata is the key=value `info` file; there is no other info format, so the pack has no info, as in INF-013')],
+  });
+  add({
+    id: 'INF-016', area: 'info', title: 'buttonY that is not a number aborts loading',
+    files: pack({ info: STD_INFO.replace('buttonY=3', 'buttonY=abc') }),
+    expected: refused(),
+    basis: [doc('info.mdx', 'Loading is aborted if buttonX or buttonY is not an integer')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -239,6 +245,24 @@ export function buildCases(palette) {
     files: pack({ keySound: { base64: Buffer.from('﻿1 1 1 a.wav\n', 'utf16le').toString('base64') } }),
     expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
     basis: [doc('key-sound.mdx', 'The file is UTF-8, or UTF-16 that starts with a byte order mark')],
+  });
+  add({
+    id: 'KS-019', area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
+    files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 0, 1, [q('END.wav')])] }),
+    basis: SOUND_CASE,
+  });
+  add({
+    id: 'KS-020', area: 'keySound', title: 'the sub folder name may differ in case too',
+    files: pack({ keySound: '1 1 1 FX/S.wav', sounds: ['fx/s.wav'] }),
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('fx/s.wav')])] }),
+    basis: SOUND_CASE,
+  });
+  add({
+    id: 'KS-021', area: 'keySound', title: 'a name that matches only a file name in another folder, or a folder, is still missing',
+    files: pack({ keySound: lines('1 1 1 fx/A.wav', '1 1 2 FX', '1 1 3 S.wav', '1 2 1 A.wav'), sounds: ['a.wav', 'fx/s.wav'] }),
+    expected: loaded({ sounds: [cell(0, 1, 0, [q('a.wav')])], errors: Array(3).fill('keySound:missing-file') }),
+    basis: [...SOUND_CASE, doc('key-sound.mdx', 'A warning is logged if the referenced sound file is not found in the sounds/ folder')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -519,8 +543,8 @@ export function buildCases(palette) {
   // ---------------------------------------------------------------------------------------------
   // runners: press, release, time, exit
   // ---------------------------------------------------------------------------------------------
-  const run = (id, area, title, files, scenario, checkpoints, basis, over = {}) => cases.push({
-    id, layer: 'run', area, title, files, scenario, expectation: 'determined', expected: { checkpoints }, basis, ...over,
+  const run = (id, area, title, files, scenario, checkpoints, basis) => cases.push({
+    id, layer: 'run', area, title, files, scenario, expectation: 'determined', expected: { checkpoints }, basis,
   });
   const press = (x, y) => ({ do: 'press', x, y });
   const release = (x, y) => ({ do: 'release', x, y });
@@ -555,6 +579,11 @@ export function buildCases(palette) {
     [press(0, 0), release(0, 0), press(0, 1), release(0, 1), observe],
     [[snd(0, 0, 0, 'a.wav', -1), snd(0, 0, 1, 'a.wav', 2)]],
     [doc('key-sound.mdx', 'Loop Values: 0 loops indefinitely, N (2 or more) repeats N-1 times')]);
+  run('RUN-S-006', 'sound', 'a pad whose sound name differs from its file only in case plays that file',
+    pack({ keySound: lines('1 1 1 End.wav', '1 1 2 FX/S.wav'), sounds: ['END.wav', 'fx/s.wav'] }),
+    [press(0, 0), release(0, 0), press(0, 1), release(0, 1), observe],
+    [[snd(0, 0, 0, 'END.wav'), snd(0, 0, 1, 'fx/s.wav')]],
+    SOUND_CASE);
 
   const ledPack = (name, content, keySound = OTHER_PAD_SOUND) => pack({ keySound, keyLed: { [name]: content } });
   run('RUN-L-001', 'led', 'a one-shot animation lights, waits and turns off',
@@ -586,14 +615,12 @@ export function buildCases(palette) {
     ledPack('1 1 1 0', lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40')),
     [press(0, 0), advance(20), observe, { do: 'stop' }, observe, advance(400), observe],
     [[['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], []],
-    [intent('unipad-android 3e5a2fd6 (#101), unipad.io 8019666 (#32)', 'LEDs still lit are cleared on exit and no stale light is sent afterwards')],
-    { unobserved: { ios: IOS_EXIT } });
+    [intent('unipad-android 3e5a2fd6 (#101), unipad.io 8019666 (#32)', 'LEDs still lit are cleared on exit and no stale light is sent afterwards')]);
   run('RUN-L-007', 'led', 'leaving the screen turns a lit round LED off and nothing follows',
     ledPack('1 1 1 0', lines('o * 1 00FF00', 'd 40', 'f * 1', 'd 40')),
     [press(0, 0), advance(20), observe, { do: 'stop' }, observe, advance(400), observe],
     [[['ledOn', -1, 0, GREEN, 4]], [['ledOff', -1, 0]], []],
-    [intent('unipad-android 3e5a2fd6 (#101), unipad.io 8019666 (#32)', 'LEDs still lit are cleared on exit and no stale light is sent afterwards')],
-    { unobserved: { ios: IOS_EXIT } });
+    [intent('unipad-android 3e5a2fd6 (#101), unipad.io 8019666 (#32)', 'LEDs still lit are cleared on exit and no stale light is sent afterwards')]);
   run('RUN-L-008', 'led', 'pressing a pad again while its animation plays restarts it after an off',
     ledPack('1 1 1 0', lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40')),
     [press(0, 0), advance(20), observe, release(0, 0), press(0, 0), advance(20), observe],
@@ -605,14 +632,12 @@ export function buildCases(palette) {
     autoFiles,
     [{ do: 'autoplay' }, advance(50), observe, advance(100), observe, advance(100), observe, advance(400), observe],
     [[['autoOn', 0, 0]], [['autoOff', 0, 0]], [['autoOn', 1, 0], ['autoOff', 1, 0]], []],
-    [doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds')],
-    { unobserved: { ios: IOS_WALL_CLOCK } });
+    [doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds')]);
   run('RUN-A-002', 'autoPlay', 'leaving the screen stops autoPlay and nothing follows',
     autoFiles,
     [{ do: 'autoplay' }, advance(50), observe, { do: 'stop' }, advance(400), observe],
     [[['autoOn', 0, 0]], []],
-    [intent('unipad-android ce6af172 (#86), unipad.io AutoPlayRunner.stop', 'a stopped runner sends no more presses')],
-    { unobserved: { ios: IOS_WALL_CLOCK } });
+    [intent('unipad-android ce6af172 (#86), unipad.io AutoPlayRunner.stop', 'a stopped runner sends no more presses')]);
 
   // ---------------------------------------------------------------------------------------------
   // shapes common in real packs: an 8 x 8 grid, five-part keyLED names, MP3 sounds, looping lights
@@ -680,8 +705,7 @@ export function buildCases(palette) {
     pack({ keySound: '1 1 1 a.wav', sounds: ['a.wav'], keyLed: { '1 1 1 2': lines('o 1 1 FF0000', 'd 40', 'f 1 1', 'd 40') }, autoPlay: lines('on 1 1', 'delay 300', 'off 1 1') }),
     [autoToPads, advance(20), observe, advance(40), observe, advance(40), observe, advance(40), observe, advance(240), observe, advance(400), observe],
     [[['autoOn', 0, 0], snd(0, 0, 0, 'a.wav'), ['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], [['ledOn', 0, 0, RED, 4]], [['ledOff', 0, 0]], [['autoOff', 0, 0]], []],
-    [doc('key-led.mdx', 'loop: repeat count; "1 2 3 2" repeats 2 times'), doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds'), VEL4],
-    { unobserved: { ios: IOS_WALL_CLOCK } });
+    [doc('key-led.mdx', 'loop: repeat count; "1 2 3 2" repeats 2 times'), doc('auto-play.mdx', 'Events are executed sequentially from top to bottom; delay waits in milliseconds'), VEL4]);
   run('RUN-RP-004', 'realPack', 'autoPlay releasing a pad whose light loops endlessly, then leaving the screen',
     pack({ keySound: '1 1 1 a.wav', sounds: ['a.wav'], keyLed: { '1 1 1 0': lines('o 1 1 FF0000', 'd 80', 'f 1 1', 'd 80') }, autoPlay: lines('on 1 1', 'delay 200', 'off 1 1') }),
     [autoToPads, advance(20), observe, advance(90), observe, advance(75), observe, advance(40), observe, { do: 'stop' }, observe, advance(400), observe],
@@ -692,8 +716,7 @@ export function buildCases(palette) {
       intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless animation ends when the pad is released (RUN-L-003)'),
       intent('unipad-android 3e5a2fd6 (#101), ce6af172 (#86), unipad.io 8019666 (#32), AutoPlayRunner.stop', 'after leaving the screen no light and no press follows (RUN-L-006, RUN-A-002)'),
       VEL4,
-    ],
-    { unobserved: { ios: IOS_WALL_CLOCK } });
+    ]);
 
   return cases;
 }

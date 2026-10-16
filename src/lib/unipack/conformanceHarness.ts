@@ -2,6 +2,7 @@
 // parser and runners. Android and iOS run the same corpus through their own parsers and runners; each
 // harness turns what its code did into the normalized result the corpus states and never sees the
 // expected side. See meta/unipack-conformance/README.md.
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -10,7 +11,7 @@ import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
-import { SoundEngine } from './SoundEngine';
+import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 import type { Sound, UniPackData } from './types';
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -119,7 +120,7 @@ export function normalizeError(message: string): string {
   const section = /^([A-Za-z.]+)\s*:/.exec(message)?.[1] ?? 'unknown';
   let kind: string;
   if (/format is (incorrect|not found)/.test(message)) kind = 'format';
-  else if (/\b(chain|x|y|loop|coordinate|delay) is incorrect\b|out of range/.test(message)) kind = 'range';
+  else if (/\b(chain|x|y|loop|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
   else if (/was not found|directory not found|doesn't exist/.test(message)) kind = 'missing-file';
   else if (/was missing/.test(message)) kind = 'missing-field';
   else kind = `other(${message})`;
@@ -196,21 +197,73 @@ export interface Deps {
 
 export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine };
 
-async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<UniPackData | null> {
+async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<{ pack: UniPackData } | { refused: string }> {
   try {
-    return await deps.parse(await zipOf(c, corpus));
+    return { pack: await deps.parse(await zipOf(c, corpus)) };
   } catch (error) {
     // The web parser throws for a pack it refuses; anything else is a bug the case must surface.
-    if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return null;
+    if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return { refused: error.message };
     throw error;
   }
 }
 
+/**
+ * The parser's warnings exactly as it wrote them, before normalizeError reduces them to `section:kind`,
+ * with the pack size they were checked against. A refused pack has no warnings to read (the parser
+ * throws), only the refusal. Kept apart from the normalized result, which it never changes; see
+ * meta/unipack-conformance/diagnostics/README.md.
+ */
+export interface WarningCapture {
+  warnings: string[] | null;
+  pack: { buttonX: number; buttonY: number; chain: number } | null;
+  refused: string | null;
+}
+
+export interface Observation { actual: Json; capture: WarningCapture | null }
+
+export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
+  if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
+  const parsed = await parseOrRefuse(c, corpus, deps);
+  if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
+  const { pack } = parsed;
+  const capture: WarningCapture = {
+    warnings: [...pack.errors], pack: { buttonX: pack.info.buttonX, buttonY: pack.info.buttonY, chain: pack.info.chain }, refused: null,
+  };
+  const actual = c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  return { actual, capture };
+}
+
 export async function actualFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Json> {
-  if (c.layer === 'palette') return { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) };
-  const pack = await parseOrRefuse(c, corpus, deps);
-  if (!pack) return { loaded: false };
-  return c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  return (await observe(c, corpus, deps)).actual;
+}
+
+export const WARNING_CAPTURE_KIND = 'unipack-conformance-raw-warnings';
+
+/** One case of the raw warning file: its input files as text where they are text, and what the parser wrote. */
+export function capturedCase(c: CorpusCase, corpus: Corpus, capture: WarningCapture): Json {
+  const inputs = c.files.map((f): Json => (f.text !== undefined ? { path: f.path, text: f.text } : { path: f.path, bytes: fileBytes(f, corpus).length }));
+  return { id: c.id, fingerprint: c.fingerprint, layer: c.layer, inputs, warnings: capture.warnings, pack: capture.pack, refused: capture.refused };
+}
+
+function sourceRevision(): Json {
+  const git = (...args: string[]) => spawnSync('git', args, { encoding: 'utf8' });
+  const head = git('rev-parse', 'HEAD');
+  if (head.status !== 0) return { commit: null, uncommittedChanges: null };
+  const status = git('status', '--porcelain');
+  return { commit: head.stdout.trim(), uncommittedChanges: status.status === 0 ? status.stdout.trim() !== '' : null };
+}
+
+/** The file meta/unipack-conformance/diagnostics/number-warnings.mjs reads. */
+export function warningCaptureFile(cases: Json[], corpusSha256: string): Json {
+  return {
+    kind: WARNING_CAPTURE_KIND,
+    platform: PLATFORM,
+    corpusSha256,
+    generatedAt: new Date().toISOString(),
+    source: sourceRevision(),
+    method: 'collected at run time: parseUniPack (src/lib/unipack/parser.ts) read a zip of each case\'s files, and UniPackData.errors was copied as written, before normalizeError',
+    cases,
+  };
 }
 
 /** A virtual clock for every timer the runners use: window.setTimeout, setTimeout and performance.now. */
@@ -284,6 +337,9 @@ class FakeAudioContext {
   }
 }
 
+/** The input a scenario's press and release steps hold pads with, like one finger on the screen. */
+const PLAYER_INPUT = 'player';
+
 async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promise<Json[]> {
   const clock = new VirtualClock();
   const g = globalThis as { AudioContext?: unknown };
@@ -310,11 +366,13 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   led.launch();
   let autoPlay: AutoPlayRunner | null = null;
 
-  // A pad press and release as the play screen sends them to the sound engine and the LED runner.
-  const pressPad = (x: number, y: number) => {
+  // A pad press and release as the play screen sends them to the sound engine and the LED runner,
+  // named by the input holding the pad: the scenario's press/release steps are one player input,
+  // auto play holds pads under its own name as useUniPadEngine does.
+  const pressPad = (x: number, y: number, input: string) => {
     const before = FakeAudioContext.started.length;
     const at = chain;
-    sound.soundOn(x, y);
+    sound.soundOn(x, y, input);
     for (const started of FakeAudioContext.started.slice(before)) {
       // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
       const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
@@ -322,8 +380,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     }
     led.eventOn(x, y);
   };
-  const releasePad = (x: number, y: number) => {
-    sound.soundOff(x, y);
+  const releasePad = (x: number, y: number, input: string) => {
+    sound.soundOff(x, y, input);
     led.eventOff(x, y);
   };
 
@@ -331,10 +389,10 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
-          pressPad(step.x!, step.y!);
+          pressPad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'release':
-          releasePad(step.x!, step.y!);
+          releasePad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'chain':
           chain = step.c!;
@@ -351,8 +409,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y); },
-            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y); },
+            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y, AUTO_PLAY_INPUT); },
+            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
             onChainChange: (next) => { chain = next; events.push(['autoChain', next]); },
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
           };
@@ -383,11 +441,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
 // ---------------------------------------------------------------------------------------------
 
 /** What this platform reports for a case: its result and status, or why the case is not observed here. */
-export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<{ actual: Json; outcome: Outcome }> {
+export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation & { outcome: Outcome }> {
   const unobserved = c.unobserved?.[PLATFORM];
-  if (unobserved) return { actual: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
-  const actual = await actualFor(c, corpus, deps);
-  return { actual, outcome: classify(c, actual) };
+  if (unobserved) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
+  const { actual, capture } = await observe(c, corpus, deps);
+  return { actual, capture, outcome: classify(c, actual) };
 }
 
 export function classify(c: CorpusCase, actual: Json, platform: string = PLATFORM): Outcome {
