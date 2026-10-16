@@ -1,5 +1,10 @@
 import { Sound, NO_WORMHOLE, UniPackData } from './types';
 
+/** The input name auto play holds pads with, apart from the player's pointers, keys and launchpad. */
+export const AUTO_PLAY_INPUT = 'autoplay';
+
+interface Press { key: string; node: AudioBufferSourceNode; infinite: boolean }
+
 export class SoundEngine {
   private audioContext: AudioContext;
   private gainNode: GainNode;
@@ -7,7 +12,8 @@ export class SoundEngine {
   private activeNodes = new Map<string, AudioBufferSourceNode>();
   // Each press (a pad and the input holding it) owns the source selected at down time,
   // independently of the current chain and the (already advanced) sound sequence.
-  private heldNodes = new Map<string, { key: string; node: AudioBufferSourceNode; infinite: boolean }>();
+  // Pad "x-y" → input → press.
+  private heldPresses = new Map<string, Map<string, Press>>();
   private chainValue: () => number;
   private setChain: (c: number) => void;
   private unipack: UniPackData;
@@ -125,8 +131,14 @@ export class SoundEngine {
     return `${chain}-${x}-${y}`;
   }
 
-  private pressKey(x: number, y: number, input: string): string {
-    return `${x}-${y}-${input}`;
+  private padPresses(x: number, y: number): Map<string, Press> {
+    const padKey = `${x}-${y}`;
+    let presses = this.heldPresses.get(padKey);
+    if (!presses) {
+      presses = new Map();
+      this.heldPresses.set(padKey, presses);
+    }
+    return presses;
   }
 
   /**
@@ -136,8 +148,8 @@ export class SoundEngine {
   soundOn(x: number, y: number, input = ''): void {
     const chain = this.chainValue();
     const key = this.stopKey(chain, x, y);
-    const pressKey = this.pressKey(x, y, input);
-    this.heldNodes.delete(pressKey);
+    const presses = this.padPresses(x, y);
+    presses.delete(input);
 
     // Stop currently playing sound for this pad
     const existing = this.activeNodes.get(key);
@@ -168,18 +180,18 @@ export class SoundEngine {
       source.stop(stopTime);
     }
     this.activeNodes.set(key, source);
-    this.heldNodes.set(pressKey, { key, node: source, infinite: sound.loop === -1 });
-    source.onended = () => this.forgetNode(key, pressKey, source);
+    const press: Press = { key, node: source, infinite: sound.loop === -1 };
+    presses.set(input, press);
+    source.onended = () => this.forgetNode(presses, input, press);
   }
 
   /** Without `input`, every press of the pad is released. */
   soundOff(x: number, y: number, input?: string): void {
-    const pressKeys = input === undefined
-      ? Array.from(this.heldNodes.keys()).filter((k) => k.startsWith(`${x}-${y}-`))
-      : [this.pressKey(x, y, input)];
-    for (const pressKey of pressKeys) {
-      const press = this.heldNodes.get(pressKey);
-      this.heldNodes.delete(pressKey);
+    const presses = this.padPresses(x, y);
+    const released = input === undefined ? Array.from(presses.values()) : [presses.get(input)];
+    if (input === undefined) presses.clear();
+    else presses.delete(input);
+    for (const press of released) {
       if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) continue;
       try { press.node.stop(); } catch { /* already stopped */ }
       this.activeNodes.delete(press.key);
@@ -188,9 +200,9 @@ export class SoundEngine {
 
   /** onended of an older node must not drop the newer node registered under the same key;
    *  it left an infinite-loop sample with nothing that could stop it. */
-  private forgetNode(key: string, pressKey: string, source: AudioBufferSourceNode): void {
-    if (this.activeNodes.get(key) === source) this.activeNodes.delete(key);
-    if (this.heldNodes.get(pressKey)?.node === source) this.heldNodes.delete(pressKey);
+  private forgetNode(presses: Map<string, Press>, input: string, press: Press): void {
+    if (this.activeNodes.get(press.key) === press.node) this.activeNodes.delete(press.key);
+    if (presses.get(input) === press) presses.delete(input);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {
@@ -229,7 +241,7 @@ export class SoundEngine {
       try { node.stop(); } catch { /* already stopped */ }
     });
     this.activeNodes.clear();
-    this.heldNodes.clear();
+    this.heldPresses.clear();
     this.audioContext.close();
   }
 

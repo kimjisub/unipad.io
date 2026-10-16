@@ -362,17 +362,22 @@ async function parseKeySoundFromFile(
  */
 async function readText(file: JSZip.JSZipObject): Promise<string> {
   const bytes = await file.async('uint8array');
-  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes);
-  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes);
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return UTF16LE.decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return UTF16BE.decode(bytes);
   return decodeUtf8OrCp949(bytes);
 }
 
+const UTF16LE = new TextDecoder('utf-16le');
+const UTF16BE = new TextDecoder('utf-16be');
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
 /** The WHATWG `euc-kr` decoder is CP949: EUC-KR with the Hangul syllables Windows added. */
+const CP949 = new TextDecoder('euc-kr');
+
 function decodeUtf8OrCp949(bytes: Uint8Array): string {
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return STRICT_UTF8.decode(bytes);
   } catch {
-    return new TextDecoder('euc-kr').decode(bytes);
+    return CP949.decode(bytes);
   }
 }
 

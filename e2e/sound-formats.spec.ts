@@ -1,28 +1,19 @@
 import { readFile } from 'node:fs/promises';
-import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
+import { openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
 import { pad } from './touch';
 
 const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);
 
 /**
- * basic.uni with its keySound, sounds and the other given files replaced. tone.wav is basic.uni's
+ * basic.uni without its lights and auto play, with the given files written over it. tone.wav is basic.uni's
  * 100 ms 440 Hz PCM tone; e2e/fixtures/tone.m4a is that tone encoded as AAC by macOS:
  *   afconvert -f m4af -d aac -b 64000 tone.wav tone.m4a
  * and tone-440.mp3 is the conformance corpus's MP3 (see meta/unipack-conformance/lib.mjs).
  */
-async function loadPack(page: Page, files: Record<string, string | Uint8Array>) {
-  const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
-  const date = new Date('2020-01-01T00:00:00Z');
-  zip.remove('keyLED');
-  zip.remove('autoPlay');
-  for (const [path, content] of Object.entries(files)) zip.file(path, content, { date });
-  await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
-    name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
-  });
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+function loadPack(page: Page, files: Record<string, string | Uint8Array>) {
+  return openBasicWith(page, files, ['keyLED', 'autoPlay']);
 }
 
 async function tap(page: Page, position: string) {

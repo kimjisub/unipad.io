@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   parseUniPack,
   SoundEngine,
+  AUTO_PLAY_INPUT,
   LedRunner,
   AutoPlayRunner,
   ChannelManager,
@@ -35,8 +36,8 @@ const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
 /** The open option panel shows its settings on the top row and its volume on the chain column. */
 const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
-// What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid).
-const AUTO_PLAY_INPUT = 'autoplay';
+// What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
+// auto play uses AUTO_PLAY_INPUT).
 const MIDI_INPUT = 'midi';
 const keyInput = (code: string) => `key-${code}`;
 
@@ -837,14 +838,10 @@ export function useUniPadEngine() {
       const failedSounds = await soundEngine.load();
       soundEngine.setVolume(volumeLevelRef.current, 7);
 
-      if (failedSounds.length > 0) {
-        const allFailed = failedSounds.length === Array.from(unipack.soundFiles.keys()).length;
-        setState((prev) => ({
-          ...prev,
-          errors: [...prev.errors, `${failedSounds.length} audio file(s) failed to decode`],
-          criticalError: allFailed,
-        }));
-        if (allFailed) return;
+      const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
+      if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
+        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
+        return;
       }
 
       const ledListener: LedRunnerListener = {
@@ -1045,8 +1042,7 @@ export function useUniPadEngine() {
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-          // prev.errors holds the warning for sounds that could not be decoded, added after this load began.
-          errors: [...unipack.errors, ...prev.errors],
+          errors: [...unipack.errors, ...soundWarnings],
           criticalError: false,
           traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,

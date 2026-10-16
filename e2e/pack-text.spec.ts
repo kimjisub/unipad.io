@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
+import { basicTone, openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
 import { pad } from './touch';
 
@@ -9,14 +8,7 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 
 /** basic.uni with some of its files replaced. */
 async function loadBasicWith(page: Page, files: Record<string, string | Uint8Array>) {
-  const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
-  const date = new Date('2020-01-01T00:00:00Z');
-  for (const [path, content] of Object.entries(files)) zip.file(path, content, { date });
-  await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
-    name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
-  });
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await openBasicWith(page, files);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
 }
@@ -46,7 +38,7 @@ for (const order of ['le', 'be'] as const) {
 
 // 똠 is one of the Hangul syllables CP949 adds to EUC-KR (0x8C 0x63), so this needs the browser's CP949.
 test('a keySound saved in CP949 (Korean Windows Notepad "ANSI") plays', async ({ page }) => {
-  const tone = await (await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'))).file('sounds/tone.wav')!.async('uint8array');
+  const tone = await basicTone();
   const keySound = Uint8Array.from([...Buffer.from('1 1 1 '), 0x8C, 0x63, ...Buffer.from('.wav 0\r\n')]);
   await loadBasicWith(page, { keySound, 'sounds/똠.wav': tone });
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
