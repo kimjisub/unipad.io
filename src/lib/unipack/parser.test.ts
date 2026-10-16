@@ -81,6 +81,38 @@ describe('parseUniPack', () => {
     assert.deepEqual(pack.ledAnimationTable![0][0][0], [{ ledEvents: [], loop: 1, num: 0 }]);
   });
 
+  describe('text files saved as UTF-16 with a byte order mark (Windows Notepad "Unicode")', () => {
+    const utf16 = (text: string, order: 'le' | 'be') => {
+      const le = Buffer.from(`\uFEFF${text}`, 'utf16le');
+      return new Uint8Array(order === 'le' ? le : le.swap16());
+    };
+
+    for (const order of ['le', 'be'] as const) {
+      test(`reads info, keySound, keyLed and autoPlay in UTF-16 ${order.toUpperCase()}`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: utf16(INFO_2X2_2CHAIN, order),
+          keySound: utf16('1 1 1 a.wav\r\n2 2 2 a.wav', order),
+          'sounds/a.wav': SILENT_WAV,
+          'keyLed/1 1 1': utf16('o 1 1 a 5\r\nf 1 1', order),
+          autoPlay: utf16('o 1 1\r\nf 1 1', order),
+        }));
+
+        assert.deepEqual(pack.errors, []);
+        assert.equal(pack.info.title, 'Test');
+        assert.equal(pack.soundCount, 2);
+        assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/a.wav']);
+        assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [
+          { type: 'on', x: 0, y: 0, color: LAUNCHPAD_ARGB[5], velocity: 5 },
+          { type: 'off', x: 0, y: 0 },
+        ]);
+        assert.deepEqual(pack.autoPlay!.elements, [
+          { type: 'on', x: 0, y: 0, currChain: 0, num: 0 },
+          { type: 'off', x: 0, y: 0, currChain: 0 },
+        ]);
+      });
+    }
+  });
+
   describe('keyLed pad coordinates', () => {
     const validLines = 'o 1 1 FF0000\nf 1 1\non 2 2 a 5\noff 2 2';
     const validEvents = [
@@ -97,18 +129,42 @@ describe('parseUniPack', () => {
       assert.deepEqual(pack.errors, ['keyLed: [1 1 1].[o 1b 1 FF0000] format is incorrect']);
     });
 
+    const ledLine = (command: string, axis: string, token: string) =>
+      `${command} ${axis === 'x' ? `${token} 1` : `1 ${token}`}${command === 'o' || command === 'on' ? ' FF0000' : ''}`;
+
     for (const command of ['o', 'on', 'f', 'off']) {
-      for (const token of ['1b', '1.5', '1e0', '0x1', 'NaN', 'Infinity', '0', '-1', '3', '9'.repeat(400)]) {
+      for (const token of ['1b', '1.5', '1e0', '0x1', 'NaN', 'Infinity', '9'.repeat(400)]) {
         for (const axis of ['x', 'y']) {
-          test(`${command} drops invalid ${axis}=${token.slice(0, 20)} and keeps valid boundary lines`, async () => {
-            const coordinate = axis === 'x' ? `${token} 1` : `1 ${token}`;
-            const line = `${command} ${coordinate}${command === 'o' || command === 'on' ? ' FF0000' : ''}`;
+          test(`${command} drops malformed ${axis}=${token.slice(0, 20)} with a format error and keeps valid boundary lines`, async () => {
+            const line = ledLine(command, axis, token);
             const pack = await parseWithLeds({ '1 1 1': `${line}\n${validLines}` });
 
             assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
+            assert.deepEqual(pack.errors, [`keyLed: [1 1 1].[${line}] format is incorrect`]);
           });
         }
       }
+
+      // KL-024: Android and iOS keep these and skip them when lit (see LedRunner.test.ts).
+      for (const [axis, token, x, y] of [['x', '-1', -2, 0], ['x', '3', 2, 0], ['y', '0', 0, -1], ['y', '-1', 0, -2], ['y', '3', 0, 2]] as const) {
+        test(`${command} keeps ${axis}=${token} outside the grid as written, without a warning`, async () => {
+          const pack = await parseWithLeds({ '1 1 1': `${ledLine(command, axis, token)}\n${validLines}` });
+
+          const kept = command === 'o' || command === 'on'
+            ? { type: 'on', x, y, color: 0xFFFF0000, velocity: 4 }
+            : { type: 'off', x, y };
+          assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [kept, ...validEvents]);
+          assert.deepEqual(pack.errors, []);
+        });
+      }
+
+      test(`${command} drops x=0 with a format error, as -1 addresses the round LEDs`, async () => {
+        const line = ledLine(command, 'x', '0');
+        const pack = await parseWithLeds({ '1 1 1': `${line}\n${validLines}` });
+
+        assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
+        assert.deepEqual(pack.errors, [`keyLed: [1 1 1].[${line}] format is incorrect`]);
+      });
     }
 
     test('preserves signed and zero-padded complete integers', async () => {
