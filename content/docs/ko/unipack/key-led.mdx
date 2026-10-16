@@ -45,7 +45,7 @@ on x y auto velocity
 | 필드 | 설명 |
 |------|------|
 | `x` | LED X 좌표, `*` / `mc` (체인 라운드 LED), 또는 `l` (로고 LED) |
-| `y` | LED Y 좌표. `l`이면 빼거나 그 자리에 아무 값이나 씁니다(특수 좌표 참고) |
+| `y` | LED Y 좌표. `l`이면 빼거나 그 자리에 `0` 같은 자리 값을 씁니다. `a`·`auto`는 안 됩니다(특수 좌표 참고) |
 | `color` | 6자리 HEX 색상 (예: `FF0000`) 또는 `auto` / `a` |
 | `velocity` | MIDI velocity (0~127), `auto`일 때 필수 |
 
@@ -62,7 +62,7 @@ on x y auto velocity
 | 토큰 | 의미 |
 |------|------|
 | `*` 또는 `mc` | Launchpad 상단/측면의 라운드(체인) LED |
-| `l` | 로고 LED. `y`를 뺄 수 있습니다: `on l FF0000`, `on l auto 72`, `off l`. 또는 `y` 자리에 아무 값이나 둘 수 있습니다: `on l 0 FF0000`, `on l 0 FF0000 5`, `on l 0 auto 72`. HEX 색과 함께 velocity를 보내려면 `y` 자리에 값을 두세요. |
+| `l` | 로고 LED. `y`를 뺄 수 있습니다: `on l FF0000`, `on l auto 72`, `off l`. 또는 `y` 자리에 `0` 같은 자리 값을 둘 수 있습니다: `on l 0 FF0000`, `on l 0 FF0000 5`, `on l 0 auto 72`. 자리 값으로 `a`·`auto`는 쓰지 마세요: `on l a FF0000`은 velocity가 `FF0000`인 자동 색으로 읽혀 그 줄은 버려집니다. HEX 색과 함께 velocity를 보내려면 `y` 자리에 값을 두세요: 값이 없으면 `on l FF0000 5`는 `5`를 색으로 읽습니다(`000005`, 거의 검은색). |
 
 ### `off` — LED 끄기
 

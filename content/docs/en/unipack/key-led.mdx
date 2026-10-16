@@ -45,7 +45,7 @@ Shorthand: `o`
 | Field | Description |
 |-------|-------------|
 | `x` | LED X coordinate, `*` / `mc` (chain round LED), or `l` (logo LED) |
-| `y` | LED Y coordinate. For `l`, leave it out or write any value in its place (see Special Coordinates) |
+| `y` | LED Y coordinate. For `l`, leave it out or put a placeholder such as `0` in its place, but not `a` or `auto` (see Special Coordinates) |
 | `color` | 6-digit HEX color (e.g., `FF0000`) or `auto` / `a` |
 | `velocity` | MIDI velocity (0~127), required when using `auto` |
 
@@ -62,7 +62,7 @@ Shorthand: `o`
 | Token | Meaning |
 |-------|---------|
 | `*` or `mc` | Round (chain) LEDs on Launchpad top/sides |
-| `l` | Logo LED. `y` can be left out: `on l FF0000`, `on l auto 72`, `off l`. Or any value can stand in the `y` position: `on l 0 FF0000`, `on l 0 FF0000 5`, `on l 0 auto 72`. To send a velocity with a HEX color, keep a value in the `y` position. |
+| `l` | Logo LED. `y` can be left out: `on l FF0000`, `on l auto 72`, `off l`. Or a placeholder such as `0` can stand in the `y` position: `on l 0 FF0000`, `on l 0 FF0000 5`, `on l 0 auto 72`. Do not use `a` or `auto` as the placeholder: `on l a FF0000` is read as the auto color with velocity `FF0000`, and the line is dropped. To send a velocity with a HEX color, keep a value in the `y` position: without it, `on l FF0000 5` reads `5` as the color (`000005`, almost black). |
 
 ### `off` — Turn LED Off
 
