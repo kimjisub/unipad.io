@@ -260,6 +260,7 @@
       "confirmDeletionAriaLabel": "삭제 확인"
     },
     "store": {
+      "connectionFailed": "스토어에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
       "title": "스토어",
       "ariaLabel": "스토어",
       "loading": "스토어를 불러오는 중...",
@@ -403,6 +404,7 @@
       "midiDisconnected": "MIDI 연결을 해제했습니다.",
       "downloaded": "받았습니다: {title}",
       "packNotFound": "서버에서 팩을 찾을 수 없습니다.",
+      "downloadConnectionFailed": "다운로드 서버에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
       "downloadedPackMissing": "받은 팩을 찾지 못했습니다. 새로고침해 주세요.",
       "sharedPackDownloading": "공유된 팩을 받는 중...",
       "sharedPackMissing": "공유된 팩이 스토어에 없습니다.",
