@@ -138,23 +138,29 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-Five, from the cases where the platforms gave different results and the expected result was then
-decided (README there, "Decided behaviour"). Each is pinned until the platform's own fix removes it.
+Three, all Android, from three of the cases where the platforms gave different results and the
+expected result was then decided (README there, "Decided behaviour"). Each is pinned until the
+platform's own fix removes it.
 
 - **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
   the line is ignored without a warning; iOS and the web already do so.
 - **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
   a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
   pack.
-- **KS-018, web:** a UTF-16 keySound with a byte order mark is read as UTF-8, so no line is understood
-  and the pack has no sound. `key-sound.mdx` now names UTF-16 with a byte order mark; Android and iOS
-  read it.
-- **KL-024, web:** a keyLED event outside the pad grid is dropped when the file is read, with a format
-  warning for each such line. Decided: keep it as written, without a warning, and skip it when it is lit,
-  as Android and iOS do.
 
 ### Resolved differences found by the corpus
 
+- **KS-018, KL-024: the web now reads a UTF-16 text file with a byte order mark and keeps keyLED events
+  outside the pad grid.** The web read every pack text file as UTF-8, so a keySound saved as UTF-16 (Windows
+  Notepad's "Unicode") had no line it understood and the pack had no sound. It now reads `info`,
+  `keySound`, keyLED files and `autoPlay` as UTF-16 when they start with a byte order mark, as Android and
+  iOS do for all four. A keyLED `on` or `off` outside the pad grid was dropped with a format warning per
+  line; it is now kept as written, without a warning, and the LED runner skips it when it is lit, so the
+  pads and the Launchpad light as before. A non-number is still a format error, and so is a column of
+  `0`, which the web keeps from becoming a round LED (Android and iOS read it as one; no case covers it).
+  Both web pins were removed; the input fingerprints are unchanged. The previous corpus SHA256 was
+  `3f1845257d2277fb5ba03e31a0f4eaf4dbbef3da0d83bfa87d82abc66c1d51ea`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 - **INF-007, INF-010, INF-015, INF-016: iOS reads `info` as the docs say.** iOS skips an `info` line
   without `=` without a warning, refuses a pack whose `buttonX` or `buttonY` is not an integer instead of
   opening it with no pads, and no longer reads `info.json` when there is no `info` file. Its three pins

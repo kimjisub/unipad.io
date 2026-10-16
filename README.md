@@ -144,6 +144,15 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 | Audible sound quality | Unverified | No person listened. Speaker output, latency and perceived quality are not established by the signal measurement |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
 
+`e2e/store-connection.spec.ts` keeps the real Firebase SDK and checks stalled
+responses, refused HTTP/WebSocket connections, cached lists and manual retries.
+It also checks a pending Firebase initialization, shared-link install confirmation
+on the pack list, successful install/playback and a stalled download with retry.
+Store lookup returns cached items or a connection message within five seconds;
+downloads stop after five seconds without incoming data, so longer transfers can
+continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
+fallbacks, progress across that idle limit, and cancellation.
+
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
 transparent analyser between the application output gain and the native destination.

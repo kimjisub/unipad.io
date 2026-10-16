@@ -167,7 +167,7 @@ try {
     await tap(button('Cancel'));
     await tap(`${detail}.querySelector('button.group')`);
     await quit();
-    await tap(`${row}.querySelector('button')`);
+    await tap(`${row}.querySelector(':scope > [aria-hidden="true"]')`);
     await quit();
     // Deselect with pointer, select and play with the application's arrow/Enter
     // shortcuts. No test-side focus/scroll is used to make the details accessible.
