@@ -93,6 +93,14 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect(dialog).toContainText('Input: Launchpad X Test Input');
   await expect(dialog).toContainText('Output: Launchpad X Test Output');
   await expect(dialog).toContainText('Resolved Type: launchpad_x');
+  // The hint promises what the model picker does: a connected device is re-initialised at once.
+  await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await dialog.locator('select').selectOption('launchpad_mini_mk3');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]);
+  await dialog.locator('select').selectOption('auto');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 81, 127]); });
   await expect(pressed(page, '0,0')).toBeVisible();
@@ -110,6 +118,125 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
+});
+
+// CoreFW keeps the stock product name but names its ports "<model> (MIDI)", and plays and lights the
+// drum-rack layout on channel 1: pad 0,0 is note 64, pad 0,1 note 65 (its src/utils/layout.rs).
+test('a Launchpad running CoreFW is played and lit in its own layout', async ({ page }) => {
+  test.slow();
+  await page.addInitScript(() => {
+    const request = navigator.requestMIDIAccess.bind(navigator);
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+      configurable: true,
+      value: async (options: MIDIOptions) => {
+        const access = await request(options);
+        for (const port of [...access.inputs.values(), ...access.outputs.values()]) {
+          (port as { name: string }).name = 'LPX (MIDI)';
+        }
+        return access;
+      },
+    });
+  });
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await expect(dialog).toContainText('Output: LPX (MIDI)');
+  await expect(dialog).toContainText('Resolved Type: launchpad_corefw');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  expect((await midiMessages(page)).filter(m => m[0] === 0xf0), 'no stock mode switch').toEqual([]);
+
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 64, 127]); });
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect(led(page, '0,1')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
+  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 65, 5]);
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 64, 0]));
+  await expect(pressed(page, '0,0')).toHaveCount(0);
+  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3], [0x80, 64, 0]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x80, 65, 0]);
+});
+
+// Analytics calls are queued in gtag's dataLayer; the next event read after an input proves
+// that the input was handled, since the events pass through Firebase in order.
+const analyticsEvents = (page: Page) => page.evaluate(() =>
+  ((window as unknown as { dataLayer?: IArguments[] }).dataLayer ?? [])
+    .map(entry => Array.from(entry))
+    .filter(([command]) => command === 'event')
+    .map(([, name, params]) => ({ name, inputSource: (params as Record<string, unknown> | undefined)?.input_source })));
+
+const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<void>> = {
+  screen: async page => { await pad(page, '0,0').hover(); await page.mouse.down(); await page.mouse.up(); },
+  keyboard: async page => { await page.keyboard.down('q'); await page.keyboard.up('q'); },
+  midi: page => page.evaluate(() => { window.browserProbe.midi.emit([0x90, 81, 127]); window.browserProbe.midi.emit([0x80, 81, 0]); }),
+};
+
+for (const [source, press] of Object.entries(padInputs)) {
+  test(`the first pad press after a load is recorded once as ${source} input`, async ({ page }) => {
+    await loadPack(page);
+    await press(page);
+    for (const other of Object.values(padInputs)) await other(page);
+    await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+    await expect.poll(() => analyticsEvents(page).then(events => events.map(e => e.name))).toContain('autoplay_start');
+    expect((await analyticsEvents(page)).filter(e => e.name === 'pad_press')).toEqual([{ name: 'pad_press', inputSource: source }]);
+  });
+}
+
+test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await expect.poll(() => starts(page)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await padInputs.screen(page);
+  await expect.poll(() => analyticsEvents(page).then(events => events.filter(e => e.name === 'pad_press'))).toEqual([{ name: 'pad_press', inputSource: 'screen' }]);
+});
+
+const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.messages);
+const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
+
+async function connectLaunchpadAndClear(page: Page) {
+  await expect.poll(() => midiMessages(page)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+}
+
+// Android and iOS light a pressed pad red (velocity 3) on the launchpad as well as on screen.
+test('the press light reaches the launchpad when it is on', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect(pressed(page, '0,0')).toHaveCount(0);
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+});
+
+test('a pressed pad sends nothing to the launchpad while the press light is off', async ({ page }) => {
+  await loadPack(page);
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => starts(page)).toBe(1);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  expect(await padNoteMessages(page, 81)).toEqual([]);
+});
+
+test('with the pack lights and the press light off, no pad light reaches the launchpad', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'LED', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  const padNotes = (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] % 10 >= 1 && m[1] % 10 <= 8 && m[1] >= 11 && m[1] <= 88);
+  expect(padNotes).toEqual([]);
 });
 
 // Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
