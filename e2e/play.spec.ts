@@ -16,15 +16,19 @@ async function loadPack(page: Page) {
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
-  const supportsMidi = await page.evaluate(() => window.browserProbe.midi.supported);
+  const supportsMidi = await hasWebMidi(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
 }
 
 // Launchpad tests need the browser's own Web MIDI API (WebKit has none); there they are
 // skipped as not applicable so the skip shows in the results instead of a failure.
+const hasWebMidi = (page: Page) => page.evaluate(() => window.browserProbe.midi.supported);
+
+const noWebMidi = 'Not applicable: this browser has no native Web MIDI API';
+
 async function skipWithoutWebMidi(page: Page) {
   await page.goto('/play');
-  test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
+  test.skip(!await hasWebMidi(page), noWebMidi);
 }
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
@@ -201,8 +205,10 @@ const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<
 for (const [source, press] of Object.entries(padInputs)) {
   test(`the first pad press after a load is recorded once as ${source} input`, async ({ page }) => {
     await loadPack(page);
+    const midi = await hasWebMidi(page);
+    test.skip(source === 'midi' && !midi, noWebMidi);
     await press(page);
-    for (const other of Object.values(padInputs)) await other(page);
+    for (const [other, otherPress] of Object.entries(padInputs)) if (other !== 'midi' || midi) await otherPress(page);
     await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
     await expect.poll(() => analyticsEvents(page).then(events => events.map(e => e.name))).toContain('autoplay_start');
     expect((await analyticsEvents(page)).filter(e => e.name === 'pad_press')).toEqual([{ name: 'pad_press', inputSource: source }]);
