@@ -218,6 +218,7 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
 // drum-rack layout on channel 1: pad 0,0 is note 64, pad 0,1 note 65 (its src/utils/layout.rs).
 test('a Launchpad running CoreFW is played and lit in its own layout', async ({ page }) => {
   test.slow();
+  await skipWithoutWebMidi(page);
   await page.addInitScript(() => {
     const request = navigator.requestMIDIAccess.bind(navigator);
     Object.defineProperty(navigator, 'requestMIDIAccess', {
@@ -291,13 +292,13 @@ const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.mid
 const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
 
 async function connectLaunchpadAndClear(page: Page) {
+  test.skip(!await hasWebMidi(page), noWebMidi);
   await expect.poll(() => midiMessages(page)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
 }
 
 // Android and iOS light a pressed pad red (velocity 3) on the launchpad as well as on screen.
 test('the press light reaches the launchpad when it is on', async ({ page }) => {
-  await skipWithoutWebMidi(page);
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await connectLaunchpadAndClear(page);
@@ -312,7 +313,6 @@ test('the press light reaches the launchpad when it is on', async ({ page }) => 
 });
 
 test('a pressed pad sends nothing to the launchpad while the press light is off', async ({ page }) => {
-  await skipWithoutWebMidi(page);
   await loadPack(page);
   await connectLaunchpadAndClear(page);
   await pad(page, '0,0').hover();
@@ -325,7 +325,6 @@ test('a pressed pad sends nothing to the launchpad while the press light is off'
 });
 
 test('with the pack lights and the press light off, no pad light reaches the launchpad', async ({ page }) => {
-  await skipWithoutWebMidi(page);
   await loadPack(page);
   await page.getByRole('button', { name: 'LED', exact: true }).click();
   await connectLaunchpadAndClear(page);
