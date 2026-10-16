@@ -27,6 +27,17 @@ function roundLedIndex(token: string | undefined): number | null {
 }
 
 /**
+ * The 0-based pad column of a keyLED line, or null for `0`, whose -1 is the round LED address. A column
+ * outside the grid is kept as written: the LED runner skips it when it is lit, as Android and iOS do, so a
+ * pack that lights positions beyond its grid opens without a warning per line. A non-number is NaN and is
+ * reported by the caller's format check.
+ */
+function padLedX(token: string | undefined): number | null {
+  const x = strictInt(token) - 1;
+  return x === -1 ? null : x;
+}
+
+/**
  * The colour tokens of a logo line, read as iOS reads them: `o l color`, `o l auto velocity`, and the forms
  * with a placeholder where other lines have y, `o l _ color` and `o l _ color|auto velocity`.
  */
@@ -44,7 +55,12 @@ export async function parseUniPack(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  const zip = await JSZip.loadAsync(zipData);
+  // A name the archive marks as UTF-8 is read as UTF-8 by JSZip itself; an unmarked name that is not
+  // valid UTF-8 comes from a Korean Windows archiver and is CP949. JSZip hands over a Uint8Array
+  // wherever typed arrays exist.
+  const zip = await JSZip.loadAsync(zipData, {
+    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
+  });
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
@@ -182,7 +198,7 @@ async function parseInfo(
     return null;
   }
 
-  const text = await file.async('text');
+  const text = await readText(file);
   const info: UniPackInfo = {
     title: '',
     producerName: '',
@@ -266,7 +282,7 @@ async function parseKeySoundFromFile(
   soundFiles: Map<string, ArrayBuffer>,
   errors: string[],
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
-  const text = await file.async('text');
+  const text = await readText(file);
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -337,6 +353,32 @@ async function parseKeySoundFromFile(
   }
 
   return { soundTable: table, soundFiles };
+}
+
+/**
+ * A pack's text file: UTF-16 when it starts with a byte order mark (Windows Notepad's "Unicode"), else
+ * UTF-8, else CP949 (Korean Windows Notepad's "ANSI", which older Korean packs were saved in). Every text
+ * file of a pack is read the same way. A byte order mark is not part of the text.
+ */
+async function readText(file: JSZip.JSZipObject): Promise<string> {
+  const bytes = await file.async('uint8array');
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return UTF16LE.decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return UTF16BE.decode(bytes);
+  return decodeUtf8OrCp949(bytes);
+}
+
+const UTF16LE = new TextDecoder('utf-16le');
+const UTF16BE = new TextDecoder('utf-16be');
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
+/** The WHATWG `euc-kr` decoder is CP949: EUC-KR with the Hangul syllables Windows added. */
+const CP949 = new TextDecoder('euc-kr');
+
+function decodeUtf8OrCp949(bytes: Uint8Array): string {
+  try {
+    return STRICT_UTF8.decode(bytes);
+  } catch {
+    return CP949.decode(bytes);
+  }
 }
 
 /** \r\n, lone \r (classic Mac) and \n; splitting on '\n' alone made a CR-only file one line. */
@@ -440,7 +482,7 @@ async function parseKeyLed(
       continue;
     }
 
-    const text = await file.async('text');
+    const text = await readText(file);
     const ledEvents: LedEvent[] = [];
 
     for (const line of splitLines(text)) {
@@ -469,13 +511,13 @@ async function parseKeyLed(
             ledY = LOGO_FUNCTION_KEY;
             colorTokens = logoColorTokens(split);
           } else {
-            ledX = strictInt(xToken) - 1;
-            ledY = strictInt(split[2]) - 1;
-            // Validate pad coordinates before -1 can be treated as a round LED address.
-            if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+            const padX = padLedX(xToken);
+            if (padX === null) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
               continue;
             }
+            ledX = padX;
+            ledY = strictInt(split[2]) - 1;
             colorTokens = split.slice(3);
           }
 
@@ -518,12 +560,13 @@ async function parseKeyLed(
             ledX = -1;
             ledY = LOGO_FUNCTION_KEY;
           } else {
-            ledX = strictInt(xToken) - 1;
-            ledY = strictInt(split[2]) - 1;
-            if (!(ledX >= 0 && ledX < info.buttonX && ledY >= 0 && ledY < info.buttonY)) {
+            const padX = padLedX(xToken);
+            if (padX === null) {
               errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
               continue;
             }
+            ledX = padX;
+            ledY = strictInt(split[2]) - 1;
           }
           if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
             errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
@@ -576,7 +619,7 @@ async function parseAutoPlay(
   const file = getFile(zip, prefix, 'autoPlay') || getFile(zip, prefix, 'autoplay');
   if (!file) return null;
 
-  const text = await file.async('text');
+  const text = await readText(file);
   const elements: AutoPlayElement[] = [];
   const map: number[][] = Array.from({ length: info.buttonX }, () =>
     Array.from({ length: info.buttonY }, () => 0),
@@ -587,6 +630,21 @@ async function parseAutoPlay(
     const sounds = soundTable[c]?.[x]?.[y];
     if (!sounds || sounds.length === 0) return null;
     return sounds[num % sounds.length];
+  }
+
+  function switchChain(c: number): void {
+    currChain = c;
+    elements.push({ type: 'chain', c: currChain });
+    for (const row of map) row.fill(0);
+  }
+
+  /** `on` and `touch` press the pad: its sound advances, and a wormhole on it switches the chain. */
+  function press(x: number, y: number, touch: boolean): void {
+    elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
+    if (touch) elements.push({ type: 'off', x, y, currChain });
+    const sound = soundGet(currChain, x, y, map[x][y]);
+    map[x][y]++;
+    if (sound && sound.wormhole !== NO_WORMHOLE) switchChain(sound.wormhole);
   }
 
   for (const line of splitLines(text)) {
@@ -640,32 +698,20 @@ async function parseAutoPlay(
 
     switch (option) {
       case 'on':
-      case 'o': {
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        const sound = soundGet(currChain, x, y, map[x][y]);
-        map[x][y]++;
-        if (sound && sound.wormhole !== NO_WORMHOLE) {
-          currChain = sound.wormhole;
-          elements.push({ type: 'chain', c: currChain });
-          for (const row of map) row.fill(0);
-        }
+      case 'o':
+        press(x, y, false);
         break;
-      }
       case 'off':
       case 'f':
         elements.push({ type: 'off', x, y, currChain });
         break;
       case 'touch':
       case 't':
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        elements.push({ type: 'off', x, y, currChain });
-        map[x][y]++;
+        press(x, y, true);
         break;
       case 'chain':
       case 'c':
-        currChain = chain;
-        elements.push({ type: 'chain', c: currChain });
-        for (const row of map) row.fill(0);
+        switchChain(chain);
         break;
       case 'delay':
       case 'd':

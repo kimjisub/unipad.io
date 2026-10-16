@@ -2,13 +2,14 @@ The `sounds` folder stores sound files referenced by the `keySound` file.
 
 ## Supported Formats
 
-All audio formats supported by Android's `SoundPool` can be used.
-
 | Format | Extension | Notes |
 |--------|-----------|-------|
 | WAV | `.wav` | Recommended (PCM 16bit) |
-| OGG Vorbis | `.ogg` | Recommended (compressed, small size) |
 | MP3 | `.mp3` | Supported |
+| M4A (AAC) | `.m4a` | Supported |
+| OGG Vorbis | `.ogg` | The iOS app does **not** play it at present. Use WAV, MP3 or M4A for packs played on iOS. |
+
+A sound is decoded by its content, not its extension: an MP3 saved as `.wav` still plays.
 
 ## Example
 
@@ -16,15 +17,15 @@ All audio formats supported by Android's `SoundPool` can be used.
 sounds/
 ├── kick.wav
 ├── snare.wav
-├── hihat.ogg
+├── hihat.m4a
 ├── bass.mp3
 └── fx/
     └── sweep.wav
 ```
 
 <Callout title="Notes">
-- Files are referenced by name in `keySound`, so paths and names must match exactly.
+- Files are referenced by name in `keySound`, so write paths and names exactly as the files are named, including upper and lower case.
 - Subdirectories are supported (e.g., `fx/sweep.wav`).
 - For compatibility, use only **alphanumeric characters, hyphens, and underscores** in file names.
-- Maximum concurrent playback is **30 streams**.
+- At least **30 sounds** can play at the same time.
 </Callout>

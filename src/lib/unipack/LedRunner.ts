@@ -135,10 +135,11 @@ export class LedRunner {
     switch (event.type) {
       case 'on': {
         if (event.x !== -1) {
+          // The parser keeps pad events outside the grid as written; they light nothing, as on Android
+          // and iOS.
+          if (this.btnLed[event.x]?.[event.y] === undefined) break;
           this.listener.onPadLedTurnOn(event.x, event.y, event.color, event.velocity);
-          if (this.btnLed[event.x]?.[event.y] !== undefined) {
-            this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
-          }
+          this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
         } else {
           this.listener.onChainLedTurnOn(event.y, event.color, event.velocity);
           this.cirLed[event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
