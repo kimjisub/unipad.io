@@ -184,6 +184,40 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
 });
 
+// Analytics calls are queued in gtag's dataLayer; the next event read after an input proves
+// that the input was handled, since the events pass through Firebase in order.
+const analyticsEvents = (page: Page) => page.evaluate(() =>
+  ((window as unknown as { dataLayer?: IArguments[] }).dataLayer ?? [])
+    .map(entry => Array.from(entry))
+    .filter(([command]) => command === 'event')
+    .map(([, name, params]) => ({ name, inputSource: (params as Record<string, unknown> | undefined)?.input_source })));
+
+const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<void>> = {
+  screen: async page => { await pad(page, '0,0').hover(); await page.mouse.down(); await page.mouse.up(); },
+  keyboard: async page => { await page.keyboard.down('q'); await page.keyboard.up('q'); },
+  midi: page => page.evaluate(() => { window.browserProbe.midi.emit([0x90, 81, 127]); window.browserProbe.midi.emit([0x80, 81, 0]); }),
+};
+
+for (const [source, press] of Object.entries(padInputs)) {
+  test(`the first pad press after a load is recorded once as ${source} input`, async ({ page }) => {
+    await loadPack(page);
+    await press(page);
+    for (const other of Object.values(padInputs)) await other(page);
+    await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+    await expect.poll(() => analyticsEvents(page).then(events => events.map(e => e.name))).toContain('autoplay_start');
+    expect((await analyticsEvents(page)).filter(e => e.name === 'pad_press')).toEqual([{ name: 'pad_press', inputSource: source }]);
+  });
+}
+
+test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await expect.poll(() => starts(page)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await padInputs.screen(page);
+  await expect.poll(() => analyticsEvents(page).then(events => events.filter(e => e.name === 'pad_press'))).toEqual([{ name: 'pad_press', inputSource: 'screen' }]);
+});
+
 const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.messages);
 const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
 

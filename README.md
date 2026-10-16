@@ -68,14 +68,17 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The full browser suite
-(`pnpm test:e2e`) runs locally before pushing. A separate **Windows playback**
-workflow runs only `play.spec.ts` on Windows 2025 with Chromium and the installed
-Chrome and Edge channels; failures fail their jobs, with no retries.
-The Windows playback workflow also runs after a merge to `main`. GitHub records each
-step's duration; the job summary records elapsed time from setup through verification.
-Its three job names are candidates for required checks; configuring branch protection
-is a separate step after this workflow is merged.
+**Web CI**: install, type check, lint, unit tests and build. A separate
+**Browser playback tests** job builds with the browser-test configuration below and
+runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+uploads the Playwright report and traces as an artifact. A separate **Windows playback**
+workflow runs only `e2e/play.spec.ts` on Windows 2025 with Chromium and the installed
+Chrome and Edge channels; failures fail their jobs, with no retries. None of these
+browser jobs is a required check yet. The other browser tests do not run in CI; run
+`pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
+GitHub records each step's duration; each job summary records elapsed time from setup
+through verification. Required-check configuration is a separate step after these
+workflows are merged.
 Vercel deployment settings are unchanged.
 
 The workflow uses deliberately fake Firebase public configuration with `.invalid`
@@ -147,7 +150,9 @@ transparent analyser between the application output gain and the native destinat
 No audio mock or forced context resume is used. Device output stays silent where the
 engine allows it without touching the graph: Chromium keeps its default headless
 `--mute-audio`, and Firefox sets `media.volume_scale` to 0, which scales only the
-device stream. WebKit has no such switch, so its pad sound can reach the speakers. The signal test
+device stream. Playwright mutes Chromium only in headless runs, so `--headed` and
+`--ui` runs play pad sound. WebKit has no such switch, so its pad sound can reach the
+speakers. The signal test
 attaches its measured RMS with `humanListening: false`. Web MIDI is mocked only
 when the native API exists; unsupported engines keep their real unsupported path.
 Auto-play checks wait across the fixture's next-note deadline to prove that

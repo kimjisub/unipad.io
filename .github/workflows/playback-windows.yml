@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-playback-${{ github.event.pull_request.number || github.ref }}
+  group: windows-playback-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -36,13 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24.15.0
-      - name: Set up pnpm
-        run: npm install --global (node -p "require('./package.json').packageManager")
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-web
       - name: Build
         run: pnpm build
       - name: Install Chromium
@@ -50,9 +44,11 @@ jobs:
         run: pnpm exec playwright install chromium
       # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
       - name: Check playback
+        id: playback
         run: pnpm exec playwright test e2e/play.spec.ts --project=${{ matrix.project }}
+      # Only after the tests ran: an earlier setup or build failure stays the only error.
       - name: Save playback results, skip reasons and failure traces
-        if: always()
+        if: always() && steps.playback.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-playback-${{ matrix.project }}
@@ -62,6 +58,6 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Summarize results
-        if: always()
+        if: always() && steps.playback.outcome != 'skipped'
         run: |
           node scripts/playback-summary.mjs >> $env:GITHUB_STEP_SUMMARY
