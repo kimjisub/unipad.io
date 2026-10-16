@@ -158,4 +158,19 @@ describe('PlayerHolds', () => {
     holds.releaseOthers(2, 2, (x, y) => released.push(`${x},${y}`));
     assert.deepEqual(released, ['0,0', '0,1', '1,0', '1,1']);
   });
+
+  test('releaseAll releases each hold once and forgets them', () => {
+    const holds = new PlayerHolds();
+    holds.press(0, 1);
+    holds.press(0, 1);
+    holds.press(1, 0);
+    const released: string[] = [];
+    holds.releaseAll((x, y) => released.push(`${x},${y}`));
+    assert.deepEqual(released, ['0,1', '0,1', '1,0']);
+    assert.equal(holds.isHeld(0, 1), false);
+    assert.equal(holds.isHeld(1, 0), false);
+    released.length = 0;
+    holds.releaseAll((x, y) => released.push(`${x},${y}`));
+    assert.deepEqual(released, []);
+  });
 });

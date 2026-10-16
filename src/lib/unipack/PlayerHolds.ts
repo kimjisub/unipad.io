@@ -45,6 +45,17 @@ export class PlayerHolds {
     this.leftToPlayer.clear();
   }
 
+  /** Forgets every hold, calling `release` once per hold; for an input that goes away without
+   *  sending its releases. */
+  releaseAll(release: (x: number, y: number) => void): void {
+    const holds = [...this.holds];
+    this.holds.clear();
+    for (const [key, count] of holds) {
+      const [x, y] = key.split(',').map(Number);
+      for (let i = 0; i < count; i++) release(x, y);
+    }
+  }
+
   /** Calls `release` for every pad of the grid the player is not holding. */
   releaseOthers(buttonX: number, buttonY: number, release: (x: number, y: number) => void): void {
     for (let x = 0; x < buttonX; x++) {

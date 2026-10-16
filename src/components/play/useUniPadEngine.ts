@@ -186,6 +186,8 @@ export function useUniPadEngine() {
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
   const playerHoldsRef = useRef(new PlayerHolds());
+  // The pads held on a controller, released when it can no longer send their releases.
+  const controllerHoldsRef = useRef(new PlayerHolds());
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
@@ -518,6 +520,17 @@ export function useUniPadEngine() {
     pressedKeysRef.current.clear();
   }, [userPadTouchOff]);
 
+  /** A controller sends no release for the pads it holds once it is disconnected, unplugged or its
+   *  option panel takes its pads, so they are released here. */
+  const releaseControllerPads = useCallback(() => {
+    controllerHoldsRef.current.releaseAll((x, y) => userPadTouchOff(x, y, MIDI_INPUT));
+  }, [userPadTouchOff]);
+
+  const applyControllerStatus = useCallback((status: MidiConnectionStatus) => {
+    if (!status.connected) releaseControllerPads();
+    applyMidiStatus(status);
+  }, [releaseControllerPads, applyMidiStatus]);
+
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
    *  opens are released, since their keyup may land in the dialog. */
@@ -801,6 +814,7 @@ export function useUniPadEngine() {
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
     playerHoldsRef.current.clear();
+    controllerHoldsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
@@ -1092,8 +1106,14 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y, 'midi', MIDI_INPUT);
-          else userPadTouchOff(x, y, MIDI_INPUT);
+          const holds = controllerHoldsRef.current;
+          if (pressed) {
+            holds.press(x, y);
+            userPadTouchOn(x, y, 'midi', MIDI_INPUT);
+          } else if (holds.isHeld(x, y)) {
+            holds.release(x, y);
+            userPadTouchOff(x, y, MIDI_INPUT);
+          }
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
@@ -1143,10 +1163,10 @@ export function useUniPadEngine() {
       midiListenerRef.current = midiListener;
       midi.connect(midiListener, {
         profile: midiProfileRef.current,
-        onStatusChange: applyMidiStatus,
+        onStatusChange: applyControllerStatus,
       }).then((connected) => {
         const status = midi.getStatus();
-        applyMidiStatus({ ...status, connected });
+        applyControllerStatus({ ...status, connected });
       });
     } catch (err) {
       console.error('Failed to load UniPack:', err);
@@ -1171,7 +1191,7 @@ export function useUniPadEngine() {
     padInit,
     ledInit,
     autoPlayRemoveGuide,
-    applyMidiStatus,
+    applyControllerStatus,
   ]);
 
   const toggleFeedbackLight = useCallback(() => {
@@ -1283,6 +1303,7 @@ export function useUniPadEngine() {
     usageTracker.unloaded();
     soundEngineRef.current?.destroy();
     playerHoldsRef.current.clear();
+    controllerHoldsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
@@ -1332,14 +1353,15 @@ export function useUniPadEngine() {
     midiRef.current = midi;
     const connected = await midi.connect(midiListenerRef.current, {
       profile: midiProfileRef.current,
-      onStatusChange: applyMidiStatus,
+      onStatusChange: applyControllerStatus,
     });
     const status = midi.getStatus();
-    applyMidiStatus({ ...status, connected });
+    applyControllerStatus({ ...status, connected });
     return connected;
-  }, [applyMidiStatus]);
+  }, [applyControllerStatus]);
 
   const disconnectMidi = useCallback(() => {
+    releaseControllerPads();
     midiRef.current?.disconnect();
     setState((prev) => ({
       ...prev,
@@ -1348,18 +1370,19 @@ export function useUniPadEngine() {
       midiOutputName: null,
       midiResolvedProfile: 'none',
     }));
-  }, []);
+  }, [releaseControllerPads]);
 
   const setMidiUiContext = useCallback((context: {
     optionPanelOpen: boolean;
     onToggleOptionPanel?: (() => void) | null;
     onQuit?: (() => void) | null;
   }) => {
+    if (context.optionPanelOpen && !midiOptionPanelOpenRef.current) releaseControllerPads();
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility]);
+  }, [applyChainSelectionVisibility, releaseControllerPads]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {

@@ -2,7 +2,7 @@ import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
   audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null };
-  midi: { supported: boolean; requests: MIDIOptions[]; messages: number[][]; emit: (data: number[]) => void };
+  midi: { supported: boolean; requests: MIDIOptions[]; messages: number[][]; emit: (data: number[]) => void; unplug: () => void };
 }
 
 declare global {
@@ -48,7 +48,7 @@ export async function installBrowserProbe(page: Page) {
           }));
         },
       };
-      const midi: BrowserProbe['midi'] = { supported: typeof navigator.requestMIDIAccess === 'function', requests: [], messages: [], emit: () => {} };
+      const midi: BrowserProbe['midi'] = { supported: typeof navigator.requestMIDIAccess === 'function', requests: [], messages: [], emit: () => {}, unplug: () => {} };
       window.browserProbe = { audio, midi };
       // Insert a transparent analyser AFTER the application's output gain, before the
       // native destination. Measuring a source would miss a muted/disconnected output.
@@ -88,10 +88,15 @@ export async function installBrowserProbe(page: Page) {
       };
       const input = { id: 'test-input', name: 'Launchpad X Test Input', onmidimessage: null as ((event: { data: Uint8Array }) => void) | null };
       const output = { id: 'test-output', name: 'Launchpad X Test Output', send: (data: number[]) => midi.messages.push(Array.from(data)) };
-      const access = { inputs: new Map([[input.id, input]]), outputs: new Map([[output.id, output]]), onstatechange: null };
+      const access = { inputs: new Map([[input.id, input]]), outputs: new Map([[output.id, output]]), onstatechange: null as (() => void) | null };
       midi.emit = data => {
         if (!input.onmidimessage) throw new Error('No MIDI input listener attached');
         input.onmidimessage({ data: new Uint8Array(data) });
+      };
+      midi.unplug = () => {
+        access.inputs.delete(input.id);
+        access.outputs.delete(output.id);
+        access.onstatechange?.();
       };
       if (midi.supported) Object.defineProperty(navigator, 'requestMIDIAccess', {
         configurable: true,
