@@ -97,7 +97,7 @@ The ring shows the level the same way on all three (8 - level lit, blue).
 | Platform | Behaviour |
 |---|---|
 | Android, iOS | A pack whose sounds cannot be decoded shows "outOfCPU" and leaves the play screen. |
-| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. |
+| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. A sound that failed is silent in its own turn: the pad still moves on to its next sound and the sound's wormhole still switches the chain. |
 
 Deliberate: on the web a single unsupported codec should not cost the whole session, and there is
 no memory pressure to escape from.
@@ -150,6 +150,14 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
+  plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
+  The web already used the file whose whole path under `sounds/` differs only in case; iOS left those
+  pads silent, and so did Android on storage that tells upper and lower case apart. Both now find the
+  file and report its stored name. A folder, or a file of that name in another folder, is still missing.
+  The four cases were added to the corpus; the previous corpus SHA256 was
+  `fe56df2756a063d3416bbd5b8219c84c73b61d2ae646805ac2a8ccbd8905efa2`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 - **KS-018, KL-024: the web now reads a UTF-16 text file with a byte order mark and keeps keyLED events
   outside the pad grid.** The web read every pack text file as UTF-8, so a keySound saved as UTF-16 (Windows
   Notepad's "Unicode") had no line it understood and the pack had no sound. It now reads `info`,
@@ -209,8 +217,9 @@ platform's own fix removes it.
 
 ### Not observed, so not known
 
-- **Lights after leaving the play screen on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32); both are measured and pass. On iOS the Launchpad is cleared by the main screen when it takes the MIDI controller back (`MainMidiControllerAdapter.onAttach`), which the unit-level harness does not drive, so the two cases are unverified there. They are not an iOS failure: an earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test. Nobody has checked it on a Launchpad.
-- **autoPlay timing on iOS** (RUN-A-001, RUN-A-002). `AutoPlayRunner` reads the wall clock and sleeps in real time, so it cannot be driven on a virtual clock.
+iOS now measures the six cases the corpus used to mark as not observable on iOS, and all six pass: autoPlay timing (RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004), with `AutoPlayRunner` given a virtual clock and sleep by the harness, and the lights after leaving the play screen (RUN-L-006, RUN-L-007). See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-ios-observed-the-six-exit-and-autoplay-cases) and, for the marks being dropped, [the section above it](unipack-conformance/RESULTS.md#changes-after-dropping-the-ios-unobserved-marks). What is still not known:
+
+- **What a Launchpad shows after the play screen is left on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32). At `stop` the iOS harness runs the main screen's step that takes the MIDI controller back (`MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver, so it sees the clear being sent, not the lights going out on a device. Nobody has checked that on a Launchpad. An earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test.
 - **Round and logo lights on Android with Pro light mode off**, which is how the play screen starts. The corpus measures Android with it on.
 
 ### Found while building the corpus (iOS, not fixed here)
@@ -219,8 +228,6 @@ platform's own fix removes it.
 
 ### Documentation that disagrees with the code
 
-- `key-led.mdx` says the logo `l` is "not supported, ignored"; all three platforms light it as circle index 32.
-- `info.mdx` says `squareButton` defaults to false; all three default to true (INF-012, held at true on an agreed basis until the docs or the apps change).
 - Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings; all three record one range error each (KL-003, AP-004). The warning is held on an agreed basis, not as documented behaviour.
 - `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, held on an agreed basis).
 
