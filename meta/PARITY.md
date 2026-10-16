@@ -114,9 +114,9 @@ apps keep those switches in the option panel and reset them per session.
 
 - **Android has no search on the pack list**; iOS (`MainViewModel.searchQuery`) and web do. Android's only search field is inside `TransferActivity`. Still open.
 - **Android sort options are three** (title, producer, download date); iOS offers five (adds play count, last opened). Still open.
-- **A pack with no title shows "Untitled" in the play menu** on Android (`PlayActivity`, `title.ifEmpty { "Untitled" }`) and,
-  since this change, on the web (`playMenuTitle` in `src/components/play/packTitle.ts`); both leave the pack list row and
-  detail panel empty. iOS was not checked.
+- **A pack with no title shows "Untitled" in the play menu** (closed on `main`): Android (`PlayActivity`,
+  `title.ifEmpty { "Untitled" }`), iOS (`PlayOptionPanel.swift`, `unipack.title.isEmpty ? "Untitled"`) and, since #85, the web
+  (`playMenuTitle` in `src/components/play/packTitle.ts`). All three leave the pack list row and detail panel empty.
 - **iOS has no file-transfer screen.** `TransferView` was removed from `main` by unipad-ios#27 (2026-09-27) as unreachable. The sold
   4.1.6 still has the file and a navigation case for it; whether anything in that build navigates there was not checked.
 - **Deleting a pack now also removes the saved history row** (closed on `main`): unipad-android#105 and unipad-ios#32 both
