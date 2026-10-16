@@ -14,6 +14,10 @@ const WHITESPACE = intent('unipad-android 22a45925', 'parser whitespace and line
 const VEL4 = intent('unipad.io src/lib/unipack/logoLed.test.ts, unipad-android UniPackFolderLogoLedTest', 'a hex-only `on` line carries velocity 4; the docs do not state the default');
 const LOGO = intent('unipad-ios #10, unipad-android #114, unipad.io #32', 'keyLED `l` lines address the logo as circle index 32 in every platform (the docs still say "not supported, ignored")');
 const AGREED = (note) => agreed('android, ios and web results of corpus c30e75b9 (2026-10-10)', note);
+const SOUND_CASE = [
+  doc('sounds.mdx', 'If no file has exactly that path, the player uses a file whose path differs only in upper and lower case. A folder is never a sound.'),
+  intent('unipad.io src/lib/unipack/parser.ts findSoundFile (5721b4c)', 'the whole path under sounds/ is compared without case, so official store packs that list End.wav for a file stored as END.wav play'),
+];
 const ROUND = intent('unipad-android UniPackFolderLogoLedTest, unipad.io logoLed.test.ts', '`mc`/`*` numbers outside 1..32 are dropped so that index 32 never lights the logo');
 
 // A keySound that leaves the pad pressed in LED scenarios silent.
@@ -241,6 +245,24 @@ export function buildCases(palette) {
     files: pack({ keySound: { base64: Buffer.from('﻿1 1 1 a.wav\n', 'utf16le').toString('base64') } }),
     expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')])] }),
     basis: [doc('key-sound.mdx', 'The file is UTF-8, or UTF-16 that starts with a byte order mark')],
+  });
+  add({
+    id: 'KS-019', area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
+    files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 0, 1, [q('END.wav')])] }),
+    basis: SOUND_CASE,
+  });
+  add({
+    id: 'KS-020', area: 'keySound', title: 'the sub folder name may differ in case too',
+    files: pack({ keySound: '1 1 1 FX/S.wav', sounds: ['fx/s.wav'] }),
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('fx/s.wav')])] }),
+    basis: SOUND_CASE,
+  });
+  add({
+    id: 'KS-021', area: 'keySound', title: 'a name that matches only a file name in another folder, or a folder, is still missing',
+    files: pack({ keySound: lines('1 1 1 fx/A.wav', '1 1 2 FX', '1 1 3 S.wav', '1 2 1 A.wav'), sounds: ['a.wav', 'fx/s.wav'] }),
+    expected: loaded({ sounds: [cell(0, 1, 0, [q('a.wav')])], errors: Array(3).fill('keySound:missing-file') }),
+    basis: [...SOUND_CASE, doc('key-sound.mdx', 'A warning is logged if the referenced sound file is not found in the sounds/ folder')],
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -557,6 +579,11 @@ export function buildCases(palette) {
     [press(0, 0), release(0, 0), press(0, 1), release(0, 1), observe],
     [[snd(0, 0, 0, 'a.wav', -1), snd(0, 0, 1, 'a.wav', 2)]],
     [doc('key-sound.mdx', 'Loop Values: 0 loops indefinitely, N (2 or more) repeats N-1 times')]);
+  run('RUN-S-006', 'sound', 'a pad whose sound name differs from its file only in case plays that file',
+    pack({ keySound: lines('1 1 1 End.wav', '1 1 2 FX/S.wav'), sounds: ['END.wav', 'fx/s.wav'] }),
+    [press(0, 0), release(0, 0), press(0, 1), release(0, 1), observe],
+    [[snd(0, 0, 0, 'END.wav'), snd(0, 0, 1, 'fx/s.wav')]],
+    SOUND_CASE);
 
   const ledPack = (name, content, keySound = OTHER_PAD_SOUND) => pack({ keySound, keyLed: { [name]: content } });
   run('RUN-L-001', 'led', 'a one-shot animation lights, waits and turns off',

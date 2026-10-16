@@ -113,6 +113,16 @@ const LED_CYAN = 52;
 const LED_LIGHT_BLUE = 55;
 const LED_GREEN = 61;
 
+/** The watermark's lights on the top row's buttons 5 to 8, as Android's refreshWatermark. */
+const WATERMARK_LEDS: ReadonlyArray<[number, number]> = [[4, LED_GREEN], [5, LED_BLUE], [6, LED_GREEN], [7, LED_BLUE]];
+
+/** The watermark and the selected chain's light show on the round buttons only while the
+ *  watermark is on and the option panel is closed, as Android's refreshWatermark. */
+function setRoundLightsVisible(cm: ChannelManager, visible: boolean): void {
+  cm.setCirIgnore(Channel.UI_UNIPAD, !visible);
+  cm.setCirIgnore(Channel.CHAIN, !visible);
+}
+
 export function useUniPadEngine() {
   const [state, setState] = useState<EngineState>({
     loaded: false,
@@ -202,13 +212,11 @@ export function useUniPadEngine() {
     if (!midi || !midi.connected) return;
 
     const current = stateRef.current;
+    const cm = channelManagerRef.current;
     const topBar = new Array<number>(8).fill(0);
     if (!midiOptionPanelOpenRef.current) {
-      if (current.watermark) {
-        topBar[4] = LED_GREEN;
-        topBar[5] = LED_BLUE;
-        topBar[6] = LED_GREEN;
-        topBar[7] = LED_BLUE;
+      for (let i = 0; i < 8; i++) {
+        topBar[i] = cm ? roundLedCode(cm, i) : 0;
       }
     } else {
       const unipack = unipackRef.current;
@@ -227,7 +235,6 @@ export function useUniPadEngine() {
       midi.sendFunctionKeyLed(i, topBar[i] ?? 0);
     }
 
-    const cm = channelManagerRef.current;
     const volumeLevel = volumeLevelRef.current;
     const volumeRangeStart = 8 - volumeLevel;
     for (let i = 0; i < 8; i++) {
@@ -307,7 +314,9 @@ export function useUniPadEngine() {
   const updateChainVisual = useCallback((c: number) => {
     const cm = channelManagerRef.current;
     if (!cm) return;
-    const item = cm.get(-1, c);
+    // The watermark lights only the launchpad, as Android's setLedUIChain draws nothing for it.
+    const winner = cm.get(-1, c);
+    const item = winner?.channel === Channel.UI_UNIPAD ? null : winner;
     if (chainStatesRef.current[c]) {
       chainStatesRef.current[c] = {
         ...chainStatesRef.current[c],
@@ -362,7 +371,7 @@ export function useUniPadEngine() {
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
     if (cm) {
-      cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
       refreshAllChains();
     }
     syncMidiFunctionLeds();
@@ -817,6 +826,8 @@ export function useUniPadEngine() {
       channelManagerRef.current = cm;
       chainRef.current = 0;
       cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
+      for (const [c, code] of WATERMARK_LEDS) cm.add(-1, c, Channel.UI_UNIPAD, -1, code);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
