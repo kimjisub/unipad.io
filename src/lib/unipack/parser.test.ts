@@ -314,7 +314,7 @@ describe('parseUniPack', () => {
       info: INFO_2X2_2CHAIN, keySound: KEYSOUND_1_1_1, 'sounds/a.wav': SILENT_WAV, autoPlay,
     }));
 
-    for (const line of ['on a 1', 'on 1', 'off x y', 'touch 1', 'on 1 1b', `o ${'9'.repeat(400)} 1`, 'chain z', 'chain', 'delay x', 'delay', 'delay 1.5']) {
+    for (const line of ['on a 1', 'on 1', 'off x y', 'touch 1', 'on 1 1b', 'on 0 bad', `o ${'9'.repeat(400)} 1`, `f 1 ${'9'.repeat(400)}`, `t ${'9'.repeat(400)} 1`, `c ${'9'.repeat(400)}`, `d ${'9'.repeat(400)}`, 'chain z', 'chain', 'delay x', 'delay', 'delay 1.5']) {
       test(`[${line.slice(0, 20)}] is a format error and the next line is kept`, async () => {
         const pack = await parseAutoPlay(`${line}\non 1 1`);
 
@@ -331,4 +331,33 @@ describe('parseUniPack', () => {
       });
     }
   });
+  describe('keySound integer validation', () => {
+    for (const token of ['9'.repeat(400), `-${'9'.repeat(400)}`]) {
+      for (const field of [0, 1, 2, 4, 5]) {
+        test(`non-finite field ${field} (${token[0] === '-' ? 'negative' : 'positive'}) is a format error and the next sound is kept`, async () => {
+          const parts = ['1', '1', '1', 'a.wav', '1', '1'];
+          parts[field] = token;
+          const line = parts.join(' ');
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: `${line}\n${KEYSOUND_1_1_1}`, 'sounds/a.wav': SILENT_WAV,
+          }));
+
+          assert.deepEqual(pack.errors, [`keySound: [${line}] format is incorrect`]);
+          assert.equal(pack.soundCount, 1);
+          assert.equal(pack.soundTable[0][0][0]![0].file, 'sounds/a.wav');
+        });
+      }
+    }
+    for (const [line, field] of [['3 1 1 a.wav', 'chain'], ['1 3 1 a.wav', 'x'], ['1 1 0 a.wav', 'y']]) {
+      test(`${field} outside the pack remains a range error`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: line, 'sounds/a.wav': SILENT_WAV,
+        }));
+
+        assert.deepEqual(pack.errors, [`keySound: [${line}] ${field} is incorrect`]);
+        assert.equal(pack.soundCount, 0);
+      });
+    }
+  });
+
 });

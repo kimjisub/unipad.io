@@ -58,3 +58,18 @@ test('lights outside the pad grid open without warnings and light nothing', asyn
   await expect(litPads(page)).toHaveCount(1);
   await page.mouse.up();
 });
+
+test('non-finite sound coordinates warn about format and the following sound still plays', async ({ page }, info) => {
+  const huge = '9'.repeat(400);
+  await loadBasicWith(page, { keySound: `1 ${huge} 1 tone.wav 0\n1 1 1 tone.wav 0` });
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText(`[1 ${huge} 1 tone.wav 0] format is incorrect`);
+  await expect(dialog).toContainText('1 issue');
+  await dialog.getByRole('button', { name: 'Show more', exact: true }).click();
+  await info.attach('sound-number-warning', { body: await page.screenshot(), contentType: 'image/png' });
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+
+  await pressAndHold(page, '0,0');
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.mouse.up();
+});

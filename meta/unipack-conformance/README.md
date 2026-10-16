@@ -205,7 +205,7 @@ first `:` (`info`, `keySound`, `keyLed`, `autoPlay`) and kind one of
 | kind | messages |
 |---|---|
 | `format` | `format is incorrect`, `format is not found` |
-| `range` | `chain\|x\|y\|loop\|coordinate\|delay is incorrect`, `out of range` |
+| `range` | `chain\|x\|y\|loop\|coordinate is incorrect`, `out of range` |
 | `missing-file` | `sound was not found`, `sounds directory not found`, `doesn't exist` |
 | `missing-field` | `title\|producerName\|buttonX\|buttonY\|chain was missing` |
 | anything else | `other(<message>)`, so a new message shows up as a difference |
