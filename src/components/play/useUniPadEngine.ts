@@ -186,8 +186,8 @@ export function useUniPadEngine() {
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
   const playerHoldsRef = useRef(new PlayerHolds());
-  // The pads held on a controller, released when it can no longer send their releases.
-  const controllerHoldsRef = useRef(new PlayerHolds());
+  // pad held on a controller ("x,y") -> the pad, released when its own release can no longer come
+  const controllerPadsRef = useRef(new Map<string, [number, number]>());
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
@@ -521,13 +521,17 @@ export function useUniPadEngine() {
   }, [userPadTouchOff]);
 
   /** A controller sends no release for the pads it holds once it is disconnected, unplugged or its
-   *  option panel takes its pads, so they are released here. */
+   *  option panel takes its pads, and after a change of model its releases are read as other pads,
+   *  so they are released here. */
   const releaseControllerPads = useCallback(() => {
-    controllerHoldsRef.current.releaseAll((x, y) => userPadTouchOff(x, y, MIDI_INPUT));
+    for (const [x, y] of controllerPadsRef.current.values()) userPadTouchOff(x, y, MIDI_INPUT);
+    controllerPadsRef.current.clear();
   }, [userPadTouchOff]);
 
+  /** The connection reports its status whenever a controller comes or goes, one of several too, and
+   *  when the model changes, so the pads held before are released. */
   const applyControllerStatus = useCallback((status: MidiConnectionStatus) => {
-    if (!status.connected) releaseControllerPads();
+    releaseControllerPads();
     applyMidiStatus(status);
   }, [releaseControllerPads, applyMidiStatus]);
 
@@ -814,7 +818,7 @@ export function useUniPadEngine() {
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
     playerHoldsRef.current.clear();
-    controllerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
@@ -1106,12 +1110,14 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          const holds = controllerHoldsRef.current;
+          const pads = controllerPadsRef.current;
+          const key = `${x},${y}`;
           if (pressed) {
-            holds.press(x, y);
+            // A press without a release in between replaces the first, as in the sound engine.
+            if (pads.has(key)) userPadTouchOff(x, y, MIDI_INPUT);
+            pads.set(key, [x, y]);
             userPadTouchOn(x, y, 'midi', MIDI_INPUT);
-          } else if (holds.isHeld(x, y)) {
-            holds.release(x, y);
+          } else if (pads.delete(key)) {
             userPadTouchOff(x, y, MIDI_INPUT);
           }
         },
@@ -1303,7 +1309,7 @@ export function useUniPadEngine() {
     usageTracker.unloaded();
     soundEngineRef.current?.destroy();
     playerHoldsRef.current.clear();
-    controllerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
@@ -1339,7 +1345,8 @@ export function useUniPadEngine() {
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
     // Applied at once as on Android and iOS; the connection then reports the model now in use
-    // through applyMidiStatus, which redraws the board on the device.
+    // through applyControllerStatus, which releases the pads held before and redraws the board on
+    // the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
