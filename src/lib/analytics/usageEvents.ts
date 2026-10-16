@@ -15,11 +15,18 @@ export type UsageEventName = (typeof UsageEvent)[keyof typeof UsageEvent];
 
 export const UsageParam = {
   result: 'result',
+  inputSource: 'input_source',
 } as const;
 
 export type UsageResult = 'success' | 'failure';
 
-export type UsageParams = Partial<Record<(typeof UsageParam)[keyof typeof UsageParam], UsageResult>>;
+/** Where a player's pad press came from: the on-screen pads (touch or mouse), the keyboard, or a MIDI controller. */
+export type PadInputSource = 'screen' | 'keyboard' | 'midi';
+
+export type UsageParams = {
+  [UsageParam.result]?: UsageResult;
+  [UsageParam.inputSource]?: PadInputSource;
+};
 
 export type UsageEventSink = (name: UsageEventName, params?: UsageParams) => void;
 
@@ -27,7 +34,7 @@ export type UsageEventSink = (name: UsageEventName, params?: UsageParams) => voi
  * Tracks one loaded pack and emits its events at most once:
  *
  * - `pack_load`: when a pack finished loading (`success`) or failed to load (`failure`).
- * - `pad_press`: on the first pad pressed by the player (touch, keyboard or MIDI) after a load.
+ * - `pad_press`: on the first pad pressed by the player after a load, with the input it came from.
  * - `autoplay_start`: the first time autoplay is started after a load.
  *
  * Presses and autoplay before a successful load or after unloading are ignored, so each count is
@@ -53,10 +60,10 @@ export class PlayUsageTracker {
     this.sink(UsageEvent.packLoad, { [UsageParam.result]: 'failure' });
   }
 
-  padPressed(): void {
+  padPressed(source: PadInputSource): void {
     if (!this.sessionActive || this.padPressLogged) return;
     this.padPressLogged = true;
-    this.sink(UsageEvent.padPress);
+    this.sink(UsageEvent.padPress, { [UsageParam.inputSource]: source });
   }
 
   autoplayStarted(): void {

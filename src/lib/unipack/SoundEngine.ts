@@ -1,13 +1,19 @@
 import { Sound, NO_WORMHOLE, UniPackData } from './types';
 
+/** The input name auto play holds pads with, apart from the player's pointers, keys and launchpad. */
+export const AUTO_PLAY_INPUT = 'autoplay';
+
+interface Press { key: string; node: AudioBufferSourceNode; infinite: boolean }
+
 export class SoundEngine {
   private audioContext: AudioContext;
   private gainNode: GainNode;
   private bufferCache = new Map<string, AudioBuffer>();
   private activeNodes = new Map<string, AudioBufferSourceNode>();
-  // The pad's current press owns the source selected at down time, independently of
-  // the current chain and the (already advanced) sound sequence.
-  private heldNodes = new Map<string, { key: string; node: AudioBufferSourceNode; infinite: boolean }>();
+  // Each press (a pad and the input holding it) owns the source selected at down time,
+  // independently of the current chain and the (already advanced) sound sequence.
+  // Pad "x-y" → input → press.
+  private heldPresses = new Map<string, Map<string, Press>>();
   private chainValue: () => number;
   private setChain: (c: number) => void;
   private unipack: UniPackData;
@@ -125,11 +131,25 @@ export class SoundEngine {
     return `${chain}-${x}-${y}`;
   }
 
-  soundOn(x: number, y: number): void {
+  private padPresses(x: number, y: number): Map<string, Press> {
+    const padKey = `${x}-${y}`;
+    let presses = this.heldPresses.get(padKey);
+    if (!presses) {
+      presses = new Map();
+      this.heldPresses.set(padKey, presses);
+    }
+    return presses;
+  }
+
+  /**
+   * `input` names what holds the pad (a pointer, a key); two inputs on one pad are two presses, so a
+   * release stops the endless sound its own press started even after the chain changed in between.
+   */
+  soundOn(x: number, y: number, input = ''): void {
     const chain = this.chainValue();
     const key = this.stopKey(chain, x, y);
-    const padKey = `${x}-${y}`;
-    this.heldNodes.delete(padKey);
+    const presses = this.padPresses(x, y);
+    presses.delete(input);
 
     // Stop currently playing sound for this pad
     const existing = this.activeNodes.get(key);
@@ -139,7 +159,14 @@ export class SoundEngine {
     }
 
     const sound = this.soundGet(chain, x, y);
-    if (!sound || !sound.audioBuffer) return;
+    if (!sound) return;
+    // A sound that could not be decoded is silent, but the pad still moves on to its next sound and
+    // follows its wormhole, so the rest of the pad's sequence plays as written.
+    this.soundPush(chain, x, y);
+    if (sound.wormhole !== NO_WORMHOLE) {
+      setTimeout(() => this.setChain(sound.wormhole), 100);
+    }
+    if (!sound.audioBuffer) return;
 
     const source = this.audioContext.createBufferSource();
     source.buffer = sound.audioBuffer;
@@ -152,30 +179,30 @@ export class SoundEngine {
       const stopTime = this.audioContext.currentTime + sound.audioBuffer.duration * (sound.loop + 1);
       source.stop(stopTime);
     }
-    this.soundPush(chain, x, y);
     this.activeNodes.set(key, source);
-    this.heldNodes.set(padKey, { key, node: source, infinite: sound.loop === -1 });
-    source.onended = () => this.forgetNode(key, padKey, source);
-
-    if (sound.wormhole !== NO_WORMHOLE) {
-      setTimeout(() => this.setChain(sound.wormhole), 100);
-    }
+    const press: Press = { key, node: source, infinite: sound.loop === -1 };
+    presses.set(input, press);
+    source.onended = () => this.forgetNode(presses, input, press);
   }
 
-  soundOff(x: number, y: number): void {
-    const padKey = `${x}-${y}`;
-    const press = this.heldNodes.get(padKey);
-    this.heldNodes.delete(padKey);
-    if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) return;
-    try { press.node.stop(); } catch { /* already stopped */ }
-    this.activeNodes.delete(press.key);
+  /** Without `input`, every press of the pad is released. */
+  soundOff(x: number, y: number, input?: string): void {
+    const presses = this.padPresses(x, y);
+    const released = input === undefined ? Array.from(presses.values()) : [presses.get(input)];
+    if (input === undefined) presses.clear();
+    else presses.delete(input);
+    for (const press of released) {
+      if (!press?.infinite || this.activeNodes.get(press.key) !== press.node) continue;
+      try { press.node.stop(); } catch { /* already stopped */ }
+      this.activeNodes.delete(press.key);
+    }
   }
 
   /** onended of an older node must not drop the newer node registered under the same key;
    *  it left an infinite-loop sample with nothing that could stop it. */
-  private forgetNode(key: string, padKey: string, source: AudioBufferSourceNode): void {
-    if (this.activeNodes.get(key) === source) this.activeNodes.delete(key);
-    if (this.heldNodes.get(padKey)?.node === source) this.heldNodes.delete(padKey);
+  private forgetNode(presses: Map<string, Press>, input: string, press: Press): void {
+    if (this.activeNodes.get(press.key) === press.node) this.activeNodes.delete(press.key);
+    if (presses.get(input) === press) presses.delete(input);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {
@@ -214,7 +241,7 @@ export class SoundEngine {
       try { node.stop(); } catch { /* already stopped */ }
     });
     this.activeNodes.clear();
-    this.heldNodes.clear();
+    this.heldPresses.clear();
     this.audioContext.close();
   }
 
