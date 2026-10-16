@@ -226,3 +226,62 @@ test('a broken result file fails that pack only, and a pack without a title stil
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('results of an earlier version of a pack are removed when its copy is not reused', async () => {
+  const dir = scratch();
+  try {
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    const bytes = await keptCopy(archive, 'p');
+    const item = { URL: 'https://example.invalid/p.zip', code: 'p' };
+    const results = join(dir, 'results');
+    const resultOf = (p) => join(results, p, 'store_0001.json');
+    const writeResults = () => {
+      for (const p of ['android', 'ios', 'web']) {
+        mkdirSync(join(results, p), { recursive: true });
+        writeFileSync(resultOf(p), JSON.stringify({ platform: p, id: 'store_0001', actual: PACK }));
+      }
+    };
+    const same = { head: async () => ({ status: 200, size: bytes.length, etag: '"a"' }), download: async () => { throw new Error('downloaded'); } };
+    const changed = { head: async () => ({ status: 200, size: bytes.length + 1, etag: '"b"' }), download: async (url, target) => { await keptCopy(archive, 'p'); return readFileSync(target).length; } };
+
+    writeResults();
+    assert.equal((await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: same })).copy.action, 'reused');
+    assert.ok(['android', 'ios', 'web'].every((p) => existsSync(resultOf(p))));
+    assert.equal((await bringPack({ key: '0001', item, archive, work: dir, heads: {}, offline: true })).copy.action, 'reused-unchecked');
+    assert.ok(['android', 'ios', 'web'].every((p) => existsSync(resultOf(p))));
+
+    const downloaded = await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: changed });
+    assert.equal(downloaded.copy.action, 'downloaded');
+    assert.equal(downloaded.unzip.ok, true);
+    assert.ok(['android', 'ios', 'web'].every((p) => !existsSync(resultOf(p))));
+    const [row] = comparePacks({ resultsDir: results, ids: ['store_0001'], stages: { packs: [downloaded] } });
+    assert.deepEqual(row.failed, { android: 'no result', ios: 'no result', web: 'no result' });
+
+    writeResults();
+    const gone = { head: async () => ({ status: 404, size: null, etag: null }), download: async () => 0 };
+    assert.equal((await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: gone })).copy.action, 'not-served');
+    assert.ok(['android', 'ios', 'web'].every((p) => !existsSync(resultOf(p))));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a list key that is not a plain folder name removes nothing', async () => {
+  const dir = scratch();
+  try {
+    const work = join(dir, 'a', 'b', 'work');
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(dir, 'keep'), 'x');
+    const net = { head: async () => { throw new Error('asked the server'); }, download: async () => { throw new Error('downloaded'); } };
+    const item = { URL: 'https://example.invalid/x.zip', code: 'x' };
+    for (const key of ['../../..', '../../../keep', 'a/b']) {
+      const record = await bringPack({ key, item, archive: dir, work, heads: {}, net });
+      assert.equal(record.copy.action, 'invalid-key');
+    }
+    assert.equal(readFileSync(join(dir, 'keep'), 'utf8'), 'x');
+    assert.ok(existsSync(work));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

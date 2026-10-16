@@ -19,7 +19,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
-import { onlyIds, parseArgs } from './packs.mjs';
+import { ID_PATTERN, onlyIds, parseArgs } from './packs.mjs';
 
 export const STORE_LIST_URL = 'https://unipad-e41ab.firebaseio.com/store.json';
 // The play screens unwrap at most this many single top folders (Android FileManager.removeDoubleFolder).
@@ -113,24 +113,36 @@ export function sameAsServer(copySize, recorded, served) {
   return !recorded?.etag || !served.etag || recorded.etag === served.etag;
 }
 
-/** A list code becomes a file name in --archive: one plain name, never a path. */
-const CODE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const READABLE = ['reused', 'downloaded', 'reused-unchecked'];
+const REUSED = ['reused', 'reused-unchecked'];
+const PLATFORMS = ['android', 'ios', 'web'];
 
 /**
  * One list entry through every step. `heads` (the archive's record of what the server served) is
  * updated only when the kept copy is that file: reused, or downloaded just now. The pack folder of an
- * earlier run is removed first, so a pack not unzipped this time leaves nothing for the runners to read.
+ * earlier run is removed first, so a pack not unzipped this time leaves nothing for the runners to read;
+ * its earlier results are removed too unless the same kept copy was unzipped again, so a comparison
+ * never reads results of another version of the pack.
  */
-export async function bringPack({ key, item, archive, work, heads, offline = false, net = { head, download } }) {
+export async function bringPack(options) {
+  const record = await bringPackFolder(options);
+  if (record.copy.action !== 'invalid-key' && !(REUSED.includes(record.copy.action) && record.unzip?.ok === true)) {
+    for (const platform of PLATFORMS) rmSync(join(options.work, 'results', platform, `${record.id}.json`), { force: true });
+  }
+  return record;
+}
+
+async function bringPackFolder({ key, item, archive, work, heads, offline = false, net = { head, download } }) {
   const id = storeId(key);
-  const packDir = join(work, 'packs', id);
-  rmSync(packDir, { recursive: true, force: true });
   const url = item?.URL ?? item?.url ?? null;
   const code = item?.code ?? null;
   const record = { id, key, code, url, head: null, copy: null, unzip: null };
+  // The key and the code become paths under --work and --archive: one plain name each, never a path.
+  if (!ID_PATTERN.test(id)) { record.copy = { action: 'invalid-key' }; return record; }
+  const packDir = join(work, 'packs', id);
+  rmSync(packDir, { recursive: true, force: true });
   if (!url || !code) { record.copy = { action: 'no-url' }; return record; }
-  if (!CODE_PATTERN.test(code)) { record.copy = { action: 'invalid-code' }; return record; }
+  if (!ID_PATTERN.test(code)) { record.copy = { action: 'invalid-code' }; return record; }
 
   const zipPath = join(archive, `${code}.zip`);
   const copySize = existsSync(zipPath) ? statSync(zipPath).size : null;
@@ -191,7 +203,7 @@ async function main() {
   const summary = {
     listed: packs.length,
     served: count((p) => p.head?.status === 200),
-    notServed: count((p) => ['not-served', 'no-url', 'invalid-code'].includes(p.copy?.action)),
+    notServed: count((p) => ['not-served', 'no-url', 'invalid-code', 'invalid-key'].includes(p.copy?.action)),
     reused: count((p) => p.copy?.action === 'reused' || p.copy?.action === 'reused-unchecked'),
     downloaded: count((p) => p.copy?.action === 'downloaded'),
     downloadFailed: count((p) => p.copy?.action === 'download-failed'),
