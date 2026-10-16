@@ -113,8 +113,8 @@ any one platform show up as a `fail` instead of passing unnoticed. A doc or an i
 case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
 own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
 disagree is never given the result of two platforms against the third; it stays undetermined until it
-is decided (below). INF-012 is held at `squareButton` true although info.mdx gives false as the default,
-because all three apps start from true.
+is decided (below). INF-012 (`squareButton` true when it is not written) was held this way because all
+three apps start from true; info.mdx now gives the same default.
 
 **Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
 choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
