@@ -12,8 +12,9 @@ interface PadGridProps {
   squareButton: boolean;
   theme: ThemeAssets | null;
   traceLogSequence?: { x: number; y: number }[];
-  onPadDown: (x: number, y: number) => void;
-  onPadUp: (x: number, y: number) => void;
+  /** `input` names the pointer, so two fingers on one pad are two presses. */
+  onPadDown: (x: number, y: number, input: string) => void;
+  onPadUp: (x: number, y: number, input: string) => void;
 }
 
 export function PadGrid({
@@ -52,11 +53,12 @@ export function PadGrid({
     if (!grid) return;
 
     const pointers = pointerPadMap.current;
+    const input = (pointerId: number) => `pointer-${pointerId}`;
     const releasePointer = (pointerId: number) => {
       const prevKey = pointers.get(pointerId);
       if (prevKey) {
         const [px, py] = prevKey.split(',').map(Number);
-        onPadUp(px, py);
+        onPadUp(px, py, input(pointerId));
       }
       pointers.delete(pointerId);
     };
@@ -66,7 +68,7 @@ export function PadGrid({
       try { grid.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
       const pad = getPadFromPoint(e.clientX, e.clientY);
       pointers.set(e.pointerId, pad ? `${pad[0]},${pad[1]}` : null);
-      if (pad) onPadDown(pad[0], pad[1]);
+      if (pad) onPadDown(pad[0], pad[1], input(e.pointerId));
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -77,10 +79,10 @@ export function PadGrid({
       if (prevKey === newKey) return;
       if (prevKey) {
         const [px, py] = prevKey.split(',').map(Number);
-        onPadUp(px, py);
+        onPadUp(px, py, input(e.pointerId));
       }
       pointers.set(e.pointerId, newKey);
-      if (pad) onPadDown(pad[0], pad[1]);
+      if (pad) onPadDown(pad[0], pad[1], input(e.pointerId));
     };
 
     const handlePointerUp = (e: PointerEvent) => {

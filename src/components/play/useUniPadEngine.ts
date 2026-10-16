@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   parseUniPack,
   SoundEngine,
+  AUTO_PLAY_INPUT,
   LedRunner,
   AutoPlayRunner,
   ChannelManager,
@@ -35,6 +36,10 @@ const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
 /** The open option panel shows its settings on the top row and its volume on the chain column. */
 const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
+// What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
+// auto play uses AUTO_PLAY_INPUT).
+const MIDI_INPUT = 'midi';
+const keyInput = (code: string) => `key-${code}`;
 
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
  *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
@@ -426,7 +431,8 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshChain, scheduleFlush]);
 
-  const padTouchOn = useCallback((x: number, y: number) => {
+  /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
+  const padTouchOn = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
@@ -435,7 +441,7 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    se?.soundOn(x, y);
+    se?.soundOn(x, y, input);
     lr?.eventOn(x, y);
     recorderRef.current.recordOn(x, y);
 
@@ -464,22 +470,23 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
-  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource) => {
+  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     usageTracker.padPressed(source);
-    padTouchOn(x, y);
+    padTouchOn(x, y, input);
   }, [usageTracker, padTouchOn]);
 
   /** A pad pressed on screen, by touch or mouse. */
-  const screenPadTouchOn = useCallback((x: number, y: number) => {
-    userPadTouchOn(x, y, 'screen');
+  const screenPadTouchOn = useCallback((x: number, y: number, input: string) => {
+    userPadTouchOn(x, y, 'screen', input);
   }, [userPadTouchOn]);
 
-  const padTouchOff = useCallback((x: number, y: number) => {
+  /** Without `input`, every press of the pad is released. */
+  const padTouchOff = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    se?.soundOff(x, y);
+    se?.soundOff(x, y, input);
     lr?.eventOff(x, y);
     recorderRef.current.recordOff(x, y);
 
@@ -498,7 +505,7 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   const releaseKeyboardPads = useCallback(() => {
-    for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
+    for (const [code, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1], keyInput(code));
     pressedKeysRef.current.clear();
   }, [padTouchOff]);
 
@@ -542,7 +549,7 @@ export function useUniPadEngine() {
       if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
         pressedKeysRef.current.set(e.code, pad);
-        userPadTouchOn(pad[0], pad[1], 'keyboard');
+        userPadTouchOn(pad[0], pad[1], 'keyboard', keyInput(e.code));
       }
     };
 
@@ -550,7 +557,7 @@ export function useUniPadEngine() {
       const pad = pressedKeysRef.current.get(e.code);
       if (pad) {
         pressedKeysRef.current.delete(e.code);
-        padTouchOff(pad[0], pad[1]);
+        padTouchOff(pad[0], pad[1], keyInput(e.code));
       }
     };
 
@@ -842,14 +849,10 @@ export function useUniPadEngine() {
       const failedSounds = await soundEngine.load();
       soundEngine.setVolume(volumeLevelRef.current, 7);
 
-      if (failedSounds.length > 0) {
-        const allFailed = failedSounds.length === Array.from(unipack.soundFiles.keys()).length;
-        setState((prev) => ({
-          ...prev,
-          errors: [...prev.errors, `${failedSounds.length} audio file(s) failed to decode`],
-          criticalError: allFailed,
-        }));
-        if (allFailed) return;
+      const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
+      if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
+        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
+        return;
       }
 
       const ledListener: LedRunnerListener = {
@@ -913,8 +916,8 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y); },
-          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y); },
+          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
             cm.add(x, y, Channel.GUIDE, -1, 17);
@@ -1050,7 +1053,7 @@ export function useUniPadEngine() {
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-          errors: unipack.errors,
+          errors: [...unipack.errors, ...soundWarnings],
           criticalError: false,
           traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,
@@ -1077,8 +1080,8 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y, 'midi');
-          else padTouchOff(x, y);
+          if (pressed) userPadTouchOn(x, y, 'midi', MIDI_INPUT);
+          else padTouchOff(x, y, MIDI_INPUT);
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
