@@ -1,8 +1,8 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
-  audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[] };
-  midi: { requests: MIDIOptions[]; messages: number[][]; emit: (data: number[]) => void };
+  audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null };
+  midi: { supported: boolean; requests: MIDIOptions[]; messages: number[][]; emit: (data: number[]) => void };
 }
 
 declare global {
@@ -36,9 +36,34 @@ export { expect };
 
 export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
-      const audio: BrowserProbe['audio'] = { decoded: [], starts: [], stops: [] };
-      const midi: BrowserProbe['midi'] = { requests: [], messages: [], emit: () => {} };
+      const outputs: { analyser: AnalyserNode; samples: Float32Array<ArrayBuffer> }[] = [];
+      const audio: BrowserProbe['audio'] = {
+        decoded: [], starts: [], stops: [],
+        outputRms: () => {
+          if (!outputs.length) return null;
+          return Math.max(...outputs.map(({ analyser, samples }) => {
+            if (analyser.context.state !== 'running') return 0;
+            analyser.getFloatTimeDomainData(samples);
+            return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+          }));
+        },
+      };
+      const midi: BrowserProbe['midi'] = { supported: typeof navigator.requestMIDIAccess === 'function', requests: [], messages: [], emit: () => {} };
       window.browserProbe = { audio, midi };
+      // Insert a transparent analyser AFTER the application's output gain, before the
+      // native destination. Measuring a source would miss a muted/disconnected output.
+      const connect = AudioNode.prototype.connect;
+      AudioNode.prototype.connect = function (this: AudioNode, destination: AudioNode | AudioParam, output?: number, input?: number) {
+        if (this instanceof GainNode && destination === this.context.destination) {
+          const analyser = this.context.createAnalyser();
+          analyser.fftSize = 2048;
+          outputs.push({ analyser, samples: new Float32Array(analyser.fftSize) });
+          Reflect.apply(connect, this, [analyser, output ?? 0, 0]);
+          Reflect.apply(connect, analyser, [destination, 0, input ?? 0]);
+          return destination;
+        }
+        return Reflect.apply(connect, this, [destination, output ?? 0, ...(destination instanceof AudioNode ? [input ?? 0] : [])]);
+      } as typeof connect;
       // Observe real Web Audio decoding/playback; keep all original calls intact.
       const decode = AudioContext.prototype.decodeAudioData;
       AudioContext.prototype.decodeAudioData = function (...args: Parameters<typeof decode>) {
@@ -68,7 +93,7 @@ export async function installBrowserProbe(page: Page) {
         if (!input.onmidimessage) throw new Error('No MIDI input listener attached');
         input.onmidimessage({ data: new Uint8Array(data) });
       };
-      Object.defineProperty(navigator, 'requestMIDIAccess', {
+      if (midi.supported) Object.defineProperty(navigator, 'requestMIDIAccess', {
         configurable: true,
         value: async (options: MIDIOptions) => { midi.requests.push(options); return access; },
       });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   parseUniPack,
   SoundEngine,
+  AUTO_PLAY_INPUT,
   LedRunner,
   AutoPlayRunner,
   ChannelManager,
@@ -33,10 +34,17 @@ import type {
 
 const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
+/** The open option panel shows its settings on the top row and its volume on the chain column. */
+const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
+// What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
+// auto play uses AUTO_PLAY_INPUT).
+const MIDI_INPUT = 'midi';
+const keyInput = (code: string) => `key-${code}`;
 
-/** The logo is sent from its channel, so it stays dark outside Pro light mode as on Android and iOS. */
-function logoLedCode(cm: ChannelManager): number {
-  return cm.get(-1, LOGO_FUNCTION_KEY)?.code ?? 0;
+/** A round button or the logo shows its highest-priority light on the launchpad (Android's
+ *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
+function roundLedCode(cm: ChannelManager, index: number): number {
+  return cm.get(-1, index)?.code ?? 0;
 }
 
 /** A pad shows its highest-priority light on the launchpad, as on screen (Android's setLedLaunchpad). */
@@ -219,11 +227,16 @@ export function useUniPadEngine() {
       midi.sendFunctionKeyLed(i, topBar[i] ?? 0);
     }
 
+    const cm = channelManagerRef.current;
     const volumeLevel = volumeLevelRef.current;
     const volumeRangeStart = 8 - volumeLevel;
     for (let i = 0; i < 8; i++) {
-      const velocity = midiOptionPanelOpenRef.current && i >= volumeRangeStart && i <= 7 ? LED_BLUE : 0;
-      midi.sendFunctionKeyLed(i + 8, velocity);
+      const c = i + CHAIN_INDEX_OFFSET;
+      if (midiOptionPanelOpenRef.current) {
+        midi.sendFunctionKeyLed(c, i >= volumeRangeStart ? LED_BLUE : 0);
+      } else {
+        midi.sendFunctionKeyLed(c, cm ? roundLedCode(cm, c) : 0);
+      }
     }
   }, []);
 
@@ -241,10 +254,9 @@ export function useUniPadEngine() {
     // The ring is addressed by circle index 0..31 (Android redrawAllLaunchpadLeds); the CHAIN
     // channel writes at c + CHAIN_INDEX_OFFSET, so reading chain indices found nothing.
     for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
-      const item = cm.get(-1, i);
-      midi.sendFunctionKeyLed(i, item ? item.code : 0);
+      midi.sendFunctionKeyLed(i, roundLedCode(cm, i));
     }
-    midi.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
+    midi.sendFunctionKeyLed(LOGO_FUNCTION_KEY, roundLedCode(cm, LOGO_FUNCTION_KEY));
     syncMidiFunctionLeds();
   }, [syncMidiFunctionLeds]);
 
@@ -305,6 +317,17 @@ export function useUniPadEngine() {
     }
   }, []);
 
+  /** Draws a round button's highest-priority light on screen and sends the same light to the
+   *  launchpad, as Android's setLedChain; every change to a round button's channels goes through
+   *  here. The open option panel keeps its buttons until syncMidiFunctionLeds redraws them. */
+  const refreshChain = useCallback((c: number) => {
+    const cm = channelManagerRef.current;
+    if (!cm) return;
+    updateChainVisual(c);
+    if (midiOptionPanelOpenRef.current && c < OPTION_PANEL_LED_COUNT) return;
+    midiRef.current?.sendFunctionKeyLed(c, roundLedCode(cm, c));
+  }, [updateChainVisual]);
+
   const flushVisualState = useCallback(() => {
     setState((prev) => ({
       ...prev,
@@ -323,22 +346,27 @@ export function useUniPadEngine() {
     }
   }, [flushVisualState]);
 
-  const refreshChainVisuals = useCallback(() => {
+  /** Redraws every round button and the logo after a channel is shown or hidden on them, as
+   *  Android's chainBtnsRefresh: the selected chain from the ninth on sits on the bottom and left
+   *  columns, and pack lights can sit on any of them. */
+  const refreshAllChains = useCallback(() => {
     // chainStates holds circle indices (the selected chain sits at c + CHAIN_INDEX_OFFSET), so a
     // loop over chain indices refreshed the top row and left the chain bar stale.
     for (let i = 0; i < CIRCLE_ARRAY_SIZE; i++) {
-      updateChainVisual(i);
+      refreshChain(i);
     }
+    refreshChain(LOGO_FUNCTION_KEY);
     scheduleFlush();
-  }, [scheduleFlush, updateChainVisual]);
+  }, [refreshChain, scheduleFlush]);
 
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
-    const current = stateRef.current;
-    if (!cm) return;
-    cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !current.watermark);
-    refreshChainVisuals();
-  }, [refreshChainVisuals]);
+    if (cm) {
+      cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !stateRef.current.watermark);
+      refreshAllChains();
+    }
+    syncMidiFunctionLeds();
+  }, [refreshAllChains, syncMidiFunctionLeds]);
 
   useEffect(() => {
     applyChainSelectionVisibility();
@@ -386,15 +414,16 @@ export function useUniPadEngine() {
     if (cm) {
       cm.remove(-1, prevChain + CHAIN_INDEX_OFFSET, Channel.CHAIN);
       cm.add(-1, c + CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
-      updateChainVisual(prevChain + CHAIN_INDEX_OFFSET);
-      updateChainVisual(c + CHAIN_INDEX_OFFSET);
+      refreshChain(prevChain + CHAIN_INDEX_OFFSET);
+      refreshChain(c + CHAIN_INDEX_OFFSET);
     }
 
     setState((prev) => ({ ...prev, chain: c }));
     scheduleFlush();
-  }, [updateChainVisual, scheduleFlush]);
+  }, [refreshChain, scheduleFlush]);
 
-  const padTouchOn = useCallback((x: number, y: number) => {
+  /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
+  const padTouchOn = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
@@ -403,7 +432,7 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    se?.soundOn(x, y);
+    se?.soundOn(x, y, input);
     lr?.eventOn(x, y);
     recorderRef.current.recordOn(x, y);
 
@@ -432,22 +461,23 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
-  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource) => {
+  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     usageTracker.padPressed(source);
-    padTouchOn(x, y);
+    padTouchOn(x, y, input);
   }, [usageTracker, padTouchOn]);
 
   /** A pad pressed on screen, by touch or mouse. */
-  const screenPadTouchOn = useCallback((x: number, y: number) => {
-    userPadTouchOn(x, y, 'screen');
+  const screenPadTouchOn = useCallback((x: number, y: number, input: string) => {
+    userPadTouchOn(x, y, 'screen', input);
   }, [userPadTouchOn]);
 
-  const padTouchOff = useCallback((x: number, y: number) => {
+  /** Without `input`, every press of the pad is released. */
+  const padTouchOff = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    se?.soundOff(x, y);
+    se?.soundOff(x, y, input);
     lr?.eventOff(x, y);
     recorderRef.current.recordOff(x, y);
 
@@ -466,7 +496,7 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   const releaseKeyboardPads = useCallback(() => {
-    for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
+    for (const [code, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1], keyInput(code));
     pressedKeysRef.current.clear();
   }, [padTouchOff]);
 
@@ -510,7 +540,7 @@ export function useUniPadEngine() {
       if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
         pressedKeysRef.current.set(e.code, pad);
-        userPadTouchOn(pad[0], pad[1], 'keyboard');
+        userPadTouchOn(pad[0], pad[1], 'keyboard', keyInput(e.code));
       }
     };
 
@@ -518,7 +548,7 @@ export function useUniPadEngine() {
       const pad = pressedKeysRef.current.get(e.code);
       if (pad) {
         pressedKeysRef.current.delete(e.code);
-        padTouchOff(pad[0], pad[1]);
+        padTouchOff(pad[0], pad[1], keyInput(e.code));
       }
     };
 
@@ -566,15 +596,10 @@ export function useUniPadEngine() {
     for (let c = 0; c < chainLedCount; c++) {
       if (lr) lr.eventOff(-1, c);
       cm.remove(-1, c, Channel.LED);
-      if (c < CIRCLE_ARRAY_SIZE) {
-        updateChainVisual(c);
-      } else {
-        // Ring slots 32..35 have no on-screen circle; they were left lit on the device.
-        midiRef.current?.sendFunctionKeyLed(c, 0);
-      }
+      refreshChain(c);
     }
     scheduleFlush();
-  }, [refreshPad, updateChainVisual, scheduleFlush]);
+  }, [refreshPad, refreshChain, scheduleFlush]);
 
   const autoPlayRemoveGuide = useCallback(() => {
     const unipack = unipackRef.current;
@@ -596,15 +621,13 @@ export function useUniPadEngine() {
     const cirLedCount = Math.max(unipack.info.chain + CHAIN_INDEX_OFFSET, 36);
     for (let cirIdx = 0; cirIdx < cirLedCount; cirIdx++) {
       cm.remove(-1, cirIdx, Channel.GUIDE);
-      const item = cm.get(-1, cirIdx);
-      midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
       if (chainStatesRef.current[cirIdx]) {
         chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: false };
       }
-      updateChainVisual(cirIdx);
+      refreshChain(cirIdx);
     }
     scheduleFlush();
-  }, [refreshPad, updateChainVisual, scheduleFlush]);
+  }, [refreshPad, refreshChain, scheduleFlush]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay') {
@@ -815,14 +838,10 @@ export function useUniPadEngine() {
       const failedSounds = await soundEngine.load();
       soundEngine.setVolume(volumeLevelRef.current, 7);
 
-      if (failedSounds.length > 0) {
-        const allFailed = failedSounds.length === Array.from(unipack.soundFiles.keys()).length;
-        setState((prev) => ({
-          ...prev,
-          errors: [...prev.errors, `${failedSounds.length} audio file(s) failed to decode`],
-          criticalError: allFailed,
-        }));
-        if (allFailed) return;
+      const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
+      if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
+        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
+        return;
       }
 
       const ledListener: LedRunnerListener = {
@@ -840,15 +859,13 @@ export function useUniPadEngine() {
         // sendChainLed added 8 and dropped indices above 7.
         onChainLedTurnOn: (c: number, color: number, velocity: number) => {
           cm.add(-1, c, Channel.LED, color, velocity);
-          updateChainVisual(c);
+          refreshChain(c);
           scheduleFlush();
-          midiRef.current?.sendFunctionKeyLed(c, c === LOGO_FUNCTION_KEY ? logoLedCode(cm) : velocity);
         },
         onChainLedTurnOff: (c: number) => {
           cm.remove(-1, c, Channel.LED);
-          updateChainVisual(c);
+          refreshChain(c);
           scheduleFlush();
-          midiRef.current?.sendFunctionKeyLed(c, 0);
         },
       };
 
@@ -888,8 +905,8 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y); },
-          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y); },
+          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
             cm.add(x, y, Channel.GUIDE, -1, 17);
@@ -926,9 +943,7 @@ export function useUniPadEngine() {
             if (chainStatesRef.current[cirIdx]) {
               chainStatesRef.current[cirIdx] = { ...chainStatesRef.current[cirIdx], guide: true };
             }
-            updateChainVisual(cirIdx);
-            const item = cm.get(-1, cirIdx);
-            midiRef.current?.sendFunctionKeyLed(cirIdx, item ? item.code : 0);
+            refreshChain(cirIdx);
             scheduleFlush();
           },
           onRemoveGuide: () => {
@@ -1027,7 +1042,7 @@ export function useUniPadEngine() {
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-          errors: unipack.errors,
+          errors: [...unipack.errors, ...soundWarnings],
           criticalError: false,
           traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,
@@ -1054,8 +1069,8 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y, 'midi');
-          else padTouchOff(x, y);
+          if (pressed) userPadTouchOn(x, y, 'midi', MIDI_INPUT);
+          else padTouchOff(x, y, MIDI_INPUT);
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
@@ -1127,7 +1142,7 @@ export function useUniPadEngine() {
     userPadTouchOn,
     padTouchOff,
     refreshPad,
-    updateChainVisual,
+    refreshChain,
     scheduleFlush,
     padInit,
     ledInit,
@@ -1213,11 +1228,11 @@ export function useUniPadEngine() {
       const next = !prev.proLightMode;
       if (cm) {
         cm.setCirIgnore(Channel.LED, !next);
-        midiRef.current?.sendFunctionKeyLed(LOGO_FUNCTION_KEY, logoLedCode(cm));
+        refreshAllChains();
       }
       return { ...prev, proLightMode: next };
     });
-  }, []);
+  }, [refreshAllChains]);
   toggleProLightModeRef.current = toggleProLightMode;
 
   const toggleTraceLog = useCallback(() => {
@@ -1318,9 +1333,8 @@ export function useUniPadEngine() {
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
-    syncMidiFunctionLeds();
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility, syncMidiFunctionLeds]);
+  }, [applyChainSelectionVisibility]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {

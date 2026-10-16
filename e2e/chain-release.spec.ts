@@ -62,6 +62,21 @@ for (const screen of touchScreens) {
       expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
     });
 
+    test('a second finger on the same pad after a chain change leaves the first loop to its own release', async ({ page, context }) => {
+      await load(page);
+      const session = await context.newCDPSession(page);
+      const a = await point(page, '0,0', 1);
+      const b = { ...a, id: 2, x: a.x + 4 };
+      await touch(session, 'touchStart', [a]);
+      await tapChain(page, session, [a]);
+      await touch(session, 'touchStart', [a, b]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+      await touch(session, 'touchEnd', [a]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      await touch(session, 'touchEnd', []);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+    });
+
     test('CR-003 simultaneous contacts preserve the unreleased loop and feedback', async ({ page, context }) => {
       await load(page);
       const session = await context.newCDPSession(page);
