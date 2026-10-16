@@ -203,8 +203,9 @@ decided (README there, "Decided behaviour"). Each is pinned until the platform's
 
 ### Not observed, so not known
 
-- **Lights after leaving the play screen on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32); both are measured and pass. On iOS the Launchpad is cleared by the main screen when it takes the MIDI controller back (`MainMidiControllerAdapter.onAttach`), which the unit-level harness does not drive, so the two cases are unverified there. They are not an iOS failure: an earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test. Nobody has checked it on a Launchpad.
-- **autoPlay timing on iOS** (RUN-A-001, RUN-A-002). `AutoPlayRunner` reads the wall clock and sleeps in real time, so it cannot be driven on a virtual clock.
+iOS now measures the six cases this section used to list for it, and all six pass: autoPlay timing (RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004), with `AutoPlayRunner` given a virtual clock and sleep by the harness, and the lights after leaving the play screen (RUN-L-006, RUN-L-007). See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-ios-observed-the-six-exit-and-autoplay-cases). What is still not known:
+
+- **What a Launchpad shows after the play screen is left on iOS** (RUN-L-006, RUN-L-007). At `stop` the iOS harness runs the main screen's step that takes the MIDI controller back (`MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver, so it sees the clear being sent, not the lights going out on a device. Nobody has checked that on a Launchpad. An earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test.
 - **Round and logo lights on Android with Pro light mode off**, which is how the play screen starts. The corpus measures Android with it on.
 
 ### Found while building the corpus (iOS, not fixed here)
