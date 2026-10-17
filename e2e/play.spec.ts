@@ -13,6 +13,13 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await expectLoadedPack(page);
+}
+
+async function expectLoadedPack(page: Page) {
+  // Archive reading and native decoding use the existing action/test budget.
+  // Only check the grid's value once the player has finished loading.
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).waitFor();
   await expect(page.locator('[data-pad]')).toHaveCount(64);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -38,9 +45,24 @@ test('imports a local pack and restores the saved pack after reload', async ({ p
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+  await expectLoadedPack(page);
+  expect(await starts(page)).toBe(0);
+});
+
+test('imports and restores a pack when native decoding outlasts a UI assertion', async ({ page }) => {
+  test.slow(); // Two real decodes, each held beyond the default UI assertion budget.
+  await page.addInitScript(() => {
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async function (...args: Parameters<typeof decode>) {
+      const buffer = await decode.apply(this, args);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      return buffer;
+    };
+  });
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.reload();
+  await expectLoadedPack(page);
   expect(await starts(page)).toBe(0);
 });
 

@@ -152,6 +152,8 @@ Store lookup returns cached items or a connection message within five seconds;
 downloads stop after five seconds without incoming data, so longer transfers can
 continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
 fallbacks, progress across that idle limit, and cancellation.
+The reconnect tests wait for an actual stalled SDK request before advancing the
+browser clock through that five-second deadline, then require fresh server data.
 
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
@@ -175,7 +177,10 @@ It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
 playback; exploratory page failures are investigated separately. Firefox allows
 90 seconds overall for page setup and playback; individual assertion timeouts
-stay unchanged. Native multi-touch CDP tests remain Chromium-only.
+stay unchanged. Import and reload wait for the player controls using the existing
+action/test budget before checking the pad count and decoded audio. A deliberately
+delayed native decode checks that loading time is kept separate from those value
+assertions. Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
