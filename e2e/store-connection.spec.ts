@@ -47,7 +47,7 @@ async function verifyDatabase(page: Page) {
 }
 
 for (const cached of [false, true]) {
-  test(`ends blocked store loading and retries after reconnecting (cached: ${cached})`, async ({ page, context }, testInfo) => {
+  test(`ends blocked store loading and retries after reconnecting (cached: ${cached})`, async ({ page, context }) => {
     const database = await connectStore(context);
     await verifyDatabase(page);
     if (cached) {
@@ -59,17 +59,13 @@ for (const cached of [false, true]) {
     await page.reload();
     await page.getByRole('button', { name: /^Store/ }).click();
     const dialog = page.getByRole('dialog', { name: 'Store', exact: true });
-    try {
-      // Wait for the SDK to issue the request, then exercise the real five-second
-      // deadline without spending the UI assertion budget on that known wait.
-      await database.waitForBlockedStoreRequest();
-      await page.clock.fastForward(5000);
-      await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
-      await expect(dialog.getByText('Loading store...')).toHaveCount(0);
-      if (cached) await expect(dialog.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
-    } finally {
-      await testInfo.attach('blocked-store', { body: await page.screenshot(), contentType: 'image/png' });
-    }
+    // Wait for the SDK to issue the request, then exercise the real five-second
+    // deadline without spending the UI assertion budget on that known wait.
+    await database.waitForBlockedStoreRequest();
+    await page.clock.fastForward(5000);
+    await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
+    await expect(dialog.getByText('Loading store...')).toHaveCount(0);
+    if (cached) await expect(dialog.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
     database.reconnect({ ...storeItem, title: 'Reconnected Test Pack' });
     await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
     // Separate request completion from the outgoing loading view's animation.
