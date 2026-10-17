@@ -1,5 +1,4 @@
 import { defineConfig } from '@playwright/test';
-import { serverCommand, serverReady } from './e2e/server';
 
 const portableTests = ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts'];
 
@@ -11,8 +10,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }], ['json', { outputFile: 'test-results/results.json' }]],
   use: {
-    // Set in the test workers from the started server's output (webServer.wait below).
-    baseURL: process.env.E2E_SERVER_URL,
+    baseURL: 'http://localhost:3184',
     headless: true,
     viewport: { width: 1280, height: 800 },
     serviceWorkers: 'block',
@@ -32,9 +30,8 @@ export default defineConfig({
     ] : []),
   ],
   webServer: {
-    // E2E_PORT pins the port when needed; by default each run gets a free one.
-    command: serverCommand(process.env.E2E_PORT || undefined),
-    wait: { stdout: serverReady },
+    command: 'node node_modules/next/dist/bin/next start --hostname localhost --port 3184',
+    url: 'http://localhost:3184/play',
     reuseExistingServer: false,
   },
 });

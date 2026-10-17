@@ -100,11 +100,8 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on a free `localhost` port that the
-operating system picks for that run, reads the address from that server's own
-output, runs the headless browser tests against it, then stops only that server.
-Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
-(the run fails at start if the port is taken). Use the fake Firebase configuration
+`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
+headless browser tests, then stops its server. Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:
 
 ```bash
