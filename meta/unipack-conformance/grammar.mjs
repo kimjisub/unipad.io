@@ -9,7 +9,7 @@ export function readGrammar(text = readFileSync(new URL('./GRAMMAR.md', import.m
   const edition = /^# UniPack grammar, edition (G\d+)$/m.exec(text)?.[1];
   if (!edition) throw new Error('GRAMMAR.md does not start with "# UniPack grammar, edition G<n>"');
   const items = [];
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     const row = ITEM_ROW.exec(line);
     if (row) items.push({ id: row[1], rule: row[2], kind: row[3], basis: row[4] });
   }

@@ -55,7 +55,12 @@ export async function parseUniPack(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  const zip = await JSZip.loadAsync(zipData);
+  // A name the archive marks as UTF-8 is read as UTF-8 by JSZip itself; an unmarked name that is not
+  // valid UTF-8 comes from a Korean Windows archiver and is CP949. JSZip hands over a Uint8Array
+  // wherever typed arrays exist.
+  const zip = await JSZip.loadAsync(zipData, {
+    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
+  });
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
@@ -285,26 +290,17 @@ async function parseKeySoundFromFile(
     const parts = trimmed.split(/\s+/);
     if (parts.length <= 2) continue;
 
-    let c: number, x: number, y: number;
+    const c = strictInt(parts[0]) - 1;
+    const x = strictInt(parts[1]) - 1;
+    const y = strictInt(parts[2]) - 1;
     const soundURL: string | undefined = parts[3];
-    let loop = 0;
-    let wormhole = NO_WORMHOLE;
-
-    try {
-      c = strictInt(parts[0]) - 1;
-      x = strictInt(parts[1]) - 1;
-      y = strictInt(parts[2]) - 1;
-      if (parts.length >= 5) loop = strictInt(parts[4]) - 1;
-      if (parts.length >= 6) wormhole = strictInt(parts[5]) - 1;
-    } catch {
-      errors.push(`keySound: [${trimmed}] format is incorrect`);
-      continue;
-    }
+    const loop = parts.length >= 5 ? strictInt(parts[4]) - 1 : 0;
+    const wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
 
     // Android records "format is incorrect" for a short or non-numeric line and keeps going;
     // here a 3-token line reached findSoundFile with undefined and threw out of the whole parse,
     // and a NaN loop/wormhole later set the chain to NaN and silenced every pad.
-    if (isNaN(c) || isNaN(x) || isNaN(y) || typeof soundURL !== 'string' || soundURL.length === 0
+    if (!Number.isFinite(c) || !Number.isFinite(x) || !Number.isFinite(y) || typeof soundURL !== 'string' || soundURL.length === 0
       || !Number.isFinite(loop) || !Number.isFinite(wormhole)) {
       errors.push(`keySound: [${trimmed}] format is incorrect`);
       continue;
@@ -351,14 +347,29 @@ async function parseKeySoundFromFile(
 }
 
 /**
- * A pack's text file as Android and iOS read it: UTF-16 when it starts with a byte order mark (Windows
- * Notepad's "Unicode"), UTF-8 otherwise. The mark itself is not part of the text.
+ * A pack's text file: UTF-16 when it starts with a byte order mark (Windows Notepad's "Unicode"), else
+ * UTF-8, else CP949 (Korean Windows Notepad's "ANSI", which older Korean packs were saved in). Every text
+ * file of a pack is read the same way. A byte order mark is not part of the text.
  */
 async function readText(file: JSZip.JSZipObject): Promise<string> {
   const bytes = await file.async('uint8array');
-  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes);
-  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes);
-  return new TextDecoder('utf-8').decode(bytes);
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return UTF16LE.decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return UTF16BE.decode(bytes);
+  return decodeUtf8OrCp949(bytes);
+}
+
+const UTF16LE = new TextDecoder('utf-16le');
+const UTF16BE = new TextDecoder('utf-16be');
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
+/** The WHATWG `euc-kr` decoder is CP949: EUC-KR with the Hangul syllables Windows added. */
+const CP949 = new TextDecoder('euc-kr');
+
+function decodeUtf8OrCp949(bytes: Uint8Array): string {
+  try {
+    return STRICT_UTF8.decode(bytes);
+  } catch {
+    return CP949.decode(bytes);
+  }
 }
 
 /** \r\n, lone \r (classic Mac) and \n; splitting on '\n' alone made a CR-only file one line. */
@@ -434,16 +445,10 @@ async function parseKeyLed(
     const parts = fileName.split(/\s+/);
     if (parts.length <= 2) continue;
 
-    let c: number, x: number, y: number, loop = 1;
-    try {
-      c = strictInt(parts[0]) - 1;
-      x = strictInt(parts[1]) - 1;
-      y = strictInt(parts[2]) - 1;
-      if (parts.length >= 4) loop = strictInt(parts[3]);
-    } catch {
-      errors.push(`keyLed: [${fileName}] format is incorrect`);
-      continue;
-    }
+    const c = strictInt(parts[0]) - 1;
+    const x = strictInt(parts[1]) - 1;
+    const y = strictInt(parts[2]) - 1;
+    const loop = parts.length >= 4 ? strictInt(parts[3]) : 1;
 
     // A field that is not a whole number is a format error, as Android and iOS report it; only a
     // number outside the pack is a range error.
@@ -476,119 +481,115 @@ async function parseKeyLed(
       if (!trimmed) continue;
       const split = trimmed.split(/\s+/);
 
-      try {
-        const option = split[0];
-        switch (option) {
-          case 'on':
-          case 'o': {
-            const xToken = split[1];
-            let ledX: number, ledY: number;
-            let ledColor = -1;
-            let ledVelocity = 4;
-            let colorTokens: string[];
+      const option = split[0];
+      switch (option) {
+        case 'on':
+        case 'o': {
+          const xToken = split[1];
+          let ledX: number, ledY: number;
+          let ledColor = -1;
+          let ledVelocity = 4;
+          let colorTokens: string[];
 
-            if (ROUND_TOKENS.has(xToken)) {
-              ledX = -1;
-              const index = roundLedIndex(split[2]);
-              if (index === null) continue;
-              ledY = index;
-              colorTokens = split.slice(3);
-            } else if (xToken === LOGO_TOKEN) {
-              ledX = -1;
-              ledY = LOGO_FUNCTION_KEY;
-              colorTokens = logoColorTokens(split);
-            } else {
-              const padX = padLedX(xToken);
-              if (padX === null) {
+          if (ROUND_TOKENS.has(xToken)) {
+            ledX = -1;
+            const index = roundLedIndex(split[2]);
+            if (index === null) continue;
+            ledY = index;
+            colorTokens = split.slice(3);
+          } else if (xToken === LOGO_TOKEN) {
+            ledX = -1;
+            ledY = LOGO_FUNCTION_KEY;
+            colorTokens = logoColorTokens(split);
+          } else {
+            const padX = padLedX(xToken);
+            if (padX === null) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
+            ledX = padX;
+            ledY = strictInt(split[2]) - 1;
+            colorTokens = split.slice(3);
+          }
+
+          if (colorTokens.length === 1) {
+            ledColor = strictHex(colorTokens[0]) + 0xFF000000;
+          } else if (colorTokens.length === 2) {
+            ledVelocity = strictInt(colorTokens[1]);
+            if (AUTO_TOKENS.has(colorTokens[0])) {
+              // Android throws on a palette index outside 0..127 and drops the event.
+              if (!(ledVelocity >= 0 && ledVelocity < LAUNCHPAD_ARGB.length)) {
                 errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
                 continue;
               }
-              ledX = padX;
-              ledY = strictInt(split[2]) - 1;
-              colorTokens = split.slice(3);
-            }
-
-            if (colorTokens.length === 1) {
+              ledColor = LAUNCHPAD_ARGB[ledVelocity] ?? 0;
+            } else {
               ledColor = strictHex(colorTokens[0]) + 0xFF000000;
-            } else if (colorTokens.length === 2) {
-              ledVelocity = strictInt(colorTokens[1]);
-              if (AUTO_TOKENS.has(colorTokens[0])) {
-                // Android throws on a palette index outside 0..127 and drops the event.
-                if (!(ledVelocity >= 0 && ledVelocity < LAUNCHPAD_ARGB.length)) {
-                  errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-                  continue;
-                }
-                ledColor = LAUNCHPAD_ARGB[ledVelocity] ?? 0;
-              } else {
-                ledColor = strictHex(colorTokens[0]) + 0xFF000000;
-              }
-            } else {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
             }
-            if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX)) || !Number.isFinite(ledColor) || !Number.isFinite(ledVelocity)) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-
-            ledEvents.push({ type: 'on', x: ledX, y: ledY, color: ledColor, velocity: ledVelocity });
-            break;
-          }
-          case 'off':
-          case 'f': {
-            const xToken = split[1];
-            let ledX: number, ledY: number;
-            if (ROUND_TOKENS.has(xToken)) {
-              ledX = -1;
-              const index = roundLedIndex(split[2]);
-              if (index === null) continue;
-              ledY = index;
-            } else if (xToken === LOGO_TOKEN) {
-              ledX = -1;
-              ledY = LOGO_FUNCTION_KEY;
-            } else {
-              const padX = padLedX(xToken);
-              if (padX === null) {
-                errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-                continue;
-              }
-              ledX = padX;
-              ledY = strictInt(split[2]) - 1;
-            }
-            if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-            ledEvents.push({ type: 'off', x: ledX, y: ledY });
-            break;
-          }
-          case 'delay':
-          case 'd': {
-            // A NaN delay froze the animation with its LEDs stuck on (state.delay += NaN never
-            // becomes <= currTime again); Android drops the event.
-            const delay = strictInt(split[1]);
-            if (!Number.isFinite(delay)) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-            ledEvents.push({ type: 'delay', delay });
-            break;
-          }
-          case 'chain':
-          case 'c': {
-            const chain = strictInt(split[1]) - 1;
-            if (!Number.isFinite(chain)) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-            ledEvents.push({ type: 'chain', chain });
-            break;
-          }
-          default:
+          } else {
             errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+            continue;
+          }
+          if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX)) || !Number.isFinite(ledColor) || !Number.isFinite(ledVelocity)) {
+            errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+            continue;
+          }
+
+          ledEvents.push({ type: 'on', x: ledX, y: ledY, color: ledColor, velocity: ledVelocity });
+          break;
         }
-      } catch {
-        errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+        case 'off':
+        case 'f': {
+          const xToken = split[1];
+          let ledX: number, ledY: number;
+          if (ROUND_TOKENS.has(xToken)) {
+            ledX = -1;
+            const index = roundLedIndex(split[2]);
+            if (index === null) continue;
+            ledY = index;
+          } else if (xToken === LOGO_TOKEN) {
+            ledX = -1;
+            ledY = LOGO_FUNCTION_KEY;
+          } else {
+            const padX = padLedX(xToken);
+            if (padX === null) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
+            ledX = padX;
+            ledY = strictInt(split[2]) - 1;
+          }
+          if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {
+            errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+            continue;
+          }
+          ledEvents.push({ type: 'off', x: ledX, y: ledY });
+          break;
+        }
+        case 'delay':
+        case 'd': {
+          // A NaN delay froze the animation with its LEDs stuck on (state.delay += NaN never
+          // becomes <= currTime again); Android drops the event.
+          const delay = strictInt(split[1]);
+          if (!Number.isFinite(delay)) {
+            errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+            continue;
+          }
+          ledEvents.push({ type: 'delay', delay });
+          break;
+        }
+        case 'chain':
+        case 'c': {
+          const chain = strictInt(split[1]) - 1;
+          if (!Number.isFinite(chain)) {
+            errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+            continue;
+          }
+          ledEvents.push({ type: 'chain', chain });
+          break;
+        }
+        default:
+          errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
       }
     }
 
@@ -622,95 +623,86 @@ async function parseAutoPlay(
     return sounds[num % sounds.length];
   }
 
+  function switchChain(c: number): void {
+    currChain = c;
+    elements.push({ type: 'chain', c: currChain });
+    for (const row of map) row.fill(0);
+  }
+
+  /** `on` and `touch` press the pad: its sound advances, and a wormhole on it switches the chain. */
+  function press(x: number, y: number, touch: boolean): void {
+    elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
+    if (touch) elements.push({ type: 'off', x, y, currChain });
+    const sound = soundGet(currChain, x, y, map[x][y]);
+    map[x][y]++;
+    if (sound && sound.wormhole !== NO_WORMHOLE) switchChain(sound.wormhole);
+  }
+
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const split = trimmed.split(/\s+/);
 
-    let option: string;
+    const option = split[0];
     let x = -1, y = -1, chain = -1, delay = -1;
+    let hasCoordinates = false;
+    let hasChain = false;
 
-    try {
-      option = split[0];
-      switch (option) {
-        // NaN passes every `< 0 || >= n` comparison, so `o x 3` used to reach map[NaN][y] and throw
-        // out of the whole parse, and a NaN delay stalled autoPlay forever. Android drops the line.
-        // A value that is not a whole number is a format error, as Android and iOS report it; only a
-        // number outside the pack is a range error.
-        case 'on':
-        case 'o':
-        case 'off':
-        case 'f':
-        case 'touch':
-        case 't':
-          x = strictInt(split[1]) - 1;
-          y = strictInt(split[2]) - 1;
-          if (!Number.isFinite(x) || !Number.isFinite(y)) {
-            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
-            continue;
-          }
-          if (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY) {
-            errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
-            continue;
-          }
-          break;
-        case 'chain':
-        case 'c':
-          chain = strictInt(split[1]) - 1;
-          if (!Number.isFinite(chain)) {
-            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
-            continue;
-          }
-          if (chain < 0 || chain >= info.chain) {
-            errors.push(`autoPlay: [${trimmed}] chain is incorrect`);
-            continue;
-          }
-          break;
-        case 'delay':
-        case 'd':
-          delay = strictInt(split[1]);
-          if (!Number.isFinite(delay)) {
-            errors.push(`autoPlay: [${trimmed}] format is incorrect`);
-            continue;
-          }
-          break;
-        default:
-          errors.push(`autoPlay: [${trimmed}] format is incorrect`);
-          continue;
-      }
-    } catch {
+    // Read all integer fields before checking the pack's bounds: malformed or non-finite values
+    // are format errors, while finite integers outside the pack remain range errors.
+    switch (option) {
+      case 'on':
+      case 'o':
+      case 'off':
+      case 'f':
+      case 'touch':
+      case 't':
+        x = strictInt(split[1]) - 1;
+        y = strictInt(split[2]) - 1;
+        hasCoordinates = true;
+        break;
+      case 'chain':
+      case 'c':
+        chain = strictInt(split[1]) - 1;
+        hasChain = true;
+        break;
+      case 'delay':
+      case 'd':
+        delay = strictInt(split[1]);
+        break;
+      default:
+        errors.push(`autoPlay: [${trimmed}] format is incorrect`);
+        continue;
+    }
+    if (![x, y, chain, delay].every(Number.isFinite)) {
       errors.push(`autoPlay: [${trimmed}] format is incorrect`);
+      continue;
+    }
+    if (hasCoordinates && (x < 0 || x >= info.buttonX || y < 0 || y >= info.buttonY)) {
+      errors.push(`autoPlay: [${trimmed}] coordinate is incorrect`);
+      continue;
+    }
+    if (hasChain && (chain < 0 || chain >= info.chain)) {
+      errors.push(`autoPlay: [${trimmed}] chain is incorrect`);
       continue;
     }
 
     switch (option) {
       case 'on':
-      case 'o': {
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        const sound = soundGet(currChain, x, y, map[x][y]);
-        map[x][y]++;
-        if (sound && sound.wormhole !== NO_WORMHOLE) {
-          currChain = sound.wormhole;
-          elements.push({ type: 'chain', c: currChain });
-          for (const row of map) row.fill(0);
-        }
+      case 'o':
+        press(x, y, false);
         break;
-      }
       case 'off':
       case 'f':
         elements.push({ type: 'off', x, y, currChain });
         break;
       case 'touch':
       case 't':
-        elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
-        elements.push({ type: 'off', x, y, currChain });
-        map[x][y]++;
+        press(x, y, true);
         break;
       case 'chain':
       case 'c':
-        currChain = chain;
-        elements.push({ type: 'chain', c: currChain });
-        for (const row of map) row.fill(0);
+        switchChain(chain);
         break;
       case 'delay':
       case 'd':

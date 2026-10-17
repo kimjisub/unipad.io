@@ -14,6 +14,7 @@ async function importSavedPack(page: Page) {
 
 for (const cachedCount of [0, 17]) {
   test(`opens and plays a saved pack with Firebase blocked and cached count ${cachedCount}`, async ({ page, context, baseURL }, testInfo) => {
+    test.slow(); // Database connection, import, navigation and offline restore share this budget.
     const database = await connectStore(context);
     // Verify a working SDK before blocking it, so an invalid build cannot pass as offline.
     await page.goto('/play');

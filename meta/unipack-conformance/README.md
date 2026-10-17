@@ -138,8 +138,8 @@ any one platform show up as a `fail` instead of passing unnoticed. A doc or an i
 case replaces it. Cases that rest on agreement are marked `[agreed]` in the table and counted on their
 own line (`agreed` in `--json`), apart from those a doc or an intent decides. A case whose platforms
 disagree is never given the result of two platforms against the third; it stays undetermined until it
-is decided (below). INF-012 is held at `squareButton` true although info.mdx gives false as the default,
-because all three apps start from true.
+is decided (below). INF-012 (`squareButton` true when it is not written) was held this way because all
+three apps start from true; info.mdx now gives the same default.
 
 **Decided behaviour.** When the platforms disagree, the maintainers choose the expected result. Where the
 choice can be stated in a format doc, the doc is changed and the case rests on a `doc` basis like any
@@ -236,7 +236,7 @@ first `:` (`info`, `keySound`, `keyLed`, `autoPlay`) and kind one of
 | kind | messages |
 |---|---|
 | `format` | `format is incorrect`, `format is not found` |
-| `range` | `chain\|x\|y\|loop\|coordinate\|delay is incorrect`, `out of range` |
+| `range` | `chain\|x\|y\|loop\|coordinate is incorrect`, `out of range` |
 | `missing-file` | `sound was not found`, `sounds directory not found`, `doesn't exist` |
 | `missing-field` | `title\|producerName\|buttonX\|buttonY\|chain was missing` |
 | anything else | `other(<message>)`, so a new message shows up as a difference |
@@ -366,7 +366,7 @@ Per item, `report.mjs` lists the cases that check it. In short:
 ## What is not covered
 
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
-- A file whose name matches exactly next to one that differs only in case (`a.wav` and `A.WAV`): a disk that does not tell case apart cannot hold both. Where the disk does not, a parser that opens only the exact name of a root file also passes FS-001 (see "Grammar items"); KS-020 names the sound as it is on disk, so it fails such a parser anyway.
+- A file whose name matches exactly next to one that differs only in case (`a.wav` and `A.WAV`): a disk that does not tell case apart cannot hold both. Where the disk does not, a parser that opens only the exact name of a root file also passes FS-001 (see "Grammar items"); KS-019 to KS-021 name the sound as it is on disk, so it fails such a parser anyway.
 - Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
 - Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
 - Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.

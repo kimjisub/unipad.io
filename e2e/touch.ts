@@ -9,6 +9,11 @@ export const touchScreens = [
 export const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
 /** The press light drawn over a held pad. */
 export const pressed = (page: Page, position: string) => pad(page, position).locator('img[src="/theme/btn_.png"]');
+/** Every pad showing the press light, in position order. */
+export const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
+  .evaluateAll(pads => pads.map(p => (p as HTMLElement).dataset.pad!).sort());
+// The right strip uses circle slots 9/10 for pack chains 1/2 (offset 8).
+export const chain2 = (page: Page) => page.getByRole('button', { name: 'Chain 10', exact: true });
 
 export async function point(page: Page, position: string, id: number) {
   const box = await pad(page, position).boundingBox();

@@ -12,7 +12,7 @@ import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
-import { SoundEngine } from './SoundEngine';
+import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 import type { Sound, UniPackData } from './types';
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -129,7 +129,7 @@ export function normalizeError(message: string): string {
   const section = /^([A-Za-z.]+)\s*:/.exec(message)?.[1] ?? 'unknown';
   let kind: string;
   if (/format is (incorrect|not found)/.test(message)) kind = 'format';
-  else if (/\b(chain|x|y|loop|coordinate|delay) is incorrect\b|out of range/.test(message)) kind = 'range';
+  else if (/\b(chain|x|y|loop|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
   else if (/was not found|directory not found|doesn't exist/.test(message)) kind = 'missing-file';
   else if (/was missing/.test(message)) kind = 'missing-field';
   else kind = `other(${message})`;
@@ -369,70 +369,79 @@ class FakeAudioContext {
   }
 }
 
+/** The input a scenario's press and release steps hold pads with, like one finger on the screen. */
+const PLAYER_INPUT = 'player';
+
 async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promise<Json[]> {
   const clock = new VirtualClock();
   const g = globalThis as { AudioContext?: unknown };
   const savedAudioContext = g.AudioContext;
-  clock.install();
-  g.AudioContext = FakeAudioContext;
-  FakeAudioContext.started = [];
-  FakeAudioContext.decodeNames = Array.from(pack.soundFiles.keys());
-
-  let chain = 0;
-  let events: Json[] = [];
-  let watchStops = false;
+  const savedStopListener = FakeAudioContext.onStopped;
   const checkpoints: Json[] = [];
-  const chainValue = () => chain;
-  // Every chain change goes through what the play screen does with it; `tag` names the event it records.
-  let sound: SoundEngine | null = null;
-  const switchChain = (next: number, tag: 'chain' | 'autoChain' | null) => {
-    const changed = deps.changeChain(pack, next, sound);
-    if (changed === null) return;
-    chain = changed;
-    if (tag) events.push([tag, changed]);
-  };
-  FakeAudioContext.onStopped = (source) => { if (watchStops && source.pad) events.push(['soundStop', ...source.pad]); };
-
-  const ledListener: LedRunnerListener = {
-    onPadLedTurnOn: (x, y, color, velocity) => { events.push(['ledOn', x, y, hex8(color), velocity]); },
-    onPadLedTurnOff: (x, y) => { events.push(['ledOff', x, y]); },
-    onChainLedTurnOn: (i, color, velocity) => { events.push(['ledOn', -1, i, hex8(color), velocity]); },
-    onChainLedTurnOff: (i) => { events.push(['ledOff', -1, i]); },
-  };
-  const led = new deps.LedRunner(pack, ledListener, chainValue, (next) => switchChain(next, 'chain'));
-  const engine = new deps.SoundEngine(pack, chainValue, (next) => switchChain(next, 'chain'));
-  sound = engine;
-  await engine.load();
-  led.launch();
+  let led: LedRunner | null = null;
   let autoPlay: AutoPlayRunner | null = null;
-
-  // A pad press and release as the play screen sends them to the sound engine and the LED runner.
-  const pressPad = (x: number, y: number) => {
-    const before = FakeAudioContext.started.length;
-    const at = chain;
-    engine.soundOn(x, y);
-    for (const started of FakeAudioContext.started.slice(before)) {
-      // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
-      const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
-      const file = started.name.replace(/^(?:.*\/)?sounds\//i, '');
-      started.pad = [at, x, y, file];
-      events.push(['sound', at, x, y, file, loop]);
-    }
-    led.eventOn(x, y);
-  };
-  const releasePad = (x: number, y: number) => {
-    engine.soundOff(x, y);
-    led.eventOff(x, y);
-  };
-
   try {
+    clock.install();
+    g.AudioContext = FakeAudioContext;
+    FakeAudioContext.started = [];
+    FakeAudioContext.decodeNames = Array.from(pack.soundFiles.keys());
+
+    let chain = 0;
+    let events: Json[] = [];
+    let watchStops = false;
+    const chainValue = () => chain;
+    // Every chain change goes through what the play screen does with it; `tag` names the event it records.
+    let sound: SoundEngine | null = null;
+    const switchChain = (next: number, tag: 'chain' | 'autoChain' | null) => {
+      const changed = deps.changeChain(pack, next, sound);
+      if (changed === null) return;
+      chain = changed;
+      if (tag) events.push([tag, changed]);
+    };
+    FakeAudioContext.onStopped = (source) => { if (watchStops && source.pad) events.push(['soundStop', ...source.pad]); };
+
+    const ledListener: LedRunnerListener = {
+      onPadLedTurnOn: (x, y, color, velocity) => { events.push(['ledOn', x, y, hex8(color), velocity]); },
+      onPadLedTurnOff: (x, y) => { events.push(['ledOff', x, y]); },
+      onChainLedTurnOn: (i, color, velocity) => { events.push(['ledOn', -1, i, hex8(color), velocity]); },
+      onChainLedTurnOff: (i) => { events.push(['ledOff', -1, i]); },
+    };
+    led = new deps.LedRunner(pack, ledListener, chainValue, (next) => switchChain(next, 'chain'));
+    const engine = new deps.SoundEngine(pack, chainValue, (next) => switchChain(next, 'chain'));
+    sound = engine;
+    await engine.load();
+    led.launch();
+
+    const scenarioLed = led;
+
+    // A pad press and release as the play screen sends them to the sound engine and the LED runner,
+    // named by the input holding the pad: the scenario's press/release steps are one player input,
+    // auto play holds pads under its own name as useUniPadEngine does.
+    const pressPad = (x: number, y: number, input: string) => {
+      const before = FakeAudioContext.started.length;
+      const at = chain;
+      engine.soundOn(x, y, input);
+      for (const started of FakeAudioContext.started.slice(before)) {
+        // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
+        const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
+        const file = started.name.replace(/^(?:.*\/)?sounds\//i, '');
+        started.pad = [at, x, y, file];
+        events.push(['sound', at, x, y, file, loop]);
+      }
+      scenarioLed.eventOn(x, y);
+    };
+    const releasePad = (x: number, y: number, input: string) => {
+      engine.soundOff(x, y, input);
+      scenarioLed.eventOff(x, y);
+    };
+
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
-          pressPad(step.x!, step.y!);
+          pressPad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'release':
-          releasePad(step.x!, step.y!);
+          releasePad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'chain':
           switchChain(step.c!, null);
@@ -452,8 +461,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y); },
-            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y); },
+            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y, AUTO_PLAY_INPUT); },
+            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
             onChainChange: (next) => switchChain(next, 'autoChain'),
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
           };
@@ -474,8 +483,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     }
   } finally {
     autoPlay?.stop();
-    led.stop();
-    FakeAudioContext.onStopped = () => {};
+    led?.stop();
+    FakeAudioContext.onStopped = savedStopListener;
     clock.uninstall();
     g.AudioContext = savedAudioContext;
   }

@@ -359,7 +359,7 @@ test('a case the platform could not drive is unverified with its own reason', ()
 
 // The corpus may mark no case `unobserved`, so a parse case and a run case are marked for iOS here.
 const IOS_REASON = 'not observable on iOS here';
-const unobservedOnIos = [determined, plain.find((c) => c.layer === 'run')].map((c) => ({ ...c, unobserved: { ios: IOS_REASON } }));
+const unobservedOnIos = [plain.find((c) => c.layer === 'parse'), plain.find((c) => c.layer === 'run')].map((c) => ({ ...c, unobserved: { ios: IOS_REASON } }));
 const withUnobserved = { ...canonical, corpus: { ...corpus, cases: corpus.cases.map((c) => unobservedOnIos.find((u) => u.id === c.id) ?? c) } };
 const iosResults = (over) => fullResults('ios', over, withUnobserved.corpus.cases);
 
@@ -487,4 +487,9 @@ test('copies.json pins the app copies CI compares to full commit hashes only', (
 
 test('report rows cover every platform', () => {
   assert.deepEqual(PLATFORMS, ['android', 'ios', 'web']);
+});
+
+ test('the grammar reads the same edition and items with CRLF line endings', () => {
+  const lf = readFileSync(join(here, 'GRAMMAR.md'), 'utf8');
+  assert.deepEqual(readGrammar(lf.replace(/\r?\n/g, '\r\n')), readGrammar(lf));
 });

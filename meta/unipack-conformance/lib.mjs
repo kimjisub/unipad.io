@@ -120,7 +120,7 @@ export function fingerprint(files, assets) {
 export const STD_INFO = ['title=Conformance', 'producerName=UniPad Conformance', 'buttonX=4', 'buttonY=3', 'chain=2', 'squareButton=true'].join('\n');
 export const DEFAULT_INFO = { title: 'Conformance', producerName: 'UniPad Conformance', buttonX: 4, buttonY: 3, chain: 2, squareButton: true };
 
-const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440', 'a.mp3': 'tone-440-mp3', 'bad.wav': 'not-audio', '소리.wav': 'tone-440' };
+const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440', 'a.mp3': 'tone-440-mp3', 'bad.wav': 'not-audio', '소리.wav': 'tone-440', 'END.wav': 'tone-660' };
 
 /**
  * `info`/`keySound`: string, or null to leave the file out. `sounds`: names under sounds/ (default

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   parseUniPack,
   SoundEngine,
+  AUTO_PLAY_INPUT,
   LedRunner,
   AutoPlayRunner,
   ChannelManager,
@@ -19,6 +20,7 @@ import {
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
+import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
@@ -36,6 +38,10 @@ const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
 /** The open option panel shows its settings on the top row and its volume on the chain column. */
 const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
+// What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
+// auto play uses AUTO_PLAY_INPUT).
+const MIDI_INPUT = 'midi';
+const keyInput = (code: string) => `key-${code}`;
 
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
  *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
@@ -109,6 +115,16 @@ const LED_CYAN = 52;
 const LED_LIGHT_BLUE = 55;
 const LED_GREEN = 61;
 
+/** The watermark's lights on the top row's buttons 5 to 8, as Android's refreshWatermark. */
+const WATERMARK_LEDS: ReadonlyArray<[number, number]> = [[4, LED_GREEN], [5, LED_BLUE], [6, LED_GREEN], [7, LED_BLUE]];
+
+/** The watermark and the selected chain's light show on the round buttons only while the
+ *  watermark is on and the option panel is closed, as Android's refreshWatermark. */
+function setRoundLightsVisible(cm: ChannelManager, visible: boolean): void {
+  cm.setCirIgnore(Channel.UI_UNIPAD, !visible);
+  cm.setCirIgnore(Channel.CHAIN, !visible);
+}
+
 export function useUniPadEngine() {
   const [state, setState] = useState<EngineState>({
     loaded: false,
@@ -170,6 +186,9 @@ export function useUniPadEngine() {
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
+  const playerHoldsRef = useRef(new PlayerHolds());
+  // pad held on a controller ("x,y") -> the pad, released when its own release can no longer come
+  const controllerPadsRef = useRef(new Map<string, [number, number]>());
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
@@ -198,13 +217,11 @@ export function useUniPadEngine() {
     if (!midi || !midi.connected) return;
 
     const current = stateRef.current;
+    const cm = channelManagerRef.current;
     const topBar = new Array<number>(8).fill(0);
     if (!midiOptionPanelOpenRef.current) {
-      if (current.watermark) {
-        topBar[4] = LED_GREEN;
-        topBar[5] = LED_BLUE;
-        topBar[6] = LED_GREEN;
-        topBar[7] = LED_BLUE;
+      for (let i = 0; i < 8; i++) {
+        topBar[i] = cm ? roundLedCode(cm, i) : 0;
       }
     } else {
       const unipack = unipackRef.current;
@@ -223,7 +240,6 @@ export function useUniPadEngine() {
       midi.sendFunctionKeyLed(i, topBar[i] ?? 0);
     }
 
-    const cm = channelManagerRef.current;
     const volumeLevel = volumeLevelRef.current;
     const volumeRangeStart = 8 - volumeLevel;
     for (let i = 0; i < 8; i++) {
@@ -303,7 +319,9 @@ export function useUniPadEngine() {
   const updateChainVisual = useCallback((c: number) => {
     const cm = channelManagerRef.current;
     if (!cm) return;
-    const item = cm.get(-1, c);
+    // The watermark lights only the launchpad, as Android's setLedUIChain draws nothing for it.
+    const winner = cm.get(-1, c);
+    const item = winner?.channel === Channel.UI_UNIPAD ? null : winner;
     if (chainStatesRef.current[c]) {
       chainStatesRef.current[c] = {
         ...chainStatesRef.current[c],
@@ -358,7 +376,7 @@ export function useUniPadEngine() {
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
     if (cm) {
-      cm.setCirIgnore(Channel.CHAIN, midiOptionPanelOpenRef.current || !stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
       refreshAllChains();
     }
     syncMidiFunctionLeds();
@@ -392,7 +410,8 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshChain, scheduleFlush]);
 
-  const padTouchOn = useCallback((x: number, y: number) => {
+  /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
+  const padTouchOn = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
@@ -401,7 +420,7 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    se?.soundOn(x, y);
+    se?.soundOn(x, y, input);
     lr?.eventOn(x, y);
     recorderRef.current.recordOn(x, y);
 
@@ -430,22 +449,24 @@ export function useUniPadEngine() {
   }, [refreshPad, scheduleFlush]);
 
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
-  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource) => {
+  const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     usageTracker.padPressed(source);
-    padTouchOn(x, y);
+    playerHoldsRef.current.press(x, y);
+    padTouchOn(x, y, input);
   }, [usageTracker, padTouchOn]);
 
   /** A pad pressed on screen, by touch or mouse. */
-  const screenPadTouchOn = useCallback((x: number, y: number) => {
-    userPadTouchOn(x, y, 'screen');
+  const screenPadTouchOn = useCallback((x: number, y: number, input: string) => {
+    userPadTouchOn(x, y, 'screen', input);
   }, [userPadTouchOn]);
 
-  const padTouchOff = useCallback((x: number, y: number) => {
+  /** Without `input`, every press of the pad is released. */
+  const padTouchOff = useCallback((x: number, y: number, input?: string) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    se?.soundOff(x, y);
+    se?.soundOff(x, y, input);
     lr?.eventOff(x, y);
     recorderRef.current.recordOff(x, y);
 
@@ -463,10 +484,31 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, scheduleFlush]);
 
-  const releaseKeyboardPads = useCallback(() => {
-    for (const [, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1]);
-    pressedKeysRef.current.clear();
+  /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
+  const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
+    const releasesAutoPlay = playerHoldsRef.current.release(x, y);
+    padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
+
+  const releaseKeyboardPads = useCallback(() => {
+    for (const [code, pad] of pressedKeysRef.current) userPadTouchOff(pad[0], pad[1], keyInput(code));
+    pressedKeysRef.current.clear();
+  }, [userPadTouchOff]);
+
+  /** A controller sends no release for the pads it holds once it is disconnected, unplugged or its
+   *  option panel takes its pads, and after a change of model its releases are read as other pads,
+   *  so they are released here. */
+  const releaseControllerPads = useCallback(() => {
+    for (const [x, y] of controllerPadsRef.current.values()) userPadTouchOff(x, y, MIDI_INPUT);
+    controllerPadsRef.current.clear();
+  }, [userPadTouchOff]);
+
+  /** The connection reports its status whenever a controller comes or goes, one of several too, and
+   *  when the model changes, so the pads held before are released. */
+  const applyControllerStatus = useCallback((status: MidiConnectionStatus) => {
+    releaseControllerPads();
+    applyMidiStatus(status);
+  }, [releaseControllerPads, applyMidiStatus]);
 
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
@@ -508,7 +550,7 @@ export function useUniPadEngine() {
       if (pad && !pressedKeysRef.current.has(e.code)) {
         e.preventDefault();
         pressedKeysRef.current.set(e.code, pad);
-        userPadTouchOn(pad[0], pad[1], 'keyboard');
+        userPadTouchOn(pad[0], pad[1], 'keyboard', keyInput(e.code));
       }
     };
 
@@ -516,7 +558,7 @@ export function useUniPadEngine() {
       const pad = pressedKeysRef.current.get(e.code);
       if (pad) {
         pressedKeysRef.current.delete(e.code);
-        padTouchOff(pad[0], pad[1]);
+        userPadTouchOff(pad[0], pad[1], keyInput(e.code));
       }
     };
 
@@ -536,16 +578,13 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, padTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, setChain]);
 
+  /** Releases every pad the player is not holding, which includes each pad autoplay still holds. */
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    for (let x = 0; x < unipack.info.buttonX; x++) {
-      for (let y = 0; y < unipack.info.buttonY; y++) {
-        padTouchOff(x, y);
-      }
-    }
+    playerHoldsRef.current.releaseOthers(unipack.info.buttonX, unipack.info.buttonY, padTouchOff);
   }, [padTouchOff]);
 
   const ledInit = useCallback(() => {
@@ -678,6 +717,8 @@ export function useUniPadEngine() {
         feedbackLight: !unipack?.keyLedExist,
       }));
     } else {
+      // Guide and step practice do not press pads, so autoplay would never release what it holds.
+      if (currentMode === 'autoPlay') padInit();
       applyModeFlags(runner, mode);
       runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
@@ -751,6 +792,8 @@ export function useUniPadEngine() {
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
@@ -785,6 +828,8 @@ export function useUniPadEngine() {
       channelManagerRef.current = cm;
       chainRef.current = 0;
       cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
+      for (const [c, code] of WATERMARK_LEDS) cm.add(-1, c, Channel.UI_UNIPAD, -1, code);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
@@ -806,14 +851,10 @@ export function useUniPadEngine() {
       const failedSounds = await soundEngine.load();
       soundEngine.setVolume(volumeLevelRef.current, 7);
 
-      if (failedSounds.length > 0) {
-        const allFailed = failedSounds.length === Array.from(unipack.soundFiles.keys()).length;
-        setState((prev) => ({
-          ...prev,
-          errors: [...prev.errors, `${failedSounds.length} audio file(s) failed to decode`],
-          criticalError: allFailed,
-        }));
-        if (allFailed) return;
+      const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
+      if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
+        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
+        return;
       }
 
       const ledListener: LedRunnerListener = {
@@ -877,8 +918,11 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y); },
-          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y); },
+          onPadTouchOn: (x: number, y: number) => {
+            playerHoldsRef.current.autoPlayPressed(x, y);
+            padTouchOn(x, y, AUTO_PLAY_INPUT);
+          },
+          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
             cm.add(x, y, Channel.GUIDE, -1, 17);
@@ -1002,7 +1046,7 @@ export function useUniPadEngine() {
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-          errors: unipack.errors,
+          errors: [...unipack.errors, ...soundWarnings],
           criticalError: false,
           traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,
@@ -1029,8 +1073,16 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y, 'midi');
-          else padTouchOff(x, y);
+          const pads = controllerPadsRef.current;
+          const key = `${x},${y}`;
+          if (pressed) {
+            // A press without a release in between replaces the first, as in the sound engine.
+            if (pads.has(key)) userPadTouchOff(x, y, MIDI_INPUT);
+            pads.set(key, [x, y]);
+            userPadTouchOn(x, y, 'midi', MIDI_INPUT);
+          } else if (pads.delete(key)) {
+            userPadTouchOff(x, y, MIDI_INPUT);
+          }
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
@@ -1080,10 +1132,10 @@ export function useUniPadEngine() {
       midiListenerRef.current = midiListener;
       midi.connect(midiListener, {
         profile: midiProfileRef.current,
-        onStatusChange: applyMidiStatus,
+        onStatusChange: applyControllerStatus,
       }).then((connected) => {
         const status = midi.getStatus();
-        applyMidiStatus({ ...status, connected });
+        applyControllerStatus({ ...status, connected });
       });
     } catch (err) {
       console.error('Failed to load UniPack:', err);
@@ -1100,6 +1152,7 @@ export function useUniPadEngine() {
     usageTracker,
     padTouchOn,
     userPadTouchOn,
+    userPadTouchOff,
     padTouchOff,
     refreshPad,
     refreshChain,
@@ -1107,7 +1160,7 @@ export function useUniPadEngine() {
     padInit,
     ledInit,
     autoPlayRemoveGuide,
-    applyMidiStatus,
+    applyControllerStatus,
   ]);
 
   const toggleFeedbackLight = useCallback(() => {
@@ -1218,6 +1271,8 @@ export function useUniPadEngine() {
   const unload = useCallback(() => {
     usageTracker.unloaded();
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
@@ -1253,7 +1308,8 @@ export function useUniPadEngine() {
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
     // Applied at once as on Android and iOS; the connection then reports the model now in use
-    // through applyMidiStatus, which redraws the board on the device.
+    // through applyControllerStatus, which releases the pads held before and redraws the board on
+    // the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
@@ -1267,14 +1323,15 @@ export function useUniPadEngine() {
     midiRef.current = midi;
     const connected = await midi.connect(midiListenerRef.current, {
       profile: midiProfileRef.current,
-      onStatusChange: applyMidiStatus,
+      onStatusChange: applyControllerStatus,
     });
     const status = midi.getStatus();
-    applyMidiStatus({ ...status, connected });
+    applyControllerStatus({ ...status, connected });
     return connected;
-  }, [applyMidiStatus]);
+  }, [applyControllerStatus]);
 
   const disconnectMidi = useCallback(() => {
+    releaseControllerPads();
     midiRef.current?.disconnect();
     setState((prev) => ({
       ...prev,
@@ -1283,18 +1340,19 @@ export function useUniPadEngine() {
       midiOutputName: null,
       midiResolvedProfile: 'none',
     }));
-  }, []);
+  }, [releaseControllerPads]);
 
   const setMidiUiContext = useCallback((context: {
     optionPanelOpen: boolean;
     onToggleOptionPanel?: (() => void) | null;
     onQuit?: (() => void) | null;
   }) => {
+    if (context.optionPanelOpen && !midiOptionPanelOpenRef.current) releaseControllerPads();
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility]);
+  }, [applyChainSelectionVisibility, releaseControllerPads]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {
@@ -1403,7 +1461,7 @@ export function useUniPadEngine() {
     loadUniPack,
     unload,
     padTouchOn: screenPadTouchOn,
-    padTouchOff,
+    padTouchOff: userPadTouchOff,
     setChain,
     playMode,
     switchPlayMode,

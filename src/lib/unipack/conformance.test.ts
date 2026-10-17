@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
+import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
   actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL,
   resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
@@ -131,8 +132,8 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
     assert.equal(classify(byId('RUN-RP-002'), await actualFor(byId('RUN-RP-002'), corpus)).status, 'pass');
     const notAudio: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'sounds/a.wav' ? { ...f, asset: 'not-audio' } : f)) };
-    // a.wav heads the queue and does not decode, so no press makes a sound (the A-06 difference of RUN-S-007).
-    assert.deepEqual(await actualFor(notAudio, corpus), { checkpoints: [[]] });
+    // A silent queue entry still advances to the next playable sound.
+    assert.deepEqual(await actualFor(notAudio, corpus), { checkpoints: [[['sound', 0, 0, 0, 'b.wav', 0]]] });
   });
 
   test('a sound stop is reported only in a scenario that watches stops', async () => {
@@ -140,6 +141,47 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
     const unwatched: CorpusCase = { ...c, scenario: c.scenario!.filter((s) => s.do !== 'watchStops') };
     assert.equal(classify(c, await actualFor(unwatched, corpus)).status, 'fail');
+  });
+
+  test('autoPlay and the player hold pads under different inputs, as on the play screen', async () => {
+    const c = byId('RUN-RP-003');
+    const withPlayer: CorpusCase = { ...c, scenario: [{ do: 'press', x: 1, y: 1 }, { do: 'release', x: 1, y: 1 }, ...c.scenario!] };
+    const calls: [string, string | undefined][] = [];
+    class RecordingSoundEngine extends SoundEngine {
+      soundOn(x: number, y: number, input?: string): void { calls.push(['on', input]); super.soundOn(x, y, input); }
+      soundOff(x: number, y: number, input?: string): void { calls.push(['off', input]); super.soundOff(x, y, input); }
+    }
+    await actualFor(withPlayer, corpus, { ...REAL, SoundEngine: RecordingSoundEngine });
+    const [playerOn, playerOff, autoOn, autoOff] = calls;
+    assert.equal(calls.length, 4);
+    assert.equal(typeof playerOn[1], 'string');
+    assert.notEqual(playerOn[1], AUTO_PLAY_INPUT);
+    assert.deepEqual([playerOff, autoOn, autoOff], [['off', playerOn[1]], ['on', AUTO_PLAY_INPUT], ['off', AUTO_PLAY_INPUT]]);
+  });
+
+  test('a failure preparing a scenario restores the clock and audio context', async () => {
+    const before = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout, now: performance.now,
+      window: (globalThis as { window?: unknown }).window, hadWindow: 'window' in globalThis,
+      audio: (globalThis as { AudioContext?: unknown }).AudioContext };
+    class BrokenSoundEngine extends SoundEngine {
+      async load(): Promise<string[]> { throw new Error('scenario preparation failed'); }
+    }
+    try {
+      await assert.rejects(actualFor(byId('RUN-S-001'), corpus, { ...REAL, SoundEngine: BrokenSoundEngine }), /scenario preparation failed/);
+      assert.equal(globalThis.setTimeout, before.setTimeout);
+      assert.equal(globalThis.clearTimeout, before.clearTimeout);
+      assert.equal((globalThis as { AudioContext?: unknown }).AudioContext, before.audio);
+      assert.equal('window' in globalThis, before.hadWindow);
+      assert.equal((globalThis as { window?: unknown }).window, before.window);
+      assert.equal(classify(byId('RUN-S-008'), await actualFor(byId('RUN-S-008'), corpus)).status, 'pass');
+    } finally {
+      globalThis.setTimeout = before.setTimeout;
+      globalThis.clearTimeout = before.clearTimeout;
+      performance.now = before.now;
+      (globalThis as { AudioContext?: unknown }).AudioContext = before.audio;
+      if (before.hadWindow) (globalThis as { window?: unknown }).window = before.window;
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
   });
 
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
