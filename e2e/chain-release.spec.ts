@@ -2,11 +2,9 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
-import { pad, point, pressed, touch, touchScreens, type Contact } from './touch';
+import { chain2, pad, point, pressed, touch, touchScreens, type Contact } from './touch';
 
 test.use({ hasTouch: true });
-// The right strip uses circle slots 9/10 for pack chains 1/2 (offset 8).
-const chain2 = (page: Page) => page.getByRole('button', { name: 'Chain 10', exact: true });
 
 async function load(page: Page, pack = 'manual') {
   await page.goto('/play');

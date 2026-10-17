@@ -42,3 +42,12 @@ await writePack('multi-touch.uni', {
   keySound: everyPad,
   'sounds/tone.wav': wav,
 });
+// autoPlay holds an endless loop (1 1) and a sound repeated three times (3 1) for ten seconds, in
+// steps of 100 ms so that switching to guide mode (which skips the pending delay) does not reach the
+// release; the player holds another endless loop (2 1) with the keyboard.
+await writePack('autoplay-hold.uni', {
+  info: 'title=AutoPlay Hold Test Pack\nproducerName=UniPad Tests\nbuttonX=8\nbuttonY=8\nchain=1\nsquareButton=true\n',
+  keySound: '1 1 1 tone.wav 0\n1 2 1 tone.wav 0\n1 3 1 tone.wav 4\n',
+  autoPlay: `o 1 1\no 3 1\n${'d 100\n'.repeat(100)}f 1 1\nf 3 1\n`,
+  'sounds/tone.wav': wav,
+});

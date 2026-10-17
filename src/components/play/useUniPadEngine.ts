@@ -19,6 +19,7 @@ import {
   releaseThemeUrls,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
@@ -184,6 +185,9 @@ export function useUniPadEngine() {
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
   // even if Shift changed in between
   const pressedKeysRef = useRef(new Map<string, [number, number]>());
+  const playerHoldsRef = useRef(new PlayerHolds());
+  // pad held on a controller ("x,y") -> the pad, released when its own release can no longer come
+  const controllerPadsRef = useRef(new Map<string, [number, number]>());
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
@@ -472,6 +476,7 @@ export function useUniPadEngine() {
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
   const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     usageTracker.padPressed(source);
+    playerHoldsRef.current.press(x, y);
     padTouchOn(x, y, input);
   }, [usageTracker, padTouchOn]);
 
@@ -504,10 +509,31 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, scheduleFlush]);
 
-  const releaseKeyboardPads = useCallback(() => {
-    for (const [code, pad] of pressedKeysRef.current) padTouchOff(pad[0], pad[1], keyInput(code));
-    pressedKeysRef.current.clear();
+  /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
+  const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
+    const releasesAutoPlay = playerHoldsRef.current.release(x, y);
+    padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
+
+  const releaseKeyboardPads = useCallback(() => {
+    for (const [code, pad] of pressedKeysRef.current) userPadTouchOff(pad[0], pad[1], keyInput(code));
+    pressedKeysRef.current.clear();
+  }, [userPadTouchOff]);
+
+  /** A controller sends no release for the pads it holds once it is disconnected, unplugged or its
+   *  option panel takes its pads, and after a change of model its releases are read as other pads,
+   *  so they are released here. */
+  const releaseControllerPads = useCallback(() => {
+    for (const [x, y] of controllerPadsRef.current.values()) userPadTouchOff(x, y, MIDI_INPUT);
+    controllerPadsRef.current.clear();
+  }, [userPadTouchOff]);
+
+  /** The connection reports its status whenever a controller comes or goes, one of several too, and
+   *  when the model changes, so the pads held before are released. */
+  const applyControllerStatus = useCallback((status: MidiConnectionStatus) => {
+    releaseControllerPads();
+    applyMidiStatus(status);
+  }, [releaseControllerPads, applyMidiStatus]);
 
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
@@ -557,7 +583,7 @@ export function useUniPadEngine() {
       const pad = pressedKeysRef.current.get(e.code);
       if (pad) {
         pressedKeysRef.current.delete(e.code);
-        padTouchOff(pad[0], pad[1], keyInput(e.code));
+        userPadTouchOff(pad[0], pad[1], keyInput(e.code));
       }
     };
 
@@ -577,16 +603,13 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, padTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, setChain]);
 
+  /** Releases every pad the player is not holding, which includes each pad autoplay still holds. */
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    for (let x = 0; x < unipack.info.buttonX; x++) {
-      for (let y = 0; y < unipack.info.buttonY; y++) {
-        padTouchOff(x, y);
-      }
-    }
+    playerHoldsRef.current.releaseOthers(unipack.info.buttonX, unipack.info.buttonY, padTouchOff);
   }, [padTouchOff]);
 
   const ledInit = useCallback(() => {
@@ -719,6 +742,8 @@ export function useUniPadEngine() {
         feedbackLight: !unipack?.keyLedExist,
       }));
     } else {
+      // Guide and step practice do not press pads, so autoplay would never release what it holds.
+      if (currentMode === 'autoPlay') padInit();
       applyModeFlags(runner, mode);
       runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
@@ -792,6 +817,8 @@ export function useUniPadEngine() {
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
 
@@ -916,7 +943,10 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => { padTouchOn(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOn: (x: number, y: number) => {
+            playerHoldsRef.current.autoPlayPressed(x, y);
+            padTouchOn(x, y, AUTO_PLAY_INPUT);
+          },
           onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
@@ -1080,8 +1110,16 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
-          if (pressed) userPadTouchOn(x, y, 'midi', MIDI_INPUT);
-          else padTouchOff(x, y, MIDI_INPUT);
+          const pads = controllerPadsRef.current;
+          const key = `${x},${y}`;
+          if (pressed) {
+            // A press without a release in between replaces the first, as in the sound engine.
+            if (pads.has(key)) userPadTouchOff(x, y, MIDI_INPUT);
+            pads.set(key, [x, y]);
+            userPadTouchOn(x, y, 'midi', MIDI_INPUT);
+          } else if (pads.delete(key)) {
+            userPadTouchOff(x, y, MIDI_INPUT);
+          }
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
@@ -1131,10 +1169,10 @@ export function useUniPadEngine() {
       midiListenerRef.current = midiListener;
       midi.connect(midiListener, {
         profile: midiProfileRef.current,
-        onStatusChange: applyMidiStatus,
+        onStatusChange: applyControllerStatus,
       }).then((connected) => {
         const status = midi.getStatus();
-        applyMidiStatus({ ...status, connected });
+        applyControllerStatus({ ...status, connected });
       });
     } catch (err) {
       console.error('Failed to load UniPack:', err);
@@ -1151,6 +1189,7 @@ export function useUniPadEngine() {
     usageTracker,
     padTouchOn,
     userPadTouchOn,
+    userPadTouchOff,
     padTouchOff,
     refreshPad,
     refreshChain,
@@ -1158,7 +1197,7 @@ export function useUniPadEngine() {
     padInit,
     ledInit,
     autoPlayRemoveGuide,
-    applyMidiStatus,
+    applyControllerStatus,
   ]);
 
   const toggleFeedbackLight = useCallback(() => {
@@ -1269,6 +1308,8 @@ export function useUniPadEngine() {
   const unload = useCallback(() => {
     usageTracker.unloaded();
     soundEngineRef.current?.destroy();
+    playerHoldsRef.current.clear();
+    controllerPadsRef.current.clear();
     ledRunnerRef.current?.stop();
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
@@ -1304,7 +1345,8 @@ export function useUniPadEngine() {
   const setMidiProfile = useCallback((profile: LaunchpadProfile) => {
     midiProfileRef.current = profile;
     // Applied at once as on Android and iOS; the connection then reports the model now in use
-    // through applyMidiStatus, which redraws the board on the device.
+    // through applyControllerStatus, which releases the pads held before and redraws the board on
+    // the device.
     midiRef.current?.setProfile(profile);
     setState((prev) => ({
       ...prev,
@@ -1318,14 +1360,15 @@ export function useUniPadEngine() {
     midiRef.current = midi;
     const connected = await midi.connect(midiListenerRef.current, {
       profile: midiProfileRef.current,
-      onStatusChange: applyMidiStatus,
+      onStatusChange: applyControllerStatus,
     });
     const status = midi.getStatus();
-    applyMidiStatus({ ...status, connected });
+    applyControllerStatus({ ...status, connected });
     return connected;
-  }, [applyMidiStatus]);
+  }, [applyControllerStatus]);
 
   const disconnectMidi = useCallback(() => {
+    releaseControllerPads();
     midiRef.current?.disconnect();
     setState((prev) => ({
       ...prev,
@@ -1334,18 +1377,19 @@ export function useUniPadEngine() {
       midiOutputName: null,
       midiResolvedProfile: 'none',
     }));
-  }, []);
+  }, [releaseControllerPads]);
 
   const setMidiUiContext = useCallback((context: {
     optionPanelOpen: boolean;
     onToggleOptionPanel?: (() => void) | null;
     onQuit?: (() => void) | null;
   }) => {
+    if (context.optionPanelOpen && !midiOptionPanelOpenRef.current) releaseControllerPads();
     midiOptionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility]);
+  }, [applyChainSelectionVisibility, releaseControllerPads]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
     try {
@@ -1466,7 +1510,7 @@ export function useUniPadEngine() {
     loadUniPack,
     unload,
     padTouchOn: screenPadTouchOn,
-    padTouchOff,
+    padTouchOff: userPadTouchOff,
     setChain,
     playMode,
     switchPlayMode,
