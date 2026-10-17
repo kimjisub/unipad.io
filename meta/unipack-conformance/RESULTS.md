@@ -1,25 +1,56 @@
-# Results (2026-10-16, Korea time)
+# Results (2026-10-17, Korea time)
 
-Corpus `3f1845257d22…` (sha256 of `corpus.json`), 133 cases, run on unipad-android d1e6c257 and
-unipad-ios 89286af6 (the head commits of the app pull requests that copy this corpus, each its main
-merged in, since merged as aa298a6e and 8b4c5d8e, the commits in `copies.json`) and on this unipad.io
-branch, all on October 16. Regenerate this table with `report.mjs` (README, "Running it"). It describes these 133 cases
-only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
+Corpus `4a67dbe1e919…` (sha256 of `corpus.json`), 137 cases, run on unipad-android d0b71a94 and
+unipad-ios 1fc7063a (the merge commits of the app pull requests that copy this corpus, the commits in
+`copies.json`) and on this unipad.io branch, all on October 17. Regenerate this table with `report.mjs`
+(README, "Running it"). It describes these 137 cases only; it does not show that every UniPack is
+compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 3 | 0 | 0 | 0 | 2026-10-15 23:51:17 |
-| iOS | 133 | 0 | 0 | 0 | 0 | 2026-10-15 23:56:51 |
-| Web | 131 | 2 | 0 | 0 | 0 | 2026-10-15 23:57:13 |
+| Android | 134 | 3 | 0 | 0 | 0 | 2026-10-16 17:45:49 |
+| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-16 18:28:49 |
+| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-16 17:58:08 |
 
-Pass on all three platforms: 128 of 133, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
-the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1).
+Pass on all three platforms: 134 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+the 17) and 1 on a decision basis (Android 1, iOS 1, web 1 of the 1).
 
-- **Fail, 5 pinned:** Android: INF-007, INF-010, INF-016. Web: KS-018, KL-024. Each is pinned in
-  `divergences.json` with the observed result and its cause; each platform's fix removes its own pins.
+- **Fail, 3 pinned:** Android: INF-007, INF-010, INF-016. Each is pinned in `divergences.json` with the
+  observed result and its cause; Android's fix removes them.
 - **No case is unverified or undetermined.** The six exit and autoPlay cases pass on iOS from the
   results its harness recorded. On iOS, leaving the play screen is observed up to the main screen's
   clear call to the MIDI driver, not what a physical Launchpad receives.
+
+## Changes after the sound name cases that differ from the file only in case
+
+The previous canonical corpus SHA256 was `fe56df2756a0…` (133 cases). Four cases were added; the other
+133 are unchanged (the two corpora were compared case by case).
+
+- **KS-019, KS-020, KS-021 and RUN-S-006 cover a `keySound` name that differs from its file only in
+  upper and lower case.** Official store packs list `End.wav` for a file stored as `END.wav`. When no file
+  has exactly the listed path under `sounds/`, the file whose whole path differs only in case is the
+  pad's sound, and its name is the stored one (`a.wav`, `END.wav`, `fx/s.wav`); a file of that name in
+  another folder, or a folder, is still `keySound:missing-file`. `sounds.mdx` says so.
+- **All three platforms pass the four.** The web already looked sounds up this way. iOS played those
+  pads silent and Android did on storage that tells upper and lower case apart; both now find the file
+  and record the stored name, so a harness that finds `A.wav` only because the disk ignores case still
+  fails.
+- Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: no rule decides
+  which one plays, and the app harnesses cannot write such a pack on a disk that ignores case (README).
+- Android and iOS give the same results as on `fe56df27…` for the other 133 cases (130, 3, 0 and 133,
+  0, 0), and so does the web (133, 0, 0).
+
+## Changes after the web reads UTF-16 text and keeps keyLED events outside the grid
+
+The previous canonical corpus SHA256 was `3f1845257d22…` (133 cases). Only the web pins for KS-018 and
+KL-024 are gone: the two corpora were compared case by case, and only `known` differs, on those two.
+
+- **The web passes KS-018 and KL-024.** It reads a text file that starts with a UTF-16 byte order mark
+  (`info`, `keySound`, keyLED files and `autoPlay`) and keeps a keyLED event outside the pad grid without a
+  warning; the LED runner skips it when it is lit. The web now passes 133 of 133 (131 and 2 pinned fails
+  before).
+- Android and iOS give the same results as on `3f184525…` (130, 3, 0 and 133, 0, 0). Both copies were
+  synchronized to `fe56df27…` (`sync.mjs --check` passes against both pull request copies).
 
 ## Changes after dropping the iOS unobserved marks
 

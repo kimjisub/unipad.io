@@ -156,6 +156,11 @@ export class MidiConnection {
   private midiAccess: MIDIAccess | null = null;
   private inputs: MIDIInput[] = [];
   private outputs: MIDIOutput[] = [];
+  /** The outputs light messages go to. On Auto only those named as a lit controller: Android and
+   *  iOS connect any other device with a driver that sends nothing, while a synthesizer (Microsoft
+   *  GS Wavetable Synth) or a virtual cable into a music program plays every light as a note. A
+   *  model picked by hand applies to every output. */
+  private lightOutputs: MIDIOutput[] = [];
   private listener: MidiControllerListener | null = null;
   private padSize = 8;
   connected = false;
@@ -163,6 +168,9 @@ export class MidiConnection {
   private outputName: string | null = null;
   private requestedProfile: LaunchpadProfile = 'auto';
   private resolvedProfile: ResolvedProfile = 'none';
+  private onStatusChange: ((status: MidiConnectionStatus) => void) | null = null;
+  /** The mode switch (and the status report after it) still waiting to be sent. */
+  private pendingInitTimers: number[] = [];
 
   async connect(
     listener: MidiControllerListener,
@@ -173,6 +181,7 @@ export class MidiConnection {
   ): Promise<boolean> {
     this.listener = listener;
     this.requestedProfile = options?.profile ?? 'auto';
+    this.onStatusChange = options?.onStatusChange ?? null;
     if (!navigator.requestMIDIAccess) {
       console.warn('Web MIDI API not supported');
       return false;
@@ -182,16 +191,16 @@ export class MidiConnection {
       this.midiAccess = await navigator.requestMIDIAccess({ sysex: true });
       this.setupDevices();
       this.sendInitSysExToAllOutputs();
-      options?.onStatusChange?.(this.getStatus());
+      this.notifyStatus();
       this.midiAccess.onstatechange = () => {
         this.setupDevices();
         this.sendInitSysExToAllOutputs();
-        options?.onStatusChange?.(this.getStatus());
+        this.notifyStatus();
       };
       return this.connected;
     } catch (err) {
       console.warn('MIDI access denied:', err);
-      options?.onStatusChange?.(this.getStatus());
+      this.notifyStatus();
       return false;
     }
   }
@@ -216,35 +225,71 @@ export class MidiConnection {
     this.connected = this.inputs.length > 0;
   }
 
-  /** Applies a manual profile immediately (re-sends the init SysEx and re-resolves), instead of
-   *  waiting for the next connect as it used to. */
+  /**
+   * Applies a model at once, in the order of Android's MidiConnection.driver setter and iOS's
+   * MidiManager.driver: the lights go off in the old model's layout, the new model's mode switch is
+   * sent, and only after its last message is the status reported, so the listener redraws the board
+   * on a device already in its new mode and shows the model that is now in use. With no port at
+   * all (disconnected, or no Web MIDI) the choice is only kept for the next connect, so no model is
+   * shown as in use.
+   */
   setProfile(profile: LaunchpadProfile): void {
+    if (!this.connected && this.outputs.length === 0) {
+      this.requestedProfile = profile;
+      return;
+    }
+    if (this.connected) this.clearAllLeds();
     this.requestedProfile = profile;
-    if (this.outputs.length > 0) this.sendInitSysExToAllOutputs();
+    const lastInitDelay = this.sendInitSysExToAllOutputs();
+    if (lastInitDelay === null) {
+      this.notifyStatus();
+    } else {
+      this.pendingInitTimers.push(window.setTimeout(() => this.notifyStatus(), lastInitDelay));
+    }
   }
 
-  private sendInitSysExToAllOutputs(): void {
+  private notifyStatus(): void {
+    this.onStatusChange?.(this.getStatus());
+  }
+
+  private cancelPendingInit(): void {
+    for (const timer of this.pendingInitTimers) window.clearTimeout(timer);
+    this.pendingInitTimers = [];
+  }
+
+  /** Re-resolves the profile and the outputs that get lights, and sends each output its mode
+   *  switch, replacing one still waiting; returns when the last message goes out, or null when
+   *  there is none. */
+  private sendInitSysExToAllOutputs(): number | null {
+    this.cancelPendingInit();
     this.resolvedProfile = 'none';
+    this.lightOutputs = [];
+    let lastDelay: number | null = null;
     for (const output of this.outputs) {
       const profile = this.resolveProfile(output.name ?? '', this.requestedProfile);
+      if (this.requestedProfile !== 'auto' || (profile !== 'none' && profile !== 'master_keyboard')) {
+        this.lightOutputs.push(output);
+      }
       const messages = this.getInitSysExMessages(profile);
       if (profile !== 'none') {
         this.resolvedProfile = profile;
       }
       // 50 ms apart, as Android and iOS send them: the device needs the gap to switch mode.
       messages.forEach((message, index) => {
-        window.setTimeout(() => {
+        this.pendingInitTimers.push(window.setTimeout(() => {
           try {
             output.send(message);
           } catch {
             // ignore per-device SysEx failures
           }
-        }, index * 50);
+        }, index * 50));
       });
+      if (messages.length > 0) lastDelay = Math.max(lastDelay ?? 0, (messages.length - 1) * 50);
     }
     if (this.outputs.length === 0 && this.requestedProfile !== 'auto') {
       this.resolvedProfile = this.requestedProfile;
     }
+    return lastDelay;
   }
 
   private resolveProfile(outputName: string, requested: LaunchpadProfile): ResolvedProfile {
@@ -635,7 +680,7 @@ export class MidiConnection {
   /** MIDIOutput.send throws on a data byte outside 0..127 (a pack LED code of 200 is valid
    *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
   private sendToOutputs(message: number[]): void {
-    for (const output of this.outputs) {
+    for (const output of this.lightOutputs) {
       try {
         output.send(message);
       } catch (err) {
@@ -693,8 +738,10 @@ export class MidiConnection {
     // Left attached, the statechange handler re-ran setupDevices on the next hot-plug and the
     // connection came back by itself after the user disconnected.
     if (this.midiAccess) this.midiAccess.onstatechange = null;
+    this.cancelPendingInit();
     this.inputs = [];
     this.outputs = [];
+    this.lightOutputs = [];
     this.connected = false;
     this.inputName = null;
     this.outputName = null;
