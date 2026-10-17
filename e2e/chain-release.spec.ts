@@ -2,11 +2,9 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
-import { pad, point, pressed, touch, touchScreens, type Contact } from './touch';
+import { chain2, pad, point, pressed, touch, touchScreens, type Contact } from './touch';
 
 test.use({ hasTouch: true });
-// The right strip uses circle slots 9/10 for pack chains 1/2 (offset 8).
-const chain2 = (page: Page) => page.getByRole('button', { name: 'Chain 10', exact: true });
 
 async function load(page: Page, pack = 'manual') {
   await page.goto('/play');
@@ -60,6 +58,21 @@ for (const screen of touchScreens) {
       await touch(session, 'touchEnd', []);
       await expect(pressed(page, '1,0')).toHaveCount(0);
       expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+    });
+
+    test('a second finger on the same pad after a chain change leaves the first loop to its own release', async ({ page, context }) => {
+      await load(page);
+      const session = await context.newCDPSession(page);
+      const a = await point(page, '0,0', 1);
+      const b = { ...a, id: 2, x: a.x + 4 };
+      await touch(session, 'touchStart', [a]);
+      await tapChain(page, session, [a]);
+      await touch(session, 'touchStart', [a, b]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+      await touch(session, 'touchEnd', [a]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      await touch(session, 'touchEnd', []);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
     });
 
     test('CR-003 simultaneous contacts preserve the unreleased loop and feedback', async ({ page, context }) => {
