@@ -104,6 +104,11 @@ pnpm build
 20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
 is retried with another, up to 10 times), reads the address from that server's own
 output, runs the headless browser tests against it, then stops only that server.
+Before reporting ready, the launcher binds the other localhost loopback address
+and forwards its TCP connections to Next, so both IPv4 and IPv6 reach this run's
+server. A conflict on either address retries the port (or fails a pinned port);
+an unavailable address family is logged and skipped. The relay and its connections
+close along with the server.
 Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
 (the run fails at start if the port is taken). Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:

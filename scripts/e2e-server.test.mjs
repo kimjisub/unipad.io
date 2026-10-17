@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createServer } from 'node:http';
+import { createServer, get } from 'node:http';
 import { PassThrough } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { test } from 'node:test';
@@ -14,7 +14,7 @@ const nextStart = port => `▲ Next.js 16.3.8\n- Local:         http://localhost
 // Stands in for Next: listens on localhost, reports the port it really got the way Next does, and
 // on a port it cannot open fails the way Node does (the listen error on stderr, exit code 1).
 const fakeNext = port => [process.execPath, '-e', `
-  const server = require('node:http').createServer((request, response) => response.end()).listen(${port}, 'localhost', () =>
+  const server = require('node:http').createServer((request, response) => response.end('OWN-SERVER')).listen(${port}, 'localhost', () =>
     console.log(${JSON.stringify(nextStart('PORT'))}.replaceAll('PORT', server.address().port)));
 `];
 
@@ -25,11 +25,28 @@ const collect = () => {
   return stream;
 };
 
-const occupy = async () => {
-  const server = createServer().listen(0, 'localhost');
+const occupy = async (host = 'localhost') => {
+  const server = createServer((request, response) => response.end('FOREIGN-V4')).listen(0, host);
   await once(server, 'listening');
   return server;
 };
+
+const waitForReady = async stdout => {
+  const deadline = Date.now() + 10_000;
+  while (!serverReady.test(stdout.text)) {
+    assert.ok(Date.now() < deadline, 'server did not report ready');
+    await sleep(20);
+  }
+  return serverReady.exec(stdout.text).groups.e2e_server_url;
+};
+
+const responseFrom = (url, family) => new Promise((resolve, reject) => {
+  get(url, { family, agent: false }, response => {
+    let body = '';
+    response.on('data', chunk => { body += chunk; });
+    response.on('end', () => resolve(body));
+  }).on('error', reject);
+});
 
 const isRunning = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -81,17 +98,17 @@ test('a taken first port is retried on another, and the address comes from the s
   const takenPort = taken.address().port;
   const stdout = collect();
   const stderr = collect();
+  let server;
   try {
     // Port 0 stands for a free second pick; the fake server reports the port it really got.
-    const server = startServer([takenPort, 0], fakeNext, { stdout, stderr });
-    while (!serverReady.test(stdout.text)) await sleep(20);
-    const url = serverReady.exec(stdout.text).groups.e2e_server_url;
+    server = startServer([takenPort, 0], fakeNext, { stdout, stderr });
+    const url = await waitForReady(stdout);
     assert.notEqual(url, `http://localhost:${takenPort}`);
     assert.match(stderr.text, new RegExp(`Port ${takenPort} could not be opened`));
     assert.equal((await fetch(url)).status, 200);
-    server.stop();
-    await server.exited;
   } finally {
+    server?.stop();
+    await server?.exited;
     taken.close();
   }
 });
@@ -145,4 +162,66 @@ test('the server stops when the test run that started it is killed outright', as
   } finally {
     if (isRunning(server)) process.kill(server, 'SIGKILL');
   }
+});
+
+
+test('an IPv4-only foreign server makes an automatic first pick retry before reporting ready', async () => {
+  const taken = await occupy('127.0.0.1');
+  const port = taken.address().port;
+  const stdout = collect();
+  const stderr = collect();
+  const server = startServer([port, 0], fakeNext, { stdout, stderr });
+  try {
+    const url = await waitForReady(stdout);
+    assert.notEqual(url, `http://localhost:${port}`);
+    assert.doesNotMatch(stdout.text, new RegExp(`Local:.*localhost:${port}\\b`));
+    assert.equal(await responseFrom(url, 4), 'OWN-SERVER');
+    assert.equal(await responseFrom(`http://localhost:${port}`, 4), 'FOREIGN-V4');
+  } finally {
+    server.stop();
+    await server.exited;
+    taken.close();
+  }
+});
+
+test('an IPv4-only foreign server makes a pinned port fail without reporting ready', async () => {
+  const taken = await occupy('127.0.0.1');
+  const port = taken.address().port;
+  const stdout = collect();
+  const server = startServer([port], fakeNext, { stdout, stderr: collect() });
+  try {
+    const result = await Promise.race([
+      server.exited.then(code => ({ code })),
+      waitForReady(stdout).then(() => ({ ready: true })),
+    ]);
+    assert.deepEqual(result, { code: 1 });
+    assert.doesNotMatch(stdout.text, /Local:|Ready in/);
+    assert.equal(await responseFrom(`http://localhost:${port}`, 4), 'FOREIGN-V4');
+  } finally {
+    server.stop();
+    await server.exited;
+    taken.close();
+  }
+});
+
+test('both loopback families answer from our server as soon as its address is reported', async () => {
+  const stdout = collect();
+  const server = startServer([0], fakeNext, { stdout, stderr: collect() });
+  try {
+    const url = await waitForReady(stdout);
+    assert.equal(await responseFrom(url, 4), 'OWN-SERVER');
+    assert.equal(await responseFrom(url, 6), 'OWN-SERVER');
+  } finally {
+    server.stop();
+    await server.exited;
+  }
+});
+
+test('the direct launcher rejects a nonnumeric pinned port', async () => {
+  const child = spawn(process.execPath, ['e2e/start-server.mjs', '--port', 'abc'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let output = '';
+  child.stderr.on('data', chunk => { output += chunk; });
+  const [code] = await once(child, 'close');
+  assert.equal(code, 1);
+  assert.match(output, /port must be an integer/);
 });

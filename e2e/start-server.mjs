@@ -11,6 +11,9 @@
 // SIGTERM, SIGHUP or SIGKILL leaves the server running. Playwright holds the server's stdin open,
 // so the run's end, however it happens, closes stdin and this stops the server it started.
 import { spawn } from 'node:child_process';
+import { lookup } from 'node:dns/promises';
+import { createConnection, createServer } from 'node:net';
+import { stripVTControlCharacters } from 'node:util';
 
 export const portRange = { min: 20000, max: 32767 };
 export const maxAttempts = 10;
@@ -39,18 +42,106 @@ export function startServer(ports, command, { stdout = process.stdout, stderr = 
   let child;
   let stopped = false;
 
-  const run = ([file, ...args]) => new Promise(resolve => {
+  const run = async ([file, ...args]) => {
+    // Use Node's localhost lookup, as Next's listen(hostname) does. If the two disagree,
+    // binding the opposite address collides with Next and the attempt fails closed.
+    const { address: target, family } = await lookup('localhost');
+    if (stopped) return { code: 1, output: '' };
+    const relayHost = family === 6 ? '127.0.0.1' : '::1';
     let output = '';
+    let pendingLine = '';
+    let held = '';
+    let holding = false;
+    let ready;
+    let closed = false;
+    let relay;
+    const sockets = new Set();
     child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.pipe(stdout, { end: false });
-    child.stderr.on('data', chunk => {
+    const attempt = child;
+    const track = socket => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      return socket;
+    };
+    const openRelay = async port => {
+      relay = createServer(incoming => {
+        track(incoming);
+        const outgoing = track(createConnection({ host: target, port }));
+        incoming.on('error', () => outgoing.destroy());
+        outgoing.on('error', () => incoming.destroy());
+        incoming.once('close', () => outgoing.destroy());
+        outgoing.once('close', () => incoming.destroy());
+        incoming.pipe(outgoing).pipe(incoming);
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          relay.once('error', reject);
+          relay.listen({ host: relayHost, port, ipv6Only: true }, resolve);
+        });
+        stderr.write(`Browser test loopback: Next ${target}:${port}; relay ${relayHost}:${port}.\n`);
+      } catch (error) {
+        if (['EADDRNOTAVAIL', 'EAFNOSUPPORT'].includes(error.code)) {
+          stderr.write(`Browser test loopback: Next ${target}:${port}; ${relayHost} unavailable (${error.code}), skipped.\n`);
+        } else {
+          throw error;
+        }
+      }
+    };
+    const reportReady = async port => {
+      try {
+        await openRelay(port);
+        if (!stopped && !closed) {
+          stdout.write(held);
+          held = '';
+          holding = false;
+        }
+      } catch (error) {
+        const message = `Error: listen ${error.code ?? 'FAILED'}: loopback relay ${relayHost}:${port}: ${error.message}\n`;
+        output += message;
+        stderr.write(message);
+        attempt.kill();
+      }
+    };
+    attempt.stdout.on('data', chunk => {
+      pendingLine += chunk;
+      let end;
+      while ((end = pendingLine.indexOf('\n')) !== -1) {
+        const line = pendingLine.slice(0, end + 1);
+        pendingLine = pendingLine.slice(end + 1);
+        const plain = stripVTControlCharacters(line);
+        if (/\bLocal:/.test(plain)) holding = true;
+        if (holding) held += line;
+        else stdout.write(line);
+        if (!ready && /Ready in/.test(plain)) {
+          const port = Number(stripVTControlCharacters(held).match(/http:\/\/localhost:(\d+)/)?.[1]);
+          if (!port) {
+            output += 'Missing localhost port in server output';
+            stderr.write(`${output}\n`);
+            attempt.kill();
+          } else {
+            ready = reportReady(port);
+          }
+        }
+      }
+    });
+    attempt.stderr.on('data', chunk => {
       if (output.length < keptStderr) output += chunk;
       stderr.write(chunk);
     });
-    child.on('error', error => resolve({ code: 1, output: String(error) }));
-    // 'close' comes after the process has exited and its output is drained.
-    child.on('close', (code, signal) => resolve({ code: code ?? (signal ? 1 : 0), output }));
-  });
+    const result = await new Promise(resolve => {
+      attempt.on('error', error => { output += String(error); });
+      // 'close' comes after the process has exited and its output is drained.
+      attempt.on('close', (code, signal) => {
+        closed = true;
+        resolve({ code: code ?? (signal ? 1 : 0) });
+      });
+    });
+    await ready;
+    for (const socket of sockets) socket.destroy();
+    if (relay?.listening) await new Promise(resolve => relay.close(resolve));
+    if (!holding && pendingLine) stdout.write(pendingLine);
+    return { ...result, output };
+  };
 
   const exited = (async () => {
     const tried = [];
@@ -79,6 +170,10 @@ export function stopWhenInputEnds(server, input = process.stdin) {
 if (import.meta.main) {
   const [flag, value] = process.argv.slice(2);
   const nextStart = port => [process.execPath, 'node_modules/next/dist/bin/next', 'start', '--hostname', 'localhost', '--port', String(port)];
+  if (flag !== undefined && (flag !== '--port' || !/^\d+$/.test(value ?? '') || Number(value) < 1 || Number(value) > 65535)) {
+    console.error('port must be an integer between 1 and 65535');
+    process.exit(1);
+  }
   const server = startServer(candidatePorts(flag === '--port' ? Number(value) : undefined), nextStart);
   stopWhenInputEnds(server);
   server.exited.then(code => process.exit(code));
