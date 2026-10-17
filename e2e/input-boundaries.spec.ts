@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, stateTimeout } from './browser';
 import { chain2, lit, pad, point, touch, touchScreens } from './touch';
-import { duration, loadInputPack, stateTimeout } from './input-fixture';
+import { duration, loadInputPack } from './input-fixture';
 
 test.use({ hasTouch: true });
 const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);

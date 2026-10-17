@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 // Newest first: the list sorts by the date a pack was added.
 const packs = [
@@ -21,7 +21,7 @@ async function openList(page: Page, files: readonly PackFile[]) {
   for (const file of files) {
     await page.goto('/play');
     await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
-    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    await expectPads(page);
     // The import shows the pads before it saves the pack; the URL changes once it is saved.
     await expect(page).toHaveURL(/\/play\?pack=.+/);
   }
@@ -103,7 +103,7 @@ test('Space selects the focused pack and Enter plays it', async ({ page }) => {
   await expect(page.locator('[data-pad]')).toHaveCount(0);
 
   await page.keyboard.press('Enter');
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page).toHaveTitle(/^Chain Release v1 manual \|/);
 });
 
