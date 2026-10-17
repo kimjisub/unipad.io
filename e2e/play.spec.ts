@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect } from './browser';
@@ -12,14 +13,28 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  const fileInput = page.locator('input[type=file][accept=".zip,.uni"]');
+  await fileInput.setInputFiles(file);
+  // File reading starts asynchronously after the input change handler returns.
+  await page.waitForFunction(() =>
+    !document.querySelector('input[type=file][accept=".zip,.uni"]')
+    || !!document.querySelector('button[aria-label="Open menu"], [role="alertdialog"]'));
   await expectLoadedPack(page);
 }
 
 async function expectLoadedPack(page: Page) {
-  // Archive reading and native decoding use the existing action/test budget.
-  // Only check the grid's value once the player has finished loading.
-  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).waitFor();
+  // Wait for loading to end, including failure outcomes, within the test budget.
+  // Storage restoration can briefly render the list before reading ?pack=.
+  await page.waitForFunction(() => {
+    if (document.querySelector('[role="alertdialog"]')) return true;
+    const fileInput = document.querySelector('input[type=file][accept=".zip,.uni"]');
+    const player = document.querySelector('button[aria-label="Open menu"]');
+    const restoringPack = fileInput && !player && new URL(location.href).searchParams.has('pack');
+    const loading = [...document.querySelectorAll('p')].some(element =>
+      /^(?:Reading archive|Loading(?: info| sounds| LEDs| autoplay| audio)?)\.\.\.(?: \(\d+\/\d+\))?$/.test(element.textContent ?? ''));
+    const settledScreen = fileInput || player;
+    return !loading && !restoringPack && !!settledScreen;
+  });
   await expect(page.locator('[data-pad]')).toHaveCount(64);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -64,6 +79,48 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
   await page.reload();
   await expectLoadedPack(page);
   expect(await starts(page)).toBe(0);
+});
+
+test('a missing saved pack fails the pad value check after restoration ends', async ({ page }, testInfo) => {
+  await page.goto('/play?pack=missing-saved-pack');
+  const failure = await expectLoadedPack(page).then(() => '', error => stripVTControlCharacters(error.message));
+  await testInfo.attach('missing-pack-value-failure', { body: failure, contentType: 'text/plain' });
+  await testInfo.attach('missing-pack-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(failure).toContain('expect(locator).toHaveCount(expected) failed');
+  expect(failure).toContain('Expected: 64');
+  expect(failure).toContain('Received: 0');
+  await expect(page.getByText('No UniPacks installed', { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/pack=/);
+});
+
+test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.addInitScript(() => {
+    const get = IDBObjectStore.prototype.get;
+    const released = new Promise<void>(resolve =>
+      window.addEventListener('release-pack-read', () => resolve(), { once: true }));
+    let held = false;
+    IDBObjectStore.prototype.get = function (query) {
+      const request = get.call(this, query);
+      if (this.name === 'unipacks' && !held) {
+        held = true;
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          void released.then(() => request.onsuccess?.call(request, event));
+        }, { once: true });
+      }
+      return request;
+    };
+  });
+  await page.reload();
+  await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
+  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
+  const restored = expectLoadedPack(page).catch(error => error);
+  // Keep the actual storage result pending beyond a pad assertion's five seconds.
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  expect(await restored).toBeUndefined();
 });
 
 test('pointer press/release plays/stops a loop and runs keyLed on another pad', async ({ page }) => {
