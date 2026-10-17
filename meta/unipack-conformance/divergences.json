@@ -1,10 +1,172 @@
 {
-  "KL-012": {},
-  "KL-014": {},
-  "KL-M05": {},
-  "KL-M11": {},
-  "KL-M12": {},
-  "KL-M13": {},
-  "KL-M17": {},
-  "KL-M18": {}
+  "FS-004": {
+    "android": {
+      "status": "fail",
+      "actual": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 3,
+            "y": 2,
+            "queue": [
+              {
+                "file": "c.wav",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": true,
+        "leds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "loop": 1,
+                "events": [
+                  [
+                    "on",
+                    0,
+                    0,
+                    "ffff0000",
+                    4
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "autoPlay": null,
+        "errors": [
+          "keyLed:other(keyLed : sub is not file)"
+        ]
+      },
+      "note": "Android takes the sub folder of keyLED for an LED file and records `keyLed : sub is not file`; the file inside it is not read."
+    }
+  },
+  "RUN-L-009": {
+    "android": {
+      "status": "fail",
+      "actual": {
+        "checkpoints": [
+          [
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ],
+            [
+              "ledOn",
+              1,
+              0,
+              "ff00ff00",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOff",
+              1,
+              0
+            ]
+          ]
+        ]
+      },
+      "note": "The LED runner reads a delay only once the time the delays before it add up to has come, so `d -60` after `d 100` is read 100 ms in and the offs come then instead of at 40 ms. `d 0` does not wait."
+    },
+    "ios": {
+      "status": "fail",
+      "actual": {
+        "checkpoints": [
+          [
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ],
+            [
+              "ledOn",
+              1,
+              0,
+              "ff00ff00",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOff",
+              1,
+              0
+            ]
+          ]
+        ]
+      },
+      "note": "The LED runner reads a delay only once the time the delays before it add up to has come, so `d -60` after `d 100` is read 100 ms in and the offs come then instead of at 40 ms. `d 0` does not wait."
+    },
+    "web": {
+      "status": "fail",
+      "actual": {
+        "checkpoints": [
+          [
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ],
+            [
+              "ledOn",
+              1,
+              0,
+              "ff00ff00",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOff",
+              1,
+              0
+            ]
+          ]
+        ]
+      },
+      "note": "The LED runner reads a delay only once the time the delays before it add up to has come, so `d -60` after `d 100` is read 100 ms in and the offs come then instead of at 40 ms. `d 0` does not wait."
+    }
+  }
 }

@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildCases } from './cases.mjs';
+import { readGrammar } from './grammar.mjs';
 import { buildAssets, fingerprint, restsOnAgreement, restsOnDecision, SCHEMA, sha256 } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,12 +23,20 @@ export function buildCorpus(makeCases = buildCases) {
   const divergences = existsSync(join(here, 'divergences.json')) ? read('divergences.json') : {};
   const assets = buildAssets();
   const cases = makeCases(palette);
+  const grammar = readGrammar();
+  const itemIds = new Set(grammar.items.map((i) => i.id));
 
   const seen = new Set();
   const problems = [];
   const out = cases.map((c) => {
     if (seen.has(c.id)) problems.push(`duplicate case id ${c.id}`);
     seen.add(c.id);
+    // Every case says which grammar items it checks, by numbers GRAMMAR.md lists.
+    if (!Array.isArray(c.items) || c.items.length === 0) problems.push(`${c.id}: names no grammar item (items)`);
+    else {
+      for (const item of c.items) if (!itemIds.has(item)) problems.push(`${c.id}: item ${item} is not in GRAMMAR.md ${grammar.edition}`);
+      if (new Set(c.items).size !== c.items.length) problems.push(`${c.id}: names an item twice`);
+    }
     if (c.expectation === 'determined') {
       if (!c.expected) problems.push(`${c.id}: determined without expected`);
       // A reference basis (another implementation) only stands for the palette, which no doc lists. An
@@ -51,6 +60,9 @@ export function buildCorpus(makeCases = buildCases) {
         if (!PLATFORMS.includes(platform)) problems.push(`${c.id}: unknown platform ${platform}`);
         if (!STATUSES.includes(d.status)) problems.push(`${c.id}/${platform}: unknown status ${d.status}`);
         if (!d.actual || !d.note) problems.push(`${c.id}/${platform}: a divergence needs the pinned actual and a note`);
+        for (const other of d.otherActuals ?? []) {
+          if (!other.where || !other.actual) problems.push(`${c.id}/${platform}: each of otherActuals needs where it happens and the actual`);
+        }
       }
     }
     for (const [platform, reason] of Object.entries(c.unobserved ?? {})) {
@@ -73,7 +85,8 @@ export function buildCorpus(makeCases = buildCases) {
   return {
     schema: SCHEMA,
     generatedBy: 'meta/unipack-conformance/build-corpus.mjs',
-    rights: 'Every sound is a synthesized 10 ms signal made by lib.mjs (two sine tones and silence), and one of them encoded as MP3. No pack, song or third-party audio is included.',
+    grammar: grammar.edition,
+    rights: 'Every sound is a synthesized 10 ms signal made by lib.mjs (two sine tones and silence), and one of them encoded as MP3; the one file that stands for a sound that cannot be decoded is a line of text. No pack, song or third-party audio is included.',
     assets,
     palette,
     cases: out,

@@ -7,11 +7,12 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
 import { buildCases } from './cases.mjs';
 import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDecision, sha256, startsWithMpegFrame } from './lib.mjs';
+import { HARNESS_LIMITS, readGrammar } from './grammar.mjs';
 import { buildReport, classify, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
 import { resolveCommits } from './copies.mjs';
 import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
@@ -110,18 +111,23 @@ test('a determined case needs a doc, intent, agreed or decision basis, and an ag
 });
 
 test('a decided case is checked like any other, and the report counts it apart from doc and agreed ones', () => {
-  const decidedIds = corpus.cases.filter(restsOnDecision).map((c) => c.id);
-  assert.deepEqual(decidedIds, ['KL-024']);
-  assert.equal(decidedIds.filter((id) => corpus.cases.find((c) => c.id === id).basis.some((b) => b.type === 'agreed')).length, 0);
+  const decided = corpus.cases.filter(restsOnDecision);
+  const decidedIds = decided.map((c) => c.id);
+  assert.ok(decidedIds.includes('KL-024'));
+  assert.equal(decided.filter((c) => c.basis.some((b) => b.type === 'agreed')).length, 0);
 
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
   assert.equal(report.decided.cases, decidedIds.length);
-  assert.deepEqual(report.decided.pass, { android: 1, ios: 1, web: 1 });
-  assert.equal(report.decided.passOnAllThree, 1);
+  // fullResults leaves a case pinned or unobserved on a platform unverified there.
+  const clean = (p) => decided.filter((c) => !c.known?.[p] && !c.unobserved?.[p]);
+  const pass = Object.fromEntries(PLATFORMS.map((p) => [p, clean(p).length]));
+  assert.deepEqual(report.decided.pass, pass);
+  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => !c.known?.[p] && !c.unobserved?.[p])).length;
+  assert.equal(report.decided.passOnAllThree, onAllThree);
   const text = renderText(report);
-  assert.match(text, /, 1 on a decision basis$/m);
-  assert.match(text, /^decision basis: 1 cases .* pass android 1, ios 1, web 1$/m);
+  assert.match(text, new RegExp(`, ${onAllThree} on a decision basis$`, 'm'));
+  assert.match(text, new RegExp(`^decision basis: ${decidedIds.length} cases .* pass android ${pass.android}, ios ${pass.ios}, web ${pass.web}$`, 'm'));
   assert.match(text, /^KL-024 .*\[decision\]$/m);
 
   // While a platform's difference is pinned, its pinned result is a fail, any other wrong result is a fail,
@@ -138,6 +144,100 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(classify(kl024, kl024.expected, 'web'), 'unverified');
   assert.equal(statusOf('web', { status: 'unverified', actual: kl024.expected }), 'unverified');
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
+});
+
+test('GRAMMAR.md lists 103 items of edition G1, each of kind parse or output, and the corpus names its edition', () => {
+  const grammar = readGrammar();
+  assert.equal(grammar.edition, 'G1');
+  assert.equal(corpus.grammar, 'G1');
+  assert.equal(grammar.items.length, 103);
+  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 103);
+  for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
+  for (const limits of Object.values(HARNESS_LIMITS)) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
+  assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
+  const row = '| S-01 | rule | parse | doc | where |';
+  assert.throws(() => readGrammar(`# UniPack grammar, edition G1\n${row}\n${row}\n`), /S-01 more than once/);
+});
+
+test('every case names the grammar items it checks, and the build refuses one without them or with an unknown one', () => {
+  const ids = new Set(readGrammar().items.map((i) => i.id));
+  for (const c of corpus.cases) {
+    assert.ok(c.items.length > 0, c.id);
+    for (const item of c.items) assert.ok(ids.has(item), `${c.id}: ${item}`);
+  }
+  const editing = (edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === 'KS-001' ? edit(structuredClone(c)) : c)));
+  assert.throws(editing((c) => { delete c.items; return c; }), /KS-001: names no grammar item/);
+  assert.throws(editing((c) => ({ ...c, items: [] })), /KS-001: names no grammar item/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G1/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-01'] })), /KS-001: names an item twice/);
+});
+
+describe('an item is confirmed on a platform', () => {
+  const allPass = () => Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)]));
+  const itemRow = (report, id) => report.grammar.rows.find((r) => r.id === id);
+  const caseOf = (id) => corpus.cases.find((c) => c.id === id);
+  /** A copy of the corpus whose cases name other items: `edit(id, items)` returns the new items of a case. */
+  const relinked = (edit) => ({ ...canonical, corpus: { ...corpus, cases: corpus.cases.map((c) => ({ ...c, items: edit(c.id, c.items) })) } });
+
+  test('only when a case checks it', () => {
+    const report = buildReport(canonical, allPass());
+    for (const id of ['F-05', 'F-06', 'A-03', 'A-04', 'A-05']) {
+      const row = itemRow(report, id);
+      assert.deepEqual(row.cases, [], id);
+      for (const p of PLATFORMS) assert.deepEqual(row[p], { confirmed: false, detail: 'no case checks this item' }, `${id} ${p}`);
+    }
+  });
+
+  test('only when every case that checks it passes there', () => {
+    const results = allPass();
+    assert.equal(itemRow(buildReport(canonical, results), 'S-09').web.confirmed, true);
+    results.web = fullResults('web', { 'KS-004': { status: 'fail', actual: SOME_RESULT } });
+    assert.deepEqual(itemRow(buildReport(canonical, results), 'S-09').web, { confirmed: false, detail: 'not every case passes: KS-004 fail' });
+    assert.equal(itemRow(buildReport(canonical, results), 'S-09').android.confirmed, true);
+    // A platform that was not run confirms nothing.
+    const none = buildReport(canonical, { web: fullResults('web') });
+    assert.equal(none.grammar.confirmed.android, 0);
+    assert.equal(none.grammar.confirmedOnAllThree, 0);
+  });
+
+  test('an output item only by a run or palette case', () => {
+    assert.equal(caseOf('RUN-S-004').layer, 'run');
+    const parseOnly = relinked((id, items) => (id === 'RUN-S-004' ? items.filter((i) => i !== 'RS-03') : id === 'KS-001' ? [...items, 'RS-03'] : items));
+    const row = itemRow(buildReport(parseOnly, allPass()), 'RS-03');
+    assert.deepEqual(row.cases, ['KS-001']);
+    for (const p of PLATFORMS) assert.match(row[p].detail, /output item .* run or palette case/, p);
+    assert.equal(itemRow(buildReport(canonical, allPass()), 'RS-03').web.confirmed, true);
+  });
+
+  test('only where its harness can observe it, or the result file says the limit does not hold', () => {
+    const report = buildReport(canonical, allPass());
+    const a01 = itemRow(report, 'A-01');
+    assert.ok(a01.cases.length > 0);
+    assert.equal(a01.ios.confirmed, true);
+    for (const p of ['android', 'web']) assert.match(a01[p].detail, new RegExp(`^the ${p} harness cannot observe it`), p);
+    const f01 = itemRow(report, 'F-01');
+    assert.equal(f01.web.confirmed, true);
+    for (const p of ['android', 'ios']) assert.equal(f01[p].confirmed, false, p);
+    const results = allPass();
+    for (const p of ['android', 'ios']) results[p].caseSensitiveFileSystem = true;
+    for (const p of ['android', 'ios']) assert.equal(itemRow(buildReport(canonical, results), 'F-01')[p].confirmed, true, p);
+    results.android.caseSensitiveFileSystem = 'yes';
+    assert.equal(itemRow(buildReport(canonical, results), 'F-01').android.confirmed, false);
+  });
+
+  test('and the four numbers count the items', () => {
+    const results = allPass();
+    const { grammar } = buildReport(canonical, results);
+    const rows = grammar.rows;
+    assert.equal(grammar.items, 103);
+    for (const p of PLATFORMS) assert.equal(grammar.confirmed[p], rows.filter((r) => r[p].confirmed).length, p);
+    assert.equal(grammar.confirmedOnAllThree, rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length);
+    assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
+    assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
+    const text = renderText(buildReport(canonical, results));
+    assert.match(text, new RegExp(`^grammar G1: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 103 items; on all three platforms ${grammar.confirmedOnAllThree} of 103; ${grammar.withCases} of 103 have a case$`, 'm'));
+    assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
+  });
 });
 
 test('sound assets regenerate to the same bytes', () => {
@@ -387,4 +487,9 @@ test('copies.json pins the app copies CI compares to full commit hashes only', (
 
 test('report rows cover every platform', () => {
   assert.deepEqual(PLATFORMS, ['android', 'ios', 'web']);
+});
+
+ test('the grammar reads the same edition and items with CRLF line endings', () => {
+  const lf = readFileSync(join(here, 'GRAMMAR.md'), 'utf8');
+  assert.deepEqual(readGrammar(lf.replace(/\r?\n/g, '\r\n')), readGrammar(lf));
 });

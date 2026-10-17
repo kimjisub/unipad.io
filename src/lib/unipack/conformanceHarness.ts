@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
+import { changeChain, ledPushToNum } from './chainChange';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
 import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
@@ -18,7 +19,13 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
 type Files = CorpusFile[];
 
 export interface CorpusFile { path: string; text?: string; base64?: string; asset?: string }
-export interface Known { status: 'fail' | 'unsupported' | 'intended-difference'; actual: Json; note: string }
+export interface Known {
+  status: 'fail' | 'unsupported' | 'intended-difference';
+  actual: Json;
+  note: string;
+  /** The same difference as the platform gives it elsewhere (another file system, say). */
+  otherActuals?: { where: string; actual: Json }[];
+}
 export interface CorpusCase {
   id: string;
   layer: 'parse' | 'palette' | 'run';
@@ -30,6 +37,8 @@ export interface CorpusCase {
   expected?: Json;
   question?: string;
   scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean }[];
+  /** The grammar items (meta/unipack-conformance/GRAMMAR.md) the case checks. */
+  items?: string[];
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -193,9 +202,11 @@ export interface Deps {
   LedRunner: typeof LedRunner;
   AutoPlayRunner: typeof AutoPlayRunner;
   SoundEngine: typeof SoundEngine;
+  /** What the play screen (useUniPadEngine setChain) does with every chain change. */
+  changeChain: typeof changeChain;
 }
 
-export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine };
+export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine, changeChain };
 
 async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<{ pack: UniPackData } | { refused: string }> {
   try {
@@ -311,19 +322,37 @@ class VirtualClock {
   }
 }
 
-/** The part of the Web Audio API SoundEngine touches, recording every started source. */
+/** A WAV (RIFF), or MP3 with an ID3 tag or starting at a frame; what the decoder stand-in accepts. */
+function looksLikeAudio(bytes: Uint8Array): boolean {
+  const ascii = (at: number, text: string) => [...text].every((ch, i) => bytes[at + i] === ch.charCodeAt(0));
+  return (ascii(0, 'RIFF') && ascii(8, 'WAVE')) || ascii(0, 'ID3') || (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
+}
+
+interface StartedSource { name: string; loop: boolean; stopAt: number | null; stopped: boolean; pad: Json[] | null }
+
+/**
+ * The part of the Web Audio API SoundEngine touches, recording every started source. It decodes no
+ * audio: a buffer stands for any bytes that start like a WAV or an MP3, and other bytes fail to decode
+ * as they would in a browser.
+ */
 class FakeAudioContext {
   static decodeNames: string[] = [];
-  static started: { name: string; loop: boolean; stopAt: number | null }[] = [];
+  static started: StartedSource[] = [];
+  /** Called when a started source is stopped at once, the first time only (a scheduled stop is not). */
+  static onStopped: (source: StartedSource) => void = () => {};
   state = 'running';
   currentTime = 0;
   destination = {};
   createGain() { return { gain: { value: 1 }, connect() {} }; }
   async resume() {}
   async close() {}
-  async decodeAudioData() { return { name: FakeAudioContext.decodeNames.shift() ?? '?', duration: 0.01 }; }
+  async decodeAudioData(data: ArrayBuffer) {
+    const name = FakeAudioContext.decodeNames.shift() ?? '?';
+    if (!looksLikeAudio(new Uint8Array(data))) throw new Error(`EncodingError: ${name} is not audio`);
+    return { name, duration: 0.01 };
+  }
   createBufferSource() {
-    const record = { name: '', loop: false, stopAt: null as number | null };
+    const record: StartedSource = { name: '', loop: false, stopAt: null, stopped: false, pad: null };
     const node = {
       buffer: null as { name: string } | null,
       get loop() { return record.loop; },
@@ -331,7 +360,10 @@ class FakeAudioContext {
       connect() {},
       onended: null as (() => void) | null,
       start() { record.name = node.buffer?.name ?? '?'; FakeAudioContext.started.push(record); },
-      stop(when?: number) { if (when !== undefined) record.stopAt = when; },
+      stop(when?: number) {
+        if (when !== undefined) record.stopAt = when;
+        else if (!record.stopped) { record.stopped = true; FakeAudioContext.onStopped(record); }
+      },
     };
     return node;
   }
@@ -344,48 +376,65 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   const clock = new VirtualClock();
   const g = globalThis as { AudioContext?: unknown };
   const savedAudioContext = g.AudioContext;
-  clock.install();
-  g.AudioContext = FakeAudioContext;
-  FakeAudioContext.started = [];
-  FakeAudioContext.decodeNames = Array.from(pack.soundFiles.keys());
-
-  let chain = 0;
-  let events: Json[] = [];
+  const savedStopListener = FakeAudioContext.onStopped;
   const checkpoints: Json[] = [];
-  const chainValue = () => chain;
-
-  const ledListener: LedRunnerListener = {
-    onPadLedTurnOn: (x, y, color, velocity) => { events.push(['ledOn', x, y, hex8(color), velocity]); },
-    onPadLedTurnOff: (x, y) => { events.push(['ledOff', x, y]); },
-    onChainLedTurnOn: (i, color, velocity) => { events.push(['ledOn', -1, i, hex8(color), velocity]); },
-    onChainLedTurnOff: (i) => { events.push(['ledOff', -1, i]); },
-  };
-  const led = new deps.LedRunner(pack, ledListener, chainValue, (next) => { chain = next; events.push(['chain', next]); });
-  const sound = new deps.SoundEngine(pack, chainValue, (next) => { chain = next; events.push(['chain', next]); });
-  await sound.load();
-  led.launch();
+  let led: LedRunner | null = null;
   let autoPlay: AutoPlayRunner | null = null;
-
-  // A pad press and release as the play screen sends them to the sound engine and the LED runner,
-  // named by the input holding the pad: the scenario's press/release steps are one player input,
-  // auto play holds pads under its own name as useUniPadEngine does.
-  const pressPad = (x: number, y: number, input: string) => {
-    const before = FakeAudioContext.started.length;
-    const at = chain;
-    sound.soundOn(x, y, input);
-    for (const started of FakeAudioContext.started.slice(before)) {
-      // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
-      const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
-      events.push(['sound', at, x, y, started.name.replace(/^(?:.*\/)?sounds\//i, ''), loop]);
-    }
-    led.eventOn(x, y);
-  };
-  const releasePad = (x: number, y: number, input: string) => {
-    sound.soundOff(x, y, input);
-    led.eventOff(x, y);
-  };
-
   try {
+    clock.install();
+    g.AudioContext = FakeAudioContext;
+    FakeAudioContext.started = [];
+    FakeAudioContext.decodeNames = Array.from(pack.soundFiles.keys());
+
+    let chain = 0;
+    let events: Json[] = [];
+    let watchStops = false;
+    const chainValue = () => chain;
+    // Every chain change goes through what the play screen does with it; `tag` names the event it records.
+    let sound: SoundEngine | null = null;
+    const switchChain = (next: number, tag: 'chain' | 'autoChain' | null) => {
+      const changed = deps.changeChain(pack, next, sound);
+      if (changed === null) return;
+      chain = changed;
+      if (tag) events.push([tag, changed]);
+    };
+    FakeAudioContext.onStopped = (source) => { if (watchStops && source.pad) events.push(['soundStop', ...source.pad]); };
+
+    const ledListener: LedRunnerListener = {
+      onPadLedTurnOn: (x, y, color, velocity) => { events.push(['ledOn', x, y, hex8(color), velocity]); },
+      onPadLedTurnOff: (x, y) => { events.push(['ledOff', x, y]); },
+      onChainLedTurnOn: (i, color, velocity) => { events.push(['ledOn', -1, i, hex8(color), velocity]); },
+      onChainLedTurnOff: (i) => { events.push(['ledOff', -1, i]); },
+    };
+    led = new deps.LedRunner(pack, ledListener, chainValue, (next) => switchChain(next, 'chain'));
+    const engine = new deps.SoundEngine(pack, chainValue, (next) => switchChain(next, 'chain'));
+    sound = engine;
+    await engine.load();
+    led.launch();
+
+    const scenarioLed = led;
+
+    // A pad press and release as the play screen sends them to the sound engine and the LED runner,
+    // named by the input holding the pad: the scenario's press/release steps are one player input,
+    // auto play holds pads under its own name as useUniPadEngine does.
+    const pressPad = (x: number, y: number, input: string) => {
+      const before = FakeAudioContext.started.length;
+      const at = chain;
+      engine.soundOn(x, y, input);
+      for (const started of FakeAudioContext.started.slice(before)) {
+        // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
+        const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
+        const file = started.name.replace(/^(?:.*\/)?sounds\//i, '');
+        started.pad = [at, x, y, file];
+        events.push(['sound', at, x, y, file, loop]);
+      }
+      scenarioLed.eventOn(x, y);
+    };
+    const releasePad = (x: number, y: number, input: string) => {
+      engine.soundOff(x, y, input);
+      scenarioLed.eventOff(x, y);
+    };
+
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
@@ -395,7 +444,10 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           releasePad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'chain':
-          chain = step.c!;
+          switchChain(step.c!, null);
+          break;
+        case 'watchStops':
+          watchStops = true;
           break;
         case 'advance':
           clock.advance(step.ms!);
@@ -411,17 +463,19 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
             onStart() {}, onEnd() {}, onProgressUpdate() {},
             onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y, AUTO_PLAY_INPUT); },
             onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
-            onChainChange: (next) => { chain = next; events.push(['autoChain', next]); },
+            onChainChange: (next) => switchChain(next, 'autoChain'),
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
           };
-          autoPlay = new deps.AutoPlayRunner(pack, listener, chainValue, () => {}, () => {}, () => {});
+          // The queue callbacks the play screen hands the runner (useUniPadEngine).
+          autoPlay = new deps.AutoPlayRunner(pack, listener, chainValue, () => {},
+            (c, x, y, num) => engine.soundPushToNum(c, x, y, num), (c, x, y, num) => ledPushToNum(pack, c, x, y, num));
           autoPlay.launch();
           break;
         }
         case 'stop':
           autoPlay?.stop();
           led.stop();
-          sound.destroy();
+          engine.destroy();
           break;
         default:
           throw new Error(`${c.id}: unknown scenario step ${step.do}`);
@@ -429,7 +483,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     }
   } finally {
     autoPlay?.stop();
-    led.stop();
+    led?.stop();
+    FakeAudioContext.onStopped = savedStopListener;
     clock.uninstall();
     g.AudioContext = savedAudioContext;
   }
@@ -459,7 +514,7 @@ export function classify(c: CorpusCase, actual: Json, platform: string = PLATFOR
       : { status: 'pass', unexpected: false, detail: '' };
   }
   if (known) {
-    return isDeepStrictEqual(actual, known.actual)
+    return isDeepStrictEqual(actual, known.actual) || (known.otherActuals ?? []).some((o) => isDeepStrictEqual(actual, o.actual))
       ? { status: known.status, unexpected: false, detail: known.note }
       : { status: 'fail', unexpected: true, detail: 'the result changed from the pinned difference' };
   }
