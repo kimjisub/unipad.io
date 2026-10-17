@@ -1,25 +1,36 @@
-# Results (2026-10-17, Korea time)
+# Results (2026-10-18, Korea time)
 
-Corpus `4a67dbe1e919…` (sha256 of `corpus.json`), 137 cases, run on unipad-android d0b71a94 and
-unipad-ios 1fc7063a (the merge commits of the app pull requests that copy this corpus, the commits in
-`copies.json`) and on this unipad.io branch, all on October 17. Regenerate this table with `report.mjs`
-(README, "Running it"). It describes these 137 cases only; it does not show that every UniPack is
-compatible, and 100% compatibility is not known.
+Corpus `844fa232eafa…` (sha256 of `corpus.json`), 137 cases, run on unipad-android 9e00b363 and
+unipad-ios f46a2cbb (the app pull requests that copy this corpus, the commits in `copies.json`) and on
+this unipad.io branch, on October 17 and 18. Regenerate this table with `report.mjs` (README, "Running
+it"). It describes these 137 cases only; it does not show that every UniPack is compatible, and 100%
+compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 134 | 3 | 0 | 0 | 0 | 2026-10-16 17:45:49 |
-| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-16 18:28:49 |
-| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-16 17:58:08 |
+| Android | 137 | 0 | 0 | 0 | 0 | 2026-10-17 14:35:27 |
+| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-17 15:33:58 |
+| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-17 14:37:15 |
 
-Pass on all three platforms: 134 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+Pass on all three platforms: 137 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
 the 17) and 1 on a decision basis (Android 1, iOS 1, web 1 of the 1).
 
-- **Fail, 3 pinned:** Android: INF-007, INF-010, INF-016. Each is pinned in `divergences.json` with the
-  observed result and its cause; Android's fix removes them.
+- **No case fails, and no difference is pinned.** No case in `divergences.json` carries a pin.
 - **No case is unverified or undetermined.** The six exit and autoPlay cases pass on iOS from the
   results its harness recorded. On iOS, leaving the play screen is observed up to the main screen's
   clear call to the MIDI driver, not what a physical Launchpad receives.
+
+## Changes after the Android `info` fix
+
+The previous canonical corpus SHA256 was `4a67dbe1e919…` (137 cases). Only the Android pins for INF-007,
+INF-010 and INF-016 are gone: ids, input files, fingerprints, expected results and bases are unchanged.
+
+- **Android gives the decided result for INF-007, INF-010 and INF-016.** It skips an `info` line without
+  `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pad column or row. Android now passes
+  137 of 137 (134 and 3 pinned fails before).
+- iOS and the web give the same results as on `4a67dbe1…` (137, 0, 0 each). The Android copy is the one
+  in 9e00b363; the iOS copy was synchronized to `844fa232…` (`sync.mjs --check` passes against both).
 
 ## Changes after the sound name cases that differ from the file only in case
 
