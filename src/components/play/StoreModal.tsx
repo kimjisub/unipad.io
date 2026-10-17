@@ -5,8 +5,18 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useClientReady } from '@/hooks/useClientReady';
 import type { StoreItem } from '@/lib/store';
+import { listboxTargetIndex } from './listboxNavigation';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
+
+/**
+ * The store keeps focus in its search field, so only up and down move the selection;
+ * Home and End stay with the text caret.
+ */
+function storeTargetIndex(key: string, current: number, count: number): number | null {
+  if (key !== 'ArrowDown' && key !== 'ArrowUp') return null;
+  return listboxTargetIndex(key, current, count);
+}
 
 interface StoreModalProps {
   visible: boolean;
@@ -169,21 +179,10 @@ export function StoreModal({
       }
       if (!visibleItems.length || isTextInput) return;
 
-      if (event.key === 'ArrowDown') {
+      const targetIndex = storeTargetIndex(event.key, selectedIndex, visibleItems.length);
+      if (targetIndex !== null) {
         event.preventDefault();
-        const next = selectedIndex < 0
-          ? 0
-          : (selectedIndex + 1) % visibleItems.length;
-        setSelectedCode(visibleItems[next].code);
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        const prev = selectedIndex <= 0
-          ? visibleItems.length - 1
-          : selectedIndex - 1;
-        setSelectedCode(visibleItems[prev].code);
+        setSelectedCode(visibleItems[targetIndex].code);
         return;
       }
 
@@ -341,15 +340,10 @@ export function StoreModal({
                       setSearch('');
                       searchInputRef.current?.blur();
                     }
-                    if (e.key === 'ArrowDown' && visibleItems.length > 0) {
+                    const targetIndex = storeTargetIndex(e.key, selectedIndex, visibleItems.length);
+                    if (targetIndex !== null) {
                       e.preventDefault();
-                      const next = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleItems.length;
-                      setSelectedCode(visibleItems[next].code);
-                    }
-                    if (e.key === 'ArrowUp' && visibleItems.length > 0) {
-                      e.preventDefault();
-                      const prev = selectedIndex <= 0 ? visibleItems.length - 1 : selectedIndex - 1;
-                      setSelectedCode(visibleItems[prev].code);
+                      setSelectedCode(visibleItems[targetIndex].code);
                     }
                     if (e.key === 'Enter' && selectedItem && !downloadingCode) {
                       e.preventDefault();

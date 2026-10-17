@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
-import { duration, loadInputPack, stateTimeout } from './input-fixture';
+import { test, expect, stateTimeout } from './browser';
+import { duration, loadInputPack } from './input-fixture';
 import { lit } from './touch';
 
 const screens = [
