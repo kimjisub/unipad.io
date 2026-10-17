@@ -80,6 +80,44 @@ function installLinks(page: Page) {
   return ['Web', 'Android', 'iOS'].map(name => page.locator('footer').getByRole('link', { name, exact: true }));
 }
 
+test.describe('scroll button settling', () => {
+  for (const present of [true, false]) {
+    test(`needs at most four frames when the button is ${present ? 'settled' : 'absent'}`, async ({ page }) => {
+      await page.setContent(present ? '<button aria-label="Scroll to top" style="bottom: 24px">Up</button>' : '<p>No button</p>');
+      await page.evaluate(() => {
+        const request = window.requestAnimationFrame.bind(window);
+        let frames = 0;
+        window.requestAnimationFrame = callback => request(time => {
+          document.body.dataset.frames = String(++frames);
+          callback(time);
+        });
+      });
+      await waitForButtonAtRest(page);
+      expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeLessThanOrEqual(4);
+    });
+  }
+
+  test('waits through placement changes, fading and removal', async ({ page }) => {
+    await page.setContent('<button aria-label="Scroll to top" style="bottom: 24px; opacity: 0">Up</button>');
+    await page.evaluate(() => {
+      const button = document.querySelector('button')!;
+      const request = window.requestAnimationFrame.bind(window);
+      let frames = 0;
+      window.requestAnimationFrame = callback => request(time => {
+        frames++;
+        button.style.bottom = `${24 + Math.min(frames, 4)}px`;
+        if (frames === 5) button.style.opacity = '1';
+        if (frames === 6) button.remove();
+        document.body.dataset.frames = String(frames);
+        callback(time);
+      });
+    });
+    await waitForButtonAtRest(page);
+    expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(7);
+    await expect(page.getByRole('button', { name: 'Scroll to top' })).toHaveCount(0);
+  });
+});
+
 test.describe('with 200% text', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium can set the default font size');
 
