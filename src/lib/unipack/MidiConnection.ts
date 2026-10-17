@@ -156,6 +156,11 @@ export class MidiConnection {
   private midiAccess: MIDIAccess | null = null;
   private inputs: MIDIInput[] = [];
   private outputs: MIDIOutput[] = [];
+  /** The outputs light messages go to. On Auto only those named as a lit controller: Android and
+   *  iOS connect any other device with a driver that sends nothing, while a synthesizer (Microsoft
+   *  GS Wavetable Synth) or a virtual cable into a music program plays every light as a note. A
+   *  model picked by hand applies to every output. */
+  private lightOutputs: MIDIOutput[] = [];
   private listener: MidiControllerListener | null = null;
   private padSize = 8;
   connected = false;
@@ -252,14 +257,19 @@ export class MidiConnection {
     this.pendingInitTimers = [];
   }
 
-  /** Re-resolves the profile and sends each output its mode switch, replacing one still waiting;
-   *  returns when the last message goes out, or null when there is none. */
+  /** Re-resolves the profile and the outputs that get lights, and sends each output its mode
+   *  switch, replacing one still waiting; returns when the last message goes out, or null when
+   *  there is none. */
   private sendInitSysExToAllOutputs(): number | null {
     this.cancelPendingInit();
     this.resolvedProfile = 'none';
+    this.lightOutputs = [];
     let lastDelay: number | null = null;
     for (const output of this.outputs) {
       const profile = this.resolveProfile(output.name ?? '', this.requestedProfile);
+      if (this.requestedProfile !== 'auto' || (profile !== 'none' && profile !== 'master_keyboard')) {
+        this.lightOutputs.push(output);
+      }
       const messages = this.getInitSysExMessages(profile);
       if (profile !== 'none') {
         this.resolvedProfile = profile;
@@ -670,7 +680,7 @@ export class MidiConnection {
   /** MIDIOutput.send throws on a data byte outside 0..127 (a pack LED code of 200 is valid
    *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
   private sendToOutputs(message: number[]): void {
-    for (const output of this.outputs) {
+    for (const output of this.lightOutputs) {
       try {
         output.send(message);
       } catch (err) {
@@ -731,6 +741,7 @@ export class MidiConnection {
     this.cancelPendingInit();
     this.inputs = [];
     this.outputs = [];
+    this.lightOutputs = [];
     this.connected = false;
     this.inputName = null;
     this.outputName = null;
