@@ -374,6 +374,47 @@ test('a model picked by hand still lights every output', async ({ page }) => {
   await page.mouse.up();
 });
 
+// Android's MultiplexDriver lights every pad with its own driver. A master keyboard gets no lights; a
+// Launchpad Mini gets the Launchpad S layout (pad x,y is note x * 16 + y, palette 3 and 5 are 63 and 2).
+for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', [[0x90, 0, 63], [0x90, 1, 2]]]] as const) {
+  for (const otherFirst of [true, false]) {
+    test(`with ${other} listed ${otherFirst ? 'before' : 'after'} the Launchpad X, each gets the lights in its own layout`, async ({ page }) => {
+      await skipWithoutWebMidi(page);
+      await page.addInitScript(([name, first]) => {
+        const request = navigator.requestMIDIAccess.bind(navigator);
+        Object.defineProperty(navigator, 'requestMIDIAccess', {
+          configurable: true,
+          value: async (options: MIDIOptions) => {
+            const access = await request(options);
+            const messages: number[][] = [];
+            (window as unknown as { otherMessages: number[][] }).otherMessages = messages;
+            const port = { id: 'other-device', name, send: (data: number[]) => messages.push(Array.from(data)) };
+            const outputs = access.outputs as unknown as Map<string, unknown>;
+            const listed = [...outputs];
+            outputs.clear();
+            for (const [id, output] of first ? [[port.id, port], ...listed] : [...listed, [port.id, port]]) outputs.set(id as string, output);
+            return access;
+          },
+        });
+      }, [other, otherFirst] as const);
+      await loadPack(page);
+      await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+      await connectLaunchpadAndClear(page);
+      const otherMessages = () => page.evaluate(() => (window as unknown as { otherMessages: number[][] }).otherMessages);
+      await page.evaluate(() => { (window as unknown as { otherMessages: number[][] }).otherMessages.length = 0; });
+      await pad(page, '0,0').hover();
+      await page.mouse.down();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+      await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+      await page.mouse.up();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      for (const light of otherLights) expect(await otherMessages()).toContainEqual(light);
+      if (otherLights.length === 0) expect(await otherMessages()).toEqual([]);
+    });
+  }
+}
+
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.
 async function roundLightPack(chains = 2, keyLeds: Record<string, string> = {
