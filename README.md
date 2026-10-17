@@ -243,9 +243,10 @@ suite. `input-fixture.ts` builds a two-chain looping pack automatically from
 buffer duration, so an unexpected playback request identifies the wrong mapping.
 The unchanged press overlay distinguishes held and released pads.
 
-The resize tests first prove a pad is sounding and lit, keep the input down
-through phone portrait (390×844), phone landscape (844×390), tablet (1180×820)
-and laptop (1280×800) viewport round trips, then release and play another pad.
+The resize tests first prove a pad is sounding and lit at the laptop size, keep
+the input down from there through phone portrait (390×844), phone landscape
+(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
+landscape, then release in that different layout and play another pad.
 The existing grid remains mounted beneath the portrait overlay. These are
 viewport changes, not a physical device rotation test. Mouse dragging and chain
 clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
@@ -262,22 +263,17 @@ these automated checks.
 
 The margin tests keep a browser-native background touch down while another
 finger selects chain 2 exactly once, then verify the new chain's pad mapping
-and complete cleanup. They run at the existing phone and tablet sizes in
-Chromium; WebKit's two-contact margin case remains unverified for the same
-API limitation.
+and complete cleanup. The background finger must produce one trusted touch
+`pointerdown` outside every pad and control, and no `pointerup`,
+`pointercancel` or `lostpointercapture` for that finger until the last
+`touchEnd`. They run at the existing phone and tablet sizes in Chromium;
+WebKit's two-contact margin case remains unverified for the same API
+limitation. Pointer records observe browser events, including their trusted
+flag and input type; they do not call input handlers.
 
-For both a 4-column/3-row pack and an 8×8 pack, the shape tests import otherwise
-identical `squareButton=true` and `false` packs at compact phone (667×320),
-phone (844×390), and laptop (1280×800) sizes. They attach both screenshots and
-all actual pad bounds before deciding applicability. Matching rendered cell
-sizes mark the rectangular edge comparison as not applicable; edge and corner
-presses for both settings are still checked by `rectangular-pad-layout.spec.ts`.
-If sizes differ,
-every cell must remain visible and hit-testable, and native mouse presses two
-CSS pixels inside the grid's four edges and four corners must request only the
-mapped pad, light it, and stop it on release. This does not certify WebKit
-multi-touch or physical fingers. Pointer records observe browser events,
-including their trusted flag and input type; they do not call input handlers.
+`squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
+the bottom and right edges play the mapped pad at four screen sizes.
 
 Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
 The default suite includes all these cases; the GitHub workflow is unchanged.

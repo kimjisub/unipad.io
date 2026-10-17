@@ -1,37 +1,30 @@
-import { writeFile } from 'node:fs/promises';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
-import { pad, point, touch, touchScreens } from './touch';
-import { duration, loadInputPack } from './input-fixture';
+import { chain2, lit, pad, point, touch, touchScreens } from './touch';
+import { duration, loadInputPack, stateTimeout } from './input-fixture';
 
 test.use({ hasTouch: true });
-const chain2 = (page: Page) => page.getByRole('button', { name: 'Chain 10', exact: true });
 const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);
-const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
-  .evaluateAll(pads => pads.map(p => (p as HTMLElement).dataset.pad!).sort());
-async function held(page: Page, positions: string[], requested: string[], chain = 1, rows = 8, cols = 8) {
-  await expect.poll(() => lit(page)).toEqual([...positions].sort());
+const events = (page: Page) => page.evaluate(() => window.inputBoundaryEvents);
+const ends = ['pointerup', 'pointercancel', 'lostpointercapture'];
+async function held(page: Page, positions: string[], requested: string[], chain = 1) {
+  await expect.poll(() => lit(page), { timeout: stateTimeout }).toEqual([...positions].sort());
   const record = await audio(page);
   expect(record.starts).toHaveLength(requested.length);
   record.starts.forEach((start, i) => {
     expect(start.loop).toBe(true);
-    expect(start.duration).toBeCloseTo(duration(rows, cols, requested[i], chain), 4);
+    expect(start.duration).toBeCloseTo(duration(8, 8, requested[i], chain), 4);
   });
 }
 async function stopped(page: Page, ids: number[]) {
-  await expect.poll(async () => (await audio(page)).stops.toSorted((a, b) => a - b)).toEqual(ids);
+  await expect.poll(async () => (await audio(page)).stops.toSorted((a, b) => a - b), { timeout: stateTimeout }).toEqual(ids);
 }
-async function jsonEvidence(info: TestInfo, name: string, data: unknown) {
-  const path = info.outputPath(`${name}.json`);
-  await writeFile(path, JSON.stringify(data, null, 2));
-  await info.attach(name, { path, contentType: 'application/json' });
-}
+const json = (info: TestInfo, name: string, data: unknown) =>
+  info.attach(name, { body: JSON.stringify(data, null, 2), contentType: 'application/json' });
 async function evidence(page: Page, info: TestInfo, name: string) {
-  const screenshot = info.outputPath(`${name}.png`);
-  await page.screenshot({ path: screenshot, animations: 'disabled' });
-  await info.attach(name, { path: screenshot, contentType: 'image/png' });
-  await jsonEvidence(info, `${name}-pointer-events`, await page.evaluate(() => window.inputBoundaryEvents));
-  await jsonEvidence(info, `${name}-requests`, await audio(page));
+  await info.attach(name, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await json(info, `${name}-pointer-events`, await events(page));
+  await json(info, `${name}-requests`, await audio(page));
 }
 const screens = [
   { name: 'phone portrait', width: 390, height: 844 },
@@ -51,7 +44,9 @@ for (const mode of ['mouse', 'touch'] as const) {
     await held(page, ['2,2'], ['2,2']);
     await stopped(page, []);
     await evidence(page, info, `${mode}-before-resize`);
-    for (const [step, screen] of [...screens, ...screens.toReversed()].entries()) {
+    // Out from the laptop size and back, then on to phone landscape so the release happens in another layout.
+    const trip = [...screens, ...screens.toReversed().slice(1, -1)];
+    for (const [step, screen] of trip.entries()) {
       await test.step(screen.name, async () => {
         await page.setViewportSize({ width: screen.width, height: screen.height });
         // The existing grid remains mounted under the portrait overlay and keeps capture.
@@ -60,7 +55,6 @@ for (const mode of ['mouse', 'touch'] as const) {
         await evidence(page, info, `${mode}-${step}-${screen.name.replaceAll(' ', '-')}`);
       });
     }
-    await page.setViewportSize({ width: 1280, height: 800 });
     if (input) await touch(input, 'touchEnd', []); else await page.mouse.up();
     await held(page, [], ['2,2']);
     await stopped(page, [1]);
@@ -114,7 +108,7 @@ for (const order of ['mouse then touch', 'touch then mouse']) {
     await stopped(page, []);
     if (mouseFirst) await touch(input, 'touchStart', [finger]); else await mouseDown();
     await held(page, ['2,2', '5,5'], requested);
-    const downs = await page.evaluate(() => window.inputBoundaryEvents.filter(e => e.type === 'pointerdown' && e.target?.includes(',')));
+    const downs = (await events(page)).filter(e => e.type === 'pointerdown' && e.target?.includes(','));
     expect(downs.map(e => e.pointerType)).toEqual(mouseFirst ? ['mouse', 'touch'] : ['touch', 'mouse']);
     expect(downs.every(e => e.trusted)).toBe(true);
     expect(new Set(downs.map(e => e.pointerId)).size).toBe(2);
@@ -145,6 +139,12 @@ for (const screen of touchScreens) {
         return !!el && !el.closest('[data-pad], button, a, input');
       }, edge), 'background contact is outside every pad and control').toBe(true);
       await touch(input, 'touchStart', [edge]);
+      // The background finger really went down: one trusted touch outside every pad and control.
+      const downs = async () => (await events(page)).filter(e => e.type === 'pointerdown');
+      await expect.poll(downs, { timeout: stateTimeout }).toHaveLength(1);
+      const [margin] = await downs();
+      expect(margin).toMatchObject({ pointerType: 'touch', trusted: true, target: null });
+      const marginEnds = async () => (await events(page)).filter(e => e.pointerId === margin.pointerId && ends.includes(e.type));
       await held(page, [], []);
       const chainBox = (await chain2(page).boundingBox())!;
       const chain = { id: 2, x: chainBox.x + chainBox.width / 2, y: chainBox.y + chainBox.height / 2 };
@@ -152,9 +152,13 @@ for (const screen of touchScreens) {
       await touch(input, 'touchEnd', [chain]);
       await expect(chain2(page).locator('div[style*="background-color"]')).toHaveCount(1);
       await held(page, [], []);
-      const events = await page.evaluate(() => window.inputBoundaryEvents);
-      expect(events.filter(e => e.type === 'pointerdown' && e.target === 'Chain 10')).toHaveLength(1);
-      expect(events.filter(e => e.type === 'pointerup')).toHaveLength(1);
+      const afterChain = await events(page);
+      // Exactly one control press, on chain 2, from a second trusted finger.
+      expect(afterChain.filter(e => e.type === 'pointerdown' && e.target !== null && !e.target.includes(',')))
+        .toMatchObject([{ target: 'Chain 10', pointerType: 'touch', trusted: true }]);
+      expect(afterChain.filter(e => e.type === 'pointerdown' && e.target === 'Chain 10')[0].pointerId).not.toBe(margin.pointerId);
+      expect(afterChain.filter(e => e.type === 'pointerup')).toHaveLength(1);
+      expect(await marginEnds()).toEqual([]);
       await evidence(page, info, 'background-held-chain-selected');
       // The background contact is still down while a new chain's pad sounds.
       const next = await point(page, '7,7', 3);
@@ -163,82 +167,12 @@ for (const screen of touchScreens) {
       await touch(input, 'touchEnd', [next]);
       await held(page, [], ['7,7'], 2);
       await stopped(page, [1]);
+      expect(await marginEnds(), 'background finger stays down until the last touchEnd').toEqual([]);
       await touch(input, 'touchEnd', []);
+      await expect.poll(async () => (await marginEnds()).map(e => e.type), { timeout: stateTimeout }).toContain('pointerup');
       await held(page, [], ['7,7'], 2);
       await stopped(page, [1]);
       await evidence(page, info, 'margin-and-pad-released');
     });
   });
-}
-
-const shapes = [{ rows: 3, cols: 4 }, { rows: 8, cols: 8 }];
-const shapeScreens = [
-  { name: 'compact phone', viewport: { width: 667, height: 320 } },
-  { name: 'phone', viewport: { width: 844, height: 390 } },
-  { name: 'laptop', viewport: { width: 1280, height: 800 } },
-];
-const geometry = (page: Page) => page.locator('[data-pad]').evaluateAll(elements => elements.map(element => {
-  const r = element.getBoundingClientRect();
-  return { position: (element as HTMLElement).dataset.pad!, x: r.x, y: r.y, width: r.width, height: r.height };
-}));
-for (const screen of shapeScreens) {
-  for (const shape of shapes) {
-    test.describe(`${screen.name}: ${shape.cols}x${shape.rows} pad geometry`, () => {
-      test.use({ viewport: screen.viewport });
-      test('compare square and rectangular pads, checking changed edges and corners', async ({ page }, info) => {
-        await loadInputPack(page, shape.rows, shape.cols, true);
-        // Wait for the measured stage to settle, rather than reading its initial zero size.
-        await expect.poll(async () => (await pad(page, '0,0').boundingBox())?.width ?? 0).toBeGreaterThan(1);
-        const square = await geometry(page);
-        await evidence(page, info, 'square-pad-layout');
-        await loadInputPack(page, shape.rows, shape.cols, false);
-        await expect.poll(async () => (await pad(page, '0,0').boundingBox())?.width ?? 0).toBeGreaterThan(1);
-        const rectangular = await geometry(page);
-        const changed = rectangular.some((r, i) => Math.abs(r.width - square[i].width) > 0.5 || Math.abs(r.height - square[i].height) > 0.5);
-        await jsonEvidence(info, 'pad-geometry', { viewport: screen.viewport, square, rectangular, changed });
-        await evidence(page, info, 'rectangular-pad-layout');
-        if (!changed) {
-          info.annotations.push({ type: 'applicability', description: 'No rendered size difference at this viewport; rectangular edge comparison is not applicable.' });
-          return;
-        }
-        // Every cell, including the last row/column, must fit and be hit-testable.
-        // Never scroll a clipped pad into view: playback is a fixed stage.
-        for (const r of rectangular) {
-          expect(r.x, `${r.position} left edge`).toBeGreaterThanOrEqual(0);
-          expect(r.y, `${r.position} top edge`).toBeGreaterThanOrEqual(0);
-          expect(r.x + r.width, `${r.position} right edge`).toBeLessThanOrEqual(screen.viewport.width);
-          expect(r.y + r.height, `${r.position} bottom edge`).toBeLessThanOrEqual(screen.viewport.height);
-          expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-pad]')?.getAttribute('data-pad'),
-            { x: r.x + r.width / 2, y: r.y + r.height / 2 }), `${r.position} visible cell`).toBe(r.position);
-        }
-        const lastRow = shape.rows - 1;
-        const lastCol = shape.cols - 1;
-        const perimeter = [
-          { position: `0,${Math.floor(lastCol / 2)}`, x: 0.5, y: 0 },
-          { position: `${lastRow},${Math.floor(lastCol / 2)}`, x: 0.5, y: 1 },
-          { position: `${Math.floor(lastRow / 2)},0`, x: 0, y: 0.5 },
-          { position: `${Math.floor(lastRow / 2)},${lastCol}`, x: 1, y: 0.5 },
-          { position: '0,0', x: 0, y: 0 },
-          { position: `0,${lastCol}`, x: 1, y: 0 },
-          { position: `${lastRow},0`, x: 0, y: 1 },
-          { position: `${lastRow},${lastCol}`, x: 1, y: 1 },
-        ];
-        const requested: string[] = [];
-        for (const location of perimeter) {
-          const r = (await pad(page, location.position).boundingBox())!;
-          // Two CSS pixels inside each outer edge/corner, avoiding adjacent cells.
-          const x = r.x + 2 + (r.width - 4) * location.x;
-          const y = r.y + 2 + (r.height - 4) * location.y;
-          await page.mouse.move(x, y);
-          await page.mouse.down();
-          requested.push(location.position);
-          await held(page, [location.position], requested, 1, shape.rows, shape.cols);
-          await page.mouse.up();
-          await held(page, [], requested, 1, shape.rows, shape.cols);
-          await stopped(page, requested.map((_, i) => i + 1));
-        }
-        await evidence(page, info, 'rectangular-edges-released');
-      });
-    });
-  }
 }

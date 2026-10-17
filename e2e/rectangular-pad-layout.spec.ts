@@ -1,6 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
 import { duration, loadInputPack, stateTimeout } from './input-fixture';
+import { lit } from './touch';
 
 const screens = [
   { name: 'compact phone', viewport: { width: 667, height: 320 } },
@@ -14,8 +15,6 @@ const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements =
 }));
 // A press shows within a frame or two; the default first retry after 100 ms adds up over every edge press.
 const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
-const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
-  .evaluateAll(elements => elements.map(element => element.getAttribute('data-pad')));
 async function record(page: Page, info: TestInfo, name: string) {
   await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await info.attach(`${name}-geometry-and-input`, {
