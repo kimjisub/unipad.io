@@ -101,14 +101,24 @@ export function fileBytes(file, assets) {
   throw new Error(`file ${file.path} has no content`);
 }
 
-export function fingerprint(files, assets) {
-  const sorted = [...files].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
+/**
+ * The input fingerprint over `{ path }` entries whose bytes `bytesOf` returns, one at a time, so a large
+ * pack read from disk is never held in memory whole.
+ */
+export function fingerprintOf(entries, bytesOf) {
+  const sorted = [...entries].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
   const hash = createHash('sha256');
-  for (const file of sorted) {
-    const bytes = fileBytes(file, assets);
-    hash.update(Buffer.concat([Buffer.from(file.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0]), bytes, Buffer.from([10])]));
+  for (const entry of sorted) {
+    const bytes = bytesOf(entry);
+    hash.update(Buffer.concat([Buffer.from(entry.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0])]));
+    hash.update(bytes);
+    hash.update(Buffer.from([10]));
   }
   return hash.digest('hex');
+}
+
+export function fingerprint(files, assets) {
+  return fingerprintOf(files, (file) => fileBytes(file, assets));
 }
 
 // ---------------------------------------------------------------------------------------------

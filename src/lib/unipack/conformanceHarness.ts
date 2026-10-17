@@ -197,9 +197,10 @@ export interface Deps {
 
 export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine };
 
-async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<{ pack: UniPackData } | { refused: string }> {
+/** The parsed pack, or why the parser refused it. Also used for real packs (meta/unipack-conformance/real-packs). */
+export async function parseOrRefuse(zip: ArrayBuffer, deps: Deps = REAL): Promise<{ pack: UniPackData } | { refused: string }> {
   try {
-    return { pack: await deps.parse(await zipOf(c, corpus)) };
+    return { pack: await deps.parse(zip) };
   } catch (error) {
     // The web parser throws for a pack it refuses; anything else is a bug the case must surface.
     if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return { refused: error.message };
@@ -223,7 +224,7 @@ export interface Observation { actual: Json; capture: WarningCapture | null }
 
 export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
   if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
-  const parsed = await parseOrRefuse(c, corpus, deps);
+  const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
   if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
   const { pack } = parsed;
   const capture: WarningCapture = {
