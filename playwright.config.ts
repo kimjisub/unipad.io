@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const portableTests = ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts'];
+const portableTests = ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts'];
 
 export default defineConfig({
   testDir: './e2e',
