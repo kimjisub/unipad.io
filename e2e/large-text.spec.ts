@@ -115,15 +115,15 @@ test.describe('scroll button settling', () => {
       let frames = 0;
       window.requestAnimationFrame = callback => request(time => {
         frames++;
-        button.style.bottom = `${24 + Math.min(frames, 4)}px`;
-        if (frames === 5) button.style.opacity = '1';
-        if (frames === 6) button.remove();
+        button.style.bottom = `${24 + Math.max(0, Math.min(frames - 3, 2))}px`;
+        if (frames === 6) button.style.opacity = '1';
+        if (frames === 7) button.remove();
         document.body.dataset.frames = String(frames);
         callback(time);
       });
     });
     await waitForButtonAtRest(page);
-    expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(7);
+    expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(8);
     await expect(page.getByRole('button', { name: 'Scroll to top' })).toHaveCount(0);
   });
 });
@@ -242,9 +242,9 @@ test.describe('the scroll-to-top button', () => {
 
   for (const { path, width, height, large } of cases) {
     test(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, browserName }) => {
-      // A short screen takes about 30 scroll steps through the tall start box and footer.
-      // Keep its existing budget even though settled positions no longer wait through frame batches.
-      test.slow(height < 400, 'many scroll steps on a short screen');
+      // Short screens and 320px enlarged text need many scroll positions through the start box and footer.
+      // Each position keeps its own settling deadline; allow time for the complete sweep as well.
+      test.slow(height < 400 || (width === 320 && large), 'many scroll positions through tall content');
       await page.setViewportSize({ width, height });
       if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
       await page.goto(path);
