@@ -112,7 +112,10 @@ function connectedTo(profile: LaunchpadProfile): { midi: MidiConnection; sent: s
   const midi = new MidiConnection();
   midi.setProfile(profile);
   const port = { send: (message: number[]) => { sent.push(message.map((b) => b.toString(16).padStart(2, '0')).join(' ')); } };
-  (midi as unknown as { outputs: unknown[] }).outputs = [port];
+  // A model picked by hand lights every output, so the port is also one that gets lights.
+  const ports = midi as unknown as { outputs: unknown[]; lightOutputs: unknown[] };
+  ports.outputs = [port];
+  ports.lightOutputs = [port];
   return { midi, sent };
 }
 
