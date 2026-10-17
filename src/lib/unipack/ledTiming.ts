@@ -21,6 +21,8 @@ export interface IntendedTimeline {
   autoPlayLengthMs: number;
   /** Endless animations with no delay in a pass; LedRunner plays them a pass per tick, which no timeline can state. */
   delaylessEndlessAnimations: number;
+  /** Endless animations still running on another chain at autoplay end; truncated there. */
+  unreleasedEndlessAnimations: number;
   /** Chain changes inside LED animations, which this timeline does not follow. */
   ledChainEvents: number;
 }
@@ -84,6 +86,7 @@ class TimelineSimulation {
     let next = 0;
     let autoPlayTime = 0;
     let ended = false;
+    let unreleasedEndlessAnimations = 0;
     this.repaintPads(0);
     this.repaintPads(0);
     for (;;) {
@@ -110,6 +113,10 @@ class TimelineSimulation {
           for (let x = 0; x < this.buttonX; x++) for (let y = 0; y < this.buttonY; y++) this.release(x, y, t);
           this.repaintPads(t);
           this.repaintPads(t);
+          // A release only reaches the current chain. Endless animations on earlier chains have no
+          // finite tail: stop modelling them here without inventing off commands the player never sent.
+          unreleasedEndlessAnimations = this.running.filter((a) => a.playing && a.led.loop === 0).length;
+          this.running = this.running.filter((a) => a.led.loop !== 0);
           ended = true;
         }
       }
@@ -118,6 +125,7 @@ class TimelineSimulation {
       commands: this.out,
       autoPlayLengthMs: autoPlayTime,
       delaylessEndlessAnimations: this.delayless,
+      unreleasedEndlessAnimations,
       ledChainEvents: this.countLedChainEvents(),
     };
   }
@@ -303,7 +311,7 @@ export interface LedTimingResult {
 
 /** Two LedRunner ticks: closer than this, two commands can share a tick and leave in either order. */
 export const OVERTAKE_MS = 8;
-/** Larger differing middles are left unmatched rather than compared cell by cell. */
+/** Larger differing middles use linear-memory LCS rather than allocating the full matrix. */
 const MAX_DIFF_CELLS = 20_000_000;
 const MAX_REPORTED_DIFFERENCES = 10;
 
@@ -378,7 +386,10 @@ function commonSubsequence(a: readonly number[], b: readonly number[]): [number,
   for (let i = 0; i < head; i++) pairs.push([i, i]);
   const n = a.length - head - tail;
   const m = b.length - head - tail;
-  if (n > 0 && m > 0 && n * m <= MAX_DIFF_CELLS) {
+  if (n === 1 && m > 0) {
+    const j = b.indexOf(a[head], head);
+    if (j >= head && j < head + m) pairs.push([head, j]);
+  } else if (n > 0 && m > 0 && n * m <= MAX_DIFF_CELLS) {
     const width = m + 1;
     const table = new Int32Array((n + 1) * width);
     for (let i = n - 1; i >= 0; i--) {
@@ -401,9 +412,37 @@ function commonSubsequence(a: readonly number[], b: readonly number[]): [number,
         j++;
       }
     }
+  } else if (n > 0 && m > 0) {
+    // Hirschberg's split preserves an exact LCS for large inputs with linear working memory.
+    const middle = head + Math.floor(n / 2);
+    const left = a.slice(head, middle);
+    const right = a.slice(middle, head + n);
+    const other = b.slice(head, head + m);
+    const forward = lcsLengths(left, other);
+    const backward = lcsLengths([...right].reverse(), [...other].reverse());
+    let split = 0;
+    for (let j = 1; j <= m; j++) {
+      if (forward[j] + backward[m - j] > forward[split] + backward[m - split]) split = j;
+    }
+    for (const [i, j] of commonSubsequence(left, other.slice(0, split))) pairs.push([head + i, head + j]);
+    for (const [i, j] of commonSubsequence(right, other.slice(split))) pairs.push([middle + i, head + split + j]);
   }
   for (let k = 0; k < tail; k++) pairs.push([a.length - tail + k, b.length - tail + k]);
   return pairs;
+}
+
+/** LCS length against each prefix of b, keeping just one row. */
+function lcsLengths(a: readonly number[], b: readonly number[]): Int32Array {
+  const row = new Int32Array(b.length + 1);
+  for (const code of a) {
+    let diagonal = 0;
+    for (let j = 0; j < b.length; j++) {
+      const previous = row[j + 1];
+      row[j + 1] = code === b[j] ? diagonal + 1 : Math.max(row[j], previous);
+      diagonal = previous;
+    }
+  }
+  return row;
 }
 
 function describe(key: string, want: readonly LedCommand[], got: readonly LedCommand[]): string {

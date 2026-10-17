@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { cpus, loadavg, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import JSZip from 'jszip';
@@ -69,7 +69,9 @@ async function recordMidiOutput(page: Page) {
           const send = output.send.bind(output);
           output.send = (data: number[] | Uint8Array, timestamp?: number) => {
             sent.push(performance.now(), data[0], data[1] ?? 0, data[2] ?? 0);
-            send(data, timestamp);
+            // The shared probe already supplied the virtual output. Keep only this timestamped
+            // recording during playback instead of allocating a second copy of every message.
+            if (window.ledTiming.autoStart === null) send(data, timestamp);
           };
         }
         return access;
@@ -117,6 +119,7 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   // Captured before the play screen's own handler, which starts autoplay in the same dispatch.
   await page.evaluate(() => {
+    window.browserProbe.midi.messages.length = 0;
     window.ledTiming.sent.length = 0;
     window.ledTiming.ticks.length = 0;
     window.addEventListener('click', () => { window.ledTiming.autoStart = performance.now(); }, { capture: true, once: true });
@@ -126,8 +129,7 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
   await expect(auto).toHaveAttribute('aria-pressed', 'true');
   await expect(auto).toHaveAttribute('aria-pressed', 'false', { timeout: timeline.autoPlayLengthMs + 60_000 });
   const lastT0 = timeline.commands.at(-1)?.ms ?? 0;
-  // Animations still running when autoplay ends keep sending; wait out the last one the pack asks for.
-  await page.waitForFunction((ms) => performance.now() - window.ledTiming.autoStart! > ms, lastT0 + 1000, { timeout: 60_000 });
+  await waitForMidiQuiet(page, lastT0);
 
   const after = await metrics();
   const { sent, ticks, autoStart } = await page.evaluate(() => window.ledTiming);
@@ -149,6 +151,30 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
   return run;
 }
 
+/** Wait past the intended tail and for a full quiet second after the last actual send. A continuing
+ * stream times out explicitly instead of being read partway through and called missing commands. */
+async function waitForMidiQuiet(page: Page, lastT0: number) {
+  await page.waitForFunction((lastIntended) => {
+    const { sent, autoStart } = window.ledTiming;
+    const lastSent = sent.length ? sent[sent.length - 4] : autoStart!;
+    return performance.now() - Math.max(autoStart! + lastIntended, lastSent) >= 1000;
+  }, lastT0, { timeout: Math.max(60_000, lastT0 + 30_000) });
+}
+
+test('records late tail commands until the MIDI output has gone quiet', async ({ page }) => {
+  await page.goto('/play');
+  await page.evaluate(() => {
+    const sent: number[] = [];
+    window.ledTiming = { sent, ticks: [], autoStart: performance.now() };
+    const send = () => sent.push(performance.now(), 0x90, 81, 5);
+    send();
+    setTimeout(send, 900);
+    setTimeout(send, 1800);
+  });
+  await waitForMidiQuiet(page, 0);
+  expect(await page.evaluate(() => window.ledTiming.sent.length / 4)).toBe(3);
+});
+
 const ms = (value: number) => (Number.isFinite(value) ? value.toFixed(1) : '-');
 
 function report(name: string, timeline: IntendedTimeline, run: Run, browserVersion: string) {
@@ -161,6 +187,7 @@ function report(name: string, timeline: IntendedTimeline, run: Run, browserVersi
     `  pack: ${timeline.commands.length} commands (${intendedPads.length} on pads) over ${lastT0} ms, ` +
       `${ms(lastT0 ? (timeline.commands.length * 1000) / lastT0 : 0)}/s average, ${peakPerSecond(timeline.commands)}/s at peak` +
       `${timeline.delaylessEndlessAnimations ? `, ${timeline.delaylessEndlessAnimations} endless animations without delay` : ''}` +
+      `${timeline.unreleasedEndlessAnimations ? `, ${timeline.unreleasedEndlessAnimations} unreleased endless animations truncated at autoplay end` : ''}` +
       `${timeline.ledChainEvents ? `, ${timeline.ledChainEvents} chain changes in LED files (not followed)` : ''}`,
     `  pack -> output.send (pads): expected ${result.expected}, arrived ${result.arrived}, matched ${result.matched}, ` +
       `reordered ${result.reordered}, missing ${result.missing}, extra ${result.extra}, ` +
@@ -212,7 +239,7 @@ const DENSE_SLACK_MS = DENSE_PADS * DENSE_PRESS_GAP_MS - DENSE_ANIMATION_MS;
 
 /**
  * 63 pads pressed 5 ms apart for ten rounds, each flashing itself every millisecond for 40 ms
- * (repeating a colour, as packs do), the top row also lighting a round LED, and one endless animation
+ * (repeating a colour, as packs do), the left column also lighting a round LED, and one endless animation
  * released halfway: about 8,000 commands a second at peak. No two animations touch the same LED within
  * a few ticks of each other, and autoplay ends 200 ms after the last one (a last delay is not waited
  * for, so a release follows it), so the order of every LED is fixed.
@@ -269,6 +296,8 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
 // LED_TIMING_MEASURE the pack codes to play, e.g.
 //   LED_TIMING_PACKS=/path/to/zips LED_TIMING_MEASURE=_TRNDSTTR,_Warrior_Song pnpm test:e2e --project=chromium e2e/led-timing.spec.ts
 // Each plays as long as its autoplay (1.5 to 3 minutes). Reordered or missing commands fail the test.
+// Extra messages are reported, not asserted: the ideal timeline does not reproduce LedRunner's pending
+// additions when a pad is pressed twice inside one tick, or its pending removal's extra off command.
 const packsFolder = process.env.LED_TIMING_PACKS;
 const measured = (process.env.LED_TIMING_MEASURE ?? '').split(',').map((code) => code.trim()).filter(Boolean);
 
@@ -280,13 +309,13 @@ if (!packsFolder || measured.length === 0) {
   for (const code of measured) {
     test(`${code}: LED commands reach the launchpad output in the pack's order with nothing missing`, async ({ page, browser }, testInfo) => {
       const folder = resolve(packsFolder);
-      const file = (await readdir(folder)).find((name) => name === `${code}.zip`);
-      expect(file, `${code}.zip in ${folder}`).toBeDefined();
-      const path = join(folder, file!);
+      const path = join(folder, `${code}.zip`);
       const data = await readFile(path);
       const pack = await parseUniPack(new Uint8Array(data).buffer);
       expect([pack.info.buttonX, pack.info.buttonY], 'an 8x8 pack, as the Launchpad X layout addresses').toEqual([8, 8]);
       const timeline = intendedTimeline(pack);
+      test.skip(timeline.unreleasedEndlessAnimations > 0 || timeline.delaylessEndlessAnimations > 0,
+        'Inconclusive: the pack has endless animations with no finite measurable tail');
       test.setTimeout(timeline.autoPlayLengthMs + 300_000);
 
       const run = await playAutoPlay(page, path, timeline);

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { describe, test } from 'node:test';
 import { compareLedCommands, intendedTimeline, peakPerSecond, summarizeLatency, type LedCommand } from './ledTiming';
 import { parseUniPack } from './parser';
@@ -43,6 +44,22 @@ describe('intendedTimeline', () => {
     ]);
     assert.equal(timeline.autoPlayLengthMs, 115);
     assert.equal(timeline.delaylessEndlessAnimations, 0);
+  });
+
+  test('bounds an endless animation left on a previous chain', async () => {
+    const pack = await packWith('o 1 1\nd 10\nc 2\nd 10\nf 1 1\nd 10\n', {
+      '1 1 1 0': 'o 1 1 a 5\nd 20\nf 1 1\nd 20\n',
+    });
+    const run = spawnSync(process.execPath, ['-e', `
+      const { intendedTimeline } = require(process.argv[1]);
+      const fs = require('node:fs');
+      console.log(JSON.stringify(intendedTimeline(JSON.parse(fs.readFileSync(0, 'utf8')))));
+    `, require.resolve('./ledTiming')], { input: JSON.stringify(pack), encoding: 'utf8', timeout: 5000 });
+    assert.equal(run.status, 0, String(run.error ?? run.stderr));
+    const timeline = JSON.parse(run.stdout);
+    assert.equal(timeline.autoPlayLengthMs, 20);
+    assert.equal(timeline.unreleasedEndlessAnimations, 1);
+    assert.ok(timeline.commands.every((c: LedCommand) => c.ms <= 20));
   });
 
   test('ends autoplay at its last element without waiting for a delay there', async () => {
@@ -95,6 +112,16 @@ describe('compareLedCommands', () => {
     );
     assert.deepEqual([result.reordered, result.missing, result.extra], [1, 1, 1]);
     assert.equal(result.differences.length, 3);
+  });
+
+  test('compares long differing sequences without counting a deletion as thousands of reorders', () => {
+    const expected = Array.from({ length: 5000 }, (_, i) => at(i, 0, i % 127));
+    // Both ends differ, so trimming equal prefixes and suffixes cannot avoid the large comparison.
+    const arrived = [...expected.slice(1), at(5000, 0, 127)];
+    const result = compareLedCommands(expected, arrived);
+    assert.deepEqual([result.matched, result.reordered, result.missing, result.extra], [4999, 0, 1, 1]);
+    const swapped = compareLedCommands(expected, [expected[4999], ...expected.slice(1, -1), expected[0]]);
+    assert.deepEqual([swapped.matched, swapped.reordered, swapped.missing, swapped.extra], [4998, 2, 0, 0]);
   });
 
   test('counts a command that arrives after one meant well after it', () => {
