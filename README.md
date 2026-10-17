@@ -100,8 +100,17 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Use the fake Firebase configuration
+`pnpm test:e2e` starts the production build on a free `localhost` port between
+20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
+is retried with another, up to 10 times), reads the address from that server's own
+output, runs the headless browser tests against it, then stops only that server.
+Before reporting ready, the launcher binds the other localhost loopback address
+and forwards its TCP connections to Next, so both IPv4 and IPv6 reach this run's
+server. A conflict on either address retries the port (or fails a pinned port);
+an unavailable address family is logged and skipped. The relay and its connections
+close along with the server.
+Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
+(the run fails at start if the port is taken). Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:
 
 ```bash
@@ -152,6 +161,9 @@ Store lookup returns cached items or a connection message within five seconds;
 downloads stop after five seconds without incoming data, so longer transfers can
 continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
 fallbacks, progress across that idle limit, and cancellation.
+The cached and uncached store-list reconnect tests wait for an actual stalled SDK
+request before advancing the browser clock through that five-second deadline,
+then require fresh server data. The shared-link retry test uses the real clock.
 
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
@@ -174,8 +186,14 @@ changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
 playback; exploratory page failures are investigated separately. Firefox allows
-90 seconds overall for page setup and playback; individual assertion timeouts
-stay unchanged. Native multi-touch CDP tests remain Chromium-only.
+90 seconds overall for page setup and playback. Pack-open assertions use the
+shared 15-second state limit from `expectPads`, including import and reload.
+A missing saved pack fails the pad-count assertion with the observed value,
+rather than waiting for a successful screen until the entire test times out.
+Restoration can briefly show the pack list while a local pack URL is still pending;
+a held native storage response covers that transition. A deliberately delayed native
+decode checks that opening still works beyond the former five-second assertion.
+Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
@@ -234,3 +252,46 @@ the shared touch helpers. Headless Chromium never hides the tab or blurs the
 window by itself, so test G sends the `visibilitychange` and `blur` events a
 browser sends when the notification shade or another app takes over. These are
 synthetic-input results; real fingers on a physical device are not certified.
+
+### Held resize and input boundary checks
+
+`e2e/input-boundaries.spec.ts` runs in the default local `pnpm test:e2e`
+suite. `input-fixture.ts` builds a two-chain looping pack automatically from
+`multi-touch.uni`'s original PCM tone. Every pad and chain has a different
+buffer duration, so an unexpected playback request identifies the wrong mapping.
+The unchanged press overlay distinguishes held and released pads.
+
+The resize tests first prove a pad is sounding and lit at the laptop size, keep
+the input down from there through phone portrait (390×844), phone landscape
+(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
+landscape, then release in that different layout and play another pad.
+The existing grid remains mounted beneath the portrait overlay. These are
+viewport changes, not a physical device rotation test. Mouse dragging and chain
+clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
+touch resizing and both mouse/touch hold orders: both inputs must succeed and
+remain active together, and releasing the second must preserve the first.
+
+WebKit's public Playwright touchscreen API only supports `tap()`; creating a
+CDP session fails because CDP is Chromium-only. Held touch resizing and mixed
+input in WebKit are explicitly skipped as unverified, not counted as passes.
+Screenshots and playback request records are attached during held and released
+states. No engine methods or app test hooks are used to inject these inputs.
+Physical fingers, physical rotation, speaker quality and latency remain outside
+these automated checks.
+
+The margin tests keep a browser-native background touch down while another
+finger selects chain 2 exactly once, then verify the new chain's pad mapping
+and complete cleanup. The background finger must produce one trusted touch
+`pointerdown` outside every pad and control, and no `pointerup`,
+`pointercancel` or `lostpointercapture` for that finger until the last
+`touchEnd`. They run at the existing phone and tablet sizes in Chromium;
+WebKit's two-contact margin case remains unverified for the same API
+limitation. Pointer records observe browser events, including their trusted
+flag and input type; they do not call input handlers.
+
+`squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
+the bottom and right edges play the mapped pad at four screen sizes.
+
+Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
+The default suite includes all these cases; the GitHub workflow is unchanged.

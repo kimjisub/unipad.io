@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 // A dialog over the player owns the keyboard: Space (auto-play), pad keys, chain keys and the
 // Alt shortcuts must not act behind it, wherever focus sits after a click on its title or text.
@@ -17,7 +17,7 @@ async function load(page: Page, baseURL: string | undefined, locale: string, pac
   await page.context().addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL }]);
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(pack));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
 }
@@ -43,6 +43,7 @@ for (const locale of ['en', 'ko']) for (const [width, height] of [[1440, 900], [
     const settings = (page: Page) => page.getByRole('dialog', { name: t.launchpad.title, exact: true });
 
     test('player keys stay off behind Launchpad settings and its help, and return after closing', async ({ page, baseURL }) => {
+      test.slow(); // Six 600 ms quiet windows and a 1.2 s LED wait: about 8 s idle, over 30 s on a busy machine.
       await load(page, baseURL, locale, 'e2e/fixtures/basic.uni');
 
       // A pad held while the settings open is released, not left sounding.

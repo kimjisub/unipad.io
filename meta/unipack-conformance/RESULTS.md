@@ -1,25 +1,55 @@
-# Results (2026-10-16, Korea time)
+# Results (2026-10-18, Korea time)
 
-Corpus `fe56df2756a0…` (sha256 of `corpus.json`), 133 cases, run on unipad-android 50acd6d6 and
-unipad-ios 59bd6832 (the head commits of the app pull requests that copy this corpus, since merged as
-2a22ac6e and 42a9ffb7, the commits in `copies.json`) and on this unipad.io branch, all
-on October 16. Regenerate this table with `report.mjs` (README, "Running it"). It describes these 133 cases
-only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
+Corpus `844fa232eafa…` (sha256 of `corpus.json`), 137 cases, run on unipad-android 9e00b363 and
+unipad-ios ead429bc (the merge commits of the app pull requests that copy this corpus, the commits in
+`copies.json`) and on this unipad.io branch, all on October 18. Regenerate this table with `report.mjs` (README, "Running
+it"). It describes these 137 cases only; it does not show that every UniPack is compatible, and 100%
+compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 3 | 0 | 0 | 0 | 2026-10-16 03:20:07 |
-| iOS | 133 | 0 | 0 | 0 | 0 | 2026-10-16 03:53:38 |
-| Web | 133 | 0 | 0 | 0 | 0 | 2026-10-16 03:56:14 |
+| Android | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:41:48 |
+| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:50:42 |
+| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:33:22 |
 
-Pass on all three platforms: 130 of 133, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+Pass on all three platforms: 137 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
 the 17) and 1 on a decision basis (Android 1, iOS 1, web 1 of the 1).
 
-- **Fail, 3 pinned:** Android: INF-007, INF-010, INF-016. Each is pinned in `divergences.json` with the
-  observed result and its cause; Android's fix removes them.
+- **No case fails, and no difference is pinned.** No case in `divergences.json` carries a pin.
 - **No case is unverified or undetermined.** The six exit and autoPlay cases pass on iOS from the
   results its harness recorded. On iOS, leaving the play screen is observed up to the main screen's
   clear call to the MIDI driver, not what a physical Launchpad receives.
+
+## Changes after the Android `info` fix
+
+The previous canonical corpus SHA256 was `4a67dbe1e919…` (137 cases). Only the Android pins for INF-007,
+INF-010 and INF-016 are gone: ids, input files, fingerprints, expected results and bases are unchanged.
+
+- **Android gives the decided result for INF-007, INF-010 and INF-016.** It skips an `info` line without
+  `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pad column or row. Android now passes
+  137 of 137 (134 and 3 pinned fails before).
+- iOS and the web give the same results as on `4a67dbe1…` (137, 0, 0 each). The Android copy is the one
+  in 9e00b363, and the iOS copy the one in ead429bc (`sync.mjs --check` passes against both).
+
+## Changes after the sound name cases that differ from the file only in case
+
+The previous canonical corpus SHA256 was `fe56df2756a0…` (133 cases). Four cases were added; the other
+133 are unchanged (the two corpora were compared case by case).
+
+- **KS-019, KS-020, KS-021 and RUN-S-006 cover a `keySound` name that differs from its file only in
+  upper and lower case.** Official store packs list `End.wav` for a file stored as `END.wav`. When no file
+  has exactly the listed path under `sounds/`, the file whose whole path differs only in case is the
+  pad's sound, and its name is the stored one (`a.wav`, `END.wav`, `fx/s.wav`); a file of that name in
+  another folder, or a folder, is still `keySound:missing-file`. `sounds.mdx` says so.
+- **All three platforms pass the four.** The web already looked sounds up this way. iOS played those
+  pads silent and Android did on storage that tells upper and lower case apart; both now find the file
+  and record the stored name, so a harness that finds `A.wav` only because the disk ignores case still
+  fails.
+- Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: no rule decides
+  which one plays, and the app harnesses cannot write such a pack on a disk that ignores case (README).
+- Android and iOS give the same results as on `fe56df27…` for the other 133 cases (130, 3, 0 and 133,
+  0, 0), and so does the web (133, 0, 0).
 
 ## Changes after the web reads UTF-16 text and keeps keyLED events outside the grid
 

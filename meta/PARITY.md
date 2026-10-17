@@ -114,6 +114,9 @@ apps keep those switches in the option panel and reset them per session.
 
 - **Android has no search on the pack list**; iOS (`MainViewModel.searchQuery`) and web do. Android's only search field is inside `TransferActivity`. Still open.
 - **Android sort options are three** (title, producer, download date); iOS offers five (adds play count, last opened). Still open.
+- **A pack with no title shows "Untitled" in the play menu** (closed on `main`): Android (`PlayActivity`,
+  `title.ifEmpty { "Untitled" }`), iOS (`PlayOptionPanel.swift`, `unipack.title.isEmpty ? "Untitled"`) and, since #85, the web
+  (`playMenuTitle` in `src/components/play/packTitle.ts`). All three leave the pack list row and detail panel empty.
 - **iOS has no file-transfer screen.** `TransferView` was removed from `main` by unipad-ios#27 (2026-09-27) as unreachable. The sold
   4.1.6 still has the file and a navigation case for it; whether anything in that build navigates there was not checked.
 - **Deleting a pack now also removes the saved history row** (closed on `main`): unipad-android#105 and unipad-ios#32 both
@@ -130,26 +133,34 @@ apps keep those switches in the option panel and reset them per session.
 
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Run of 2026-10-02 (Korea time), 124 cases: 76 pass on all three
-platforms; the rest are the differences below, 21 cases whose expected result no doc decides (observed
-only) and 4 cases the iOS harness cannot observe. This is a result for those cases, not a statement
+covered and what is not; RESULTS.md: the numbers). Run of 2026-10-17 (Korea time) on corpus
+`844fa232…`, 137 cases: all 137 pass on all three platforms; none is undetermined, and none is a case a
+harness cannot observe ([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
 that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
 are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
 
 ### Open differences found by the corpus
 
-Three, all Android, from three of the cases where the platforms gave different results and the
-expected result was then decided (README there, "Decided behaviour"). Each is pinned until the
-platform's own fix removes it.
-
-- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
-  the line is ignored without a warning; iOS and the web already do so.
-- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
-  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
-  pack.
+None. The last three, all Android, were fixed (below); a new difference found by the corpus is pinned
+in `divergences.json` and listed here until the platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **INF-007, INF-010, INF-016: Android reads `info` as the docs say.** Android skips an `info` line
+  without `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pads. Its three pins were removed; the
+  input fingerprints are unchanged. The corpus SHA256 is now
+  `844fa232eafac305f068fafad1cf4ada2e343f423a802b128242812711943c95`; the previous one was
+  `4a67dbe1e91930816e58816490ae1522c4b7ed300a2b8a5f028bb0a281d61381`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
+- **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
+  plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
+  The web already used the file whose whole path under `sounds/` differs only in case; iOS left those
+  pads silent, and so did Android on storage that tells upper and lower case apart. Both now find the
+  file and report its stored name. A folder, or a file of that name in another folder, is still missing.
+  The four cases were added to the corpus; the previous corpus SHA256 was
+  `fe56df2756a063d3416bbd5b8219c84c73b61d2ae646805ac2a8ccbd8905efa2`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 - **KS-018, KL-024: the web now reads a UTF-16 text file with a byte order mark and keeps keyLED events
   outside the pad grid.** The web read every pack text file as UTF-8, so a keySound saved as UTF-16 (Windows
   Notepad's "Unicode") had no line it understood and the pack had no sound. It now reads `info`,
