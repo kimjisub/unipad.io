@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { serverCommand, serverReady } from './e2e/server';
 
-const portableTests = ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts'];
+const portableTests = ['docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts', 'store-keyboard.spec.ts'];
 
 export default defineConfig({
   testDir: './e2e',
