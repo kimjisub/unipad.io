@@ -27,11 +27,16 @@ function isComposingKey(event: KeyboardEvent): boolean {
   return event.isComposing || event.keyCode === 229;
 }
 
-const ACTS_ON_ENTER = 'button, a[href], select, textarea, summary, [role="button"], [role="link"]';
+const ACTS_ON_ENTER = 'button, a[href], select, summary, [role="button"], [role="link"]';
 
-/** Whether the key's target handles Enter itself, as a focused button does. */
+/**
+ * Whether the key's target handles Enter itself, as a button reached with Tab does. Buttons left
+ * out of the Tab order only hold focus after a mouse press, so Enter there stays with the selected pack.
+ */
 function targetActsOnEnter(event: KeyboardEvent): boolean {
-  return event.target instanceof Element && event.target.closest(ACTS_ON_ENTER) !== null;
+  if (!(event.target instanceof Element)) return false;
+  const control = event.target.closest<HTMLElement>(ACTS_ON_ENTER);
+  return control !== null && control.tabIndex >= 0;
 }
 
 interface StoreModalProps {
@@ -363,15 +368,7 @@ export function StoreModal({
                     </div>
 
                     {selectedItem ? (
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={selectedItem.code}
-                          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={reduceMotion ? {} : { opacity: 0, y: -4 }}
-                          transition={{ duration: reduceMotion ? 0 : 0.16 }}
-                          className="contents"
-                        >
+                      <>
                   {downloadedPackIdByCode.has(selectedItem.code) && (
                     <button
                       className="relative w-full py-2.5 rounded-xl text-xs font-bold text-white hover:scale-[1.01] transition-all group"
@@ -438,8 +435,7 @@ export function StoreModal({
                       {t('website')}
                     </button>
                   </div>
-                        </motion.div>
-                      </AnimatePresence>
+                      </>
                     ) : (
                       <div className="text-sm text-white/35">{t('noItemSelected')}</div>
                     )}
