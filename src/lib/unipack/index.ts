@@ -1,5 +1,5 @@
 export { parseUniPack } from './parser';
-export { SoundEngine } from './SoundEngine';
+export { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 export { LedRunner } from './LedRunner';
 export type { LedRunnerListener } from './LedRunner';
 export { AutoPlayRunner } from './AutoPlayRunner';
@@ -15,6 +15,7 @@ export type { ThemeAssets, ThemeMetadata, ThemeColors } from './ThemeManager';
 export type * from './types';
 export {
   saveUniPack,
+  saveStoreUniPack,
   getUniPack,
   listUniPacks,
   deleteUniPack,

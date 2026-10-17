@@ -97,7 +97,7 @@ The ring shows the level the same way on all three (8 - level lit, blue).
 | Platform | Behaviour |
 |---|---|
 | Android, iOS | A pack whose sounds cannot be decoded shows "outOfCPU" and leaves the play screen. |
-| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. |
+| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. A sound that failed is silent in its own turn: the pad still moves on to its next sound and the sound's wormhole still switches the chain. |
 
 Deliberate: on the web a single unsupported codec should not cost the whole session, and there is
 no memory pressure to escape from.
@@ -114,6 +114,9 @@ apps keep those switches in the option panel and reset them per session.
 
 - **Android has no search on the pack list**; iOS (`MainViewModel.searchQuery`) and web do. Android's only search field is inside `TransferActivity`. Still open.
 - **Android sort options are three** (title, producer, download date); iOS offers five (adds play count, last opened). Still open.
+- **A pack with no title shows "Untitled" in the play menu** (closed on `main`): Android (`PlayActivity`,
+  `title.ifEmpty { "Untitled" }`), iOS (`PlayOptionPanel.swift`, `unipack.title.isEmpty ? "Untitled"`) and, since #85, the web
+  (`playMenuTitle` in `src/components/play/packTitle.ts`). All three leave the pack list row and detail panel empty.
 - **iOS has no file-transfer screen.** `TransferView` was removed from `main` by unipad-ios#27 (2026-09-27) as unreachable. The sold
   4.1.6 still has the file and a navigation case for it; whether anything in that build navigates there was not checked.
 - **Deleting a pack now also removes the saved history row** (closed on `main`): unipad-android#105 and unipad-ios#32 both
@@ -125,6 +128,111 @@ apps keep those switches in the option panel and reset them per session.
   Android sends none: the Firebase Analytics dependency is in `app/build.gradle` but no `logEvent` call exists in `app/src/main`.
   The web file's comment about events "shared with the Android and iOS players" does not match the iOS event names.
   How much of this reaches the analytics backend was not measured; local browser checks block all analytics requests.
+
+## Parser and runner conformance
+
+`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
+the expected result of each case (README there: how to run it, what each harness measures, what is
+covered and what is not; RESULTS.md: the numbers). Run of 2026-10-02 (Korea time), 124 cases: 76 pass on all three
+platforms; the rest are the differences below, 21 cases whose expected result no doc decides (observed
+only) and 4 cases the iOS harness cannot observe. This is a result for those cases, not a statement
+that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
+are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
+
+### Open differences found by the corpus
+
+Three, all Android, from three of the cases where the platforms gave different results and the
+expected result was then decided (README there, "Decided behaviour"). Each is pinned until the
+platform's own fix removes it.
+
+- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
+  the line is ignored without a warning; iOS and the web already do so.
+- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
+  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
+  pack.
+
+### Resolved differences found by the corpus
+
+- **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
+  plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
+  The web already used the file whose whole path under `sounds/` differs only in case; iOS left those
+  pads silent, and so did Android on storage that tells upper and lower case apart. Both now find the
+  file and report its stored name. A folder, or a file of that name in another folder, is still missing.
+  The four cases were added to the corpus; the previous corpus SHA256 was
+  `fe56df2756a063d3416bbd5b8219c84c73b61d2ae646805ac2a8ccbd8905efa2`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
+- **KS-018, KL-024: the web now reads a UTF-16 text file with a byte order mark and keeps keyLED events
+  outside the pad grid.** The web read every pack text file as UTF-8, so a keySound saved as UTF-16 (Windows
+  Notepad's "Unicode") had no line it understood and the pack had no sound. It now reads `info`,
+  `keySound`, keyLED files and `autoPlay` as UTF-16 when they start with a byte order mark, as Android and
+  iOS do for all four. A keyLED `on` or `off` outside the pad grid was dropped with a format warning per
+  line; it is now kept as written, without a warning, and the LED runner skips it when it is lit, so the
+  pads and the Launchpad light as before. A non-number is still a format error, and so is a column of
+  `0`, which the web keeps from becoming a round LED (Android and iOS read it as one; no case covers it).
+  Both web pins were removed; the input fingerprints are unchanged. The previous corpus SHA256 was
+  `3f1845257d2277fb5ba03e31a0f4eaf4dbbef3da0d83bfa87d82abc66c1d51ea`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
+- **INF-007, INF-010, INF-015, INF-016: iOS reads `info` as the docs say.** iOS skips an `info` line
+  without `=` without a warning, refuses a pack whose `buttonX` or `buttonY` is not an integer instead of
+  opening it with no pads, and no longer reads `info.json` when there is no `info` file. Its three pins
+  were removed; INF-016 (`buttonY=abc`) was added so that a fix of `buttonX` alone no longer passes.
+- **AP-M01..M09, AP-M11, KL-N01..N05: the web now calls a value that is not a whole number a format
+  error.** The web parser reported a non-numeric autoPlay value or keyLED file-name field as a range
+  error (`autoPlay: [on a 1] coordinate is incorrect`, `keyLed: [a 1 1] chain is incorrect`); Android
+  and iOS report `format is incorrect`. All three dropped the line or file, so only the warning text
+  differed. The web now writes `autoPlay: [on a 1] format is incorrect` and `keyLed: [a 1 1] format is
+  incorrect`; a number outside the pack is still a range error. The 15 web pins were removed; the input
+  fingerprints are unchanged. The previous corpus SHA256 was
+  `c30e75b9985e2fbb591ada9da3fac0a5437515ebe8a90e8f95ff8679066283d8`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
+
+- **KL-M05: the web now rejects an x coordinate with trailing letters.** The previous web result lit pad (0,0)
+  for `o 1b 1 FF0000`: `parseInt` stopped at the letter. [unipad.io PR #37](https://github.com/kimjisub/unipad.io/pull/37),
+  main [`ffe8fa0`](https://github.com/kimjisub/unipad.io/commit/ffe8fa0916bd27a38b5dc086a4f0da1c721da46b), reads both
+  coordinates with `strictInt` and rejects coordinates outside the pad grid. Only the web pin was removed; the other
+  15 web records and all 124 input fingerprints remain unchanged. The previous corpus SHA256 was
+  `2317abb20fe8499fef8b9e9c4e0dc11e63849a8db5ba020d353418c835520c8b`; the regenerated corpus SHA256 is
+  `3c8ec4875cffab4dabbd454f32fbb7f2b30b5d977b1d25ca0a0b8b21ebc251b9`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-web-coordinate-fix).
+- **KL-012, KL-014, KL-M11, KL-M12, KL-M17, KL-M18: iOS now rejects malformed keyLED arguments.**
+  The previous iOS results kept `o mc 33`, `o * 0`, `f mc 33` and `f mc 0` (33 reached the logo at index 32,
+  0 addressed index -1), lit `o 1 1 FF0000 x`, `o 1 1 FF0000 5 6` and `o l 0 a 5 9` instead of reporting them,
+  and read the out-of-range auto velocities in `o 1 1 a 200` and `o 1 1 a -1` as the colour `ff00000a`.
+  [unipad-ios PR #56](https://github.com/kimjisub/unipad-ios/pull/56),
+  main [`0c0e47c9`](https://github.com/kimjisub/unipad-ios/commit/0c0e47c9a10ca563101ef898b022b012a3aa5e4b),
+  drops round LED numbers outside 1..32, rejects extra trailing arguments and malformed supplied
+  velocities, and adds `KeyLedInputValidationTests` with the exact inputs of all six cases. Only these six
+  iOS pins were removed; the 16 web records and all 124 input fingerprints remain unchanged. The previous
+  corpus SHA256 was `ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`; the regenerated
+  corpus SHA256 is `2317abb20fe8499fef8b9e9c4e0dc11e63849a8db5ba020d353418c835520c8b`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-ios-keyled-argument-fix) for the evidence
+  and rerun limits; the historical aggregate above was not recalculated.
+- **KL-M13: Android now rejects a 7-digit hex colour.** The previous Android result was
+  `on 0 0 00234567 4` with no error: `toInt(16)` accepted seven digits and adding the alpha offset
+  carried into alpha. [unipad-android PR #133](https://github.com/kimjisub/unipad-android/pull/133),
+  main [`59f8ebcf`](https://github.com/kimjisub/unipad-android/commit/59f8ebcf493e82a6a2726ba39757a88aa41184ea),
+  checks the colour token length before conversion and includes a regression for the exact KL-M13 input.
+  Only its Android pin was removed; the other 22 records and all 124 input fingerprints remain unchanged.
+  The previous corpus SHA256 was `30ad4442b7abf40ee0cbfcc97976999fbde4571b30f1d39590425620e4c465eb`;
+  the regenerated corpus SHA256 is `ed629f5ab29c616b2da273631e1fc579e4a17b637167cc34d435659c00956c96`.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-android-colour-length-fix) for the
+  preserved history and rerun limits; the historical aggregate above was not recalculated.
+
+### Not observed, so not known
+
+iOS now measures the six cases the corpus used to mark as not observable on iOS, and all six pass: autoPlay timing (RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004), with `AutoPlayRunner` given a virtual clock and sleep by the harness, and the lights after leaving the play screen (RUN-L-006, RUN-L-007). See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-ios-observed-the-six-exit-and-autoplay-cases) and, for the marks being dropped, [the section above it](unipack-conformance/RESULTS.md#changes-after-dropping-the-ios-unobserved-marks). What is still not known:
+
+- **What a Launchpad shows after the play screen is left on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32). At `stop` the iOS harness runs the main screen's step that takes the MIDI controller back (`MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver, so it sees the clear being sent, not the lights going out on a device. Nobody has checked that on a Launchpad. An earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test.
+- **Round and logo lights on Android with Pro light mode off**, which is how the play screen starts. The corpus measures Android with it on.
+
+### Found while building the corpus (iOS, not fixed here)
+
+- **Stopping a repeated sound while it cycles hangs the iOS main thread** (simulator, iOS 27.0, 3 runs of 3). A keySound loop of 2 or more, then `SoundEngine.destroy()` (leaving the play screen) or the same pad pressed again: `AVAudioPlayerNode.stop()` waits for the completion handler `SoundEngine.soundOn` scheduled, which waits for the engine lock `stop()` holds. Input, command and stacks in `meta/unipack-conformance/RESULTS.md`. Not checked on a device. Android and web are not affected by this code path; whether they have their own problem there is not known.
+
+### Documentation that disagrees with the code
+
+- Out-of-range keyLED file names are "ignored" and autoPlay lines are "skipped" in the docs, without specifying warnings; all three record one range error each (KL-003, AP-004). The warning is held on an agreed basis, not as documented behaviour.
+- `auto-play.mdx` does not say what a line starting with an unknown word does, and `key-led.mdx` says such a line is "skipped" without saying whether it warns; all three record a format error (KL-M07, KL-025, AP-M10, AP-022, held on an agreed basis).
 
 ## Slide across pads
 

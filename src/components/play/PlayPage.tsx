@@ -13,9 +13,11 @@ import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
+import { describeStoreError } from './storeError';
 import {
   parseUniPack,
   saveUniPack,
+  saveStoreUniPack,
   getUniPack,
   listUniPacks,
   deleteUniPack,
@@ -30,9 +32,10 @@ import {
 } from '@/lib/unipack';
 import {
   downloadStoreItem,
-  fetchStoreItems,
-  fetchStoreCount,
+  fetchStoreItemsResult,
   getStoreYoutubeSearchUrl,
+  runStoreDownloadStep,
+  storeDownloadFailParams,
   subscribeStoreCount,
   subscribeStoreItems,
   type StoreItem,
@@ -56,6 +59,7 @@ export function PlayPage() {
   const t = useTranslations('play.player');
   const tToast = useTranslations('play.toast');
   const tCommon = useTranslations('play.common');
+  const tStore = useTranslations('play.store');
   const {
     state,
     loadUniPack,
@@ -81,6 +85,7 @@ export function PlayPage() {
     connectMidi,
     disconnectMidi,
     setMidiUiContext,
+    setKeyboardBlocked,
     setVolumeLevel,
     resumeAudio,
     startAutoMapping,
@@ -104,6 +109,7 @@ export function PlayPage() {
   const [storeProgress, setStoreProgress] = useState(0);
   const [storeCount, setStoreCount] = useState(0);
   const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
+  const storeVisitedRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
 
   /**
@@ -146,7 +152,6 @@ export function PlayPage() {
   const currentPackIdRef = useRef<string | null>(null);
   const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
-  const storeCountUnsubscribeRef = useRef<(() => void) | null>(null);
   const storeItemsRef = useRef<StoreItem[]>([]);
   const toastTimerRef = useRef<number | null>(null);
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
@@ -180,17 +185,6 @@ export function PlayPage() {
     }, 2000);
   }, []);
 
-  const normalizeStoreError = useCallback((error: unknown): string => {
-    const raw = error instanceof Error ? error.message : String(error);
-    if (/aborted|canceled/i.test(raw)) return 'Download canceled.';
-    if (/HTTP 403|Host not allowed/i.test(raw)) return 'Download source is blocked by server policy.';
-    if (/HTTP 404/i.test(raw)) return 'Pack not found on server.';
-    if (/HTTP 5\d\d/i.test(raw)) return 'Store server is temporarily unavailable.';
-    if (/Network error/i.test(raw)) return 'Network error. Please check your connection.';
-    if (/Invalid UniPack|parse/i.test(raw)) return 'Downloaded file is not a valid UniPack.';
-    return raw;
-  }, []);
-
   const trackStoreEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
     logAnalyticsEvent(name, params);
   }, []);
@@ -222,16 +216,8 @@ export function PlayPage() {
           && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {
           setMidiProfile(savedMidiProfile as LaunchpadProfile);
         }
-        const [savedLastPackId, countResult] = await Promise.all([
-          getSetting('lastUniPackId'),
-          fetchStoreCount(),
-        ]);
-        const prev = Number(await getSetting('prevStoreCount') ?? '0');
-        if (!cancelled) {
-          if (savedLastPackId) setLastPlayedPackId(savedLastPackId);
-          setStoreCount(countResult);
-          setHasStoreUpdate(countResult > prev);
-        }
+        const savedLastPackId = await getSetting('lastUniPackId');
+        if (!cancelled && savedLastPackId) setLastPlayedPackId(savedLastPackId);
       } catch {
         /* storage unavailable */
       }
@@ -241,21 +227,39 @@ export function PlayPage() {
   }, [refreshLists, setMidiProfile]);
 
   useEffect(() => {
-    subscribeStoreCount(
-      async (count) => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    // Store metadata must never hold up local packs, even while Firebase is initializing.
+    (async () => {
+      let updateVersion = 0;
+      let receivedLiveCount = false;
+      const updateCount = async (count: number, fromCache: boolean) => {
+        if (cancelled) return;
+        const version = ++updateVersion;
         setStoreCount(count);
-        const prev = Number(await getSetting('prevStoreCount') ?? '0');
-        setHasStoreUpdate(count > prev);
-      },
-    ).then((unsub) => {
-      storeCountUnsubscribeRef.current = unsub;
-    }).catch(() => {
-      // ignore
+        const firstLiveCount = !fromCache && !receivedLiveCount;
+        if (!fromCache) receivedLiveCount = true;
+        // A visit before the first live count has already acknowledged that store.
+        if (firstLiveCount && storeVisitedRef.current) {
+          await setSetting('prevStoreCount', String(count)).catch(() => {});
+          if (!cancelled && version === updateVersion) setHasStoreUpdate(false);
+          return;
+        }
+        const prev = Number(await getSetting('prevStoreCount').catch(() => null) ?? '0');
+        if (!cancelled && version === updateVersion) {
+          setHasStoreUpdate(count > prev && !(fromCache && storeVisitedRef.current));
+        }
+      };
+      const unsub = await subscribeStoreCount(updateCount);
+      if (cancelled) unsub();
+      else unsubscribe = unsub;
+    })().catch(() => {
+      // Keep the cached count when Firebase is unavailable.
     });
 
     return () => {
-      storeCountUnsubscribeRef.current?.();
-      storeCountUnsubscribeRef.current = null;
+      cancelled = true;
+      unsubscribe?.();
       if (toastTimerRef.current) {
         window.clearTimeout(toastTimerRef.current);
         toastTimerRef.current = null;
@@ -264,11 +268,8 @@ export function PlayPage() {
   }, []);
 
   useEffect(() => {
-    if (storeItems.length > 0 && storeError) {
-      setStoreError(null);
-    }
     storeItemsRef.current = storeItems;
-  }, [storeItems, storeError]);
+  }, [storeItems]);
 
   useEffect(() => {
     if (!downloadingStoreCode) return;
@@ -579,6 +580,10 @@ export function PlayPage() {
     prevRecordingRef.current = state.recording;
   }, [state.recording, showToast, tToast]);
 
+  // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
+  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null;
+  useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
+
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
   useEffect(() => {
     if (!state.loaded) return;
@@ -599,6 +604,7 @@ export function PlayPage() {
         }
         return;
       }
+      if (dialogOpen) return;
 
       // Android function key equivalents (Backtick + number)
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -620,7 +626,7 @@ export function PlayPage() {
     state.loaded, state.hideUI, state.criticalError,
     toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
     toggleWatermark, toggleProLightMode, toggleRecording,
-    errorDialogShown, launchpadSettingsOpen, optionPanelOpen,
+    errorDialogShown, launchpadSettingsOpen, optionPanelOpen, dialogOpen,
   ]);
 
   useEffect(() => {
@@ -672,9 +678,12 @@ export function PlayPage() {
     setStoreError(null);
     setStoreWarning(null);
     try {
-      const items = await fetchStoreItems();
+      const { items, fromCache } = await fetchStoreItemsResult();
       setStoreItems(items);
-      if (items.length === 0) {
+      if (fromCache) {
+        if (items.length) setStoreWarning(tStore('connectionFailed'));
+        else setStoreError(tStore('connectionFailed'));
+      } else if (items.length === 0) {
         setStoreWarning('Store list is empty or unavailable.');
       }
     } catch (error) {
@@ -682,9 +691,10 @@ export function PlayPage() {
     } finally {
       setStoreLoading(false);
     }
-  }, []);
+  }, [tStore]);
 
   const handleOpenStore = useCallback(() => {
+    storeVisitedRef.current = true;
     setStoreOpen(true);
     setStoreLoading(true);
     setStoreError(null);
@@ -707,6 +717,8 @@ export function PlayPage() {
       (items) => {
         if (cancelled) return;
         setStoreItems(items);
+        setStoreWarning(null);
+        setStoreError(current => current === tStore('connectionFailed') ? null : current);
         setStoreLoading(false);
       },
       (message) => {
@@ -734,7 +746,7 @@ export function PlayPage() {
       storeUnsubscribeRef.current?.();
       storeUnsubscribeRef.current = null;
     };
-  }, [storeOpen]);
+  }, [storeOpen, tStore]);
 
   const handleDownloadStoreItem = useCallback(async (item: StoreItem) => {
     if (downloadingStoreCode) return;
@@ -752,22 +764,16 @@ export function PlayPage() {
       const zipData = await downloadStoreItem(item, (percent) => {
         setStoreProgress(percent);
       }, controller.signal);
-      const parsed = await parseUniPack(zipData.slice(0));
+      const parsed = await runStoreDownloadStep('invalid_pack', () => parseUniPack(zipData.slice(0)));
 
-      const packs = await listUniPacks();
-      const existing = packs.find((p) => p.storeCode === item.code);
-      if (existing) {
-        await deleteUniPack(existing.id);
-      }
-
-      await saveUniPack(zipData, {
+      await runStoreDownloadStep('storage', () => saveStoreUniPack(zipData, {
         ...parsed.info,
         keyLedExist: parsed.keyLedExist,
         autoPlayExist: parsed.autoPlayExist,
         soundCount: parsed.soundCount,
         ledCount: parsed.ledCount,
         storeCode: item.code,
-      });
+      }));
 
       await refreshLists();
       await loadStoreItems();
@@ -776,16 +782,20 @@ export function PlayPage() {
       trackStoreEvent('store_download_success', { code: item.code });
       showToast(tToast('downloaded', { title: item.title }));
     } catch (error) {
-      const message = normalizeStoreError(error);
-      setStoreError(message);
+      const { message, toastKey } = describeStoreError(error);
+      const shownMessage = toastKey ? tToast(toastKey) : message;
       setFailedStoreCode(item.code);
-      trackStoreEvent('store_download_fail', { code: item.code, message });
-      showToast(message);
+      setStoreOpen(true);
+      const failParams = storeDownloadFailParams(error, controller.signal.aborted);
+      if (failParams) {
+        trackStoreEvent('store_download_fail', { code: item.code, message, ...failParams });
+      }
+      showToast(shownMessage);
     } finally {
       storeDownloadAbortRef.current = null;
       setDownloadingStoreCode(null);
     }
-  }, [downloadingStoreCode, loadStoreItems, normalizeStoreError, refreshLists, showToast, tToast, trackStoreEvent]);
+  }, [downloadingStoreCode, loadStoreItems, refreshLists, showToast, tToast, trackStoreEvent]);
 
   /**
    * Carry out an install the person approved from a shared link.
@@ -878,19 +888,27 @@ export function PlayPage() {
     (async () => {
       try {
         showToast(tToast('sharedPackDownloading'));
-        const items = await fetchStoreItems();
+        const { items, fromCache } = await fetchStoreItemsResult();
         const item = items.find((i) => i.code === shareCode);
+        if (!item && fromCache) {
+          setPreferredStoreCode(shareCode);
+          setStoreItems(items);
+          setStoreError(tStore('connectionFailed'));
+          setStoreOpen(true);
+          return;
+        }
         if (!item) {
           showToast(tToast('sharedPackMissing'));
           return;
         }
+        setStoreItems(items);
         // Ask first. installSharedPack runs from the dialog, not from here.
         setPendingShareItem(item);
       } catch {
         showToast(tToast('sharedPackFailed'));
       }
     })();
-  }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast, tToast]);
+  }, [getCodeFromUrl, handlePlay, handleDownloadStoreItem, restoringFromStorage, downloadedPackIdByCode, state.loaded, state.loading, showToast, tToast, tStore]);
 
   useLayoutEffect(() => {
     const target = centerStageRef.current;
@@ -930,6 +948,31 @@ export function PlayPage() {
       setChain(circleIdx - CHAIN_INDEX_OFFSET);
     }
   }, [setChain, actualChainCount]);
+
+  const shareInstallDialog = pendingShareItem && (
+    <ConfirmDialog
+      label={t('confirmInstallAriaLabel')}
+      confirmText={tCommon('install')}
+      tone="primary"
+      message={
+        pendingShareItem.producerName
+          ? t('confirmInstallByProducer', {
+              title: pendingShareItem.title,
+              producer: pendingShareItem.producerName,
+            })
+          : t('confirmInstall', { title: pendingShareItem.title })
+      }
+      onConfirm={() => {
+        const item = pendingShareItem;
+        setPendingShareItem(null);
+        void installSharedPack(item);
+      }}
+      onCancel={() => {
+        setPendingShareItem(null);
+        showToast(tToast('installCancelled'));
+      }}
+    />
+  );
 
   // Loading spinner
   if (restoringFromStorage) {
@@ -994,6 +1037,8 @@ export function PlayPage() {
           onYoutube={handleStoreYoutube}
           onWebsite={handleStoreWebsite}
         />
+
+        <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
         <AnimatePresence>
           {toast && (
@@ -1617,33 +1662,7 @@ export function PlayPage() {
         </>
       )}
 
-      {/* A shared link asked to install something; the person decides. */}
-      <AnimatePresence>
-        {pendingShareItem && (
-          <ConfirmDialog
-            label={t('confirmInstallAriaLabel')}
-            confirmText={tCommon('install')}
-            tone="primary"
-            message={
-              pendingShareItem.producerName
-                ? t('confirmInstallByProducer', {
-                    title: pendingShareItem.title,
-                    producer: pendingShareItem.producerName,
-                  })
-                : t('confirmInstall', { title: pendingShareItem.title })
-            }
-            onConfirm={() => {
-              const item = pendingShareItem;
-              setPendingShareItem(null);
-              void installSharedPack(item);
-            }}
-            onCancel={() => {
-              setPendingShareItem(null);
-              showToast(tToast('installCancelled'));
-            }}
-          />
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>

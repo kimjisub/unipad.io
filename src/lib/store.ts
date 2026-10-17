@@ -5,6 +5,26 @@ const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
 const STORE_CACHE_KEY = 'store_items_cache_v1';
 const STORE_COUNT_CACHE_KEY = 'store_count_cache_v1';
+const STORE_NETWORK_IDLE_TIMEOUT_MS = 5000;
+const STORE_NETWORK_TIMEOUT_MESSAGE = 'Store connection timed out.';
+
+function isNetworkTimeout(error: unknown): error is Error {
+  return error instanceof Error && error.message === STORE_NETWORK_TIMEOUT_MESSAGE;
+}
+
+async function withNetworkDeadline<T>(pending: Promise<T>, onTimeout?: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(STORE_NETWORK_TIMEOUT_MESSAGE));
+        onTimeout?.();
+      }, STORE_NETWORK_IDLE_TIMEOUT_MS);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface StoreItem {
   code: string;
@@ -120,46 +140,32 @@ export async function fetchStoreItems(): Promise<StoreItem[]> {
 }
 
 export async function fetchStoreItemsResult(): Promise<StoreItemsResult> {
-  const services = await initFirebaseServices();
-  const db = services?.database;
-  if (!db) {
-    return { items: loadCachedStoreItems(), fromCache: true };
-  }
-
   try {
-    const snapshot = await get(ref(db, 'store'));
-    if (!snapshot.exists()) {
-      return { items: loadCachedStoreItems(), fromCache: true };
-    }
-
-    const items: StoreItem[] = [];
-    snapshot.forEach((child) => {
-      const normalized = normalizeStoreItem(child.val(), child.key ?? '');
-      if (normalized) items.push(normalized);
-    });
-
-    const normalizedItems = normalizeSortAndDedupe(items);
-    saveCachedStoreItems(normalizedItems);
-    return { items: normalizedItems, fromCache: false };
+    return await withNetworkDeadline(fetchLiveStoreItems());
   } catch {
     return { items: loadCachedStoreItems(), fromCache: true };
   }
 }
 
-export async function fetchStoreCount(): Promise<number> {
+async function fetchLiveStoreItems(): Promise<StoreItemsResult> {
   const services = await initFirebaseServices();
   const db = services?.database;
-  if (!db) return loadCachedStoreCount();
+  if (!db) return { items: loadCachedStoreItems(), fromCache: true };
 
-  try {
-    const snapshot = await get(ref(db, 'storeCount'));
-    const value = Number(snapshot.val() ?? 0);
-    const resolved = Number.isFinite(value) ? value : 0;
-    saveCachedStoreCount(resolved);
-    return resolved;
-  } catch {
-    return loadCachedStoreCount();
+  const snapshot = await get(ref(db, 'store'));
+  if (!snapshot.exists()) {
+    return { items: loadCachedStoreItems(), fromCache: true };
   }
+
+  const items: StoreItem[] = [];
+  snapshot.forEach((child) => {
+    const normalized = normalizeStoreItem(child.val(), child.key ?? '');
+    if (normalized) items.push(normalized);
+  });
+
+  const normalizedItems = normalizeSortAndDedupe(items);
+  saveCachedStoreItems(normalizedItems);
+  return { items: normalizedItems, fromCache: false };
 }
 
 export async function subscribeStoreItems(
@@ -196,13 +202,13 @@ export async function subscribeStoreItems(
 }
 
 export async function subscribeStoreCount(
-  onCount: (count: number) => void,
+  onCount: (count: number, fromCache: boolean) => void,
   onError?: (message: string) => void,
 ): Promise<StoreUnsubscribe> {
+  onCount(loadCachedStoreCount(), true);
   const services = await initFirebaseServices();
   const db = services?.database;
   if (!db) {
-    onCount(loadCachedStoreCount());
     onError?.('Firebase Database is not available.');
     return () => {};
   }
@@ -214,7 +220,7 @@ export async function subscribeStoreCount(
       const value = Number(snapshot.val() ?? 0);
       const resolved = Number.isFinite(value) ? value : 0;
       saveCachedStoreCount(resolved);
-      onCount(resolved);
+      onCount(resolved, false);
     },
     (error) => {
       onError?.(error?.message || 'Failed to subscribe store count.');
@@ -240,38 +246,130 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Why a store download did not end with a saved pack. Sent as the `error_type` parameter of
+ * `store_download_fail`, so the values are categorical and must stay stable.
+ */
+export type StoreDownloadErrorType =
+  | 'network'
+  | 'http_403'
+  | 'http_404'
+  | 'http_5xx'
+  | 'http_other'
+  | 'invalid_pack'
+  | 'storage'
+  | 'other';
+
+/** A store download failure that knows its `StoreDownloadErrorType`; the message is what people see. */
+export class StoreDownloadError extends Error {
+  readonly type: StoreDownloadErrorType;
+
+  constructor(type: StoreDownloadErrorType, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'StoreDownloadError';
+    this.type = type;
+  }
+}
+
+export function httpStatusErrorType(status: number): StoreDownloadErrorType {
+  if (status === 403) return 'http_403';
+  if (status === 404) return 'http_404';
+  if (status >= 500 && status <= 599) return 'http_5xx';
+  return 'http_other';
+}
+
+export function storeDownloadErrorType(error: unknown): StoreDownloadErrorType {
+  return error instanceof StoreDownloadError ? error.type : 'other';
+}
+
+/**
+ * Runs one step after the download (reading the pack, saving it) and tags what it throws
+ * with `type`, keeping the original message.
+ */
+export async function runStoreDownloadStep<T>(
+  type: StoreDownloadErrorType,
+  step: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await step();
+  } catch (error) {
+    if (error instanceof StoreDownloadError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new StoreDownloadError(type, message, { cause: error });
+  }
+}
+
+/**
+ * Analytics parameters for a download that threw, or null when the person canceled it:
+ * a cancel is counted by `store_download_cancel` alone, not as a failure.
+ */
+export function storeDownloadFailParams(
+  error: unknown,
+  canceled: boolean,
+): { error_type: StoreDownloadErrorType } | null {
+  if (canceled) return null;
+  return { error_type: storeDownloadErrorType(error) };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export async function downloadStoreItem(
   item: StoreItem,
   onProgress?: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort(signal?.reason);
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    return await downloadStoreItemData(item, onProgress, controller);
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
+}
+
+async function downloadStoreItemData(
+  item: StoreItem,
+  onProgress: ((percent: number) => void) | undefined,
+  controller: AbortController,
+): Promise<ArrayBuffer> {
+  const signal = controller.signal;
+  const waitForNetwork = <T>(pending: Promise<T>) => withNetworkDeadline(pending, () => controller.abort());
   const proxyUrl = getStoreProxyUrl(item);
   const directUrl = getStoreDownloadUrl(item);
   let response: Response | null = null;
   let lastError: unknown = null;
+  // Set when this attempt's proxy refused the URL, so a failing direct fetch is reported as that refusal.
+  let proxyRejectedStatus: number | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    proxyRejectedStatus = null;
     try {
-      response = await fetch(proxyUrl, {
+      response = await waitForNetwork(fetch(proxyUrl, {
         method: 'GET',
         signal,
         cache: 'no-store',
-      });
+      }));
       if ([429, 502, 503, 504].includes(response.status) && attempt === 0) {
         await sleep(350);
         continue;
       }
       if ([400, 401, 403].includes(response.status)) {
         // Fallback to direct download if proxy rejects host/url.
-        response = await fetch(directUrl, {
+        proxyRejectedStatus = response.status;
+        response = await waitForNetwork(fetch(directUrl, {
           method: 'GET',
           signal,
           cache: 'no-store',
-        });
+        }));
       }
       break;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isNetworkTimeout(error)) throw new StoreDownloadError('network', error.message, { cause: error });
+      if (isAbortError(error)) {
         throw new Error('Download was canceled.');
       }
       lastError = error;
@@ -281,23 +379,48 @@ export async function downloadStoreItem(
       }
       const message =
         error instanceof Error ? error.message : String(error);
-      throw new Error(`Network error while downloading store item: ${message}`);
+      throw new StoreDownloadError(
+        proxyRejectedStatus === null ? 'network' : httpStatusErrorType(proxyRejectedStatus),
+        `Network error while downloading store item: ${message}`,
+        { cause: error },
+      );
     }
   }
 
   if (!response) {
     const message = lastError instanceof Error ? lastError.message : 'Unknown network error';
-    throw new Error(`Store download failed: ${message}`);
+    throw new StoreDownloadError('network', `Store download failed: ${message}`);
   }
 
   if (!response.ok) {
-    throw new Error(`Store download failed (HTTP ${response.status}).`);
+    throw new StoreDownloadError(
+      httpStatusErrorType(response.status),
+      `Store download failed (HTTP ${response.status}).`,
+    );
   }
 
+  try {
+    return await readStoreResponse(response, waitForNetwork, onProgress);
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error('Download was canceled.');
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new StoreDownloadError('network', `Network error while downloading store item: ${message}`, {
+      cause: error,
+    });
+  }
+}
+
+async function readStoreResponse(
+  response: Response,
+  waitForNetwork: <T>(pending: Promise<T>) => Promise<T>,
+  onProgress?: (percent: number) => void,
+): Promise<ArrayBuffer> {
   const total = Number(response.headers.get('content-length') ?? 0);
   const reader = response.body?.getReader();
   if (!reader) {
-    return response.arrayBuffer();
+    return waitForNetwork(response.arrayBuffer());
   }
 
   const chunks: Uint8Array[] = [];
@@ -305,7 +428,7 @@ export async function downloadStoreItem(
   let pseudoProgress = 3;
   onProgress?.(pseudoProgress);
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await waitForNetwork(reader.read());
     if (done) break;
     if (!value) continue;
     chunks.push(value);

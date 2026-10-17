@@ -55,6 +55,16 @@ describe('LedRunner', () => {
     assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
   });
 
+  test('skips pad events outside the grid and keeps playing the rest', async () => {
+    const { outputs, press } = await startRunner({
+      '1 1 1': 'o 3 1 a 5\no 1 3 a 5\no 1 0 a 5\no -1 1 a 5\no 9 9 a 5\no 1 1 a 5\nd 10\nf 3 1\nf 1 0\nf 1 1',
+    });
+
+    press(0, 0);
+    clock.tick(10);
+    assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
+  });
+
   test('turns a looping animation off on release and stays dark', async () => {
     const { runner, outputs, press } = await startRunner({ '1 1 1 0': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
 

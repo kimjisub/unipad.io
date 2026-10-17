@@ -1,5 +1,8 @@
 `info` 파일은 UniPack의 메타데이터를 정의합니다.
 각 줄은 `key=value` 형식으로 작성하며, 앞뒤 공백은 무시됩니다.
+`=`가 없는 줄은 경고 없이 무시됩니다.
+같은 키가 두 번 이상 나오면 마지막 값을 사용합니다.
+글자 인코딩 규칙은 `keySound`와 같습니다.
 
 ## 속성
 
@@ -7,10 +10,10 @@
 |-----|------|------|------|
 | `title` | string | O | UniPack 제목 |
 | `producerName` | string | O | 제작자 이름 |
-| `buttonX` | int | O | 가로 버튼 수 (1 이상) |
-| `buttonY` | int | O | 세로 버튼 수 (1 이상) |
+| `buttonX` | int | O | 가로 버튼 수 (**1~64**. `0`은 경고와 함께 열림) |
+| `buttonY` | int | O | 세로 버튼 수 (**1~64**. `0`은 경고와 함께 열림) |
 | `chain` | int | O | 체인(뱅크) 수 (**1~24**) |
-| `squareButton` | boolean | | 정사각형 버튼 여부 (기본: false) |
+| `squareButton` | boolean | | 정사각형 버튼 여부 (기본: **true**). 값이 정확히 `true`일 때만 켜지고, 그 밖의 값(`false`, `True`, `1`)은 꺼집니다. |
 | `website` | string | | 제작자 웹사이트 URL |
 
 ## 예시
@@ -30,3 +33,5 @@ website=https://unipad.io
 - `title`, `producerName`이 비어있으면 경고가 발생합니다.
 - `buttonX`, `buttonY`, `chain`이 0이면 경고가 발생합니다.
 - `chain`이 1~24 범위를 벗어나면 **로드가 중단**됩니다.
+- `buttonX`, `buttonY`가 정수가 아니면(예: `abc`) **로드가 중단**됩니다.
+- `buttonX`, `buttonY`가 음수이거나 64보다 크면 **로드가 중단**됩니다.

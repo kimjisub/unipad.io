@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
 import type { PlayMode } from './useUniPadEngine';
+import { playMenuTitle } from './packTitle';
 
 interface OptionPanelProps {
   visible: boolean;
@@ -151,7 +152,7 @@ export function OptionPanel({
             aria-label={t('togglePackInfo')}
           >
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-white truncate">{unipackInfo.title}</div>
+              <div className="text-sm font-semibold text-white truncate">{playMenuTitle(unipackInfo.title)}</div>
             </div>
             <svg
               className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${infoExpanded ? 'rotate-180' : ''}`}
