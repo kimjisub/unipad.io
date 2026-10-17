@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useClientReady } from '@/hooks/useClientReady';
@@ -16,6 +16,22 @@ const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
 function storeTargetIndex(key: string, current: number, count: number): number | null {
   if (key !== 'ArrowDown' && key !== 'ArrowUp') return null;
   return listboxTargetIndex(key, current, count);
+}
+
+/**
+ * A key an input method spends on composing text, such as the Enter that finishes a Hangul
+ * syllable. Chrome and Firefox flag it; Safari sends that Enter after the composition ends,
+ * marked only by the legacy key code 229.
+ */
+function isComposingKey(event: KeyboardEvent): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+const ACTS_ON_ENTER = 'button, a[href], select, textarea, summary, [role="button"], [role="link"]';
+
+/** Whether the key's target handles Enter itself, as a focused button does. */
+function targetActsOnEnter(event: KeyboardEvent): boolean {
+  return event.target instanceof Element && event.target.closest(ACTS_ON_ENTER) !== null;
 }
 
 interface StoreModalProps {
@@ -160,6 +176,24 @@ export function StoreModal({
     });
   }, [visible, selectedItem, reduceMotion]);
 
+  /** Up and down move the selection; Enter plays, retries or downloads the selected pack. */
+  const handleSelectionKey = useCallback((event: KeyboardEvent) => {
+    if (isComposingKey(event)) return;
+
+    const targetIndex = storeTargetIndex(event.key, selectedIndex, visibleItems.length);
+    if (targetIndex !== null) {
+      event.preventDefault();
+      setSelectedCode(visibleItems[targetIndex].code);
+      return;
+    }
+
+    if (event.key !== 'Enter' || !selectedItem || downloadingCode || targetActsOnEnter(event)) return;
+    event.preventDefault();
+    if (downloadedCodes.has(selectedItem.code)) onPlayDownloaded(selectedItem);
+    else if (failedCode === selectedItem.code) onRetryFailed(selectedItem);
+    else onDownload(selectedItem);
+  }, [visibleItems, selectedIndex, selectedItem, downloadingCode, failedCode, downloadedCodes, onPlayDownloaded, onRetryFailed, onDownload]);
+
   useEffect(() => {
     if (!visible) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -177,41 +211,13 @@ export function StoreModal({
         onClose();
         return;
       }
-      if (!visibleItems.length || isTextInput) return;
-
-      const targetIndex = storeTargetIndex(event.key, selectedIndex, visibleItems.length);
-      if (targetIndex !== null) {
-        event.preventDefault();
-        setSelectedCode(visibleItems[targetIndex].code);
-        return;
-      }
-
-      if (event.key === 'Enter' && selectedItem && !downloadingCode) {
-        event.preventDefault();
-        const downloaded = downloadedCodes.has(selectedItem.code);
-        const failed = failedCode === selectedItem.code;
-        if (downloaded) onPlayDownloaded(selectedItem);
-        else if (failed) onRetryFailed(selectedItem);
-        else onDownload(selectedItem);
-      }
+      if (!isTextInput) handleSelectionKey(event);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [
-    visible,
-    visibleItems,
-    selectedIndex,
-    selectedItem,
-    downloadingCode,
-    failedCode,
-    downloadedCodes,
-    onClose,
-    onPlayDownloaded,
-    onRetryFailed,
-    onDownload,
-  ]);
+  }, [visible, downloadingCode, onClose, handleSelectionKey]);
 
   return (
     <AnimatePresence>
@@ -339,20 +345,9 @@ export function StoreModal({
                       e.stopPropagation();
                       setSearch('');
                       searchInputRef.current?.blur();
+                      return;
                     }
-                    const targetIndex = storeTargetIndex(e.key, selectedIndex, visibleItems.length);
-                    if (targetIndex !== null) {
-                      e.preventDefault();
-                      setSelectedCode(visibleItems[targetIndex].code);
-                    }
-                    if (e.key === 'Enter' && selectedItem && !downloadingCode) {
-                      e.preventDefault();
-                      const downloaded = downloadedCodes.has(selectedItem.code);
-                      const failed = failedCode === selectedItem.code;
-                      if (downloaded) onPlayDownloaded(selectedItem);
-                      else if (failed) onRetryFailed(selectedItem);
-                      else onDownload(selectedItem);
-                    }
+                    handleSelectionKey(e.nativeEvent);
                   }}
                   placeholder={t('searchPlaceholder')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
