@@ -93,10 +93,9 @@ What a run trusts from an earlier one:
 ## Limits
 
 - A pack is read from a folder on the machine running the tests, so file lookups follow that machine's
-  file system. A keySound line naming `End.wav` for a file stored as `END.wav` is found by the web (it
-  matches names regardless of case) and by the Android JVM test on a case-insensitive macOS volume,
-  which reports the name written in keySound; an Android device's storage may not find it, and that is
-  not observed here. The iOS test on a simulator does not find it and reports `keySound:missing-file`.
+  file system. All three parsers match a keySound sound name to a file regardless of case (`End.wav`
+  finds `END.wav`), so a case-insensitive macOS volume and a device's case-sensitive storage should read
+  such a pack the same way; the runs here only observe the macOS volume.
 - The web reads a zip made in memory from the folder, the apps read the folder; zip import itself is
   not compared (see the corpus's [What is not covered](../README.md#what-is-not-covered)).
 - No playback: autoPlay is compared as the parsed command list, not run on a clock.
