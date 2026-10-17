@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { chain2, pad, point, pressed, touch, touchScreens, type Contact } from './touch';
 
 test.use({ hasTouch: true });
@@ -9,7 +9,7 @@ test.use({ hasTouch: true });
 async function load(page: Page, pack = 'manual') {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(`meta/unipack-conformance/chain-release-v1/packs/${pack}.uni`));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 }

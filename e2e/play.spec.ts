@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -13,7 +13,7 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
@@ -38,7 +38,7 @@ test('imports a local pack and restores the saved pack after reload', async ({ p
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
   expect(await starts(page)).toBe(0);
@@ -114,7 +114,7 @@ test('pad audio reaches the output after volume control and becomes silent on re
 test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await page.keyboard.down('1');
   await expect(pressed(page, '0,0')).toBeVisible();
@@ -534,7 +534,7 @@ for (const [name, file] of [
   test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
     await page.goto('/play');
     await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    await expectPads(page);
     for (const hideUI of [false, true]) {
       if (hideUI) await page.keyboard.press('Alt+h');
       await expect(page.getByRole('button', { name: 'Feedback', exact: true })).toHaveCount(hideUI ? 0 : 1);

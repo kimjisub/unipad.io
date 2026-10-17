@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { expect } from './browser';
+import { expectPads } from './browser';
 
 export const BASIC_PACK = 'e2e/fixtures/basic.uni';
 
@@ -20,5 +20,5 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
 }
