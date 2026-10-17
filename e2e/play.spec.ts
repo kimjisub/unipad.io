@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -13,29 +13,12 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
-  const fileInput = page.locator('input[type=file][accept=".zip,.uni"]');
-  await fileInput.setInputFiles(file);
-  // File reading starts asynchronously after the input change handler returns.
-  await page.waitForFunction(() =>
-    !document.querySelector('input[type=file][accept=".zip,.uni"]')
-    || !!document.querySelector('button[aria-label="Open menu"], [role="alertdialog"]'));
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
   await expectLoadedPack(page);
 }
 
 async function expectLoadedPack(page: Page) {
-  // Wait for loading to end, including failure outcomes, within the test budget.
-  // Storage restoration can briefly render the list before reading ?pack=.
-  await page.waitForFunction(() => {
-    if (document.querySelector('[role="alertdialog"]')) return true;
-    const fileInput = document.querySelector('input[type=file][accept=".zip,.uni"]');
-    const player = document.querySelector('button[aria-label="Open menu"]');
-    const restoringPack = fileInput && !player && new URL(location.href).searchParams.has('pack');
-    const loading = [...document.querySelectorAll('p')].some(element =>
-      /^(?:Reading archive|Loading(?: info| sounds| LEDs| autoplay| audio)?)\.\.\.(?: \(\d+\/\d+\))?$/.test(element.textContent ?? ''));
-    const settledScreen = fileInput || player;
-    return !loading && !restoringPack && !!settledScreen;
-  });
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
@@ -83,7 +66,7 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
 
 test('a missing saved pack fails the pad value check after restoration ends', async ({ page }, testInfo) => {
   await page.goto('/play?pack=missing-saved-pack');
-  const failure = await expectLoadedPack(page).then(() => '', error => stripVTControlCharacters(error.message));
+  const failure = await expectPads(page).then(() => '', error => stripVTControlCharacters(error.message));
   await testInfo.attach('missing-pack-value-failure', { body: failure, contentType: 'text/plain' });
   await testInfo.attach('missing-pack-screen', { body: await page.screenshot(), contentType: 'image/png' });
   expect(failure).toContain('expect(locator).toHaveCount(expected) failed');
@@ -117,7 +100,7 @@ test('restoration waits past the temporary pack list before reading a saved pack
   await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
   await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
   const restored = expectLoadedPack(page).catch(error => error);
-  // Keep the actual storage result pending beyond a pad assertion's five seconds.
+  // Keep the actual storage result pending beyond the former five-second assertion.
   await page.waitForTimeout(6000);
   await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
   expect(await restored).toBeUndefined();
@@ -193,7 +176,7 @@ test('pad audio reaches the output after volume control and becomes silent on re
 test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await page.keyboard.down('1');
   await expect(pressed(page, '0,0')).toBeVisible();
@@ -613,7 +596,7 @@ for (const [name, file] of [
   test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
     await page.goto('/play');
     await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    await expectPads(page);
     for (const hideUI of [false, true]) {
       if (hideUI) await page.keyboard.press('Alt+h');
       await expect(page.getByRole('button', { name: 'Feedback', exact: true })).toHaveCount(hideUI ? 0 : 1);

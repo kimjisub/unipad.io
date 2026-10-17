@@ -100,8 +100,17 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Use the fake Firebase configuration
+`pnpm test:e2e` starts the production build on a free `localhost` port between
+20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
+is retried with another, up to 10 times), reads the address from that server's own
+output, runs the headless browser tests against it, then stops only that server.
+Before reporting ready, the launcher binds the other localhost loopback address
+and forwards its TCP connections to Next, so both IPv4 and IPv6 reach this run's
+server. A conflict on either address retries the port (or fails a pinned port);
+an unavailable address family is logged and skipped. The relay and its connections
+close along with the server.
+Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
+(the run fails at start if the port is taken). Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:
 
 ```bash
@@ -177,13 +186,14 @@ changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
 playback; exploratory page failures are investigated separately. Firefox allows
-90 seconds overall for page setup and playback; individual assertion timeouts
-stay unchanged. Import and reload wait for loading to finish using the existing
-action/test budget, then check pad counts and decoded audio. A missing saved pack
-or error dialog reaches the value assertions instead of waiting for success until
-the entire test times out. Restoration can briefly show the pack list while a local
-pack URL is still pending; a held native storage response covers that transition.
-A deliberately delayed native decode keeps loading time separate from value checks. Native multi-touch CDP tests remain Chromium-only.
+90 seconds overall for page setup and playback. Pack-open assertions use the
+shared 15-second state limit from `expectPads`, including import and reload.
+A missing saved pack fails the pad-count assertion with the observed value,
+rather than waiting for a successful screen until the entire test times out.
+Restoration can briefly show the pack list while a local pack URL is still pending;
+a held native storage response covers that transition. A deliberately delayed native
+decode checks that opening still works beyond the former five-second assertion.
+Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash

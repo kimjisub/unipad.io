@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type BrowserContext, type Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',
@@ -105,7 +105,7 @@ test('a connected shared link still asks before installing and plays the downloa
   await expect(confirmation).toBeVisible();
   await expect(page.locator('[data-pad]')).toHaveCount(0);
   await confirmation.getByRole('button', { name: 'Install', exact: true }).click();
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
 });
 
 test('ends a stalled shared pack download and retries it', async ({ page, context }, testInfo) => {
