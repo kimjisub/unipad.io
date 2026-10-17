@@ -357,7 +357,7 @@ Per item, `report.mjs` lists the cases that check it. In short:
 - keySound: coordinates and their end values, loop and wormhole, columns after the sixth, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names in other letter case, spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole after `on` and after `touch`, out-of-range and malformed lines, empty file.
-- runners: sound queue and chain, wormhole chain switch, its timing and a wormhole to a chain the pack does not have, a sound that cannot be decoded, endless and repeated sound loops, which sounds a release and a second press stop, the queue reset on a chain change (web), LED timeline with zero and negative delays, loop count, release of an endless and of a counted animation, several animations on one pad, two animations on one light, an event outside the pad grid, chain event, logo, exit, autoPlay timeline, its queue numbers after a hand press and a chain, and stop.
+- runners: sound queue and chain, wormhole chain switch, its timing and a wormhole to a chain the pack does not have, a sound that cannot be decoded, endless and repeated sound loops, which sounds a release and a second press stop, the queue reset on a chain change (Android and web), LED timeline with zero and negative delays, loop count, release of an endless and of a counted animation, several animations on one pad, two animations on one light, an event outside the pad grid, chain event, logo, exit, autoPlay timeline, its queue numbers after a hand press and a chain, and stop.
 - shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
   started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
   `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are held on an agreed basis.
@@ -373,9 +373,9 @@ Per item, `report.mjs` lists the cases that check it. In short:
 - MIDI devices and drivers, Launchpad colour output, the play screens, practice/guide mode of autoPlay, volume, theme packs.
 - What a user sees after leaving the play screen on iOS, and on any platform with a real Launchpad connected.
 - Android with Pro light mode off (its default), where round and logo lights of a keyLED file are hidden.
-- The queue reset on a chain change on Android and iOS, and which voices the iOS engine stops (see "What each harness measures").
+- The queue reset on a chain change on iOS, and which voices the iOS engine stops (see "What each harness measures").
 - A pack opened in the running app on a device or in a browser: no capture exists yet for any platform.
-- Sound loop timing and stop-on-release of endless sounds (the engines differ and the docs do not decide).
+- Real sound loop timing; release cases record stop requests on Android and web, while iOS cannot observe which voice stops.
 - Encodings other than UTF-8, UTF-16 with BOM and CP949.
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.

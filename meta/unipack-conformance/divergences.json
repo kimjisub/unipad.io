@@ -131,18 +131,6 @@
     }
   },
   "RUN-S-007": {
-    "android": {
-      "status": "fail",
-      "actual": {
-        "checkpoints": [
-          [],
-          [],
-          [],
-          []
-        ]
-      },
-      "note": "A sound that fails to decode stops the pad's queue at it (SoundRunner pushes the queue only for a loaded sound): every press of the pad is silent, and the wormhole of such a sound does not switch the chain."
-    },
     "ios": {
       "status": "fail",
       "actual": {
