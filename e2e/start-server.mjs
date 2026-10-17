@@ -41,6 +41,7 @@ const keptStderr = 16_384;
 export function startServer(ports, command, { stdout = process.stdout, stderr = process.stderr } = {}) {
   let child;
   let stopped = false;
+  let closeRelay = () => {};
 
   const run = async ([file, ...args]) => {
     // Use Node's localhost lookup, as Next's listen(hostname) does. If the two disagree,
@@ -56,6 +57,11 @@ export function startServer(ports, command, { stdout = process.stdout, stderr = 
     let closed = false;
     let relay;
     const sockets = new Set();
+    let relayClosed;
+    closeRelay = () => {
+      for (const socket of sockets) socket.destroy();
+      if (!relayClosed && relay?.listening) relayClosed = new Promise(resolve => relay.close(resolve));
+    };
     child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const attempt = child;
     const track = socket => {
@@ -78,6 +84,7 @@ export function startServer(ports, command, { stdout = process.stdout, stderr = 
           relay.once('error', reject);
           relay.listen({ host: relayHost, port, ipv6Only: true }, resolve);
         });
+        if (stopped || closed) closeRelay();
         stderr.write(`Browser test loopback: Next ${target}:${port}; relay ${relayHost}:${port}.\n`);
       } catch (error) {
         if (['EADDRNOTAVAIL', 'EAFNOSUPPORT'].includes(error.code)) {
@@ -137,8 +144,8 @@ export function startServer(ports, command, { stdout = process.stdout, stderr = 
       });
     });
     await ready;
-    for (const socket of sockets) socket.destroy();
-    if (relay?.listening) await new Promise(resolve => relay.close(resolve));
+    closeRelay();
+    await relayClosed;
     if (!holding && pendingLine) stdout.write(pendingLine);
     return { ...result, output };
   };
@@ -157,6 +164,8 @@ export function startServer(ports, command, { stdout = process.stdout, stderr = 
 
   const stop = () => {
     stopped = true;
+    // Next waits for open connections on SIGTERM; close the relay before waiting for Next.
+    closeRelay();
     child?.kill();
   };
   return { exited, stop };

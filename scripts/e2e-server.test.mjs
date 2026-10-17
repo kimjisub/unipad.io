@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer, get } from 'node:http';
+import { createConnection } from 'node:net';
+import { lookup } from 'node:dns/promises';
 import { PassThrough } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { test } from 'node:test';
@@ -224,4 +226,51 @@ test('the direct launcher rejects a nonnumeric pinned port', async () => {
   const [code] = await once(child, 'close');
   assert.equal(code, 1);
   assert.match(output, /port must be an integer/);
+});
+
+
+test('shutdown closes a live relay connection before waiting for the child to exit', async () => {
+  const stdout = collect();
+  const command = port => [process.execPath, '-e', `
+    const server = require('node:http').createServer().listen(${port}, 'localhost', () =>
+      console.log(${JSON.stringify(nextStart('PORT'))}.replaceAll('PORT', server.address().port)));
+    server.on('connection', () => console.log('ACCEPTED'));
+    let stopping = false;
+    process.on('SIGTERM', () => {
+      if (stopping) process.exit(1);
+      stopping = true;
+      server.close(() => process.exit(0));
+    });
+  `];
+  const server = startServer([0], command, { stdout, stderr: collect() });
+  let connection;
+  try {
+    const url = new URL(await waitForReady(stdout));
+    const { family } = await lookup('localhost');
+    connection = createConnection({ host: family === 6 ? '127.0.0.1' : '::1', port: Number(url.port) });
+    connection.on('error', () => {});
+    await once(connection, 'connect');
+    connection.write('GET /');
+    const deadline = Date.now() + 10_000;
+    while (!stdout.text.includes('ACCEPTED')) {
+      assert.ok(Date.now() < deadline, 'child never accepted the relay connection');
+      await sleep(20);
+    }
+    server.stop();
+    const controller = new AbortController();
+    let code;
+    try {
+      code = await Promise.race([
+        server.exited,
+        sleep(5000, undefined, { signal: controller.signal }).then(() => { throw new Error('child waited for its relay connection'); }),
+      ]);
+    } finally {
+      controller.abort();
+    }
+    assert.equal(code, 0);
+  } finally {
+    connection?.destroy();
+    server.stop();
+    await server.exited;
+  }
 });
