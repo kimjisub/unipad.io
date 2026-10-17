@@ -73,3 +73,23 @@ test('non-finite sound coordinates warn about format and the following sound sti
   await expect.poll(() => starts(page)).toBe(1);
   await page.mouse.up();
 });
+
+test('a number beyond 32 bits warns about format and the lines after it still work', async ({ page }, info) => {
+  const huge = '9'.repeat(400);
+  await loadBasicWith(page, {
+    keySound: '1 2147483648 1 tone.wav 0\n1 1 1 tone.wav 0',
+    'keyLED/1 1 1 1': `o mc ${huge} a 5\no 1 2 a 5\nd 5000\nf 1 2`,
+  });
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('2 issues');
+  await dialog.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(dialog).toContainText('[1 2147483648 1 tone.wav 0] format is incorrect');
+  await expect(dialog).toContainText(`[o mc ${huge} a 5] format is incorrect`);
+  await info.attach('beyond-32-bit-warnings', { body: await page.screenshot(), contentType: 'image/png' });
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+
+  await pressAndHold(page, '0,0');
+  await expect.poll(() => starts(page)).toBe(1);
+  await expect(pad(page, '0,1').locator('div[style*="background-color"]')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
+  await page.mouse.up();
+});
