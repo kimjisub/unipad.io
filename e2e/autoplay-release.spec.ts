@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 // Sources in start order: 1 the player's endless loop (pad 1,0 held with Q), 2 autoPlay's endless
 // loop (pad 0,0), 3 autoPlay's sound repeated three times (pad 2,0), whose end is scheduled as it starts.
@@ -14,7 +14,7 @@ const mode = (page: Page, name: string) => page.getByRole('button', { name: `Pla
 async function holdPlayerLoopAndStartAutoPlay(page: Page) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/autoplay-hold.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(async () => (await audio(page)).decoded).toEqual([0.1]);
   await page.keyboard.down('q');
@@ -90,7 +90,7 @@ async function openWithController(page: Page) {
   await page.goto('/play');
   test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/autoplay-hold.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
 }
