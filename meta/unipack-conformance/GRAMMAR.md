@@ -20,6 +20,9 @@ the corpus changes only when a rule does, never to match what an app does today.
 
 ## What this edition decides
 
+The differences and implementation notes in this edition record the state used to establish G1.
+For the current per-platform status, run `report.mjs`; fixes do not change these grammar rules.
+
 No item chooses a new product behaviour. Each of the decisions below either keeps what the three apps
 already do and corrects the docs, reads what the author clearly meant, or keeps grammar that is already
 written (line order, wormholes, `touch` = `on` + `off`). No pack that loads and plays today changes in
@@ -41,7 +44,7 @@ any of them.
 | T-03 | Encoding rules: the docs only speak of keySound | the same for every text file | docs, check web |
 | T-04 | Legacy Korean encodings: only iOS reads them | after UTF-8 and UTF-16, CP949 | Android, web |
 
-Items the docs state but an app does not follow yet (not new decisions): I-02 and I-04 (Android), T-02
+Other gaps noted when G1 was introduced, for rules already stated in the docs (not new decisions): I-02 and I-04 (Android), T-02
 (web), A-03 OGG (iOS cannot open it; no real pack seen uses it), P-04 a wormhole under `touch` (all
 three), RS-05 releasing an endless sound (Android looks at the loop of the queue's next sound), RS-06
 releasing after the chain changed (Android, web).
