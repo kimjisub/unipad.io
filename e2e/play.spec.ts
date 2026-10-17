@@ -337,6 +337,43 @@ test('with the pack lights and the press light off, no pad light reaches the lau
   expect(padNotes).toEqual([]);
 });
 
+const synthMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.synthMessages);
+
+// Android and iOS send lights only to a device they recognise; a synthesizer plays each light as a note.
+test('pack and press lights reach the launchpad and nothing reaches the synthesizer', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  expect(await synthMessages(page)).toEqual([]);
+});
+
+// Picking the model by hand is how a launchpad with a name the player does not know gets its lights.
+test('a model picked by hand still lights every output', async ({ page }) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await dialog.locator('select').selectOption('launchpad_x');
+  await expect(dialog).toContainText('Requested Type: launchpad_x');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.synthMessages.length = 0; });
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  for (const messages of [midiMessages, synthMessages]) {
+    await expect.poll(() => messages(page)).toContainEqual([0x90, 81, 3]);
+    await expect.poll(() => messages(page)).toContainEqual([0x90, 82, 5]);
+  }
+  await page.mouse.up();
+});
+
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.
 async function roundLightPack(chains = 2, keyLeds: Record<string, string> = {
