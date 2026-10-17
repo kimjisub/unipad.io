@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
-import { listboxTargetIndex } from './listboxNavigation';
+import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -150,6 +150,7 @@ export function MainScreen({
         if (target !== null) selectPackRow(filteredAndSortedPacks[target].id, false);
         return;
       }
+      if (targetHandlesOwnKeys(event)) return;
       if (event.key === 'Enter' && selectedId) {
         const selected = filteredAndSortedPacks.find((pack) => pack.id === selectedId);
         if (selected) onPlay(selected.id);
