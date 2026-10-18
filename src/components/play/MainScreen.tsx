@@ -990,7 +990,10 @@ export function ConfirmDialog({
 }) {
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
+  const dialogRef = useRef<HTMLDivElement>(null);
 
+  // The dialog takes Escape and Enter before the page does. Enter on one of its own buttons is
+  // left to that button, so a focused Cancel cancels instead of confirming.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -999,6 +1002,8 @@ export function ConfirmDialog({
       }
       if (e.key === 'Enter') {
         e.stopImmediatePropagation();
+        if (targetHandlesOwnKeys(e) && dialogRef.current?.contains(e.target as Node)) return;
+        e.preventDefault();
         onConfirm();
       }
     };
@@ -1016,6 +1021,7 @@ export function ConfirmDialog({
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       <motion.div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={label ?? t('confirmDeletionAriaLabel')}
