@@ -35,6 +35,14 @@ export const test = base.extend<{ checkedPage: void }>({
 
 export { expect };
 
+// Waits that check state, not speed. On a busy shared machine one browser round trip has stalled for 5-10 s,
+// and opening a 10 KB pack (reading the archive and decoding its sounds before the pads appear) has taken 8 s.
+export const stateTimeout = 15_000;
+
+/** Waits for the pads of the pack just opened on /play: 64 for an 8x8 pack. */
+export const expectPads = (page: Page, count = 64) =>
+  expect(page.locator('[data-pad]')).toHaveCount(count, { timeout: stateTimeout });
+
 export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
       const outputs: { analyser: AnalyserNode; samples: Float32Array<ArrayBuffer> }[] = [];

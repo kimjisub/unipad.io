@@ -1,13 +1,13 @@
 import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
 import { savedRecords } from './saved-packs';
 
 async function importSavedPack(page: Page) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(async () => (await savedRecords(page)).length).toBe(1);
   await page.goto('/');
 }
@@ -39,7 +39,7 @@ for (const cachedCount of [0, 17]) {
     if (cachedCount) await expect(store).toContainText(String(cachedCount));
     else await expect(store).toHaveText('Store');
     await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).press('Enter');
-    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    await expectPads(page);
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
     await page.locator('[data-pad="0,0"]').hover();
     await page.mouse.down();
