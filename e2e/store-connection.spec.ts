@@ -12,19 +12,31 @@ const storeItem = {
 // retry test restore that same connection without faking the SDK's HTTP fallback.
 async function connectStore(context: BrowserContext) {
   let connected = true;
+  let liveItem = storeItem;
+  let blockedStoreRequests = 0;
   await context.route('**/firebaseremoteconfig.googleapis.com/**', route => route.fulfill({ json: { entries: {}, state: 'NO_CHANGE' } }));
   await context.routeWebSocket(/firebaseio\.com|firebasedatabase\.app/, socket => {
     socket.onMessage(raw => {
       const message = JSON.parse(String(raw));
-      if (message.t !== 'd' || !connected) return;
+      if (message.t !== 'd') return;
       const { r, a, b } = message.d;
-      const data = b.p === '/storeCount' ? 42 : { 'browser-pack': storeItem };
+      if (!connected) {
+        if (a === 'g' && b.p === '/store') blockedStoreRequests++;
+        return;
+      }
+      const data = b.p === '/storeCount' ? 42 : { 'browser-pack': liveItem };
       if (a === 'q') socket.send(JSON.stringify({ t: 'd', d: { a: 'd', b: { p: b.p, d: data } } }));
       socket.send(JSON.stringify({ t: 'd', d: { r, b: { s: 'ok', d: a === 'g' ? data : '' } } }));
     });
     socket.send(JSON.stringify({ t: 'c', d: { t: 'h', d: { ts: Date.now(), v: '5', h: new URL(socket.url()).hostname, s: 'store-test-session' } } }));
   });
-  return { block() { connected = false; }, reconnect() { connected = true; } };
+  return {
+    block() { connected = false; blockedStoreRequests = 0; },
+    reconnect(item = storeItem) { liveItem = item; connected = true; },
+    async waitForBlockedStoreRequest() {
+      await expect.poll(() => blockedStoreRequests, { timeout: 15000 }).toBeGreaterThan(0);
+    },
+  };
 }
 
 async function verifyDatabase(page: Page) {
@@ -35,7 +47,7 @@ async function verifyDatabase(page: Page) {
 }
 
 for (const cached of [false, true]) {
-  test(`ends blocked store loading and retries after reconnecting (cached: ${cached})`, async ({ page, context }, testInfo) => {
+  test(`ends blocked store loading and retries after reconnecting (cached: ${cached})`, async ({ page, context }) => {
     const database = await connectStore(context);
     await verifyDatabase(page);
     if (cached) {
@@ -43,19 +55,22 @@ for (const cached of [false, true]) {
       await expect(page.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
     }
     database.block();
+    await page.clock.install();
     await page.reload();
     await page.getByRole('button', { name: /^Store/ }).click();
     const dialog = page.getByRole('dialog', { name: 'Store', exact: true });
-    try {
-      await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
-      await expect(dialog.getByText('Loading store...')).toHaveCount(0);
-      if (cached) await expect(dialog.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
-    } finally {
-      await testInfo.attach('blocked-store', { body: await page.screenshot(), contentType: 'image/png' });
-    }
-    database.reconnect();
+    // Wait for the SDK to issue the request, then exercise the real five-second
+    // deadline without spending the UI assertion budget on that known wait.
+    await database.waitForBlockedStoreRequest();
+    await page.clock.fastForward(5000);
+    await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
+    await expect(dialog.getByText('Loading store...')).toHaveCount(0);
+    if (cached) await expect(dialog.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
+    database.reconnect({ ...storeItem, title: 'Reconnected Test Pack' });
     await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(dialog.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible({ timeout: 6500 });
+    // Separate request completion from the outgoing loading view's animation.
+    await expect(dialog.getByRole('button', { name: 'Reload', exact: true })).toBeEnabled({ timeout: 6500 });
+    await expect(dialog.getByRole('option', { name: /Reconnected Test Pack/ })).toBeVisible({ timeout: 6500 });
     await expect(dialog.getByText(/Cannot connect to the store/)).toHaveCount(0, { timeout: 6500 });
   });
 }

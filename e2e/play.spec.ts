@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
@@ -13,6 +14,10 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await expectLoadedPack(page);
+}
+
+async function expectLoadedPack(page: Page) {
   await expectPads(page);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -38,10 +43,67 @@ test('imports a local pack and restores the saved pack after reload', async ({ p
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
-  await expectPads(page);
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+  await expectLoadedPack(page);
   expect(await starts(page)).toBe(0);
+});
+
+test('imports and restores a pack when native decoding outlasts a UI assertion', async ({ page }) => {
+  test.slow(); // Two real decodes, each held beyond the default UI assertion budget.
+  await page.addInitScript(() => {
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async function (...args: Parameters<typeof decode>) {
+      const buffer = await decode.apply(this, args);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      return buffer;
+    };
+  });
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.reload();
+  await expectLoadedPack(page);
+  expect(await starts(page)).toBe(0);
+});
+
+test('a missing saved pack fails the pad value check after restoration ends', async ({ page }, testInfo) => {
+  await page.goto('/play?pack=missing-saved-pack');
+  const failure = await expectPads(page).then(() => '', error => stripVTControlCharacters(error.message));
+  await testInfo.attach('missing-pack-value-failure', { body: failure, contentType: 'text/plain' });
+  await testInfo.attach('missing-pack-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(failure).toContain('expect(locator).toHaveCount(expected) failed');
+  expect(failure).toContain('Expected: 64');
+  expect(failure).toContain('Received: 0');
+  await expect(page.getByText('No UniPacks installed', { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/pack=/);
+});
+
+test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.addInitScript(() => {
+    const get = IDBObjectStore.prototype.get;
+    const released = new Promise<void>(resolve =>
+      window.addEventListener('release-pack-read', () => resolve(), { once: true }));
+    let held = false;
+    IDBObjectStore.prototype.get = function (query) {
+      const request = get.call(this, query);
+      if (this.name === 'unipacks' && !held) {
+        held = true;
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          void released.then(() => request.onsuccess?.call(request, event));
+        }, { once: true });
+      }
+      return request;
+    };
+  });
+  await page.reload();
+  await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
+  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
+  const restored = expectLoadedPack(page).catch(error => error);
+  // Keep the actual storage result pending beyond the former five-second assertion.
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  expect(await restored).toBeUndefined();
 });
 
 test('pointer press/release plays/stops a loop and runs keyLed on another pad', async ({ page }) => {
@@ -373,6 +435,47 @@ test('a model picked by hand still lights every output', async ({ page }) => {
   }
   await page.mouse.up();
 });
+
+// Android's MultiplexDriver lights every pad with its own driver. A master keyboard gets no lights; a
+// Launchpad Mini gets the Launchpad S layout (pad x,y is note x * 16 + y, palette 3 and 5 are 63 and 2).
+for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', [[0x90, 0, 63], [0x90, 1, 2]]]] as const) {
+  for (const otherFirst of [true, false]) {
+    test(`with ${other} listed ${otherFirst ? 'before' : 'after'} the Launchpad X, each gets the lights in its own layout`, async ({ page }) => {
+      await skipWithoutWebMidi(page);
+      await page.addInitScript(([name, first]) => {
+        const request = navigator.requestMIDIAccess.bind(navigator);
+        Object.defineProperty(navigator, 'requestMIDIAccess', {
+          configurable: true,
+          value: async (options: MIDIOptions) => {
+            const access = await request(options);
+            const messages: number[][] = [];
+            (window as unknown as { otherMessages: number[][] }).otherMessages = messages;
+            const port = { id: 'other-device', name, send: (data: number[]) => messages.push(Array.from(data)) };
+            const outputs = access.outputs as unknown as Map<string, unknown>;
+            const listed = [...outputs];
+            outputs.clear();
+            for (const [id, output] of first ? [[port.id, port], ...listed] : [...listed, [port.id, port]]) outputs.set(id as string, output);
+            return access;
+          },
+        });
+      }, [other, otherFirst] as const);
+      await loadPack(page);
+      await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+      await connectLaunchpadAndClear(page);
+      const otherMessages = () => page.evaluate(() => (window as unknown as { otherMessages: number[][] }).otherMessages);
+      await page.evaluate(() => { (window as unknown as { otherMessages: number[][] }).otherMessages.length = 0; });
+      await pad(page, '0,0').hover();
+      await page.mouse.down();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+      await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+      await page.mouse.up();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      for (const light of otherLights) expect(await otherMessages()).toContainEqual(light);
+      if (otherLights.length === 0) expect(await otherMessages()).toEqual([]);
+    });
+  }
+}
 
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.

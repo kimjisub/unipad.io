@@ -161,6 +161,9 @@ Store lookup returns cached items or a connection message within five seconds;
 downloads stop after five seconds without incoming data, so longer transfers can
 continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
 fallbacks, progress across that idle limit, and cancellation.
+The cached and uncached store-list reconnect tests wait for an actual stalled SDK
+request before advancing the browser clock through that five-second deadline,
+then require fresh server data. The shared-link retry test uses the real clock.
 
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
@@ -183,8 +186,14 @@ changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
 playback; exploratory page failures are investigated separately. Firefox allows
-90 seconds overall for page setup and playback; individual assertion timeouts
-stay unchanged. Native multi-touch CDP tests remain Chromium-only.
+90 seconds overall for page setup and playback. Pack-open assertions use the
+shared 15-second state limit from `expectPads`, including import and reload.
+A missing saved pack fails the pad-count assertion with the observed value,
+rather than waiting for a successful screen until the entire test times out.
+Restoration can briefly show the pack list while a local pack URL is still pending;
+a held native storage response covers that transition. A deliberately delayed native
+decode checks that opening still works beyond the former five-second assertion.
+Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
