@@ -141,11 +141,27 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-None. The last three, all Android, were fixed (below); a new difference found by the corpus is pinned
-in `divergences.json` and listed here until the platform's own fix removes it.
+- **KS-B08, KL-BE10: Android keeps 1 less than `-2147483648` at `-2147483648`.** A keySound loop and a
+  keyLED coordinate or chain are stored 1 less than written; iOS and the web store `-2147483649` for the
+  smallest 32-bit number, which Android's 32-bit fields cannot hold. Android used to wrap it to
+  `2147483647`, so such a loop repeated practically forever; it now stays at the smallest number and the
+  sound plays once, as on the web. What is left is the number itself, below -1 and outside every grid and
+  chain on all three. Pinned for Android; it goes only if Android widens these fields or the corpus decides
+  otherwise.
+
+A new difference found by the corpus is pinned in `divergences.json` and listed here until the
+platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **KS-B01..08, KL-BN01..08, KL-BE01..10, AP-B01..08: a number in a pack is a 32-bit integer on all
+  three.** Android always read pack numbers as 32-bit integers, so `2147483648` was a format error and
+  only its line or file was skipped. iOS read numbers up to 64 bits and the web any number, so the same
+  value was a range error there; the web also rounded numbers past 2^53 and dropped a round LED line with
+  a 400-digit number without a warning. iOS and the web now read a number that does not fit in 32 bits as
+  a format error and range-check one that does, as Android does. The 34 cases were added to the corpus (a
+  keyLED file name holds the 400-digit number cut to 240 digits, so the name stays within the 255-byte limit of a file name); the
+  previous corpus SHA256 was `844fa232eafac305f068fafad1cf4ada2e343f423a802b128242812711943c95`.
 - **INF-007, INF-010, INF-016: Android reads `info` as the docs say.** Android skips an `info` line
   without `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
   (`info : buttonX is not a number`) instead of opening it with no pads. Its three pins were removed; the

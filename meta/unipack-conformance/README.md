@@ -35,7 +35,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 pnpm test:unipack
 
 # Android (repo root of unipad-android): writes app/build/unipack-conformance/android.json
-./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'
+./gradlew --no-watch-fs :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'
 
 # iOS (repo root of unipad-ios): prints UNIPACK-CONFORMANCE lines and writes ios.json
 TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=/tmp/unipack-conformance \
@@ -54,7 +54,9 @@ node meta/unipack-conformance/report.mjs --web .next/cache/unipack-conformance/w
 answers the next run with `UP-TO-DATE` or `FROM-CACHE` without running anything; `android.json` is not an
 output Gradle knows about, so it is then not written again and an older one stays where it was. The two
 options make the task run. They are not set in the build files because those are outside this work's
-scope.
+scope. `--no-watch-fs` makes Gradle look at the copy `sync.mjs` just wrote: right after a sync, a
+Gradle daemon that watches the file system has been seen to test with the previous copy (its
+`corpusSha256` in `android.json` was the previous one, so `report.mjs` marked every case unverified).
 
 **iOS: environment variables need the `TEST_RUNNER_` prefix.** xcodebuild hands a variable to the test
 process only when it is given as `TEST_RUNNER_<NAME>`; the test reads `<NAME>`. Without
@@ -122,7 +124,8 @@ other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-0
 `buttonX` or a `buttonY` that is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
 keySound with a byte order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names
 who decided and when and whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as
-written and skipped when lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
+written and skipped when lit) and the `-B` cases of keySound, keyLED and autoPlay (a number is a 32-bit
+integer: a larger one is a format error, one that fits is range-checked where the field has a range). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
 `--json`). Each platform that does not give the decided result yet is pinned in `divergences.json`, so
 its suite stays green until its own fix removes the pin.
 
@@ -308,9 +311,9 @@ comparison locally, check out both apps at the pinned commits and run the three 
 ## What is covered
 
 - info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
-- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
-- keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
-- autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
+- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, numbers past 32 bits and the two 32-bit ends in every number field (KS-B01..08), missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
+- keyLed: file name mapping and loop, queue order, numbers past 32 bits and the two 32-bit ends in file names and events (KL-BN01..08, KL-BE01..10; a file name holds the 400-digit number cut to 240 digits), on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
+- autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, numbers past 32 bits and the two 32-bit ends (AP-B01..08), empty file.
 - runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
 - shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
   started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
