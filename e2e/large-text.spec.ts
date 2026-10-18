@@ -158,7 +158,7 @@ test.describe('scroll button settling', () => {
         });
       }, change);
       await waitForButtonAtRest(page);
-      expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(8);
+      expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(8 + Math.ceil(250 / 16));
       const button = page.getByRole('button', { name: 'Scroll to top' });
       if (change === 'exit') await expect(button).toHaveCount(0);
       else await expect(button).toHaveCSS('bottom', '64px');
@@ -279,8 +279,8 @@ test.describe('the scroll-to-top button', () => {
   ];
 
   for (const { path, width, height, large } of cases) {
-    // Preparation has its own existing 90s ceiling. Browser startup/navigation
-    // must not consume the budget for inspecting every scroll position.
+    // Give viewport/font setup, navigation and content preparation a separate 90s
+    // ceiling. The page fixture is created first and still uses the sweep budget.
     const sweep = test.extend<{ prepared: { startBox: number; end: number } }>({
       prepared: [async ({ page, browserName }, use, testInfo) => {
         const started = Date.now();
@@ -301,7 +301,8 @@ test.describe('the scroll-to-top button', () => {
       }, { timeout: 90_000 }],
     });
     sweep.describe(() => {
-      // Keep the existing sweep budgets and per-position 15s settling deadline.
+      // Allow 90s for short screens and 320px large text, 30s for other sweeps.
+      // Each scroll position still has a 15s settling deadline.
       sweep.describe.configure({ timeout: height < 400 || (width === 320 && large) ? 90_000 : 30_000 });
       sweep(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, prepared }) => {
         const { startBox, end } = prepared;
