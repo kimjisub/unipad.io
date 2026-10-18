@@ -8,9 +8,9 @@ const litPads = (page: Page) => page.locator('[data-pad] div[style*="background-
 const guide = (page: Page, position: string) => pad(page, position).locator('div[style*="background-color: rgba(0, 0, 0, 0.87)"]');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 
-/** basic.uni with some of its files replaced. */
-async function loadBasicWith(page: Page, files: Record<string, string | Uint8Array>) {
-  await openBasicWith(page, files);
+/** basic.uni with some of its files replaced and the `remove` ones taken out. */
+async function loadBasicWith(page: Page, files: Record<string, string | Uint8Array>, remove: string[] = []) {
+  await openBasicWith(page, files, remove);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
 }
@@ -83,6 +83,20 @@ test('step practice through a keySound move past the last chain plays to the end
     await expect.poll(() => starts(page)).toBe(presses);
   }
   await expect(step).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('a light repeated 2147483647 times without delays leaves the page responsive and ends as its pass ends', async ({ page }) => {
+  await loadBasicWith(page, { 'keyLED/1 1 1 2147483647': 'f 1 2\no 1 2 a 5' }, ['keyLED/1 1 1 1']);
+
+  await pressAndHold(page, '0,0');
+  const answered = await Promise.race([
+    page.evaluate(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 100))),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+  ]);
+  expect(answered).toBe(true);
+  await expect(pad(page, '0,1').locator('div[style*="background-color"]')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
+  await expect(litPads(page)).toHaveCount(1);
+  await page.mouse.up();
 });
 
 test('non-finite sound coordinates warn about format and the following sound still plays', async ({ page }, info) => {
