@@ -296,7 +296,7 @@ async function parseKeySoundFromFile(
     const y = strictInt(parts[2]) - 1;
     const soundURL: string | undefined = parts[3];
     const loop = parts.length >= 5 ? strictInt(parts[4]) - 1 : 0;
-    const wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
+    let wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
 
     // Android records "format is incorrect" for a short or non-numeric line and keeps going;
     // here a 3-token line reached findSoundFile with undefined and threw out of the whole parse,
@@ -305,6 +305,13 @@ async function parseKeySoundFromFile(
       || !Number.isFinite(loop) || !Number.isFinite(wormhole)) {
       errors.push(`keySound: [${trimmed}] format is incorrect`);
       continue;
+    }
+
+    // A move to a chain the pack lacks goes to the nearest one: the autoPlay order built from it
+    // otherwise made practice wait for a chain button that does not exist.
+    if (wormhole !== NO_WORMHOLE && (wormhole < 0 || wormhole >= info.chain)) {
+      errors.push(`keySound: [${trimmed}] wormhole is incorrect`);
+      wormhole = Math.max(0, Math.min(wormhole, info.chain - 1));
     }
 
     if (c < 0 || c >= info.chain) {
