@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
+import { AutoPlayRunner } from './AutoPlayRunner';
 import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
   actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, normalizeError, observe, PLATFORM, REAL,
@@ -118,6 +119,23 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
     const notForwarded: CorpusCase = { ...c, scenario: c.scenario!.map((s) => (s.do === 'autoplay' ? { do: 'autoplay' } : s)) };
     assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
+  });
+
+  test('RUN-RP-005 fails when endless sounds ignore release', async () => {
+    const c = byId('RUN-RP-005');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    class UnreleasedSoundEngine extends SoundEngine {
+      soundOff(): void {}
+    }
+    assert.equal(classify(c, await actualFor(c, corpus, { ...REAL, SoundEngine: UnreleasedSoundEngine })).status, 'fail');
+  });
+
+  test('RUN-RP-005 fails when autoPlay continues after it is turned off', async () => {
+    const c = byId('RUN-RP-005');
+    class UnstoppedAutoPlayRunner extends AutoPlayRunner {
+      stop(): void {}
+    }
+    assert.equal(classify(c, await actualFor(c, corpus, { ...REAL, AutoPlayRunner: UnstoppedAutoPlayRunner })).status, 'fail');
   });
 
   test('autoPlay and the player hold pads under different inputs, as on the play screen', async () => {

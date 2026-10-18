@@ -216,12 +216,16 @@ per `observe` step holding what happened since the previous one, in the order it
 `press`/`release` (x, y: the sound engine and the LED runner, as the play screen calls them), `chain`
 (c: the user picks a chain), `advance` (ms of virtual time, runners ticking at 4 ms, autoPlay at 1 ms),
 `observe`, `autoplay` (start the autoPlay runner; with `"toPads": true` each of its presses and releases
-also goes to the sound engine and the LED runner, as the play screens forward them), `stop` (leave the
-play screen). Events:
+also goes to the sound engine and the LED runner, as the play screens forward them), `autoplayOff` (the
+user turns autoPlay off and stays on the play screen: the runner stops, and every pad it still holds
+that the user does not also hold through `press` is released to the sound engine and the LED runner;
+no `autoOff` event is recorded for it), `looping` (record one `looping` event per endless sound still
+playing), `stop` (leave the play screen). Events:
 `["sound", chain, x, y, file, loop]` (loop as stored: -1 endless, 0 once, N repeats),
 `["ledOn", x, y, "aarrggbb", velocity]`, `["ledOff", x, y]`, `["chain", c]` (a keyLed `c` line or a
 wormhole switched the chain; the harness's chain follows), `["autoOn", x, y]`, `["autoOff", x, y]`,
-`["autoChain", c]`.
+`["autoChain", c]`, `["looping", x, y]` (an endless sound started by a press of that pad is still
+playing; one per sound, ordered by x, then y).
 
 Cases leave 20 ms or more between an event that a `delay` schedules and the `observe` that expects it,
 because such an event can be two ticks (8 ms) late. RUN-L-003 observes 12 ms after a release on purpose:
@@ -237,6 +241,7 @@ this seam":
 | Lights | what the play screen would draw: `PlayActivityViewModel` with a `ChannelManager`, read at `UiCallback` | `LedRunner.Listener` batches, the runner alone | `LedRunnerListener` calls, the runner alone |
 | Round and logo lights | measured with **Pro light mode on**. The play screen starts with it off, where the LED channel's round and logo lights are hidden (`PlayActivityViewModel.proLightMode`); that default is not measured | no such setting in the runner | no such setting in the runner |
 | `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | `AutoPlayRunner.stop()`, `LedRunner.stop()`, `SoundEngine.destroy()`, then the main screen's step that takes the MIDI controller back (`MainViewModel.setupMidiController` → `MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver; the clear call is observed, not what a physical Launchpad receives | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
+| `autoplayOff` | `PlayActivityViewModel.switchPlayMode(PlayMode.None)`, including the screen's own autoPlay-end listener; the recording engine reports the endless voices it has not stopped | `PlayViewModel.switchPlayMode(.none)` on the real play view model; the real sound engine's `activePlayIDs` identifies endless sounds still active | `AutoPlayRunner.stop()`, then `PlayerHolds.releaseOthers`, which the play screen's `padInit` calls, releases every pad the user does not hold |
 | autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | `AutoPlayRunner` on the virtual clock (its clock and sleep are passed in by the harness) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
 | MP3 | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for any bytes |
 
@@ -311,7 +316,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
 - keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
 - autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
-- runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
+- runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop, and turning autoPlay off while it holds an endless sound and the user holds another (RUN-RP-005).
 - shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
   started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
   `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are held on an agreed basis.
@@ -322,7 +327,7 @@ comparison locally, check out both apps at the pinned commits and run the three 
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
 - File and folder name case other than sound names (`keyLED` vs `keyled`, `Sounds` vs `sounds`): it depends on the file system of the machine running the test. Sound names are covered because the expected result is the name the file is stored under: an app that opens `A.wav` on a file system that ignores case reports `A.wav`, not the stored `a.wav`, and fails. Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: they cannot both be written on such a file system, and the format does not say which one plays.
 - Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
-- Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
+- The lights when autoPlay is stopped without leaving the screen: the play screens clear them themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed. Only the endless sounds are (RUN-RP-005).
 - Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.
 - MIDI devices and drivers, Launchpad colour output, the play screens, practice/guide mode of autoPlay, volume, theme packs.
 - What a user sees after leaving the play screen on iOS, and on any platform with a real Launchpad connected.
