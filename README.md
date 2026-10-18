@@ -127,8 +127,13 @@ pointing to the browser-build command above; it cannot silently pass as offline.
 The offline tests abort every external HTTP request and
 WebSocket, open a saved pack within five seconds, and check real audio start/stop
 calls. Three more tests open a saved pack, play its first pad and quit back to
-the saved list when only the store database fails, when only analytics requests
-fail, and when no external request or WebSocket is ever answered. Separate tests
+the saved list with the default external-service blocking (including the database),
+with the database working while analytics requests are blocked, and with external
+HTTP requests held and WebSockets connected but silent. The last condition still
+receives the inert installation token so the SDK reaches the held Remote Config
+request. Each condition starts observing requests after leaving the import page
+for `about:blank`, so only the reopened saved-list page supplies network evidence.
+Separate tests
 supply realtime database messages to check the cached store badge is refreshed,
 and that the first delayed count does not announce old items after a store visit
 while a later increase still does.
