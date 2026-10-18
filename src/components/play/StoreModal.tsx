@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useClientReady } from '@/hooks/useClientReady';
 import type { StoreItem } from '@/lib/store';
-import { listboxTargetIndex } from './listboxNavigation';
+import { isComposingKey, listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
 
@@ -16,27 +16,6 @@ const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
 function storeTargetIndex(key: string, current: number, count: number): number | null {
   if (key !== 'ArrowDown' && key !== 'ArrowUp') return null;
   return listboxTargetIndex(key, current, count);
-}
-
-/**
- * A key an input method spends on composing text, such as the Enter that finishes a Hangul
- * syllable. Chrome and Firefox flag it; Safari sends that Enter after the composition ends,
- * marked only by the legacy key code 229.
- */
-function isComposingKey(event: KeyboardEvent): boolean {
-  return event.isComposing || event.keyCode === 229;
-}
-
-const ACTS_ON_ENTER = 'button, a[href], select, summary, [role="button"], [role="link"]';
-
-/**
- * Whether the key's target handles Enter itself, as a button reached with Tab does. Buttons left
- * out of the Tab order only hold focus after a mouse press, so Enter there stays with the selected pack.
- */
-function targetActsOnEnter(event: KeyboardEvent): boolean {
-  if (!(event.target instanceof Element)) return false;
-  const control = event.target.closest<HTMLElement>(ACTS_ON_ENTER);
-  return control !== null && control.tabIndex >= 0;
 }
 
 interface StoreModalProps {
@@ -192,7 +171,7 @@ export function StoreModal({
       return;
     }
 
-    if (event.key !== 'Enter' || !selectedItem || downloadingCode || targetActsOnEnter(event)) return;
+    if (event.key !== 'Enter' || !selectedItem || downloadingCode || targetHandlesOwnKeys(event)) return;
     event.preventDefault();
     if (downloadedCodes.has(selectedItem.code)) onPlayDownloaded(selectedItem);
     else if (failedCode === selectedItem.code) onRetryFailed(selectedItem);

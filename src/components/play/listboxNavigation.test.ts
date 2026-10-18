@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listboxTargetIndex } from './listboxNavigation';
+import { isComposingKey, listboxTargetIndex } from './listboxNavigation';
 
 test('arrow keys step through the options and wrap around the ends', () => {
   assert.equal(listboxTargetIndex('ArrowDown', 0, 3), 1);
@@ -24,4 +24,10 @@ test('other keys and empty lists do not move', () => {
   assert.equal(listboxTargetIndex('Enter', 1, 3), null);
   assert.equal(listboxTargetIndex(' ', 1, 3), null);
   assert.equal(listboxTargetIndex('Home', -1, 0), null);
+});
+
+test('a key is composing text when the browser flags it or sends the key code 229', () => {
+  assert.equal(isComposingKey({ isComposing: true, keyCode: 13 }), true);
+  assert.equal(isComposingKey({ isComposing: false, keyCode: 229 }), true);
+  assert.equal(isComposingKey({ isComposing: false, keyCode: 13 }), false);
 });
