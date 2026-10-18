@@ -40,18 +40,24 @@ function scrollTo(page: Page, top: number) {
 
 /** Waits in the browser so driver round trips do not consume the animation deadline. */
 async function waitUntilSettled(target: Locator) {
-  await target.evaluate(element => new Promise<void>((resolve, reject) => {
+  await target.evaluateAll(elements => new Promise<void>((resolve, reject) => {
+    if (elements.length === 0) {
+      reject(new Error('No elements to check for settled animations'));
+      return;
+    }
     let frame = 0;
     const timeout = setTimeout(() => {
       cancelAnimationFrame(frame);
-      reject(new Error(`Element did not finish fading and sliding: ${element.textContent}`));
+      reject(new Error(`Elements did not finish fading and sliding: ${elements.map(element => element.textContent).join(', ')}`));
     }, 5_000);
     const step = () => {
-      for (let node: Element | null = element; node; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        if (style.opacity !== '1' || style.transform !== 'none') {
-          frame = requestAnimationFrame(step);
-          return;
+      for (const element of elements) {
+        for (let node: Element | null = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.opacity !== '1' || style.transform !== 'none') {
+            frame = requestAnimationFrame(step);
+            return;
+          }
         }
       }
       clearTimeout(timeout);
@@ -106,7 +112,7 @@ async function waitForButtonAtRest(page: Page, top?: number) {
 
 async function scrollToFooter(page: Page) {
   await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
-  for (const link of installLinks(page)) await waitUntilSettled(link);
+  await waitUntilSettled(page.locator('footer a'));
 }
 
 function installLinks(page: Page) {
@@ -284,7 +290,7 @@ test.describe('the scroll-to-top button', () => {
         const navigated = Date.now();
         const startBox = await page.locator('#cta').evaluate(el => el.getBoundingClientRect().top + scrollY);
         await scrollTo(page, startBox - height / 2);
-        for (const target of await page.locator('#cta a').all()) await waitUntilSettled(target);
+        await waitUntilSettled(page.locator('#cta a'));
         await scrollToFooter(page);
         const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
         await testInfo.attach('page preparation', {
