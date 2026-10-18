@@ -257,292 +257,279 @@ export function StoreModal({
               </button>
             </div>
 
-            <AnimatePresence mode="wait">
-              {loading ? (
-                <motion.div
-                  key="store-loading"
-                  className="flex-1 flex flex-col items-center justify-center text-white/50 text-sm gap-4"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.18 }}
-                >
-                  {/* Loading pad grid animation */}
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {Array.from({ length: 16 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-5 h-5 rounded-md"
-                        style={{
-                          backgroundColor: i % 3 === 0 ? 'rgba(255,143,0,0.15)' : 'rgba(0,184,212,0.08)',
-                          animation: `pad-pulse ${2 + (i % 4) * 0.4}s ease-in-out ${i * 0.15}s infinite`,
-                          ['--pad-glow' as string]: i % 3 === 0 ? 'rgba(255,143,0,0.3)' : 'rgba(0,184,212,0.15)',
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <div className="text-white/35 text-xs">{t('loading')}</div>
-                </motion.div>
-              ) : error ? (
-                <motion.div
-                  key="store-error"
-                  className="flex-1 flex flex-col items-center justify-center gap-3"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.18 }}
-                >
-                  <p className="text-sm text-red-300">{error}</p>
-                  <button
-                    className="px-4 py-1.5 rounded-lg text-xs text-white/70 bg-white/[0.06] hover:bg-white/10 transition-colors"
-                    onClick={onReload}
-                  >
-                    {tCommon('retry')}
-                  </button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="store-content"
-                  className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row relative z-10"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {/* Left Panel - Detail & Filters */}
-                  <div className="shrink-0 lg:shrink min-h-0 lg:overflow-y-auto lg:w-[42%] border-b lg:border-b-0 lg:border-r border-white/[0.06] p-4 flex flex-col gap-3 bg-gradient-to-b from-white/[0.02] to-transparent">
-                    {warning && (
-                      <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-400/15 text-[10px] text-yellow-200">
-                        {warning}
-                        <button className="ml-2 underline" onClick={onReload}>{tCommon('retry')}</button>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                <input
-                  aria-label={t('searchAriaLabel')}
-                  ref={searchInputRef}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSearch('');
-                      searchInputRef.current?.blur();
-                      return;
-                    }
-                    handleSelectionKey(e.nativeEvent);
-                  }}
-                  placeholder={t('searchPlaceholder')}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
-                />
-                <div className="flex gap-1">
-                  <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>{t('filterAll')}</FilterChip>
-                  <FilterChip active={filter === 'led'} onClick={() => setFilter('led')} color="green">{tBadge('led')}</FilterChip>
-                  <FilterChip active={filter === 'autoplay'} onClick={() => setFilter('autoplay')} color="secondary">AP</FilterChip>
-                  <div className="flex-1" />
-                  <FilterChip active={sort === 'downloads'} onClick={() => setSort('downloads')}>DL</FilterChip>
-                  <FilterChip active={sort === 'title'} onClick={() => setSort('title')}>{t('sortAZ')}</FilterChip>
+            {/* Network state must not wait for an outgoing animation to finish. */}
+            {loading ? (
+              <div
+                key="store-loading"
+                className="flex-1 flex flex-col items-center justify-center text-white/50 text-sm gap-4"
+              >
+                {/* Loading pad grid animation */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {Array.from({ length: 16 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-5 h-5 rounded-md"
+                      style={{
+                        backgroundColor: i % 3 === 0 ? 'rgba(255,143,0,0.15)' : 'rgba(0,184,212,0.08)',
+                        animation: `pad-pulse ${2 + (i % 4) * 0.4}s ease-in-out ${i * 0.15}s infinite`,
+                        ['--pad-glow' as string]: i % 3 === 0 ? 'rgba(255,143,0,0.3)' : 'rgba(0,184,212,0.15)',
+                      }}
+                    />
+                  ))}
                 </div>
+                <div className="text-white/35 text-xs">{t('loading')}</div>
+              </div>
+            ) : error ? (
+              <div
+                key="store-error"
+                className="flex-1 flex flex-col items-center justify-center gap-3"
+              >
+                <p className="text-sm text-red-300">{error}</p>
+                <button
+                  className="px-4 py-1.5 rounded-lg text-xs text-white/70 bg-white/[0.06] hover:bg-white/10 transition-colors"
+                  onClick={onReload}
+                >
+                  {tCommon('retry')}
+                </button>
+              </div>
+            ) : (
+              <div
+                key="store-content"
+                className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row relative z-10"
+              >
+                {/* Left Panel - Detail & Filters */}
+                <div className="shrink-0 lg:shrink min-h-0 lg:overflow-y-auto lg:w-[42%] border-b lg:border-b-0 lg:border-r border-white/[0.06] p-4 flex flex-col gap-3 bg-gradient-to-b from-white/[0.02] to-transparent">
+                  {warning && (
+                    <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-400/15 text-[10px] text-yellow-200">
+                      {warning}
+                      <button className="ml-2 underline" onClick={onReload}>{tCommon('retry')}</button>
                     </div>
+                  )}
+                  <div className="space-y-2">
+              <input
+                aria-label={t('searchAriaLabel')}
+                ref={searchInputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearch('');
+                    searchInputRef.current?.blur();
+                    return;
+                  }
+                  handleSelectionKey(e.nativeEvent);
+                }}
+                placeholder={t('searchPlaceholder')}
+                className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
+              />
+              <div className="flex gap-1">
+                <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>{t('filterAll')}</FilterChip>
+                <FilterChip active={filter === 'led'} onClick={() => setFilter('led')} color="green">{tBadge('led')}</FilterChip>
+                <FilterChip active={filter === 'autoplay'} onClick={() => setFilter('autoplay')} color="secondary">AP</FilterChip>
+                <div className="flex-1" />
+                <FilterChip active={sort === 'downloads'} onClick={() => setSort('downloads')}>DL</FilterChip>
+                <FilterChip active={sort === 'title'} onClick={() => setSort('title')}>{t('sortAZ')}</FilterChip>
+              </div>
+                  </div>
 
-                    {selectedItem ? (
-                      <>
-                  {downloadedPackIdByCode.has(selectedItem.code) && (
+                  {selectedItem ? (
+                    <>
+                {downloadedPackIdByCode.has(selectedItem.code) && (
+                  <button
+                    className="relative w-full py-2.5 rounded-xl text-xs font-bold text-white hover:scale-[1.01] transition-all group"
+                    style={{ background: 'var(--accent)' }}
+                    tabIndex={-1}
+                    onClick={() => onPlayDownloaded(selectedItem)}
+                  >
+                    <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
+                    {t('playDownloadedPack')}
+                  </button>
+                )}
+                <div>
+                  <h3 className="text-sm font-bold text-white">{selectedItem.title}</h3>
+                  <p className="text-xs text-white/45">{selectedItem.producerName}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-[11px] text-white/30">{t('code')} <span className="text-accent/60 font-mono">{selectedItem.code}</span></div>
+                  <div className="text-[11px] text-white/30">{t('downloads')} <span className="text-white/50">{selectedItem.downloadCount.toLocaleString()}</span></div>
+                  <div className="flex gap-2 mt-2">
+                    {selectedItem.isLED && (
+                      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-green-500/10 border border-green-500/15">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]" />
+                        <span className="text-[10px] font-semibold text-green-400/90">{tBadge('led')}</span>
+                      </span>
+                    )}
+                    {selectedItem.isAutoPlay && (
+                      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[var(--secondary)]/10 border border-[var(--secondary)]/15">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--secondary)] shadow-[0_0_6px_rgba(0,184,212,0.5)]" />
+                        <span className="text-[10px] font-semibold text-[var(--secondary)]">{tBadge('autoPlay')}</span>
+                      </span>
+                    )}
+                    {!selectedItem.isLED && !selectedItem.isAutoPlay && <span className="text-[10px] text-white/25">{t('noLedOrAutoPlay')}</span>}
+                  </div>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  {downloadingCode && (
                     <button
-                      className="relative w-full py-2.5 rounded-xl text-xs font-bold text-white hover:scale-[1.01] transition-all group"
-                      style={{ background: 'var(--accent)' }}
+                      className="flex-1 py-1.5 rounded-lg text-xs bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors"
                       tabIndex={-1}
-                      onClick={() => onPlayDownloaded(selectedItem)}
+                      onClick={onCancelDownload}
                     >
-                      <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
-                      {t('playDownloadedPack')}
+                      {tCommon('cancel')}
                     </button>
                   )}
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{selectedItem.title}</h3>
-                    <p className="text-xs text-white/45">{selectedItem.producerName}</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] text-white/30">{t('code')} <span className="text-accent/60 font-mono">{selectedItem.code}</span></div>
-                    <div className="text-[11px] text-white/30">{t('downloads')} <span className="text-white/50">{selectedItem.downloadCount.toLocaleString()}</span></div>
-                    <div className="flex gap-2 mt-2">
-                      {selectedItem.isLED && (
-                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-green-500/10 border border-green-500/15">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]" />
-                          <span className="text-[10px] font-semibold text-green-400/90">{tBadge('led')}</span>
-                        </span>
-                      )}
-                      {selectedItem.isAutoPlay && (
-                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[var(--secondary)]/10 border border-[var(--secondary)]/15">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[var(--secondary)] shadow-[0_0_6px_rgba(0,184,212,0.5)]" />
-                          <span className="text-[10px] font-semibold text-[var(--secondary)]">{tBadge('autoPlay')}</span>
-                        </span>
-                      )}
-                      {!selectedItem.isLED && !selectedItem.isAutoPlay && <span className="text-[10px] text-white/25">{t('noLedOrAutoPlay')}</span>}
-                    </div>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    {downloadingCode && (
+                  <button
+                    className="flex-1 py-2 rounded-lg text-xs bg-white/[0.04] text-white/50 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-1.5"
+                    tabIndex={-1}
+                    onClick={() => onYoutube(selectedItem)}
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                    {t('youtube')}
+                  </button>
+                  <button
+                    className={`flex-1 py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${
+                      selectedItem.url
+                        ? 'bg-white/[0.04] text-white/50 hover:bg-white/[0.08]'
+                        : 'bg-white/[0.02] text-white/20'
+                    }`}
+                    tabIndex={-1}
+                    onClick={() => onWebsite(selectedItem)}
+                    disabled={!selectedItem.url}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    {t('website')}
+                  </button>
+                </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-white/35">{t('noItemSelected')}</div>
+                  )}
+                </div>
+
+                {/* Right Panel - Item List */}
+                <div role="listbox" aria-label={t('itemListAriaLabel')} className="shrink-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto p-4 space-y-1.5">
+                  {visibleItems.length === 0 ? (
+                    <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-2 text-xs text-white/35">
+                      <div>{t('noMatchingItems')}</div>
                       <button
-                        className="flex-1 py-1.5 rounded-lg text-xs bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors"
-                        tabIndex={-1}
-                        onClick={onCancelDownload}
+                        className="px-3 py-1 rounded-lg bg-white/[0.06] text-white/60 hover:bg-white/10 transition-colors"
+                        onClick={() => {
+                          setSearch('');
+                          setFilter('all');
+                        }}
                       >
-                        {tCommon('cancel')}
+                        {t('clearFilters')}
                       </button>
-                    )}
-                    <button
-                      className="flex-1 py-2 rounded-lg text-xs bg-white/[0.04] text-white/50 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-1.5"
-                      tabIndex={-1}
-                      onClick={() => onYoutube(selectedItem)}
-                    >
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                      {t('youtube')}
-                    </button>
-                    <button
-                      className={`flex-1 py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 ${
-                        selectedItem.url
-                          ? 'bg-white/[0.04] text-white/50 hover:bg-white/[0.08]'
-                          : 'bg-white/[0.02] text-white/20'
-                      }`}
-                      tabIndex={-1}
-                      onClick={() => onWebsite(selectedItem)}
-                      disabled={!selectedItem.url}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                      {t('website')}
-                    </button>
-                  </div>
-                      </>
-                    ) : (
-                      <div className="text-sm text-white/35">{t('noItemSelected')}</div>
-                    )}
-                  </div>
-
-                  {/* Right Panel - Item List */}
-                  <div role="listbox" aria-label={t('itemListAriaLabel')} className="shrink-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto p-4 space-y-1.5">
-                    {visibleItems.length === 0 ? (
-                      <div className="h-full min-h-[240px] flex flex-col items-center justify-center gap-2 text-xs text-white/35">
-                        <div>{t('noMatchingItems')}</div>
-                        <button
-                          className="px-3 py-1 rounded-lg bg-white/[0.06] text-white/60 hover:bg-white/10 transition-colors"
-                          onClick={() => {
-                            setSearch('');
-                            setFilter('all');
-                          }}
-                        >
-                          {t('clearFilters')}
-                        </button>
-                      </div>
-                    ) : visibleItems.map((item, index) => {
-              const downloaded = downloadedCodes.has(item.code);
-              const downloading = downloadingCode === item.code;
-              const failed = failedCode === item.code;
-              return (
-                <motion.div
-                  key={item.code}
-                  data-store-code={item.code}
-                  initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: reduceMotion ? 0 : 0.16,
-                    delay: reduceMotion ? 0 : Math.min(index * 0.012, 0.12),
-                  }}
-                  role="option"
-                  aria-selected={selectedCode === item.code}
-                  aria-label={`${item.title} by ${item.producerName}`}
-                  className={`rounded-xl border px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-all ${
-                    selectedCode === item.code
-                      ? 'bg-accent/[0.08] border-accent/25'
-                      : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1]'
-                  }`}
-                  style={selectedCode === item.code ? { boxShadow: '0 0 20px -5px rgba(255,143,0,0.1)' } : undefined}
-                  onClick={() => setSelectedCode(item.code)}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-white font-medium truncate">{item.title}</div>
-                    <div className="text-xs text-white/40 truncate">{item.producerName}</div>
-                    <div className="mt-1 flex items-center gap-2 text-[10px] text-white/30">
-                      <span className="text-accent/40 font-mono">#{item.code}</span>
-                      <span>{item.downloadCount.toLocaleString()} downloads</span>
-                      {item.isLED && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_3px_rgba(74,222,128,0.3)]" /><span className="text-green-400/60">{tBadge('led')}</span></span>}
-                      {item.isAutoPlay && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-[var(--secondary)] shadow-[0_0_3px_rgba(0,184,212,0.3)]" /><span className="text-[var(--secondary)]/60">{tBadge('autoPlayShort')}</span></span>}
                     </div>
+                  ) : visibleItems.map((item, index) => {
+            const downloaded = downloadedCodes.has(item.code);
+            const downloading = downloadingCode === item.code;
+            const failed = failedCode === item.code;
+            return (
+              <motion.div
+                key={item.code}
+                data-store-code={item.code}
+                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.16,
+                  delay: reduceMotion ? 0 : Math.min(index * 0.012, 0.12),
+                }}
+                role="option"
+                aria-selected={selectedCode === item.code}
+                aria-label={`${item.title} by ${item.producerName}`}
+                className={`rounded-xl border px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-all ${
+                  selectedCode === item.code
+                    ? 'bg-accent/[0.08] border-accent/25'
+                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1]'
+                }`}
+                style={selectedCode === item.code ? { boxShadow: '0 0 20px -5px rgba(255,143,0,0.1)' } : undefined}
+                onClick={() => setSelectedCode(item.code)}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-white font-medium truncate">{item.title}</div>
+                  <div className="text-xs text-white/40 truncate">{item.producerName}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[10px] text-white/30">
+                    <span className="text-accent/40 font-mono">#{item.code}</span>
+                    <span>{item.downloadCount.toLocaleString()} downloads</span>
+                    {item.isLED && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-green-400/80 shadow-[0_0_3px_rgba(74,222,128,0.3)]" /><span className="text-green-400/60">{tBadge('led')}</span></span>}
+                    {item.isAutoPlay && <span className="flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-[var(--secondary)] shadow-[0_0_3px_rgba(0,184,212,0.3)]" /><span className="text-[var(--secondary)]/60">{tBadge('autoPlayShort')}</span></span>}
                   </div>
+                </div>
 
-                  <div className="w-36 shrink-0">
-                    {downloading ? (
-                      <div className="w-full">
-                        <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden relative">
-                          <motion.div
-                            className="absolute inset-0 opacity-25"
-                            animate={{ x: ['-100%', '100%'] }}
-                            transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
-                            style={{
-                              background:
-                                'linear-gradient(90deg, transparent 0%, rgba(255,143,0,0.7) 50%, transparent 100%)',
-                            }}
-                          />
-                          <motion.div
-                            className="h-full rounded-full"
-                            style={{ background: 'linear-gradient(90deg, var(--accent), var(--secondary))' }}
-                            animate={{ width: `${downloadProgress}%` }}
-                            transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.35 }}
-                          />
-                        </div>
-                        <div className="mt-1 text-[10px] text-white/40 text-right">Downloading {downloadProgress}%</div>
+                <div className="w-36 shrink-0">
+                  {downloading ? (
+                    <div className="w-full">
+                      <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden relative">
+                        <motion.div
+                          className="absolute inset-0 opacity-25"
+                          animate={{ x: ['-100%', '100%'] }}
+                          transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
+                          style={{
+                            background:
+                              'linear-gradient(90deg, transparent 0%, rgba(255,143,0,0.7) 50%, transparent 100%)',
+                          }}
+                        />
+                        <motion.div
+                          className="h-full rounded-full"
+                          style={{ background: 'linear-gradient(90deg, var(--accent), var(--secondary))' }}
+                          animate={{ width: `${downloadProgress}%` }}
+                          transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.35 }}
+                        />
                       </div>
-                    ) : (
-                      <div className="flex gap-1">
+                      <div className="mt-1 text-[10px] text-white/40 text-right">Downloading {downloadProgress}%</div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1">
+                      <button
+                        className="w-1/3 py-1.5 rounded-lg text-[10px] font-medium bg-white/[0.06] text-white/50 hover:bg-white/10 transition-colors"
+                        tabIndex={-1}
+                        disabled={Boolean(downloadingCode)}
+                        onClick={() => onYoutube(item)}
+                      >
+                        YT
+                      </button>
+                      {downloaded ? (
                         <button
-                          className="w-1/3 py-1.5 rounded-lg text-[10px] font-medium bg-white/[0.06] text-white/50 hover:bg-white/10 transition-colors"
+                          className="relative w-2/3 py-1.5 rounded-lg text-xs font-semibold text-white hover:scale-[1.02] transition-all group"
+                          style={{ background: 'var(--accent)' }}
                           tabIndex={-1}
                           disabled={Boolean(downloadingCode)}
-                          onClick={() => onYoutube(item)}
+                          onClick={() => onPlayDownloaded(item)}
                         >
-                          YT
+                          <span className="absolute -inset-[1px] rounded-lg bg-accent opacity-25 blur-sm -z-10 group-hover:opacity-40 transition-opacity" />
+                          {tCommon('play')}
                         </button>
-                        {downloaded ? (
-                          <button
-                            className="relative w-2/3 py-1.5 rounded-lg text-xs font-semibold text-white hover:scale-[1.02] transition-all group"
-                            style={{ background: 'var(--accent)' }}
-                            tabIndex={-1}
-                            disabled={Boolean(downloadingCode)}
-                            onClick={() => onPlayDownloaded(item)}
-                          >
-                            <span className="absolute -inset-[1px] rounded-lg bg-accent opacity-25 blur-sm -z-10 group-hover:opacity-40 transition-opacity" />
-                            {tCommon('play')}
-                          </button>
-                        ) : failed ? (
-                          <button
-                            className="w-2/3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors"
-                            tabIndex={-1}
-                            disabled={Boolean(downloadingCode)}
-                            onClick={() => onRetryFailed(item)}
-                          >
-                            {tCommon('retry')}
-                          </button>
-                        ) : (
-                          <button
-                            className="w-2/3 py-1.5 rounded-lg text-xs font-medium bg-secondary/15 text-[var(--secondary)] hover:bg-secondary/25 border border-secondary/15 transition-colors"
-                            tabIndex={-1}
-                            disabled={Boolean(downloadingCode)}
-                            onClick={() => onDownload(item)}
-                          >
-                            {t('download')}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                      ) : failed ? (
+                        <button
+                          className="w-2/3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors"
+                          tabIndex={-1}
+                          disabled={Boolean(downloadingCode)}
+                          onClick={() => onRetryFailed(item)}
+                        >
+                          {tCommon('retry')}
+                        </button>
+                      ) : (
+                        <button
+                          className="w-2/3 py-1.5 rounded-lg text-xs font-medium bg-secondary/15 text-[var(--secondary)] hover:bg-secondary/25 border border-secondary/15 transition-colors"
+                          tabIndex={-1}
+                          disabled={Boolean(downloadingCode)}
+                          onClick={() => onDownload(item)}
+                        >
+                          {t('download')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+                </div>
+              </div>
+            )}
             <div className="shrink-0 px-4 py-3 border-t border-white/[0.06] text-[10px] text-white/20 flex items-center justify-center gap-4">
               <StoreKeyHint keys="↑↓" label={t('keyHintSelect')} />
               <StoreKeyHint keys="Enter" label={t('keyHintAction')} />
