@@ -2,7 +2,7 @@ import { Code, Download, Heart, Play, Star } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { SectionContainer, SectionHeading } from '@/components/introduce/SectionHeader';
-import { LARGE_BUTTON_CLASS, ON_ACCENT_FOCUS_CLASS, StoreButtons } from '@/components/introduce/StoreButtons';
+import { LARGE_BUTTON_CLASS, LARGE_BUTTON_PADDING_X_CLASS, ON_ACCENT_FOCUS_CLASS, StoreButtons } from '@/components/introduce/StoreButtons';
 import { Link } from '@/i18n/navigation';
 import { SCROLL_TOP_AVOID } from '@/lib/constants';
 
@@ -46,7 +46,7 @@ export const CtaSection = () => {
 					<div {...SCROLL_TOP_AVOID} className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
 						<Link
 							href="/play"
-							className={`${LARGE_BUTTON_CLASS} ${ON_ACCENT_FOCUS_CLASS} bg-accent-foreground px-6 text-white hover:bg-accent-foreground/90`}
+							className={`${LARGE_BUTTON_CLASS} ${LARGE_BUTTON_PADDING_X_CLASS} ${ON_ACCENT_FOCUS_CLASS} bg-accent-foreground text-white hover:bg-accent-foreground/90`}
 						>
 							<Play className="h-5 w-5 shrink-0 fill-current" aria-hidden />
 							{t('playNow')}

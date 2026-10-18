@@ -4,6 +4,8 @@ import { test, expect } from './browser';
 import { pad } from './touch';
 
 const litPads = (page: Page) => page.locator('[data-pad] div[style*="background-color"]');
+/** The dark square practice draws over the pad to press next. */
+const guide = (page: Page, position: string) => pad(page, position).locator('div[style*="background-color: rgba(0, 0, 0, 0.87)"]');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 
 /** basic.uni with some of its files replaced. */
@@ -57,6 +59,30 @@ test('lights outside the pad grid open without warnings and light nothing', asyn
   await expect(pad(page, '0,1').locator('div[style*="background-color"]')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
   await expect(litPads(page)).toHaveCount(1);
   await page.mouse.up();
+});
+
+// Pad (1, 1) moves to chain 40 of a two-chain pack; the second autoPlay press is on chain 2.
+test('step practice through a keySound move past the last chain plays to the end', async ({ page }, info) => {
+  await loadBasicWith(page, {
+    info: 'title=Browser Test Pack\nproducerName=UniPad Tests\nbuttonX=8\nbuttonY=8\nchain=2\nsquareButton=true',
+    keySound: '1 1 1 tone.wav 1 40\n2 2 1 tone.wav 1\n',
+    autoPlay: 'd 1000\no 1 1\nd 200\nf 1 1\nd 3000\no 2 1\nd 200\nf 2 1',
+  });
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('[1 1 1 tone.wav 1 40] wormhole is incorrect');
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+
+  const step = page.getByRole('button', { name: 'Play mode: Step', exact: true });
+  await step.click();
+  for (const [position, presses] of [['0,0', 1], ['1,0', 2]] as const) {
+    await expect(guide(page, position)).toBeVisible();
+    if (presses === 2) await info.attach('nearest-chain-practice-guide', { body: await page.screenshot(), contentType: 'image/png' });
+    await pad(page, position).hover();
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect.poll(() => starts(page)).toBe(presses);
+  }
+  await expect(step).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('non-finite sound coordinates warn about format and the following sound still plays', async ({ page }, info) => {

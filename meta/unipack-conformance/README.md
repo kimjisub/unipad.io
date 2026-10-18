@@ -205,7 +205,7 @@ first `:` (`info`, `keySound`, `keyLed`, `autoPlay`) and kind one of
 | kind | messages |
 |---|---|
 | `format` | `format is incorrect`, `format is not found` |
-| `range` | `chain\|x\|y\|loop\|coordinate is incorrect`, `out of range` |
+| `range` | `chain\|x\|y\|loop\|wormhole\|coordinate is incorrect`, `out of range` |
 | `missing-file` | `sound was not found`, `sounds directory not found`, `doesn't exist` |
 | `missing-field` | `title\|producerName\|buttonX\|buttonY\|chain was missing` |
 | anything else | `other(<message>)`, so a new message shows up as a difference |
@@ -241,7 +241,7 @@ this seam":
 | Lights | what the play screen would draw: `PlayActivityViewModel` with a `ChannelManager`, read at `UiCallback` | `LedRunner.Listener` batches, the runner alone | `LedRunnerListener` calls, the runner alone |
 | Round and logo lights | measured with **Pro light mode on**. The play screen starts with it off, where the LED channel's round and logo lights are hidden (`PlayActivityViewModel.proLightMode`); that default is not measured | no such setting in the runner | no such setting in the runner |
 | `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | `AutoPlayRunner.stop()`, `LedRunner.stop()`, `SoundEngine.destroy()`, then the main screen's step that takes the MIDI controller back (`MainViewModel.setupMidiController` → `MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver; the clear call is observed, not what a physical Launchpad receives | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
-| `autoplayOff` | not run yet | not run yet | `AutoPlayRunner.stop()`, then `PlayerHolds.releaseOthers`, which the play screen's `padInit` calls, releases every pad the user does not hold |
+| `autoplayOff` | `PlayActivityViewModel.switchPlayMode(PlayMode.None)`, including the screen's own autoPlay-end listener; the recording engine reports the endless voices it has not stopped | `PlayViewModel.switchPlayMode(.none)` on the real play view model; the real sound engine's `activePlayIDs` identifies endless sounds still active | `AutoPlayRunner.stop()`, then `PlayerHolds.releaseOthers`, which the play screen's `padInit` calls, releases every pad the user does not hold |
 | autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | `AutoPlayRunner` on the virtual clock (its clock and sleep are passed in by the harness) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
 | MP3 | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for any bytes |
 

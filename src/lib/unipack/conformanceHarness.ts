@@ -121,7 +121,7 @@ export function normalizeError(message: string): string {
   const section = /^([A-Za-z.]+)\s*:/.exec(message)?.[1] ?? 'unknown';
   let kind: string;
   if (/format is (incorrect|not found)/.test(message)) kind = 'format';
-  else if (/\b(chain|x|y|loop|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
+  else if (/\b(chain|x|y|loop|wormhole|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
   else if (/was not found|directory not found|doesn't exist/.test(message)) kind = 'missing-file';
   else if (/was missing/.test(message)) kind = 'missing-field';
   else kind = `other(${message})`;
