@@ -360,4 +360,93 @@ describe('parseUniPack', () => {
     }
   });
 
+  // Android reads every number field with a 32-bit toInt: a value beyond it is not a number, so the line
+  // or file is skipped with a format error; a 32-bit value outside the pack stays a range error.
+  describe('a number beyond 32 bits', () => {
+    const beyond = ['2147483648', '-2147483649', '99999999999', '9007199254740993', '9223372036854775808', '9'.repeat(400)];
+    const short = (token: string) => token.slice(0, 20);
+
+    for (const token of beyond) {
+      for (const field of [0, 1, 2, 4, 5]) {
+        test(`keySound field ${field} = ${short(token)} is a format error and the next sound is kept`, async () => {
+          const parts = ['1', '1', '1', 'a.wav', '1', '1'];
+          parts[field] = token;
+          const line = parts.join(' ');
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: `${line}\n${KEYSOUND_1_1_1}`, 'sounds/a.wav': SILENT_WAV,
+          }));
+
+          assert.deepEqual(pack.errors, [`keySound: [${line}] format is incorrect`]);
+          assert.equal(pack.soundCount, 1);
+        });
+      }
+
+      for (const field of [0, 1, 2, 3]) {
+        test(`keyLed file name field ${field} = ${short(token)} is a format error and the next file is kept`, async () => {
+          const parts = ['1', '1', '1', '1'];
+          parts[field] = token;
+          const name = parts.join(' ');
+          const pack = await parseWithLeds({ [name]: 'f 1 1', '1 1 1': 'f 1 1' });
+
+          assert.deepEqual(pack.errors, [`keyLed: [${name}] format is incorrect`]);
+          assert.equal(pack.ledCount, 1);
+        });
+      }
+
+      for (const line of [`o ${token} 1 a 5`, `o 1 ${token} a 5`, `o 1 1 a ${token}`, `f ${token} 1`, `f 1 ${token}`,
+        `o mc ${token} a 5`, `f mc ${token}`, `d ${token}`, `c ${token}`]) {
+        test(`keyLed line [${short(line)}] is a format error and the next line is kept`, async () => {
+          const pack = await parseWithLeds({ '1 1 1': `${line}\nf 1 1` });
+
+          assert.deepEqual(pack.errors, [`keyLed: [1 1 1].[${line}] format is incorrect`]);
+          assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [{ type: 'off', x: 0, y: 0 }]);
+        });
+      }
+
+      for (const line of [`o ${token} 1`, `f 1 ${token}`, `t ${token} 1`, `c ${token}`, `d ${token}`]) {
+        test(`autoPlay line [${short(line)}] is a format error and the next line is kept`, async () => {
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: KEYSOUND_1_1_1, 'sounds/a.wav': SILENT_WAV, autoPlay: `${line}\non 1 1`,
+          }));
+
+          assert.deepEqual(pack.errors, [`autoPlay: [${line}] format is incorrect`]);
+          assert.deepEqual(pack.autoPlay!.elements, [{ type: 'on', x: 0, y: 0, currChain: 0, num: 0 }]);
+        });
+      }
+    }
+
+    for (const token of ['2147483647', '-2147483648']) {
+      test(`${token} is read as a number: outside the pack it is a range error`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN,
+          keySound: `${token} 1 1 a.wav\n1 ${token} 1 a.wav\n${KEYSOUND_1_1_1}`,
+          'sounds/a.wav': SILENT_WAV,
+          [`keyLed/1 1 ${token}`]: 'f 1 1',
+          autoPlay: `o ${token} 1\nc ${token}`,
+        }));
+
+        assert.deepEqual(pack.errors, [
+          `keySound: [${token} 1 1 a.wav] chain is incorrect`,
+          `keySound: [1 ${token} 1 a.wav] x is incorrect`,
+          `keyLed: [1 1 ${token}] y is incorrect`,
+          `autoPlay: [o ${token} 1] coordinate is incorrect`,
+          `autoPlay: [c ${token}] chain is incorrect`,
+        ]);
+      });
+    }
+
+    test('the largest 32-bit delay and loop are kept, and a round LED index past 32 is dropped without a warning', async () => {
+      const pack = await parseWithLeds({ '1 1 1 2147483647': 'd 2147483647\nd 2147483647\no mc 2147483647 a 5\nf 1 1' });
+
+      assert.deepEqual(pack.errors, []);
+      const animation = pack.ledAnimationTable![0][0][0]![0];
+      assert.equal(animation.loop, 2147483647);
+      assert.deepEqual(animation.ledEvents, [
+        { type: 'delay', delay: 2147483647 },
+        { type: 'delay', delay: 2147483647 },
+        { type: 'off', x: 0, y: 0 },
+      ]);
+    });
+  });
+
 });

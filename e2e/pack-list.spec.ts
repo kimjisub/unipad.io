@@ -118,3 +118,57 @@ test('rows hold no separate controls and the empty search result sits outside th
   await expect(page.getByText('no pack has this name')).toBeVisible();
   await expect(page.getByRole('listbox')).toHaveCount(0);
 });
+
+/**
+ * Selects the middle pack, then focuses the theme button as Tab does. Safari's Tab reaches buttons
+ * only with its "Press Tab to highlight each item" setting, so the button is focused directly.
+ */
+async function focusThemeButtonWithPackSelected(page: Page) {
+  await option(page, middle).click();
+  await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
+
+  const theme = page.getByRole('button', { name: 'Theme', exact: true });
+  await theme.focus();
+  await expect(theme).toBeFocused();
+}
+
+/** The main screen is still showing the list with the middle pack selected, and nothing is open over it. */
+async function expectListUntouched(page: Page) {
+  await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/[?&]pack=/);
+}
+
+test('Enter on a focused button presses that button and leaves the selected pack closed', async ({ page }) => {
+  await openListWithThreePacks(page);
+  await focusThemeButtonWithPackSelected(page);
+
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Enter');
+  await chooser;
+  await expectListUntouched(page);
+
+  // Enter on the focused row still plays the selected pack.
+  await option(page, middle).focus();
+  await page.keyboard.press('Enter');
+  await expectPads(page);
+  await expect(page).toHaveTitle(/^Chain Release v1 manual \|/);
+});
+
+test('Backspace and Delete on a focused button leave the selected pack alone', async ({ page }) => {
+  await openListWithThreePacks(page);
+  await focusThemeButtonWithPackSelected(page);
+  // WebKit's own Backspace on a button goes back a page, which here would reopen an imported pack;
+  // a second entry for this page keeps it on the list.
+  await page.evaluate(() => history.pushState(null, '', location.href));
+
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Delete');
+  await expectListUntouched(page);
+
+  // On the focused row they still ask to delete the selected pack.
+  await option(page, middle).focus();
+  await page.keyboard.press('Backspace');
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+});
