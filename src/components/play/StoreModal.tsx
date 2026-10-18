@@ -1,12 +1,43 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useClientReady } from '@/hooks/useClientReady';
 import type { StoreItem } from '@/lib/store';
+import { listboxTargetIndex } from './listboxNavigation';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
+
+/**
+ * The store keeps focus in its search field, so only up and down move the selection;
+ * Home and End stay with the text caret.
+ */
+function storeTargetIndex(key: string, current: number, count: number): number | null {
+  if (key !== 'ArrowDown' && key !== 'ArrowUp') return null;
+  return listboxTargetIndex(key, current, count);
+}
+
+/**
+ * A key an input method spends on composing text, such as the Enter that finishes a Hangul
+ * syllable. Chrome and Firefox flag it; Safari sends that Enter after the composition ends,
+ * marked only by the legacy key code 229.
+ */
+function isComposingKey(event: KeyboardEvent): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+const ACTS_ON_ENTER = 'button, a[href], select, summary, [role="button"], [role="link"]';
+
+/**
+ * Whether the key's target handles Enter itself, as a button reached with Tab does. Buttons left
+ * out of the Tab order only hold focus after a mouse press, so Enter there stays with the selected pack.
+ */
+function targetActsOnEnter(event: KeyboardEvent): boolean {
+  if (!(event.target instanceof Element)) return false;
+  const control = event.target.closest<HTMLElement>(ACTS_ON_ENTER);
+  return control !== null && control.tabIndex >= 0;
+}
 
 interface StoreModalProps {
   visible: boolean;
@@ -150,6 +181,24 @@ export function StoreModal({
     });
   }, [visible, selectedItem, reduceMotion]);
 
+  /** Up and down move the selection; Enter plays, retries or downloads the selected pack. */
+  const handleSelectionKey = useCallback((event: KeyboardEvent) => {
+    if (isComposingKey(event)) return;
+
+    const targetIndex = storeTargetIndex(event.key, selectedIndex, visibleItems.length);
+    if (targetIndex !== null) {
+      event.preventDefault();
+      setSelectedCode(visibleItems[targetIndex].code);
+      return;
+    }
+
+    if (event.key !== 'Enter' || !selectedItem || downloadingCode || targetActsOnEnter(event)) return;
+    event.preventDefault();
+    if (downloadedCodes.has(selectedItem.code)) onPlayDownloaded(selectedItem);
+    else if (failedCode === selectedItem.code) onRetryFailed(selectedItem);
+    else onDownload(selectedItem);
+  }, [visibleItems, selectedIndex, selectedItem, downloadingCode, failedCode, downloadedCodes, onPlayDownloaded, onRetryFailed, onDownload]);
+
   useEffect(() => {
     if (!visible) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -167,52 +216,13 @@ export function StoreModal({
         onClose();
         return;
       }
-      if (!visibleItems.length || isTextInput) return;
-
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        const next = selectedIndex < 0
-          ? 0
-          : (selectedIndex + 1) % visibleItems.length;
-        setSelectedCode(visibleItems[next].code);
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        const prev = selectedIndex <= 0
-          ? visibleItems.length - 1
-          : selectedIndex - 1;
-        setSelectedCode(visibleItems[prev].code);
-        return;
-      }
-
-      if (event.key === 'Enter' && selectedItem && !downloadingCode) {
-        event.preventDefault();
-        const downloaded = downloadedCodes.has(selectedItem.code);
-        const failed = failedCode === selectedItem.code;
-        if (downloaded) onPlayDownloaded(selectedItem);
-        else if (failed) onRetryFailed(selectedItem);
-        else onDownload(selectedItem);
-      }
+      if (!isTextInput) handleSelectionKey(event);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [
-    visible,
-    visibleItems,
-    selectedIndex,
-    selectedItem,
-    downloadingCode,
-    failedCode,
-    downloadedCodes,
-    onClose,
-    onPlayDownloaded,
-    onRetryFailed,
-    onDownload,
-  ]);
+  }, [visible, downloadingCode, onClose, handleSelectionKey]);
 
   return (
     <AnimatePresence>
@@ -325,6 +335,7 @@ export function StoreModal({
                     {warning && (
                       <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-400/15 text-[10px] text-yellow-200">
                         {warning}
+                        <button className="ml-2 underline" onClick={onReload}>{tCommon('retry')}</button>
                       </div>
                     )}
                     <div className="space-y-2">
@@ -339,25 +350,9 @@ export function StoreModal({
                       e.stopPropagation();
                       setSearch('');
                       searchInputRef.current?.blur();
+                      return;
                     }
-                    if (e.key === 'ArrowDown' && visibleItems.length > 0) {
-                      e.preventDefault();
-                      const next = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleItems.length;
-                      setSelectedCode(visibleItems[next].code);
-                    }
-                    if (e.key === 'ArrowUp' && visibleItems.length > 0) {
-                      e.preventDefault();
-                      const prev = selectedIndex <= 0 ? visibleItems.length - 1 : selectedIndex - 1;
-                      setSelectedCode(visibleItems[prev].code);
-                    }
-                    if (e.key === 'Enter' && selectedItem && !downloadingCode) {
-                      e.preventDefault();
-                      const downloaded = downloadedCodes.has(selectedItem.code);
-                      const failed = failedCode === selectedItem.code;
-                      if (downloaded) onPlayDownloaded(selectedItem);
-                      else if (failed) onRetryFailed(selectedItem);
-                      else onDownload(selectedItem);
-                    }
+                    handleSelectionKey(e.nativeEvent);
                   }}
                   placeholder={t('searchPlaceholder')}
                   className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] text-xs text-white placeholder:text-white/25 outline-none border border-transparent focus:border-accent/30 focus:bg-white/[0.07] transition-colors"
@@ -373,15 +368,7 @@ export function StoreModal({
                     </div>
 
                     {selectedItem ? (
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={selectedItem.code}
-                          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={reduceMotion ? {} : { opacity: 0, y: -4 }}
-                          transition={{ duration: reduceMotion ? 0 : 0.16 }}
-                          className="contents"
-                        >
+                      <>
                   {downloadedPackIdByCode.has(selectedItem.code) && (
                     <button
                       className="relative w-full py-2.5 rounded-xl text-xs font-bold text-white hover:scale-[1.01] transition-all group"
@@ -448,8 +435,7 @@ export function StoreModal({
                       {t('website')}
                     </button>
                   </div>
-                        </motion.div>
-                      </AnimatePresence>
+                      </>
                     ) : (
                       <div className="text-sm text-white/35">{t('noItemSelected')}</div>
                     )}

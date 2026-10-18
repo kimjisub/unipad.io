@@ -57,7 +57,7 @@ pnpm exec tsc --noEmit
 pnpm lint
 pnpm test
 pnpm build
-pnpm exec playwright install --with-deps chromium
+pnpm exec playwright install --with-deps chromium webkit firefox
 pnpm test:e2e
 ```
 
@@ -68,10 +68,17 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 `pnpm test:unipack` remains available for a focused parser/player check.
 
 Every pull request (including drafts) runs the fixed **Web checks** job in
-**Web CI**: install, type check, lint, unit tests and build. The browser tests
-(`pnpm test:e2e`) do not run in CI; run them locally before pushing. It also runs after a merge to `main`. GitHub records each step's
-duration; the job summary records elapsed time from setup through verification.
-Required-check configuration is a separate step after this workflow is merged.
+**Web CI**: install, type check, lint, unit tests and build. A separate
+**Browser playback tests** job builds with the browser-test configuration below and
+runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+uploads the Playwright report and traces as an artifact. A separate **Windows playback**
+workflow runs only `e2e/play.spec.ts` on Windows 2025 with Chromium and the installed
+Chrome and Edge channels; failures fail their jobs, with no retries. None of these
+browser jobs is a required check yet. The other browser tests do not run in CI; run
+`pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
+GitHub records each step's duration; each job summary records elapsed time from setup
+through verification. Required-check configuration is a separate step after these
+workflows are merged.
 Vercel deployment settings are unchanged.
 
 The workflow uses deliberately fake Firebase public configuration with `.invalid`
@@ -93,8 +100,17 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Use the fake Firebase configuration
+`pnpm test:e2e` starts the production build on a free `localhost` port between
+20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
+is retried with another, up to 10 times), reads the address from that server's own
+output, runs the headless browser tests against it, then stops only that server.
+Before reporting ready, the launcher binds the other localhost loopback address
+and forwards its TCP connections to Next, so both IPv4 and IPv6 reach this run's
+server. A conflict on either address retries the port (or fails a pinned port);
+an unavailable address family is logged and skipped. The relay and its connections
+close along with the server.
+Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
+(the run fails at start if the port is taken). Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:
 
 ```bash
@@ -135,16 +151,63 @@ both with `node e2e/fixtures/generate.mjs`. There are no downloaded songs or ass
 | Keyboard input | Automatic | Physical Q key mapping, release and repeat suppression |
 | keyLed | Automatic | Red/green overlays on a different pad and timed removal |
 | Auto-play | Automatic | Start, pause with frozen progress/no new notes, resume, stop and loop-source cleanup |
-| Web MIDI | Partial | Fake `requestMIDIAccess`, input/output names, auto-detected X profile, init SysEx, note input/release, exact LED on/off bytes, disconnect/reconnect |
-| Audible sound quality | Unavailable in headless CI | Real decode, buffer duration and original Web Audio start/stop calls are observed; Chromium output is muted. Speaker output, latency and perceived quality require listening |
+| Web MIDI | Native API capability check; explicitly skipped as not applicable when absent | Fake `requestMIDIAccess`, input/output names, auto-detected X profile, init SysEx, note input/release, exact LED on/off bytes, disconnect/reconnect |
+| Audio output signal | Automatic on all three engines and Windows channels | An analyser after the application output gain measures nonzero RMS on a held pad, silence after release, and silence at zero volume despite a running source |
+| Audible sound quality | Unverified | No person listened. Speaker output, latency and perceived quality are not established by the signal measurement |
 | Physical USB MIDI | Unavailable in headless CI | A fake browser MIDI access object replaces hardware; cable/driver/permission prompts and real hardware LEDs need a physical device |
 
+`e2e/store-connection.spec.ts` keeps the real Firebase SDK and checks stalled
+responses, refused HTTP/WebSocket connections, cached lists and manual retries.
+It also checks a pending Firebase initialization, shared-link install confirmation
+on the pack list, successful install/playback and a stalled download with retry.
+Store lookup returns cached items or a connection message within five seconds;
+downloads stop after five seconds without incoming data, so longer transfers can
+continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
+fallbacks, progress across that idle limit, and cancellation.
+The cached and uncached store-list reconnect tests wait for an actual stalled SDK
+request before advancing the browser clock through that five-second deadline,
+then require fresh server data. The shared-link retry test uses the real clock.
+
 No test-only application hooks are added.
-The browser probes wrap native Web Audio calls without changing their behavior.
+The browser probes observe native decoding and start/stop calls, and insert a
+transparent analyser between the application output gain and the native destination.
+No audio mock or forced context resume is used. Device output stays silent where the
+engine allows it without touching the graph: Chromium keeps its default headless
+`--mute-audio`, and Firefox sets `media.volume_scale` to 0, which scales only the
+device stream. Playwright mutes Chromium only in headless runs, so `--headed` and
+`--ui` runs play pad sound. WebKit has no such switch, so its pad sound can reach the
+speakers. The signal test
+attaches its measured RMS with `humanListening: false`. Web MIDI is mocked only
+when the native API exists; unsupported engines keep their real unsupported path.
 Auto-play checks wait across the fixture's next-note deadline to prove that
 pause and stop produce no further playback requests.
 Each test uses fresh browser storage. Uncaught page errors fail the suite.
 Tests have zero retries and `test.only` is forbidden.
+
+`play.spec.ts` covers import/reload, pointer and keyboard input, keyLed, chain
+changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
+It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
+WebKit also runs the existing portable page/layout tests. Firefox is scoped to
+playback; exploratory page failures are investigated separately. Firefox allows
+90 seconds overall for page setup and playback. Pack-open assertions use the
+shared 15-second state limit from `expectPads`, including import and reload.
+A missing saved pack fails the pad-count assertion with the observed value,
+rather than waiting for a successful screen until the entire test times out.
+Restoration can briefly show the pack list while a local pack URL is still pending;
+a held native storage response covers that transition. A deliberately delayed native
+decode checks that opening still works beyond the former five-second assertion.
+Native multi-touch CDP tests remain Chromium-only.
+On Windows, reproduce the smoke jobs with:
+
+```bash
+pnpm exec playwright test e2e/play.spec.ts --project=chromium --project=chrome --project=msedge
+node scripts/playback-summary.mjs
+```
+
+The list/HTML reports and `test-results/results.json` retain skip counts and
+reasons. The summary separates intentional skips from interrupted and unrun tests,
+and fails on incomplete execution. Windows uploads them, signal attachments and failure traces for 14 days,
+and writes counts and measurement limits to the job summary.
 
 On failure, traces and screenshots remain in `test-results/` and the HTML
 report is in `playwright-report/`. Open a trace with
@@ -172,9 +235,9 @@ no-chain-change baseline (CR-005/006). No app-only test hooks are used.
 
 The CR-001 browser test attaches screenshots and real Web Audio start/stop call
 records before and after partial release. These are program input and playback
-request evidence. Audio is muted; no physical fingers, MIDI hardware, speaker
-quality, audible stop or latency is certified. The exact 99/100 ms delayed move
-and finite-play deadlines are checked only by the logical-clock unit suite.
+request evidence. Audio output is checked separately by the RMS test; no physical
+fingers, MIDI hardware, speaker quality, audible stop or latency is certified.
+The exact 99/100 ms delayed move and finite-play deadlines are checked only by the logical-clock unit suite.
 
 The common corpus bytes/expectations and their SHA-256 manifest stay unchanged.
 These new results remain separate from the 124 historical parser cases, KS-003,
@@ -192,3 +255,46 @@ the shared touch helpers. Headless Chromium never hides the tab or blurs the
 window by itself, so test G sends the `visibilitychange` and `blur` events a
 browser sends when the notification shade or another app takes over. These are
 synthetic-input results; real fingers on a physical device are not certified.
+
+### Held resize and input boundary checks
+
+`e2e/input-boundaries.spec.ts` runs in the default local `pnpm test:e2e`
+suite. `input-fixture.ts` builds a two-chain looping pack automatically from
+`multi-touch.uni`'s original PCM tone. Every pad and chain has a different
+buffer duration, so an unexpected playback request identifies the wrong mapping.
+The unchanged press overlay distinguishes held and released pads.
+
+The resize tests first prove a pad is sounding and lit at the laptop size, keep
+the input down from there through phone portrait (390×844), phone landscape
+(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
+landscape, then release in that different layout and play another pad.
+The existing grid remains mounted beneath the portrait overlay. These are
+viewport changes, not a physical device rotation test. Mouse dragging and chain
+clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
+touch resizing and both mouse/touch hold orders: both inputs must succeed and
+remain active together, and releasing the second must preserve the first.
+
+WebKit's public Playwright touchscreen API only supports `tap()`; creating a
+CDP session fails because CDP is Chromium-only. Held touch resizing and mixed
+input in WebKit are explicitly skipped as unverified, not counted as passes.
+Screenshots and playback request records are attached during held and released
+states. No engine methods or app test hooks are used to inject these inputs.
+Physical fingers, physical rotation, speaker quality and latency remain outside
+these automated checks.
+
+The margin tests keep a browser-native background touch down while another
+finger selects chain 2 exactly once, then verify the new chain's pad mapping
+and complete cleanup. The background finger must produce one trusted touch
+`pointerdown` outside every pad and control, and no `pointerup`,
+`pointercancel` or `lostpointercapture` for that finger until the last
+`touchEnd`. They run at the existing phone and tablet sizes in Chromium;
+WebKit's two-contact margin case remains unverified for the same API
+limitation. Pointer records observe browser events, including their trusted
+flag and input type; they do not call input handlers.
+
+`squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
+the bottom and right edges play the mapped pad at four screen sizes.
+
+Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
+The default suite includes all these cases; the GitHub workflow is unchanged.

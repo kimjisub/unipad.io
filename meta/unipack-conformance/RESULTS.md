@@ -1,27 +1,86 @@
-# Results (2026-10-15, Korea time)
+# Results (2026-10-18, Korea time)
 
-Corpus `4ae6a72cb475…` (sha256 of `corpus.json`), 133 cases, based on unipad-android aa93be99 and
-unipad-ios 4828fc2b (the head commits of the app pull requests that copy this corpus and fix the iOS
-`info` parser; not merged yet, and the same commits as `copies.json`, which is moved to their merge
-commits after they merge). Android and iOS results below were recorded on October 12; the web was
-rerun on this merged branch on October 15. Regenerate this table with `report.mjs` (README,
-"Running it"). It describes these 133 cases only; it does not show that every UniPack is compatible, and
-100% compatibility is not known.
+Corpus `844fa232eafa…` (sha256 of `corpus.json`), 137 cases, run on unipad-android 9e00b363 and
+unipad-ios ead429bc (the merge commits of the app pull requests that copy this corpus, the commits in
+`copies.json`) and on this unipad.io branch, all on October 18. Regenerate this table with `report.mjs` (README, "Running
+it"). It describes these 137 cases only; it does not show that every UniPack is compatible, and 100%
+compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 130 | 3 | 0 | 0 | 0 | 2026-10-12 12:16:21 |
-| iOS | 133 | 0 | 0 | 0 | 0 | 2026-10-12 12:49:48 |
-| Web | 131 | 2 | 0 | 0 | 0 | 2026-10-15 14:52:02 |
+| Android | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:41:48 |
+| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:50:42 |
+| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:33:22 |
 
-Pass on all three platforms: 128 of 133, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
-the 17) and none on a decision basis (Android 1, iOS 1, web 0 of the 1).
+Pass on all three platforms: 137 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+the 17) and 1 on a decision basis (Android 1, iOS 1, web 1 of the 1).
 
-- **Fail, 5 pinned:** Android: INF-007, INF-010, INF-016. Web: KS-018, KL-024. Each is pinned in
-  `divergences.json` with the observed result and its cause; each platform's fix removes its own pins.
+- **No case fails, and no difference is pinned.** No case in `divergences.json` carries a pin.
 - **No case is unverified or undetermined.** The six exit and autoPlay cases pass on iOS from the
   results its harness recorded. On iOS, leaving the play screen is observed up to the main screen's
   clear call to the MIDI driver, not what a physical Launchpad receives.
+
+## Changes after the Android `info` fix
+
+The previous canonical corpus SHA256 was `4a67dbe1e919…` (137 cases). Only the Android pins for INF-007,
+INF-010 and INF-016 are gone: ids, input files, fingerprints, expected results and bases are unchanged.
+
+- **Android gives the decided result for INF-007, INF-010 and INF-016.** It skips an `info` line without
+  `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pad column or row. Android now passes
+  137 of 137 (134 and 3 pinned fails before).
+- iOS and the web give the same results as on `4a67dbe1…` (137, 0, 0 each). The Android copy is the one
+  in 9e00b363, and the iOS copy the one in ead429bc (`sync.mjs --check` passes against both).
+
+## Changes after the sound name cases that differ from the file only in case
+
+The previous canonical corpus SHA256 was `fe56df2756a0…` (133 cases). Four cases were added; the other
+133 are unchanged (the two corpora were compared case by case).
+
+- **KS-019, KS-020, KS-021 and RUN-S-006 cover a `keySound` name that differs from its file only in
+  upper and lower case.** Official store packs list `End.wav` for a file stored as `END.wav`. When no file
+  has exactly the listed path under `sounds/`, the file whose whole path differs only in case is the
+  pad's sound, and its name is the stored one (`a.wav`, `END.wav`, `fx/s.wav`); a file of that name in
+  another folder, or a folder, is still `keySound:missing-file`. `sounds.mdx` says so.
+- **All three platforms pass the four.** The web already looked sounds up this way. iOS played those
+  pads silent and Android did on storage that tells upper and lower case apart; both now find the file
+  and record the stored name, so a harness that finds `A.wav` only because the disk ignores case still
+  fails.
+- Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: no rule decides
+  which one plays, and the app harnesses cannot write such a pack on a disk that ignores case (README).
+- Android and iOS give the same results as on `fe56df27…` for the other 133 cases (130, 3, 0 and 133,
+  0, 0), and so does the web (133, 0, 0).
+
+## Changes after the web reads UTF-16 text and keeps keyLED events outside the grid
+
+The previous canonical corpus SHA256 was `3f1845257d22…` (133 cases). Only the web pins for KS-018 and
+KL-024 are gone: the two corpora were compared case by case, and only `known` differs, on those two.
+
+- **The web passes KS-018 and KL-024.** It reads a text file that starts with a UTF-16 byte order mark
+  (`info`, `keySound`, keyLED files and `autoPlay`) and keeps a keyLED event outside the pad grid without a
+  warning; the LED runner skips it when it is lit. The web now passes 133 of 133 (131 and 2 pinned fails
+  before).
+- Android and iOS give the same results as on `3f184525…` (130, 3, 0 and 133, 0, 0). Both copies were
+  synchronized to `fe56df27…` (`sync.mjs --check` passes against both pull request copies).
+
+## Changes after dropping the iOS unobserved marks
+
+The previous canonical corpus SHA256 was `4ae6a72cb475…` (133 cases). It still marked RUN-L-006,
+RUN-L-007, RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 as unobserved on iOS, although the iOS harness
+records a result for all six and they pass.
+
+- **The six marks and their reasons are gone.** No case is marked `unobserved` now. Ids, input files,
+  fingerprints, expected results, bases and pinned differences are unchanged: the two corpora were
+  compared case by case, and only `unobserved` differs, on those six.
+- **The iOS harness no longer keeps its list of the six** (`newlyObservableCases`), which let it run
+  them in spite of the mark. A case the corpus marks `unobserved` for iOS is again reported unverified
+  with its reason and not run.
+- **`selftest.mjs` marks two cases `unobserved` itself** (a parse case and a run case) to keep checking
+  how `report.mjs` treats such a case, since the corpus has none. With the check that returns the reason
+  removed from `report.mjs`, the test fails.
+- The table is the same as on `4ae6a72c…`: Android 130, 3, 0; iOS 133, 0, 0; web 131, 2, 0. All three
+  were rerun on the new corpus. The Android and iOS copies were synchronized to `3f184525…`
+  (`sync.mjs --check` passes against both pull request copies).
 
 ## Changes after the iOS `info` fix
 
@@ -237,6 +296,18 @@ review. What changed, and why:
   test log given in place of a result file.
 
 ## How the checks were run
+
+On 2026-10-16, after dropping the iOS unobserved marks (corpus `3f1845257d22…`):
+
+| Platform | Command | Result |
+|---|---|---|
+| Web | `pnpm test:unipack` | 309 tests pass; `node --test meta/unipack-conformance/selftest.mjs`: 25 pass |
+| Android | `./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'` on d1e6c257 | BUILD SUCCESSFUL; 130 pass, INF-007, INF-010 and INF-016 fail as pinned |
+| iOS | `TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=<dir> xcodebuild test -only-testing:unipadTests/UniPackConformanceTests -only-testing:unipadTests/ConformanceRegressionTests -parallel-testing-enabled NO UNIPAD_WARNINGS_AS_ERRORS=YES` on 89286af6 (iPhone 17 Pro simulator, iOS 27.0, Xcode 27.0) | TEST SUCCEEDED, 26 tests pass, 133 corpus cases included; 133 pass, RUN-L-006, RUN-L-007, RUN-A-001, RUN-A-002, RUN-RP-003 and RUN-RP-004 among them with recorded results |
+
+All runs asserted cases (`assertions: checked`) and reported the canonical corpus hash.
+`build-corpus.mjs --check` passes, and `sync.mjs --check` passes against checkouts of the two app merge
+commits in `copies.json`. With the `unobserved` check removed from `report.mjs`, `selftest.mjs` fails one test.
 
 On 2026-10-15, after merging the current default branch into the iOS info corpus change:
 

@@ -1,7 +1,8 @@
 import { type Page, type Route, type TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
-import { importSavedPack, playFirstPad } from './saved-packs';
+import { importSavedPack } from './saved-packs';
+import { playFirstPad } from './basic-pack';
 
 // The saved list, opening a saved pack and quitting back to the list read only browser storage.
 // Each case breaks one part of the network, or leaves every request unanswered, and walks that path.
@@ -25,7 +26,7 @@ async function playSavedPackAndQuit(page: Page, testInfo: TestInfo) {
     await capture(page, testInfo, '1-saved-list');
   }
   await saved.press('Enter');
-  await expect(pads).toHaveCount(64);
+  await expectPads(page);
   await capture(page, testInfo, '2-pack-opened');
   await playFirstPad(page);
   await capture(page, testInfo, '3-first-pad-played');

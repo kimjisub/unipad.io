@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { afterEach, describe, mock, test, type TestContext } from 'node:test';
 import { parseUniPack } from './parser';
 import { SoundEngine } from './SoundEngine';
+import { INFO_2X2_2CHAIN, SILENT_WAV, packZip } from './testUtils';
 
 const corpus = 'meta/unipack-conformance/chain-release-v1';
 interface Start { playbackId: string; inputId: string; chain: number; pad: number[]; file: string; plays: string | number }
@@ -12,6 +13,15 @@ interface Step {
   expected: { chain: number; starts: Start[]; releaseStops: string[]; naturalEnds: string[]; active: string[]; pressedInputs: string[] };
 }
 const cases: { id: string; pack: string; steps: Step[] }[] = JSON.parse(readFileSync(`${corpus}/expectations.json`, 'utf8')).cases;
+
+function stubGlobal(t: TestContext, name: string, value: unknown) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, { configurable: true, value });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, name, original);
+    else Reflect.deleteProperty(globalThis, name);
+  });
+}
 
 class Source {
   buffer: AudioBuffer | null = null;
@@ -50,12 +60,7 @@ for (const scenario of cases) {
       createBufferSource() { const node = new Source(() => now, stops); nodes.push(node); return node; }
       close() {}
     }
-    const originalContext = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
-    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
-    t.after(() => {
-      if (originalContext) Object.defineProperty(globalThis, 'AudioContext', originalContext);
-      else Reflect.deleteProperty(globalThis, 'AudioContext');
-    });
+    stubGlobal(t, 'AudioContext', Context);
     const bytes = readFileSync(`${corpus}/packs/${scenario.pack}.uni`);
     const pack = await parseUniPack(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
     assert.deepEqual(pack.errors, []);
@@ -135,3 +140,133 @@ for (const scenario of cases) {
     } finally { engine.destroy(); }
   });
 }
+
+describe('SoundEngine', () => {
+  const UNDECODABLE = new Uint8Array([0x42, 0x41, 0x44]);
+
+  /** A pack whose sounds decode as the fake context says, with every source it starts. */
+  async function engineFor(t: TestContext, keySound: string) {
+    let chain = 0;
+    const sources: Source[] = [];
+    const stops: Source[] = [];
+    const timers: (() => void)[] = [];
+    mock.method(globalThis, 'setTimeout', ((callback: () => void) => { timers.push(callback); return 1; }) as unknown as typeof setTimeout);
+    class Context {
+      state = 'running';
+      destination = {};
+      currentTime = 0;
+      createGain() { return { gain: { value: 1 }, connect() {} }; }
+      async decodeAudioData(data: ArrayBuffer) {
+        if (new Uint8Array(data)[0] === UNDECODABLE[0]) throw new Error('EncodingError');
+        return { duration: 0.1 };
+      }
+      createBufferSource() { const node = new Source(() => 0, stops); sources.push(node); return node; }
+      close() {}
+    }
+    stubGlobal(t, 'AudioContext', Context);
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN,
+      keySound,
+      'sounds/a.wav': SILENT_WAV,
+      'sounds/b.wav': SILENT_WAV,
+      'sounds/bad.wav': UNDECODABLE,
+    }));
+    assert.deepEqual(pack.errors, []);
+    const engine = new SoundEngine(pack, () => chain, (c) => { chain = c; });
+    const failed = await engine.load();
+    return {
+      engine, sources, stops, failed,
+      get chain() { return chain; },
+      set chain(c: number) { chain = c; },
+      runTimers() { timers.splice(0).forEach((callback) => callback()); },
+      played: () => sources.map((s) => pack.soundTable.flat(2).flat().find((sound) => sound?.audioBuffer === s.buffer)?.file),
+    };
+  }
+
+  afterEach(() => mock.restoreAll());
+
+  test('a sound that cannot be decoded is silent and the pad moves on to its next sound', async t => {
+    const sound = await engineFor(t, '1 1 1 bad.wav\n1 1 1 a.wav');
+    assert.deepEqual(sound.failed, ['sounds/bad.wav']);
+    sound.engine.soundOn(0, 0);
+    assert.deepEqual(sound.played(), []);
+    sound.engine.soundOn(0, 0);
+    assert.deepEqual(sound.played(), ['sounds/a.wav']);
+    sound.engine.soundOn(0, 0);
+    assert.equal(sound.sources.length, 1, 'the third press is the silent first sound again');
+  });
+
+  test('a sound that cannot be decoded still follows its wormhole', async t => {
+    const sound = await engineFor(t, '1 1 1 bad.wav 1 2\n2 1 1 b.wav');
+    sound.engine.soundOn(0, 0);
+    sound.runTimers();
+    assert.equal(sound.chain, 1);
+    sound.engine.soundOn(0, 0);
+    assert.deepEqual(sound.played(), ['sounds/b.wav']);
+  });
+
+  test('a release stops the endless sound its own press started when another input pressed the pad in another chain', async t => {
+    const sound = await engineFor(t, '1 1 1 a.wav 0\n2 1 1 b.wav 0');
+    sound.engine.soundOn(0, 0, 'pointer-1');
+    const first = sound.sources[0];
+    sound.chain = 1;
+    sound.engine.soundOn(0, 0, 'pointer-2');
+    const second = sound.sources[1];
+    sound.engine.soundOff(0, 0, 'pointer-1');
+    assert.deepEqual(sound.stops, [first]);
+    assert.equal(second.active, true);
+    sound.engine.soundOff(0, 0, 'pointer-2');
+    assert.deepEqual(sound.stops, [first, second]);
+  });
+
+  test('a release without an input releases every press of the pad', async t => {
+    const sound = await engineFor(t, '1 1 1 a.wav 0\n2 1 1 b.wav 0');
+    sound.engine.soundOn(0, 0, 'pointer-1');
+    sound.chain = 1;
+    sound.engine.soundOn(0, 0, 'key-KeyA');
+    sound.engine.soundOff(0, 0);
+    assert.deepEqual(sound.stops, sound.sources);
+  });
+});
+
+test('audio session', async t => {
+  const bytes = readFileSync(`${corpus}/packs/${cases[0].pack}.uni`);
+  const pack = await parseUniPack(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  let typeAtContextCreation: string | undefined;
+  let contexts = 0;
+  let session: { type: string } | undefined;
+  class Context {
+    state = 'running';
+    destination = {};
+    constructor() { typeAtContextCreation = session?.type; contexts++; }
+    createGain() { return { gain: { value: 1 }, connect() {} }; }
+    close() {}
+  }
+  stubGlobal(t, 'AudioContext', Context);
+  const create = () => new SoundEngine(pack, () => 0, () => {}).destroy();
+
+  await t.test('is set to playback before the context exists, so the silent switch does not mute pads', st => {
+    session = { type: 'auto' };
+    stubGlobal(st, 'navigator', { audioSession: session });
+    create();
+    assert.equal(typeAtContextCreation, 'playback');
+    assert.equal(session.type, 'playback');
+  });
+
+  await t.test('is left alone where the browser has no audio session', st => {
+    session = undefined;
+    const browser = {};
+    stubGlobal(st, 'navigator', browser);
+    assert.doesNotThrow(create);
+    assert.deepEqual(browser, {});
+  });
+
+  await t.test('a refused type still creates the engine', st => {
+    session = undefined;
+    stubGlobal(st, 'navigator', { get audioSession() { return { set type(_: string) { throw new Error('refused'); } }; } });
+    st.mock.method(console, 'warn', () => {});
+    const before = contexts;
+    assert.doesNotThrow(create);
+    assert.equal(contexts, before + 1);
+  });
+});
