@@ -133,9 +133,10 @@ apps keep those switches in the option panel and reset them per session.
 
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Run of 2026-10-17 (Korea time) on corpus
-`844fa232…`, 137 cases: all 137 pass on all three platforms; none is undetermined, and none is a case a
-harness cannot observe ([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
+covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
+(Korea time), on corpus `ba80283d…`, 171 cases: Android passes 169 with two pinned storage differences;
+iOS and the web pass all 171. None is undetermined or unverified
+([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
 that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
 are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
 
@@ -145,9 +146,9 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
   keyLED coordinate or chain are stored 1 less than written; iOS and the web store `-2147483649` for the
   smallest 32-bit number, which Android's 32-bit fields cannot hold. Android used to wrap it to
   `2147483647`, so such a loop repeated practically forever; it now stays at the smallest number and the
-  sound plays once, as on the web. What is left is the number itself, below -1 and outside every grid and
-  chain on all three. Pinned for Android; it goes only if Android widens these fields or the corpus decides
-  otherwise.
+  sound plays once, as on iOS and the web. What is left is the number itself, below -1 and outside every
+  grid and chain on all three. The grammar does not define this stored value; the user-visible result is
+  the same. The two Android results remain pinned so a change to them is noticed.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
@@ -155,7 +156,8 @@ platform's own fix removes it.
 ### Resolved differences found by the corpus
 
 - **KS-B01..08, KL-BN01..08, KL-BE01..10, AP-B01..08: a number in a pack is a 32-bit integer on all
-  three.** Android always read pack numbers as 32-bit integers, so `2147483648` was a format error and
+  three (except the two pinned Android storage differences KS-B08 and KL-BE10 above).** Android always
+  read pack numbers as 32-bit integers, so `2147483648` was a format error and
   only its line or file was skipped. iOS read numbers up to 64 bits and the web any number, so the same
   value was a range error there; the web also rounded numbers past 2^53 and dropped a round LED line with
   a 400-digit number without a warning. iOS and the web now read a number that does not fit in 32 bits as
@@ -165,7 +167,7 @@ platform's own fix removes it.
 - **INF-007, INF-010, INF-016: Android reads `info` as the docs say.** Android skips an `info` line
   without `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
   (`info : buttonX is not a number`) instead of opening it with no pads. Its three pins were removed; the
-  input fingerprints are unchanged. The corpus SHA256 is now
+  input fingerprints are unchanged. The corpus SHA256 after that fix was
   `844fa232eafac305f068fafad1cf4ada2e343f423a802b128242812711943c95`; the previous one was
   `4a67dbe1e91930816e58816490ae1522c4b7ed300a2b8a5f028bb0a281d61381`. See
   [RESULTS.md](unipack-conformance/RESULTS.md).
