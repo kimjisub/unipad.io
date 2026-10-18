@@ -89,10 +89,11 @@ test('a light repeated 2147483647 times without delays leaves the page responsiv
   await loadBasicWith(page, { 'keyLED/1 1 1 2147483647': 'f 1 2\no 1 2 a 5' }, ['keyLED/1 1 1 1']);
 
   await pressAndHold(page, '0,0');
+  let deadline: NodeJS.Timeout | undefined;
   const answered = await Promise.race([
     page.evaluate(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 100))),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
-  ]);
+    new Promise<boolean>((resolve) => { deadline = setTimeout(() => resolve(false), 5000); }),
+  ]).finally(() => clearTimeout(deadline));
   expect(answered).toBe(true);
   await expect(pad(page, '0,1').locator('div[style*="background-color"]')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
   await expect(litPads(page)).toHaveCount(1);

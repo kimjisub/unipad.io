@@ -64,6 +64,15 @@ describe('LedRunner', () => {
     assert.deepEqual(outputs, [...pass, ...pass, ...pass]);
   });
 
+  test('plays every repeat of an animation whose pass takes time when one late tick covers them all', async () => {
+    const { outputs, press } = await startRunner({ '1 1 1 3': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
+
+    press(0, 0);
+    clock.tick(100);
+    const pass = [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]];
+    assert.deepEqual(outputs, [...pass, ...pass, ...pass]);
+  });
+
   test('skips pad events outside the grid and keeps playing the rest', async () => {
     const { outputs, press } = await startRunner({
       '1 1 1': 'o 3 1 a 5\no 1 3 a 5\no 1 0 a 5\no -1 1 a 5\no 9 9 a 5\no 1 1 a 5\nd 10\nf 3 1\nf 1 0\nf 1 1',
@@ -186,7 +195,7 @@ describe('LedRunner', () => {
     assert.equal(clock.scheduled, true);
   });
 
-  // A tick that never returns freezes the page and this process with it, so these run in a worker
+  // A tick that never returns freezes the page and this process with it, so the tests below run in a worker
   // that is terminated after a deadline.
   describe('endless animations that never push time forward', () => {
     test('an empty endless keyLed file does not hang a tick', async () => {
@@ -197,13 +206,19 @@ describe('LedRunner', () => {
       const outputs = await playInWorker({ '1 1 1 0': 'o 1 1 a 5\nf 1 1' });
       assert.ok(outputs.length > 0);
     });
+  });
 
+  describe('repeated animations whose pass takes no time', () => {
     test('a keyLed file repeated 2147483647 times without delays does not hang a tick and ends dark', async () => {
       assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nf 1 1' }), [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
     });
 
     test('a keyLed file repeated 2147483647 times with only zero delays ends lit when its pass ends lit', async () => {
       assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'f 1 1\nd 0\no 1 1 a 5' }), [['padOn', 0, 0, RED, 5]]);
+    });
+
+    test('a keyLed file repeated 2147483647 times whose delays go back in time does not hang a tick', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd -1' }), [['padOn', 0, 0, RED, 5]]);
     });
   });
 

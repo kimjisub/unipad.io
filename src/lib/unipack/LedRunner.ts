@@ -81,8 +81,9 @@ export class LedRunner {
         const loopCount = Math.max(1, state.ledAnimation!.loop);
         const budget = events.length * loopCount + 1;
         let processed = 0;
-        // A pass that started in this tick and ends at the time it started had no delay to wait for, so
-        // every further pass replays it at the same moment and leaves the LEDs as this one did. A finite
+        // A pass that started in this tick and ends no later than it started (no delays, only `d 0`, or
+        // delays that sum to zero or less) had every event due in this tick, so every further pass is due
+        // too and replays the same events in the same order, leaving the LEDs as this one did. A finite
         // animation then ends here instead of replaying up to 2^31 passes in one tick.
         let passStart = state.index === 0 ? state.delay : NaN;
 
@@ -90,7 +91,7 @@ export class LedRunner {
           if (state.index >= events.length) {
             state.loopProgress++;
             state.index = 0;
-            if (state.delay === passStart && state.ledAnimation!.loop !== 0) {
+            if (state.delay <= passStart && state.ledAnimation!.loop !== 0) {
               state.loopProgress = state.ledAnimation!.loop;
             }
             passStart = state.delay;
