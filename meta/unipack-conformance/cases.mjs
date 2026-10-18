@@ -636,6 +636,7 @@ export function buildCases(palette) {
   const release = (x, y) => ({ do: 'release', x, y });
   const advance = (ms) => ({ do: 'advance', ms });
   const observe = { do: 'observe' };
+  const looping = { do: 'looping' };
   const snd = (c, x, y, file, loop = 0) => ['sound', c, x, y, file, loop];
   const RED = 'ffff0000';
   const GREEN = 'ff00ff00';
@@ -802,6 +803,15 @@ export function buildCases(palette) {
       intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless animation ends when the pad is released (RUN-L-003)'),
       intent('unipad-android 3e5a2fd6 (#101), ce6af172 (#86), unipad.io 8019666 (#32), AutoPlayRunner.stop', 'after leaving the screen no light and no press follows (RUN-L-006, RUN-A-002)'),
       VEL4,
+    ]);
+  run('RUN-RP-005', 'realPack', 'turning autoPlay off releases the endless sound it held, not the one the user holds',
+    pack({ keySound: lines('1 1 1 a.wav 0', '1 2 1 a.wav 0'), sounds: ['a.wav'], autoPlay: lines('on 1 1', 'delay 300', 'off 1 1') }),
+    [press(1, 0), autoToPads, advance(20), looping, observe, { do: 'autoplayOff' }, looping, observe, advance(400), observe, release(1, 0), looping, observe],
+    [[snd(0, 1, 0, 'a.wav', -1), ['autoOn', 0, 0], snd(0, 0, 0, 'a.wav', -1), ['looping', 0, 0], ['looping', 1, 0]], [['looping', 1, 0]], [], []],
+    [
+      doc('key-sound.mdx', 'Loop Values: 0 loops indefinitely'),
+      intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless loop lasts while its pad is held and ends when the pad is released (RUN-L-003)'),
+      intent('unipad.io src/lib/unipack/PlayerHolds.test.ts', 'a pad autoPlay holds counts as released when autoPlay is turned off, as any input that goes away counts as a release, so its endless sound stops; a pad the user still holds keeps sounding until the user lets go'),
     ]);
 
   return cases;

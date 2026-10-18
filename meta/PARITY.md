@@ -134,8 +134,8 @@ apps keep those switches in the option panel and reset them per session.
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
 covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
-(Korea time), on corpus `ba80283d…`, 171 cases: Android passes 169 with two pinned storage differences;
-iOS and the web pass all 171. None is undetermined or unverified
+(Korea time), on corpus `aae2cc72…`, 172 cases: Android passes 170 with two pinned storage differences;
+iOS and the web pass all 172. None is undetermined or unverified
 ([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
 that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
 are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
