@@ -25,7 +25,6 @@ async function prepareSavedPack(page: Page) {
 /** Opens the saved list, plays the saved pack's first pad, then quits from the menu back to the list. */
 async function playSavedPackAndQuit(page: Page, testInfo: TestInfo) {
   const saved = page.getByRole('option', { name: PACK_NAME, exact: true });
-  const pads = page.locator('[data-pad]');
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
   try {
     await expect(saved).toBeVisible({ timeout: 5000 });
@@ -46,7 +45,7 @@ async function playSavedPackAndQuit(page: Page, testInfo: TestInfo) {
   await capture(page, testInfo, '3-first-pad-played');
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
-  await expect(pads).toHaveCount(0);
+  await expectPads(page, 0);
   await expect(saved).toBeVisible();
   await capture(page, testInfo, '4-back-to-saved-list');
 }
