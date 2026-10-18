@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
-import { pad, point, touch, touchScreens, type Contact } from './touch';
+import { test, expect, expectPads } from './browser';
+import { lit, pad, point, touch, touchScreens, type Contact } from './touch';
 
 // Multi-touch items A-I. Item H (a loop held while another finger changes chain) is
 // covered by the CR tests in chain-release.spec.ts, which run on the same two screens.
@@ -12,14 +12,11 @@ test.use({ hasTouch: true });
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 const stops = (page: Page) => page.evaluate(() => window.browserProbe.audio.stops);
 const sortedStops = async (page: Page) => (await stops(page)).sort((a, b) => a - b);
-/** Every pad showing the press light, in position order. */
-const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
-  .evaluateAll(pads => pads.map(p => (p as HTMLElement).dataset.pad!).sort());
 
 async function load(page: Page) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(1);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 }

@@ -38,47 +38,133 @@ function scrollTo(page: Page, top: number) {
   return page.evaluate(y => window.scrollTo({ top: y, behavior: 'instant' }), top);
 }
 
-/** Waits until the element and the boxes around it have finished fading and sliding in. */
+/** Waits in the browser so driver round trips do not consume the animation deadline. */
 async function waitUntilSettled(target: Locator) {
-  await expect.poll(() => target.evaluate(element => {
-    for (let node: Element | null = element; node; node = node.parentElement) {
-      const style = getComputedStyle(node);
-      if (style.opacity !== '1' || style.transform !== 'none') return false;
+  await target.evaluateAll(elements => new Promise<void>((resolve, reject) => {
+    if (elements.length === 0) {
+      reject(new Error('No elements to check for settled animations'));
+      return;
     }
-    return true;
-  })).toBe(true);
+    let frame = 0;
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(frame);
+      reject(new Error(`Elements did not finish fading and sliding: ${elements.map(element => element.textContent).join(', ')}`));
+    }, 5_000);
+    const step = () => {
+      for (const element of elements) {
+        for (let node: Element | null = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.opacity !== '1' || style.transform !== 'none') {
+            frame = requestAnimationFrame(step);
+            return;
+          }
+        }
+      }
+      clearTimeout(timeout);
+      resolve();
+    };
+    step();
+  }));
 }
 
+const scrollButtonSelector = 'button[aria-label="Scroll to top"]';
+
 /**
- * Waits until the scroll-to-top button has kept its place and full opacity, or stayed away, for several frames.
- * It is placed in the frame after a scroll, and a button that leaves fades out where it was.
- * Polls 'at rest', or what each frame showed (bottom/opacity of every button) so a failure tells why.
- * One eight-frame sample can take longer than the default five-second poll budget in Chromium.
+ * Lets scroll handlers apply placement, then observes an unchanged, fully visible
+ * button (or absence) for longer than its 200ms exit animation. At least three
+ * samples are required even when frames are far apart. Changes reset the interval,
+ * without discarding samples in batches or making repeated driver round trips.
  */
-async function waitForButtonAtRest(page: Page) {
-  await expect.poll(() => page.evaluate(() => new Promise<string>(resolve => {
-    const read = () => [...document.querySelectorAll<HTMLElement>('button[aria-label="Scroll to top"]')]
-      .map(button => `${button.style.bottom}/${getComputedStyle(button).opacity}`)
+async function waitForButtonAtRest(page: Page, top?: number) {
+  return page.evaluate(({ selector, top }) => new Promise<{ signature: string; stableMs: number }>((resolve, reject) => {
+    if (top !== undefined) window.scrollTo({ top, behavior: 'instant' });
+    const read = () => [...document.querySelectorAll<HTMLElement>(selector)]
+      .map(button => `${button.style.bottom}/${getComputedStyle(button).transform}/${getComputedStyle(button).opacity}`)
       .join(' + ') || 'none';
     const frames: string[] = [];
+    let stableSince = 0;
+    let samples = 0;
+    let frame = 0;
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(frame);
+      reject(new Error(`Scroll button did not settle at scroll ${scrollY}: ${frames.join(' | ')}`));
+    }, 15_000);
     const step = () => {
-      frames.push(read());
-      if (frames.length < 6) return requestAnimationFrame(step);
-      const atRest = frames.every(frame => frame === frames[0]) && (frames[0] === 'none' || /^[^+]*\/1$/.test(frames[0]));
-      resolve(atRest ? 'at rest' : `scroll ${scrollY}: ${frames.join(' | ')}`);
+      const current = read();
+      const now = performance.now();
+      if (current !== frames.at(-1)) {
+        stableSince = now;
+        samples = 0;
+      }
+      samples++;
+      frames.push(current);
+      if (frames.length > 6) frames.shift();
+      if (samples >= 3 && now - stableSince >= 250 && (current === 'none' || /^[^+]*\/1$/.test(current))) {
+        clearTimeout(timeout);
+        resolve({ signature: current, stableMs: now - stableSince });
+      } else {
+        frame = requestAnimationFrame(step);
+      }
     };
-    requestAnimationFrame(() => requestAnimationFrame(step));
-  })), { timeout: 15_000 }).toBe('at rest');
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(step); });
+  }), { selector: scrollButtonSelector, top });
 }
 
 async function scrollToFooter(page: Page) {
   await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
-  for (const link of installLinks(page)) await waitUntilSettled(link);
+  await waitUntilSettled(page.locator('footer a'));
 }
 
 function installLinks(page: Page) {
   return ['Web', 'Android', 'iOS'].map(name => page.locator('footer').getByRole('link', { name, exact: true }));
 }
+
+test.describe('scroll button settling', () => {
+  for (const present of [true, false]) {
+    test(`observes a settled ${present ? 'button' : 'absence'} beyond the exit duration`, async ({ page }) => {
+      await page.setContent(present ? '<button aria-label="Scroll to top" style="bottom: 24px">Up</button>' : '<p>No button</p>');
+      const result = await waitForButtonAtRest(page);
+      expect(result.stableMs).toBeGreaterThanOrEqual(250);
+      expect(result.signature === 'none').toBe(!present);
+    });
+  }
+
+  for (const change of ['exit', 'appearance', 'opaque movement'] as const) {
+    test(`waits for a delayed ${change}`, async ({ page }) => {
+      await page.setContent(change === 'appearance' ? '<p>No button yet</p>' : '<button aria-label="Scroll to top" style="bottom: 24px">Up</button>');
+      await page.evaluate(change => {
+        const request = window.requestAnimationFrame.bind(window);
+        let frames = 0;
+        // Make delayed changes deterministic even when real display frames are far apart.
+        Object.defineProperty(performance, 'now', { value: () => frames * 16 });
+        window.requestAnimationFrame = callback => request(time => {
+          frames++;
+          let button = document.querySelector('button');
+          if (frames === 5) {
+            if (change === 'appearance') {
+              button = document.createElement('button');
+              button.setAttribute('aria-label', 'Scroll to top');
+              button.style.bottom = '24px';
+              document.body.append(button);
+            } else if (change === 'exit') button!.style.opacity = '0.5';
+            else button!.style.bottom = '40px';
+          }
+          if (frames === 8) {
+            if (change === 'exit') button!.remove();
+            else button!.style.bottom = '64px';
+          }
+          document.body.dataset.frames = String(frames);
+          callback(time);
+        });
+      }, change);
+      await waitForButtonAtRest(page);
+      expect(Number(await page.locator('body').getAttribute('data-frames'))).toBeGreaterThanOrEqual(8 + Math.ceil(250 / 16));
+      const button = page.getByRole('button', { name: 'Scroll to top' });
+      if (change === 'exit') await expect(button).toHaveCount(0);
+      else await expect(button).toHaveCSS('bottom', '64px');
+    });
+  }
+});
 
 test.describe('with 200% text', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium can set the default font size');
@@ -193,44 +279,56 @@ test.describe('the scroll-to-top button', () => {
   ];
 
   for (const { path, width, height, large } of cases) {
-    test(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, browserName }) => {
-      // Scrolling a quarter of a short screen at a time takes about 30 steps through the tall start box and footer,
-      // each waiting at least eight frames; a busy machine draws a frame every 60-80ms, even on an empty page.
-      test.slow(height < 400, 'many scroll steps on a short screen');
-      await page.setViewportSize({ width, height });
-      if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
-      await page.goto(path);
-
-      // The start box and the footer slide in once seen; wait until they rest where the button must avoid them.
-      const startBox = await page.locator('#cta').evaluate(el => el.getBoundingClientRect().top + scrollY);
-      await scrollTo(page, startBox - height / 2);
-      for (const target of await page.locator('#cta a').all()) await waitUntilSettled(target);
-      await scrollToFooter(page);
-
-      const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
-      let shown = 0;
-      for (let y = Math.max(startBox - height, 601); y < end + height / 4; y += height / 4) {
-        await scrollTo(page, Math.min(y, end));
-        await waitForButtonAtRest(page);
-        const placement = await page.evaluate(() => {
-          const button = document.querySelector<HTMLElement>('button[aria-label="Scroll to top"]');
-          if (!button) return null;
-          // offset* leave out the button's own scale-in.
-          const box = { left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth, bottom: button.offsetTop + button.offsetHeight };
-          const covered = [...document.querySelectorAll<HTMLElement>('#cta a, footer a, footer button')]
-            .filter(target => {
-              const other = target.getBoundingClientRect();
-              return other.width > 0 && box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom;
-            })
-            .map(target => target.innerText);
-          return { scrollY, top: box.top, barBottom: document.getElementById('navigation')!.offsetHeight, covered };
+    // Give viewport/font setup, navigation and content preparation a separate 90s
+    // ceiling. The page fixture is created first and still uses the sweep budget.
+    const sweep = test.extend<{ prepared: { startBox: number; end: number } }>({
+      prepared: [async ({ page, browserName }, use, testInfo) => {
+        const started = Date.now();
+        await page.setViewportSize({ width, height });
+        if (large) await (browserName === 'chromium' ? useLargeText(page) : useLargeRootText(page));
+        await page.goto(path);
+        const navigated = Date.now();
+        const startBox = await page.locator('#cta').evaluate(el => el.getBoundingClientRect().top + scrollY);
+        await scrollTo(page, startBox - height / 2);
+        await waitUntilSettled(page.locator('#cta a'));
+        await scrollToFooter(page);
+        const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+        await testInfo.attach('page preparation', {
+          body: JSON.stringify({ navigationMs: navigated - started, contentMs: Date.now() - navigated }),
+          contentType: 'application/json',
         });
-        if (!placement) continue;
-        shown++;
-        expect(placement.top, `top at scroll ${placement.scrollY}`).toBeGreaterThanOrEqual(placement.barBottom);
-        expect(placement.covered, `covered at scroll ${placement.scrollY}`).toEqual([]);
-      }
-      expect(shown, 'scroll positions where the button showed').toBeGreaterThan(0);
+        await use({ startBox, end });
+      }, { timeout: 90_000 }],
+    });
+    sweep.describe(() => {
+      // Allow 90s for short screens and 320px large text, 30s for other sweeps.
+      // Each scroll position still has a 15s settling deadline.
+      sweep.describe.configure({ timeout: height < 400 || (width === 320 && large) ? 90_000 : 30_000 });
+      sweep(`covers no start box or footer link and stays below the top bar at ${width}x${height}${large ? ' with 200% text' : ''} on ${path}`, async ({ page, prepared }) => {
+        const { startBox, end } = prepared;
+        let shown = 0;
+        for (let y = Math.max(startBox - height, 601); y < end + height / 4; y += height / 4) {
+          await waitForButtonAtRest(page, Math.min(y, end));
+          const placement = await page.evaluate(selector => {
+            const button = document.querySelector<HTMLElement>(selector);
+            if (!button) return null;
+            // offset* leave out the button's own scale-in.
+            const box = { left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth, bottom: button.offsetTop + button.offsetHeight };
+            const covered = [...document.querySelectorAll<HTMLElement>('#cta a, footer a, footer button')]
+              .filter(target => {
+                const other = target.getBoundingClientRect();
+                return other.width > 0 && box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom;
+              })
+              .map(target => target.innerText);
+            return { scrollY, top: box.top, barBottom: document.getElementById('navigation')!.offsetHeight, covered };
+          }, scrollButtonSelector);
+          if (!placement) continue;
+          shown++;
+          expect(placement.top, `top at scroll ${placement.scrollY}`).toBeGreaterThanOrEqual(placement.barBottom);
+          expect(placement.covered, `covered at scroll ${placement.scrollY}`).toEqual([]);
+        }
+        expect(shown, 'scroll positions where the button showed').toBeGreaterThan(0);
+      });
     });
   }
 });

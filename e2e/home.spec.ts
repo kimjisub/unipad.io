@@ -194,10 +194,23 @@ test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 
   test('nothing moves by itself', async ({ page }) => {
+    // The pad picture would start playing when it first reports itself on screen, which can come
+    // well after its server-drawn pads appear; that report draws one blank frame. Watch from after it.
+    await page.addInitScript(() => {
+      const Observer = window.IntersectionObserver;
+      window.IntersectionObserver = class extends Observer {
+        constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+          super((entries, observer) => {
+            callback(entries, observer);
+            if (entries.some(entry => entry.target.querySelector('#hero [data-pad]'))) Object.assign(window, { heroSeen: true });
+          }, options);
+        }
+      };
+    });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await expect(page.locator('#hero [data-pad]')).toHaveCount(64);
-    await page.waitForTimeout(300);
+    await expect.poll(() => page.evaluate(() => 'heroSeen' in window)).toBe(true);
     expect(await motion(page)).toEqual({ lit: 0, frames: 0, running: 0 });
   });
 });

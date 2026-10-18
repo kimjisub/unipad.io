@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import { LAUNCHPAD_ARGB } from './colors';
 import { parseUniPack } from './parser';
 import { NO_WORMHOLE } from './types';
-import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds } from './testUtils';
+import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds, rawNameZip } from './testUtils';
 
 describe('parseUniPack', () => {
   test('opens a complete pack wrapped in a top folder', async () => {
@@ -114,6 +114,66 @@ describe('parseUniPack', () => {
     }
   });
 
+  // Korean Windows Notepad's "ANSI" and Korean Windows archivers write CP949; bytes are spelled out
+  // because Node has no CP949 encoder.
+  describe('old Korean packs written in CP949', () => {
+    const cp949 = (...bytes: number[]) => new Uint8Array(bytes);
+    const HANGUL = cp949(0xC7, 0xD1, 0xB1, 0xDB); // 한글
+    const SORI_WAV = cp949(0xBC, 0xD2, 0xB8, 0xAE, 0x2E, 0x77, 0x61, 0x76); // 소리.wav
+    const join = (...parts: (string | Uint8Array)[]) => Uint8Array.from(parts.flatMap((p) => Array.from(typeof p === 'string' ? new TextEncoder().encode(p) : p)));
+
+    test('reads info, keySound, keyLed and autoPlay that are not UTF-8 as CP949', async () => {
+      const pack = await parseUniPack(await packZip({
+        info: join('title=', HANGUL, '\nproducerName=', HANGUL, '\nbuttonX=2\nbuttonY=2\nchain=2'),
+        keySound: join('1 1 1 ', SORI_WAV, '\n2 2 2 ', SORI_WAV),
+        'sounds/소리.wav': SILENT_WAV,
+        'keyLed/1 1 1': join('o 1 1 a 5 ', HANGUL, '\nf 1 1'),
+        autoPlay: join('o 1 1\nf 1 1\n', HANGUL),
+      }));
+
+      assert.equal(pack.info.title, '한글');
+      assert.equal(pack.info.producerName, '한글');
+      assert.equal(pack.soundCount, 2);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+      assert.deepEqual(pack.errors, [
+        'keyLed: [1 1 1].[o 1 1 a 5 한글] format is incorrect',
+        'autoPlay: [한글] format is incorrect',
+      ]);
+    });
+
+    test('reads a UTF-8 text file as UTF-8 even when it is also valid CP949', async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN.replace('title=Test', 'title=한글'),
+        keySound: KEYSOUND_1_1_1,
+        'sounds/a.wav': SILENT_WAV,
+      }));
+
+      assert.equal(pack.info.title, '한글');
+    });
+
+    test('reads a CP949 file name inside the archive that has no UTF-8 mark', async () => {
+      const pack = await parseUniPack(rawNameZip([
+        [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+        [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
+        [join('sounds/', SORI_WAV), SILENT_WAV],
+      ]));
+
+      assert.deepEqual(pack.errors, []);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+    });
+
+    test('reads an unmarked file name that is valid UTF-8 as UTF-8', async () => {
+      const pack = await parseUniPack(rawNameZip([
+        [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+        [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
+        [new TextEncoder().encode('sounds/소리.wav'), SILENT_WAV],
+      ]));
+
+      assert.deepEqual(pack.errors, []);
+      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+    });
+  });
+
   describe('keyLed pad coordinates', () => {
     const validLines = 'o 1 1 FF0000\nf 1 1\non 2 2 a 5\noff 2 2';
     const validEvents = [
@@ -206,7 +266,7 @@ describe('parseUniPack', () => {
       assert.deepEqual(pack.errors, ['autoPlay: [c 3] chain is incorrect']);
     });
 
-    // A move to a chain the pack lacks made practice wait for a chain button that does not exist.
+    // Clamp an out-of-range move to the nearest chain and record a warning.
     for (const [value, chain] of [['3', 1], ['40', 1], ['-2', 0]] as const) {
       test(`moves a keySound wormhole of ${value} to the nearest chain the pack has, with a warning`, async () => {
         const line = `1 1 1 a.wav 1 ${value}`;
@@ -219,6 +279,23 @@ describe('parseUniPack', () => {
       });
     }
 
+    for (const [line, field] of [
+      ['5 1 1 a.wav 1 40', 'chain'],
+      ['1 5 1 a.wav 1 40', 'x'],
+      ['1 1 5 a.wav 1 40', 'y'],
+    ]) {
+      test(`warns about the wormhole before the invalid ${field}`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: line, 'sounds/a.wav': SILENT_WAV,
+        }));
+
+        assert.deepEqual(pack.errors, [
+          `keySound: [${line}] wormhole is incorrect`,
+          `keySound: [${line}] ${field} is incorrect`,
+        ]);
+      });
+    }
+
     test('keeps a keySound wormhole of 0 as no chain move, without a warning', async () => {
       const pack = await parseUniPack(await packZip({
         info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav 1 0', 'sounds/a.wav': SILENT_WAV,
@@ -227,6 +304,28 @@ describe('parseUniPack', () => {
       assert.equal(pack.soundTable[0][0][0]![0].wormhole, NO_WORMHOLE);
       assert.deepEqual(pack.errors, []);
     });
+
+    // touch is on + off in one line, so its sound's wormhole moves the following lines as on does.
+    for (const command of ['o', 'on', 't', 'touch']) {
+      test(`moves autoPlay presses after \`${command}\` of a wormhole sound to that chain`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN,
+          keySound: '1 1 1 a.wav 1 2\n2 1 1 a.wav',
+          'sounds/a.wav': SILENT_WAV,
+          autoPlay: `${command} 1 1\nd 100\no 1 1`,
+        }));
+
+        const touch = command.startsWith('t');
+        assert.deepEqual(pack.errors, []);
+        assert.deepEqual(pack.autoPlay!.elements, [
+          { type: 'on', x: 0, y: 0, currChain: 0, num: 0 },
+          ...(touch ? [{ type: 'off', x: 0, y: 0, currChain: 0 }] : []),
+          { type: 'chain', c: 1 },
+          { type: 'delay', delay: 100 },
+          { type: 'on', x: 0, y: 0, currChain: 1, num: 0 },
+        ]);
+      });
+    }
   });
 
   // Android and iOS call a value that is not a whole number a format error and a number outside the
@@ -255,7 +354,7 @@ describe('parseUniPack', () => {
       info: INFO_2X2_2CHAIN, keySound: KEYSOUND_1_1_1, 'sounds/a.wav': SILENT_WAV, autoPlay,
     }));
 
-    for (const line of ['on a 1', 'on 1', 'off x y', 'touch 1', 'on 1 1b', `o ${'9'.repeat(400)} 1`, 'chain z', 'chain', 'delay x', 'delay', 'delay 1.5']) {
+    for (const line of ['on a 1', 'on 1', 'off x y', 'touch 1', 'on 1 1b', 'on 0 bad', `o ${'9'.repeat(400)} 1`, `f 1 ${'9'.repeat(400)}`, `t ${'9'.repeat(400)} 1`, `c ${'9'.repeat(400)}`, `d ${'9'.repeat(400)}`, 'chain z', 'chain', 'delay x', 'delay', 'delay 1.5']) {
       test(`[${line.slice(0, 20)}] is a format error and the next line is kept`, async () => {
         const pack = await parseAutoPlay(`${line}\non 1 1`);
 
@@ -272,4 +371,122 @@ describe('parseUniPack', () => {
       });
     }
   });
+  describe('keySound integer validation', () => {
+    for (const token of ['9'.repeat(400), `-${'9'.repeat(400)}`]) {
+      for (const field of [0, 1, 2, 4, 5]) {
+        test(`non-finite field ${field} (${token[0] === '-' ? 'negative' : 'positive'}) is a format error and the next sound is kept`, async () => {
+          const parts = ['1', '1', '1', 'a.wav', '1', '1'];
+          parts[field] = token;
+          const line = parts.join(' ');
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: `${line}\n${KEYSOUND_1_1_1}`, 'sounds/a.wav': SILENT_WAV,
+          }));
+
+          assert.deepEqual(pack.errors, [`keySound: [${line}] format is incorrect`]);
+          assert.equal(pack.soundCount, 1);
+          assert.equal(pack.soundTable[0][0][0]![0].file, 'sounds/a.wav');
+        });
+      }
+    }
+    for (const [line, field] of [['3 1 1 a.wav', 'chain'], ['1 3 1 a.wav', 'x'], ['1 1 0 a.wav', 'y']]) {
+      test(`${field} outside the pack remains a range error`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: line, 'sounds/a.wav': SILENT_WAV,
+        }));
+
+        assert.deepEqual(pack.errors, [`keySound: [${line}] ${field} is incorrect`]);
+        assert.equal(pack.soundCount, 0);
+      });
+    }
+  });
+
+  // Android reads every number field with a 32-bit toInt: a value beyond it is not a number, so the line
+  // or file is skipped with a format error; a 32-bit value outside the pack stays a range error.
+  describe('a number beyond 32 bits', () => {
+    const beyond = ['2147483648', '-2147483649', '99999999999', '9007199254740993', '9223372036854775808', '9'.repeat(400)];
+    const short = (token: string) => token.slice(0, 20);
+
+    for (const token of beyond) {
+      for (const field of [0, 1, 2, 4, 5]) {
+        test(`keySound field ${field} = ${short(token)} is a format error and the next sound is kept`, async () => {
+          const parts = ['1', '1', '1', 'a.wav', '1', '1'];
+          parts[field] = token;
+          const line = parts.join(' ');
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: `${line}\n${KEYSOUND_1_1_1}`, 'sounds/a.wav': SILENT_WAV,
+          }));
+
+          assert.deepEqual(pack.errors, [`keySound: [${line}] format is incorrect`]);
+          assert.equal(pack.soundCount, 1);
+        });
+      }
+
+      for (const field of [0, 1, 2, 3]) {
+        test(`keyLed file name field ${field} = ${short(token)} is a format error and the next file is kept`, async () => {
+          const parts = ['1', '1', '1', '1'];
+          parts[field] = token;
+          const name = parts.join(' ');
+          const pack = await parseWithLeds({ [name]: 'f 1 1', '1 1 1': 'f 1 1' });
+
+          assert.deepEqual(pack.errors, [`keyLed: [${name}] format is incorrect`]);
+          assert.equal(pack.ledCount, 1);
+        });
+      }
+
+      for (const line of [`o ${token} 1 a 5`, `o 1 ${token} a 5`, `o 1 1 a ${token}`, `f ${token} 1`, `f 1 ${token}`,
+        `o mc ${token} a 5`, `f mc ${token}`, `d ${token}`, `c ${token}`]) {
+        test(`keyLed line [${short(line)}] is a format error and the next line is kept`, async () => {
+          const pack = await parseWithLeds({ '1 1 1': `${line}\nf 1 1` });
+
+          assert.deepEqual(pack.errors, [`keyLed: [1 1 1].[${line}] format is incorrect`]);
+          assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [{ type: 'off', x: 0, y: 0 }]);
+        });
+      }
+
+      for (const line of [`o ${token} 1`, `f 1 ${token}`, `t ${token} 1`, `c ${token}`, `d ${token}`]) {
+        test(`autoPlay line [${short(line)}] is a format error and the next line is kept`, async () => {
+          const pack = await parseUniPack(await packZip({
+            info: INFO_2X2_2CHAIN, keySound: KEYSOUND_1_1_1, 'sounds/a.wav': SILENT_WAV, autoPlay: `${line}\non 1 1`,
+          }));
+
+          assert.deepEqual(pack.errors, [`autoPlay: [${line}] format is incorrect`]);
+          assert.deepEqual(pack.autoPlay!.elements, [{ type: 'on', x: 0, y: 0, currChain: 0, num: 0 }]);
+        });
+      }
+    }
+
+    for (const token of ['2147483647', '-2147483648']) {
+      test(`${token} is read as a number: outside the pack it is a range error`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN,
+          keySound: `${token} 1 1 a.wav\n1 ${token} 1 a.wav\n${KEYSOUND_1_1_1}`,
+          'sounds/a.wav': SILENT_WAV,
+          [`keyLed/1 1 ${token}`]: 'f 1 1',
+          autoPlay: `o ${token} 1\nc ${token}`,
+        }));
+
+        assert.deepEqual(pack.errors, [
+          `keySound: [${token} 1 1 a.wav] chain is incorrect`,
+          `keySound: [1 ${token} 1 a.wav] x is incorrect`,
+          `keyLed: [1 1 ${token}] y is incorrect`,
+          `autoPlay: [o ${token} 1] coordinate is incorrect`,
+          `autoPlay: [c ${token}] chain is incorrect`,
+        ]);
+      });
+    }
+
+    test('the largest 32-bit delay and loop are kept, and a round LED index past 32 is dropped without a warning', async () => {
+      const pack = await parseWithLeds({ '1 1 1 2147483647': 'd 2147483647\nd 2147483647\no mc 2147483647 a 5\nf 1 1' });
+
+      assert.deepEqual(pack.errors, []);
+      const animation = pack.ledAnimationTable![0][0][0]![0];
+      assert.equal(animation.loop, 2147483647);
+      assert.deepEqual(animation.ledEvents, [
+        { type: 'delay', delay: 2147483647 },
+        { type: 'delay', delay: 2147483647 },
+        { type: 'off', x: 0, y: 0 },
+      ]);
+    });
+  });
+
 });

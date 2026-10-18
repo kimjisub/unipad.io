@@ -1,5 +1,7 @@
 // Local Chromium regression and before/after captures. No physical MIDI or network.
-// PLAYER_URL=http://localhost:3195 SCREENSHOT_DIR=<run scratch> BASELINE=1 node ...
+// Start a production server on a port the OS picks and note the address it prints, then stop it after:
+//   node node_modules/next/dist/bin/next start --hostname localhost --port 0 &  # prints "- Local: http://localhost:<port>"
+//   PLAYER_URL=http://localhost:<port> SCREENSHOT_DIR=<run scratch> BASELINE=1 node ...; kill %1
 import { chromium, expect } from '@playwright/test';
 import { resolve, join } from 'node:path';
 import { mkdir } from 'node:fs/promises';

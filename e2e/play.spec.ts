@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -13,12 +14,28 @@ const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.sta
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectLoadedPack(page);
+}
+
+async function expectLoadedPack(page: Page) {
+  await expectPads(page);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual([{ sysex: true }]);
+  const supportsMidi = await hasWebMidi(page);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
+}
+
+// Launchpad tests need the browser's own Web MIDI API (WebKit has none); there they are
+// skipped as not applicable so the skip shows in the results instead of a failure.
+const hasWebMidi = (page: Page) => page.evaluate(() => window.browserProbe.midi.supported);
+
+const noWebMidi = 'Not applicable: this browser has no native Web MIDI API';
+
+async function skipWithoutWebMidi(page: Page) {
+  await page.goto('/play');
+  test.skip(!await hasWebMidi(page), noWebMidi);
 }
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
@@ -26,10 +43,67 @@ test('imports a local pack and restores the saved pack after reload', async ({ p
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+  await expectLoadedPack(page);
   expect(await starts(page)).toBe(0);
+});
+
+test('imports and restores a pack when native decoding outlasts a UI assertion', async ({ page }) => {
+  test.slow(); // Two real decodes, each held beyond the default UI assertion budget.
+  await page.addInitScript(() => {
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async function (...args: Parameters<typeof decode>) {
+      const buffer = await decode.apply(this, args);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      return buffer;
+    };
+  });
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.reload();
+  await expectLoadedPack(page);
+  expect(await starts(page)).toBe(0);
+});
+
+test('a missing saved pack fails the pad value check after restoration ends', async ({ page }, testInfo) => {
+  await page.goto('/play?pack=missing-saved-pack');
+  const failure = await expectPads(page).then(() => '', error => stripVTControlCharacters(error.message));
+  await testInfo.attach('missing-pack-value-failure', { body: failure, contentType: 'text/plain' });
+  await testInfo.attach('missing-pack-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(failure).toContain('expect(locator).toHaveCount(expected) failed');
+  expect(failure).toContain('Expected: 64');
+  expect(failure).toContain('Received: 0');
+  await expect(page.getByText('No UniPacks installed', { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/pack=/);
+});
+
+test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/\/play\?pack=.+/);
+  await page.addInitScript(() => {
+    const get = IDBObjectStore.prototype.get;
+    const released = new Promise<void>(resolve =>
+      window.addEventListener('release-pack-read', () => resolve(), { once: true }));
+    let held = false;
+    IDBObjectStore.prototype.get = function (query) {
+      const request = get.call(this, query);
+      if (this.name === 'unipacks' && !held) {
+        held = true;
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          void released.then(() => request.onsuccess?.call(request, event));
+        }, { once: true });
+      }
+      return request;
+    };
+  });
+  await page.reload();
+  await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
+  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
+  const restored = expectLoadedPack(page).catch(error => error);
+  // Keep the actual storage result pending beyond the former five-second assertion.
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  expect(await restored).toBeUndefined();
 });
 
 test('pointer press/release plays/stops a loop and runs keyLed on another pad', async ({ page }) => {
@@ -61,6 +135,69 @@ test('keyboard down/up reaches the mapped pad and ignores repeated keydown', asy
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
 });
 
+test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
+  await loadPack(page);
+  const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
+  await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  let playingRms: number | null = null;
+  await expect.poll(async () => {
+    playingRms = await rms();
+    return playingRms;
+  }, 'the held pad must produce a nonzero post-volume audio signal').toBeGreaterThan(0.001);
+  // Preserve the positive measurement even if a later control check fails.
+  await info.attach('output-signal', {
+    body: JSON.stringify({ playingRms, browser: info.project.name, browserVersion: browser.version(),
+      measurement: 'RMS after application output gain, before native audio destination', humanListening: false }),
+    contentType: 'application/json',
+  });
+  await page.mouse.up();
+  await expect.poll(rms, 'release must silence the output').toBe(0);
+  const releasedRms = await rms();
+
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.locator('input[type=range][max="7"]').fill('0');
+  await page.getByRole('button', { name: 'Close menu', exact: true }).click();
+  await page.keyboard.down('q');
+  await expect.poll(() => starts(page)).toBe(2);
+  // Still playing a looping source: a pre-volume probe would incorrectly report sound.
+  await expect.poll(rms, 'zero application volume must silence a running source').toBe(0);
+  const mutedRms = await rms();
+  await page.keyboard.up('q');
+  await info.attach('output-signal-controls', {
+    body: JSON.stringify({ playingRms, releasedRms, mutedRms,
+      measurement: 'RMS after application output gain, before native audio destination',
+      humanListening: false }),
+    contentType: 'application/json',
+  });
+});
+
+test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+  await expectPads(page);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
+  await page.keyboard.down('1');
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => starts(page)).toBe(1);
+  const chain = page.getByRole('button', { name: 'Chain 10', exact: true });
+  await chain.click();
+  await expect(chain.locator('div[style*="background-color"]')).toHaveCount(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+  await page.keyboard.up('1');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  await page.keyboard.down('q');
+  await expect.poll(() => starts(page)).toBe(2);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+  await page.keyboard.up('q');
+  await expect(page).not.toHaveURL(/pack=/);
+});
+
 test('auto-play starts, pauses without advancing, resumes, and stops', async ({ page }) => {
   await loadPack(page);
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
@@ -86,7 +223,8 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
 });
 
 test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnects', async ({ page }) => {
-  test.slow(); // Pack import plus repeated connection changes can exhaust a short test's setup budget.
+  await skipWithoutWebMidi(page);
+  test.setTimeout(90_000); // Keep connection checks bounded even on projects with a longer setup budget.
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
@@ -142,6 +280,7 @@ test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnect
 // drum-rack layout on channel 1: pad 0,0 is note 64, pad 0,1 note 65 (its src/utils/layout.rs).
 test('a Launchpad running CoreFW is played and lit in its own layout', async ({ page }) => {
   test.slow();
+  await skipWithoutWebMidi(page);
   await page.addInitScript(() => {
     const request = navigator.requestMIDIAccess.bind(navigator);
     Object.defineProperty(navigator, 'requestMIDIAccess', {
@@ -192,8 +331,10 @@ const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<
 for (const [source, press] of Object.entries(padInputs)) {
   test(`the first pad press after a load is recorded once as ${source} input`, async ({ page }) => {
     await loadPack(page);
+    const midi = await hasWebMidi(page);
+    test.skip(source === 'midi' && !midi, noWebMidi);
     await press(page);
-    for (const other of Object.values(padInputs)) await other(page);
+    for (const [other, otherPress] of Object.entries(padInputs)) if (other !== 'midi' || midi) await otherPress(page);
     await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
     await expect.poll(() => analyticsEvents(page).then(events => events.map(e => e.name))).toContain('autoplay_start');
     expect((await analyticsEvents(page)).filter(e => e.name === 'pad_press')).toEqual([{ name: 'pad_press', inputSource: source }]);
@@ -213,6 +354,7 @@ const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.mid
 const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
 
 async function connectLaunchpadAndClear(page: Page) {
+  test.skip(!await hasWebMidi(page), noWebMidi);
   await expect.poll(() => midiMessages(page)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
 }
@@ -256,6 +398,84 @@ test('with the pack lights and the press light off, no pad light reaches the lau
   const padNotes = (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] % 10 >= 1 && m[1] % 10 <= 8 && m[1] >= 11 && m[1] <= 88);
   expect(padNotes).toEqual([]);
 });
+
+const synthMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.synthMessages);
+
+// Android and iOS send lights only to a device they recognise; a synthesizer plays each light as a note.
+test('pack and press lights reach the launchpad and nothing reaches the synthesizer', async ({ page }) => {
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+  await page.mouse.up();
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+  expect(await synthMessages(page)).toEqual([]);
+});
+
+// Picking the model by hand is how a launchpad with a name the player does not know gets its lights.
+test('a model picked by hand still lights every output', async ({ page }) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await dialog.locator('select').selectOption('launchpad_x');
+  await expect(dialog).toContainText('Requested Type: launchpad_x');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.synthMessages.length = 0; });
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  for (const messages of [midiMessages, synthMessages]) {
+    await expect.poll(() => messages(page)).toContainEqual([0x90, 81, 3]);
+    await expect.poll(() => messages(page)).toContainEqual([0x90, 82, 5]);
+  }
+  await page.mouse.up();
+});
+
+// Android's MultiplexDriver lights every pad with its own driver. A master keyboard gets no lights; a
+// Launchpad Mini gets the Launchpad S layout (pad x,y is note x * 16 + y, palette 3 and 5 are 63 and 2).
+for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', [[0x90, 0, 63], [0x90, 1, 2]]]] as const) {
+  for (const otherFirst of [true, false]) {
+    test(`with ${other} listed ${otherFirst ? 'before' : 'after'} the Launchpad X, each gets the lights in its own layout`, async ({ page }) => {
+      await skipWithoutWebMidi(page);
+      await page.addInitScript(([name, first]) => {
+        const request = navigator.requestMIDIAccess.bind(navigator);
+        Object.defineProperty(navigator, 'requestMIDIAccess', {
+          configurable: true,
+          value: async (options: MIDIOptions) => {
+            const access = await request(options);
+            const messages: number[][] = [];
+            (window as unknown as { otherMessages: number[][] }).otherMessages = messages;
+            const port = { id: 'other-device', name, send: (data: number[]) => messages.push(Array.from(data)) };
+            const outputs = access.outputs as unknown as Map<string, unknown>;
+            const listed = [...outputs];
+            outputs.clear();
+            for (const [id, output] of first ? [[port.id, port], ...listed] : [...listed, [port.id, port]]) outputs.set(id as string, output);
+            return access;
+          },
+        });
+      }, [other, otherFirst] as const);
+      await loadPack(page);
+      await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+      await connectLaunchpadAndClear(page);
+      const otherMessages = () => page.evaluate(() => (window as unknown as { otherMessages: number[][] }).otherMessages);
+      await page.evaluate(() => { (window as unknown as { otherMessages: number[][] }).otherMessages.length = 0; });
+      await pad(page, '0,0').hover();
+      await page.mouse.down();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
+      await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
+      await page.mouse.up();
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      for (const light of otherLights) expect(await otherMessages()).toContainEqual(light);
+      if (otherLights.length === 0) expect(await otherMessages()).toEqual([]);
+    });
+  }
+}
 
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.
@@ -354,6 +574,44 @@ test('a pack light ending under the open option panel leaves its volume lights',
   await expect.poll(async () => (await roundLightMessages(page, 79)).at(-1)).toEqual([0xb0, 79, 0]);
 });
 
+// The watermark lights the top row's buttons 5 to 8 (button 5 is CC 95) and, as in Android and
+// iOS, outranks a pack light there, so a pack light passing over it leaves the watermark on.
+test('a pack light ending on a watermark button leaves the watermark light on the launchpad', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 5 a 5\nd 1000\nf mc 5\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await expect.poll(async () => (await roundLightMessages(page, 95)).at(-1)).toEqual([0xb0, 95, 61]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await tapPad(page, '0,0', 1);
+  await expect.poll(() => roundLightMessages(page, 95)).toEqual([[0xb0, 95, 61], [0xb0, 95, 61]]);
+});
+
+test('with the watermark off, a pack light on the top row turns off when it ends', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 5 a 5\nd 1000\nf mc 5\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await page.keyboard.press('Alt+w');
+  await expect.poll(async () => (await roundLightMessages(page, 95)).at(-1)).toEqual([0xb0, 95, 0]);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  await tapPad(page, '0,0', 1);
+  await expect.poll(() => roundLightMessages(page, 95)).toEqual([[0xb0, 95, 5], [0xb0, 95, 0]]);
+});
+
+// The open option panel shows its settings on the top row (button 8, CC 98, is the quit light);
+// a pack light ending there leaves it, and closing the panel brings the watermark back.
+test('a pack light ending under the open option panel leaves its top-row lights', async ({ page }) => {
+  await loadPack(page, await roundLightPack(2, { '1 1 1 1': 'o mc 8 a 21\nd 1000\nf mc 8\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+p');
+  await tapPad(page, '0,0', 1);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 5]);
+  await page.waitForTimeout(1500);
+  expect((await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 5]);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 40]);
+});
+
 // Android 4.1.7 drew the pads off-centre (unipad-android#75); the web centred them in the space
 // right of the menu, 61 px right of the screen's centre line on every landscape screen, and with
 // the menu hidden it centred the pads together with the chain column, half a column to the left,
@@ -379,7 +637,7 @@ for (const [name, file] of [
   test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
     await page.goto('/play');
     await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-    await expect(page.locator('[data-pad]')).toHaveCount(64);
+    await expectPads(page);
     for (const hideUI of [false, true]) {
       if (hideUI) await page.keyboard.press('Alt+h');
       await expect(page.getByRole('button', { name: 'Feedback', exact: true })).toHaveCount(hideUI ? 0 : 1);
