@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
 import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
-  actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL,
+  actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, normalizeError, observe, PLATFORM, REAL,
   resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
 } from './conformanceHarness';
 
@@ -294,4 +294,12 @@ after(() => {
   if (RECORD_ONLY) console.log(`UNIPACK-CONFORMANCE-RECORD-ONLY ${RECORD_ONLY_NOTICE}`);
   for (const r of report.cases) console.log(`UNIPACK-CONFORMANCE ${JSON.stringify({ platform: PLATFORM, id: r.id, fingerprint: r.fingerprint, status: r.status })}`);
   console.log(`UNIPACK-CONFORMANCE-CORPUS ${JSON.stringify({ platform: PLATFORM, corpusSha256: sha256, cases: report.cases.length })}`);
+});
+
+describe('chain move warning normalization', () => {
+  for (const section of ['keySound:', 'keySound :']) {
+    test(`classifies ${section} wormhole warnings as range errors`, () => {
+      assert.equal(normalizeError(`${section} [1 1 1 a.wav 1 40] wormhole is incorrect`), 'keySound:range');
+    });
+  }
 });

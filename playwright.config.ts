@@ -24,7 +24,8 @@ export default defineConfig({
     // iPhone Safari draws pages with WebKit; only WebKit shows Hangul without a font as missing-glyph boxes.
     { name: 'webkit', testMatch: portableTests, use: { browserName: 'webkit' } },
     // Scales only the device stream after the Web Audio graph, so the analyser still measures the signal.
-    { name: 'firefox', timeout: 90_000, testMatch: ['play.spec.ts'], use: { browserName: 'firefox', launchOptions: { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } } },
+    // Firefox also counts text that spills into a button's side padding as overflow, so the home page runs here too.
+    { name: 'firefox', timeout: 90_000, testMatch: ['play.spec.ts', 'home.spec.ts'], use: { browserName: 'firefox', launchOptions: { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } } },
     // The Windows runner supplies these installed channels; local Macs still run all three engines.
     ...(process.platform === 'win32' ? [
       { name: 'chrome', testMatch: 'play.spec.ts', use: { browserName: 'chromium' as const, channel: 'chrome' } },
