@@ -89,6 +89,25 @@ test('a connected shared link still asks before installing and plays the downloa
   await expectPads(page);
 });
 
+test('Enter on the shared link confirmation\'s Cancel button installs nothing', async ({ page, context }) => {
+  await connectStore(context);
+  let downloads = 0;
+  await context.route('**/api/store/download?*', route => {
+    downloads += 1;
+    return route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' });
+  });
+  await page.goto('/play?code=browser-pack');
+  const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(confirmation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(confirmation).toHaveCount(0);
+  // Give a started install time to reach the download and open the pack.
+  await page.waitForTimeout(1000);
+  expect(downloads).toBe(0);
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+});
+
 test('ends a stalled shared pack download and retries it', async ({ page, context }, testInfo) => {
   await connectStore(context);
   let stalled = true;
