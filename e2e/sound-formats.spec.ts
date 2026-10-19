@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { basicTone, openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
 import { pad } from './touch';
+import { formatAudio, observeFormatBuffers } from './sound-format-probe';
 
 const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);
 
@@ -34,15 +35,16 @@ const formats = [
 
 for (const [index, [item, format, filename, bytes]] of formats.entries()) {
   test(`${item} ${format} decodes and plays its own buffer with an output signal`, async ({ page, browser }, info) => {
+    await observeFormatBuffers(page);
     const entries = await Promise.all(formats.map(async ([, , name, read]) => [name, await read()] as const));
     const expectedHash = createHash('sha256').update(await bytes()).digest('hex');
     await loadPack(page, {
       keySound: formats.map(([, , name], i) => `1 ${i + 1} 1 ${name} 0\n`).join(''),
       ...Object.fromEntries(entries.map(([name, data]) => [`sounds/${name}`, data])),
     });
-    await expect.poll(async () => (await audio(page)).decodedBuffers.length).toBe(5);
+    await expect.poll(async () => (await formatAudio(page)).decodedBuffers.length).toBe(5);
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
-    const decodedBuffers = (await audio(page)).decodedBuffers;
+    const decodedBuffers = (await formatAudio(page)).decodedBuffers;
     const decoded = decodedBuffers.find(buffer => buffer.encodedSha256 === expectedHash)!;
     expect(decoded, 'the expected encoded file must reach native decoding').toBeDefined();
     expect(decoded.duration).toBeGreaterThan(0);
@@ -52,8 +54,8 @@ for (const [index, [item, format, filename, bytes]] of formats.entries()) {
     await pad(page, `${index},0`).hover();
     await page.mouse.down();
     try {
-      await expect.poll(async () => (await audio(page)).starts.length).toBe(1);
-      const [started] = (await audio(page)).starts;
+      await expect.poll(async () => (await formatAudio(page)).starts.length).toBe(1);
+      const [started] = (await formatAudio(page)).starts;
       const playedBuffer = decodedBuffers.find(buffer => buffer.id === started.bufferId);
       expect(playedBuffer?.encodedSha256).toBe(expectedHash);
       expect(started.duration).toBe(playedBuffer!.duration);

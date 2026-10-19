@@ -1,7 +1,7 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
-  audio: { decoded: number[]; decodedBuffers: { id: number; duration: number; encodedSha256: string }[]; starts: { bufferId: number | null; id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null };
+  audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null };
   /** `messages` reach the launchpad output, `synthMessages` the synthesizer Windows always lists. */
   midi: { supported: boolean; requests: MIDIOptions[]; messages: number[][]; synthMessages: number[][]; emit: (data: number[]) => void; unplug: () => void; plugAnother: () => void };
 }
@@ -47,7 +47,7 @@ export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
       const outputs: { analyser: AnalyserNode; samples: Float32Array<ArrayBuffer> }[] = [];
       const audio: BrowserProbe['audio'] = {
-        decoded: [], decodedBuffers: [], starts: [], stops: [],
+        decoded: [], starts: [], stops: [],
         outputRms: () => {
           if (!outputs.length) return null;
           return Math.max(...outputs.map(({ analyser, samples }) => {
@@ -74,15 +74,9 @@ export async function installBrowserProbe(page: Page) {
         return Reflect.apply(connect, this, [destination, output ?? 0, ...(destination instanceof AudioNode ? [input ?? 0] : [])]);
       } as typeof connect;
       // Observe real Web Audio decoding/playback; keep all original calls intact.
-      const bufferIds = new WeakMap<AudioBuffer, number>();
       const decode = AudioContext.prototype.decodeAudioData;
       AudioContext.prototype.decodeAudioData = function (...args: Parameters<typeof decode>) {
-        const encodedHash = crypto.subtle.digest('SHA-256', args[0].slice(0));
-        return decode.apply(this, args).then(async buffer => {
-          const encodedSha256 = Array.from(new Uint8Array(await encodedHash), byte => byte.toString(16).padStart(2, '0')).join('');
-          const id = audio.decodedBuffers.length + 1;
-          bufferIds.set(buffer, id);
-          audio.decodedBuffers.push({ id, duration: buffer.duration, encodedSha256 });
+        return decode.apply(this, args).then(buffer => {
           audio.decoded.push(buffer.duration);
           return buffer;
         });
@@ -95,7 +89,7 @@ export async function installBrowserProbe(page: Page) {
         const start = source.start.bind(source);
         const stop = source.stop.bind(source);
         source.start = (...args) => {
-          audio.starts.push({ bufferId: source.buffer ? bufferIds.get(source.buffer) ?? null : null, id, duration: source.buffer?.duration ?? 0, loop: source.loop });
+          audio.starts.push({ id, duration: source.buffer?.duration ?? 0, loop: source.loop });
           start(...args);
         };
         source.stop = (...args) => { audio.stops.push(id); stop(...args); };
