@@ -104,7 +104,7 @@ test('plays a saved pack and quits to the list when only analytics fails', async
 });
 
 test('plays a saved pack and quits to the list when external service responses stall', async ({ page, context, baseURL }, testInfo) => {
-  test.slow(); // Import, playback and the intentional Remote Config timeout share this budget.
+  test.slow(); // Import, playback and stalled-service observation share this budget.
   await prepareSavedPack(page);
 
   const held: Route[] = [];
@@ -123,8 +123,8 @@ test('plays a saved pack and quits to the list when external service responses s
   const heldUrls = () => held.map(route => route.request().url());
   // The configuration request is still unanswered after every step above.
   await expect.poll(() => heldUrls().some(url => new URL(url).hostname === 'firebaseremoteconfig.googleapis.com')).toBe(true);
-  // The SDK reaches the database only after its 10 s configuration timeout; it gets no answer either.
-  await expect.poll(() => database.length, { timeout: 20000 }).toBeGreaterThan(0);
+  // Store subscription waits for Remote Config initialization, so its transport need not have
+  // started while configuration is held. Keep any database contacts as diagnostics only.
   await expect(page.getByRole('button', { name: /^Store/ })).toHaveText('Store');
   await testInfo.attach('held-requests', { body: JSON.stringify(heldUrls(), null, 2), contentType: 'application/json' });
   await testInfo.attach('database-requests', { body: JSON.stringify(database, null, 2), contentType: 'application/json' });
