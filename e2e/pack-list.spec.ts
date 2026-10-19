@@ -25,9 +25,10 @@ async function openList(page: Page, files: readonly PackFile[]) {
       await expectPads(page);
       // The import shows the pads before it saves the pack; the URL changes once it is saved.
       await expect(page).toHaveURL(/\/play\?pack=.+/);
-      // Return through the UI instead of reloading and initializing the application for each pack.
-      await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-      await page.getByRole('button', { name: 'Quit', exact: true }).click();
+      // Setup needs the buttons' actions, not pointer hit testing during their animations.
+      // Keep the page alive and return to the list before the next import.
+      await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+      await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
       await expect(list(page).getByRole('option')).toHaveCount(index + 1);
     }
   });
