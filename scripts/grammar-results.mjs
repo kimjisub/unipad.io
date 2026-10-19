@@ -60,7 +60,7 @@ function main() {
   const parser = run('parser', ['--import', 'tsx', '--test', '--test-reporter=./scripts/grammar-node-reporter.mjs',
     '--test-name-pattern=F-05|F-06', 'src/lib/unipack/parser.test.ts']);
   const browser = run('browser', ['node_modules/@playwright/test/cli.js', 'test',
-    'e2e/sound-formats.spec.ts', '--project=chromium', '--grep=^A-0[1-5] ', '--reporter=json',
+    'e2e/sound-formats.spec.ts', '--project=chromium', '--grep=A-0[1-5] ', '--reporter=json',
     `--output=${resolve(output, 'playwright')}`], { PLAYWRIGHT_JSON_OUTPUT_FILE: resolve(output, 'browser.json') });
   const parserRecords = [];
   const browserRecords = [];
