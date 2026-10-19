@@ -13,3 +13,12 @@ ffmpeg -i tone.wav -c:a vorbis -strict experimental -ac 2 -q:a 4 -map_metadata -
 Run those commands in a scratch directory with the repository imports resolved,
 then copy the OGG into this directory. OGG container serial numbers may differ
 between encodes; the committed file is the test input. No downloaded music is used.
+
+`tone-660.mp3` is an original 100 ms, 660 Hz sine tone encoded with FFmpeg's
+LAME encoder. It is imported as `mp3-named.wav` to check content-based decoding.
+Its bytes differ from the corpus's 440 Hz MP3, so swapping those two pads' buffers
+must fail the format tests. Reproduce it with FFmpeg 8.1:
+
+```sh
+ffmpeg -nostdin -f lavfi -i 'sine=frequency=660:sample_rate=44100:duration=0.1' -c:a libmp3lame -b:a 128k -map_metadata -1 -write_xing 0 -id3v2_version 0 tone-660.mp3
+```

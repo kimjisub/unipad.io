@@ -210,14 +210,21 @@ describe('parseUniPack', () => {
     });
 
     test('F-06 reads an unmarked file name that is valid UTF-8 as UTF-8', async () => {
-      const pack = await parseUniPack(rawNameZip([
-        [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
-        [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
-        [new TextEncoder().encode('sounds/소리.wav'), SILENT_WAV],
-      ]));
+      // Keep both the CP949-invalid case and bytes that strictly decode in either encoding.
+      const ambiguous = new TextEncoder().encode('차카.wav');
+      assert.doesNotThrow(() => new TextDecoder('euc-kr', { fatal: true }).decode(ambiguous));
+      assert.notEqual(new TextDecoder('euc-kr', { fatal: true }).decode(ambiguous), '차카.wav');
+      for (const name of ['소리.wav', '차카.wav']) {
+        const pack = await parseUniPack(rawNameZip([
+          [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+          [new TextEncoder().encode('keySound'), `1 1 1 ${name}`],
+          [new TextEncoder().encode(`sounds/${name}`), SILENT_WAV],
+        ]));
 
-      assert.deepEqual(pack.errors, []);
-      assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+        assert.deepEqual(pack.errors, [], name);
+        assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), [`sounds/${name}`]);
+        assert.deepEqual(new Uint8Array(pack.soundFiles.get(`sounds/${name}`)!), SILENT_WAV);
+      }
     });
   });
 

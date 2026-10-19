@@ -13,7 +13,8 @@ const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);
  * 100 ms 440 Hz PCM tone; e2e/fixtures/tone.m4a is that tone encoded as AAC by macOS:
  *   afconvert -f m4af -d aac -b 64000 tone.wav tone.m4a
  * tone.ogg is the same PCM tone encoded with FFmpeg native Vorbis (see fixtures/README.md);
- * and tone-440.mp3 is the conformance corpus's MP3 (see meta/unipack-conformance/lib.mjs).
+ * tone-440.mp3 is the conformance corpus's MP3 (see meta/unipack-conformance/lib.mjs);
+ * tone-660.mp3 is a distinct synthetic tone for the misleading-extension pad (see fixtures/README.md).
  */
 function loadPack(page: Page, files: Record<string, string | Uint8Array>) {
   return openBasicWith(page, files, ['keyLED', 'autoPlay']);
@@ -30,13 +31,15 @@ const formats = [
   ['A-02', 'MP3', 'tone.mp3', () => readFile('meta/unipack-conformance/assets/tone-440.mp3')],
   ['A-03', 'OGG Vorbis', 'tone.ogg', () => readFile('e2e/fixtures/tone.ogg')],
   ['A-04', 'M4A AAC', 'tone.m4a', () => readFile('e2e/fixtures/tone.m4a')],
-  ['A-05', 'MP3 named .wav', 'mp3-named.wav', () => readFile('meta/unipack-conformance/assets/tone-440.mp3')],
+  ['A-05', 'MP3 named .wav', 'mp3-named.wav', () => readFile('e2e/fixtures/tone-660.mp3')],
 ] as const;
 
 for (const [index, [item, format, filename, bytes]] of formats.entries()) {
   test(`${item} ${format} decodes and plays its own buffer with an output signal`, async ({ page, browser }, info) => {
     await observeFormatBuffers(page);
     const entries = await Promise.all(formats.map(async ([, , name, read]) => [name, await read()] as const));
+    const hashes = entries.map(([, data]) => createHash('sha256').update(data).digest('hex'));
+    expect(new Set(hashes).size, 'each pad must have distinguishable encoded bytes').toBe(formats.length);
     const expectedHash = createHash('sha256').update(await bytes()).digest('hex');
     await loadPack(page, {
       keySound: formats.map(([, , name], i) => `1 ${i + 1} 1 ${name} 0\n`).join(''),

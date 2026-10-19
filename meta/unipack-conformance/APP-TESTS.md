@@ -1,20 +1,24 @@
 # Archive and native audio checks
 
 These app tests supplement the common corpus; they do not change its grammar,
-limitations, fixtures or counters. The expectations below follow G2.
+limitations, fixtures or counters. G2 names the second grammar baseline; F item
+identifiers cover archive handling and A identifiers cover audio content. The
+table states the expectations used here without requiring a separate document.
 
 | Item | Mapped tests | Same expectation |
 | --- | --- | --- |
 | F-05 | `parser.test.ts`: single top folder; nested folders and archive sidecars | A unique pack opens from ZIP bytes with the same title, sound mappings and bytes, lights and auto-play. Nested wrappers, adjacent files, dot files and `__MACOSX` do not change it. |
-| F-06 | `parser.test.ts`: marked UTF-8; unmarked valid UTF-8; unmarked CP949 | Names use UTF-8 when marked or valid; only invalid unmarked UTF-8 falls back to CP949. The named sound resolves. |
+| F-06 | `parser.test.ts`: marked UTF-8; unmarked valid UTF-8 (including bytes also valid as CP949); unmarked CP949 | Names use UTF-8 when marked or valid; only invalid unmarked UTF-8 falls back to CP949. The named sound resolves. |
 | A-01 | `sound-formats.spec.ts`: WAV PCM | Native decode of the expected encoded bytes; its pad starts that buffer and produces nonzero post-volume RMS. |
 | A-02 | Same file: MP3 | Same native decode, buffer identity and output checks. |
 | A-03 | Same file: OGG Vorbis | Same native decode, buffer identity and output checks. |
 | A-04 | Same file: M4A AAC | Same native decode, buffer identity and output checks. |
-| A-05 | Same file: MP3 named `.wav` | Same checks using MP3 content despite its WAV extension. |
+| A-05 | Same file: MP3 named `.wav` | Same checks using a distinct 660 Hz MP3 despite its WAV extension; it must not play the A-02 MP3 buffer. |
 
 The audio tests import all five sounds together, then exercise each mapped pad
-in a separate test. The probe fingerprints the bytes passed to native
+in a separate test. All five encoded inputs must have distinct SHA-256 hashes,
+including the two MP3 files, so the expected hash identifies one buffer only.
+The probe fingerprints the bytes passed to native
 `decodeAudioData` and tracks the returned buffer by identity through native
 `AudioBufferSourceNode.start`. It observes rather than replaces decoding or
 playback. Infinite playback permits sampling after the application gain;
