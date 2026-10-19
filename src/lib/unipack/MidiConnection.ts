@@ -29,6 +29,12 @@ export interface MidiConnectionStatus {
 
 type ResolvedProfile = Exclude<LaunchpadProfile, 'auto'>;
 
+/** An output that gets lights, encoded for the model it is. */
+interface LightOutput {
+  output: MIDIOutput;
+  profile: ResolvedProfile;
+}
+
 /** Round buttons are function keys 0 until this: top, right, bottom and left rows of 8. */
 export const ROUND_BUTTON_COUNT = 32;
 
@@ -156,11 +162,12 @@ export class MidiConnection {
   private midiAccess: MIDIAccess | null = null;
   private inputs: MIDIInput[] = [];
   private outputs: MIDIOutput[] = [];
-  /** The outputs light messages go to. On Auto only those named as a lit controller: Android and
-   *  iOS connect any other device with a driver that sends nothing, while a synthesizer (Microsoft
-   *  GS Wavetable Synth) or a virtual cable into a music program plays every light as a note. A
-   *  model picked by hand applies to every output. */
-  private lightOutputs: MIDIOutput[] = [];
+  /** The outputs light messages go to, each with the model its lights are encoded for. On Auto only
+   *  those named as a lit controller, each in its own model's layout as Android's MultiplexDriver
+   *  sends to every pad: Android and iOS connect any other device with a driver that sends nothing,
+   *  while a synthesizer (Microsoft GS Wavetable Synth) or a virtual cable into a music program plays
+   *  every light as a note. A model picked by hand applies to every output. */
+  private lightOutputs: LightOutput[] = [];
   private listener: MidiControllerListener | null = null;
   private padSize = 8;
   connected = false;
@@ -259,21 +266,20 @@ export class MidiConnection {
 
   /** Re-resolves the profile and the outputs that get lights, and sends each output its mode
    *  switch, replacing one still waiting; returns when the last message goes out, or null when
-   *  there is none. */
+   *  there is none. Input is read in one layout: as iOS's scan, the first lit controller's, else the
+   *  first device's that has a layout at all (a master keyboard). */
   private sendInitSysExToAllOutputs(): number | null {
     this.cancelPendingInit();
-    this.resolvedProfile = 'none';
     this.lightOutputs = [];
+    let firstKnownProfile: ResolvedProfile = 'none';
     let lastDelay: number | null = null;
     for (const output of this.outputs) {
       const profile = this.resolveProfile(output.name ?? '', this.requestedProfile);
       if (this.requestedProfile !== 'auto' || (profile !== 'none' && profile !== 'master_keyboard')) {
-        this.lightOutputs.push(output);
+        this.lightOutputs.push({ output, profile });
       }
       const messages = this.getInitSysExMessages(profile);
-      if (profile !== 'none') {
-        this.resolvedProfile = profile;
-      }
+      if (firstKnownProfile === 'none') firstKnownProfile = profile;
       // 50 ms apart, as Android and iOS send them: the device needs the gap to switch mode.
       messages.forEach((message, index) => {
         this.pendingInitTimers.push(window.setTimeout(() => {
@@ -286,6 +292,7 @@ export class MidiConnection {
       });
       if (messages.length > 0) lastDelay = Math.max(lastDelay ?? 0, (messages.length - 1) * 50);
     }
+    this.resolvedProfile = this.lightOutputs[0]?.profile ?? firstKnownProfile;
     if (this.outputs.length === 0 && this.requestedProfile !== 'auto') {
       this.resolvedProfile = this.requestedProfile;
     }
@@ -545,8 +552,7 @@ export class MidiConnection {
     return this.resolvedProfile;
   }
 
-  private getPadNoteForProfile(x: number, y: number): { note: number; status: number } | null {
-    const profile = this.getMappingProfile();
+  private getPadNoteForProfile(profile: ResolvedProfile, x: number, y: number): { note: number; status: number } | null {
     if (
       profile === 'launchpad_x' ||
       profile === 'launchpad_mini_mk3' ||
@@ -572,8 +578,10 @@ export class MidiConnection {
     return { note: (y + 1) * 10 + (x + 1), status: 0x90 };
   }
 
-  private getFunctionTargetForProfile(index: number): { type: 'note' | 'cc'; value: number; status: number } | null {
-    const profile = this.getMappingProfile();
+  private getFunctionTargetForProfile(
+    profile: ResolvedProfile,
+    index: number,
+  ): { type: 'note' | 'cc'; value: number; status: number } | null {
     if (
       profile === 'launchpad_x' ||
       profile === 'launchpad_mini_mk3' ||
@@ -611,47 +619,48 @@ export class MidiConnection {
   }
 
   sendFunctionKeyLed(index: number, velocity: number): void {
+    for (const light of this.lightOutputs) this.sendFunctionKeyLedTo(light, index, velocity);
+  }
+
+  private sendFunctionKeyLedTo(light: LightOutput, index: number, velocity: number): void {
     if (index === LOGO_FUNCTION_KEY) {
-      this.sendLogoLed(velocity);
+      this.sendLogoLedTo(light, velocity);
       return;
     }
-    const target = this.getFunctionTargetForProfile(index);
+    const target = this.getFunctionTargetForProfile(light.profile, index);
     if (!target) return;
-    const mappedVelocity = this.getFunctionVelocityForProfile(velocity);
+    const mappedVelocity = this.getFunctionVelocityForProfile(light.profile, velocity);
     if (target.type === 'cc') {
-      this.sendCC(target.value, mappedVelocity, target.status & 0x0f);
+      sendCC(light.output, target.value, mappedVelocity, target.status & 0x0f);
       return;
     }
-    this.sendNote(target.value, mappedVelocity, target.status & 0x0f);
+    sendNote(light.output, target.value, mappedVelocity, target.status & 0x0f);
   }
 
   /** Devices whose logo is not addressable (MK2, S, Matrix, ...) ignore it. */
-  private sendLogoLed(velocity: number): void {
-    const profile = this.getMappingProfile();
+  private sendLogoLedTo({ output, profile }: LightOutput, velocity: number): void {
     if (profile === 'launchpad_x' || profile === 'launchpad_mini_mk3' || profile === 'launchpad_pro_mk3') {
       // Their programmer's references name the logo CC 99.
-      this.sendCC(99, velocity);
+      sendCC(output, 99, velocity);
     } else if (profile === 'launchpad_pro') {
       // Launchpad Pro programmer's reference: the side LED is index 99 (63h), reachable only by the
       // "light LED" SysEx.
-      this.sendToOutputs([0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
+      send(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
     } else if (isCoreFw(profile)) {
-      this.sendNote(DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(velocity));
+      sendNote(output, DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(profile, velocity));
     }
   }
 
-  private getFunctionVelocityForProfile(velocity: number): number {
-    const profile = this.getMappingProfile();
+  private getFunctionVelocityForProfile(profile: ResolvedProfile, velocity: number): number {
     if (profile === 'launchpad_s' || profile === 'launchpad_corefw_rg') {
       return LAUNCHPAD_S_COLOR_CODES[velocity] ?? 0;
     }
     return velocity;
   }
 
-  private getChainFunctionIndex(c: number): number | null {
+  private getChainFunctionIndex(profile: ResolvedProfile, c: number): number | null {
     // Chains 0..23 map onto ring indices 8..31 (right column, bottom row, left column)
     if (c < 0 || c > 23) return null;
-    const profile = this.getMappingProfile();
     if (
       profile === 'launchpad_x' ||
       profile === 'launchpad_mini_mk3' ||
@@ -667,48 +676,34 @@ export class MidiConnection {
     return null;
   }
 
-  sendNote(note: number, velocity: number, channel = 0): void {
-    const v = clampData(velocity);
-    const status = v > 0 ? 0x90 | channel : 0x80 | channel;
-    this.sendToOutputs([status, clampData(note), v]);
-  }
-
-  sendCC(cc: number, value: number, channel = 0): void {
-    this.sendToOutputs([0xb0 | channel, clampData(cc), clampData(value)]);
-  }
-
-  /** MIDIOutput.send throws on a data byte outside 0..127 (a pack LED code of 200 is valid
-   *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
-  private sendToOutputs(message: number[]): void {
-    for (const output of this.lightOutputs) {
-      try {
-        output.send(message);
-      } catch (err) {
-        console.warn('MIDI send failed', err);
-      }
-    }
-  }
-
   sendPadLed(x: number, y: number, velocity: number): void {
-    const target = this.getPadNoteForProfile(x, y);
+    for (const light of this.lightOutputs) this.sendPadLedTo(light, x, y, velocity);
+  }
+
+  private sendPadLedTo(light: LightOutput, x: number, y: number, velocity: number): void {
+    const target = this.getPadNoteForProfile(light.profile, x, y);
     if (!target) return;
-    const mappedVelocity = this.getFunctionVelocityForProfile(velocity);
-    this.sendNote(target.note, mappedVelocity, target.status & 0x0f);
+    const mappedVelocity = this.getFunctionVelocityForProfile(light.profile, velocity);
+    sendNote(light.output, target.note, mappedVelocity, target.status & 0x0f);
   }
 
   sendChainLed(c: number, velocity: number): void {
-    const fnIndex = this.getChainFunctionIndex(c);
-    if (fnIndex !== null) {
-      this.sendFunctionKeyLed(fnIndex, velocity);
+    for (const light of this.lightOutputs) {
+      const fnIndex = this.getChainFunctionIndex(light.profile, c);
+      if (fnIndex !== null) this.sendFunctionKeyLedTo(light, fnIndex, velocity);
     }
   }
 
   clearAllLeds(): void {
-    const profile = this.getMappingProfile();
+    for (const light of this.lightOutputs) this.clearLeds(light);
+  }
+
+  private clearLeds(light: LightOutput): void {
+    const { profile } = light;
     if (profile === 'master_keyboard') return;
     for (let x = 0; x < this.padSize; x++) {
       for (let y = 0; y < this.padSize; y++) {
-        this.sendPadLed(x, y, 0);
+        this.sendPadLedTo(light, x, y, 0);
       }
     }
     // The X/Pro/Pro MK3 ring has 32 buttons; clearing only 16 left the bottom row and the left
@@ -719,9 +714,9 @@ export class MidiConnection {
         ? ROUND_BUTTON_COUNT
         : profile === 'midifighter' ? 0 : 16;
     for (let i = 0; i < functionKeyCount; i++) {
-      this.sendFunctionKeyLed(i, 0);
+      this.sendFunctionKeyLedTo(light, i, 0);
     }
-    this.sendLogoLed(0);
+    this.sendLogoLedTo(light, 0);
   }
 
   /** Leaving the pack: LEDs lit by animations that already ended are no longer tracked by the runner,
@@ -746,6 +741,26 @@ export class MidiConnection {
     this.inputName = null;
     this.outputName = null;
     this.resolvedProfile = 'none';
+  }
+}
+
+function sendNote(output: MIDIOutput, note: number, velocity: number, channel = 0): void {
+  const v = clampData(velocity);
+  const status = v > 0 ? 0x90 | channel : 0x80 | channel;
+  send(output, [status, clampData(note), v]);
+}
+
+function sendCC(output: MIDIOutput, cc: number, value: number, channel = 0): void {
+  send(output, [0xb0 | channel, clampData(cc), clampData(value)]);
+}
+
+/** MIDIOutput.send throws on a data byte outside 0..127 (a pack LED code of 200 is valid
+ *  text), and the callers (guide LEDs, autoPlay) are React callbacks with no try around them. */
+function send(output: MIDIOutput, message: number[]): void {
+  try {
+    output.send(message);
+  } catch (err) {
+    console.warn('MIDI send failed', err);
   }
 }
 
