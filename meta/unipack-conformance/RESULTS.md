@@ -1,20 +1,23 @@
 # Results (reported 2026-10-19, Korea time)
 
-Corpus `ba80283d9b32…` (sha256 of `corpus.json`), 171 cases. The platform results were recorded on
-October 19 (Korea time) on unipad-android `50f1bdb11e212b19d0b9e3b7edab1204dfecbfcb`, unipad-ios
-`29c971e79bda226aa78a6098307391144c18c7b4` and the unipad.io conformance branch. The app commits are
-the pull request heads in `copies.json`, not merge commits; both app pull requests are still open.
-The table was regenerated on October 19 from those saved result files using `report.mjs` (README,
-"Running it"). It describes these 171 cases only; it does not show that every UniPack is compatible,
-and 100% compatibility is not known.
+Corpus `aae2cc7215f5afdfb2220c1f160ec96edc058bd111f45d1a499e759c1c3c2f56` (sha256 of `corpus.json`), 172 cases. These are fresh asserting runs
+on committed checkouts: unipad-android `b27171e7386f88b111f14956345fd97343a2f7c7`, unipad-ios
+`f24c22ad099995e14f80bfe35112d657808c4e98` and unipad.io `5227ad7f56c3b9074f35ec0e41b057f2ee1c714d`.
+Each commit existed before its run started. The app commits are the pull request heads in
+`copies.json`, not merge commits; both app pull requests are still open. The web commit combines the
+current default branch with the integer cases; the subsequent documentation update leaves the corpus
+and all tested sources unchanged.
+
+The table comes from `report.mjs` on these new result files (README, "Running it"). It describes these
+172 cases only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 169 | 2 | 0 | 0 | 0 | 2026-10-18 16:15:14.087273 |
-| iOS | 171 | 0 | 0 | 0 | 0 | 2026-10-18 16:28:16 |
-| Web | 171 | 0 | 0 | 0 | 0 | 2026-10-18 16:29:56.948 |
+| Android | 170 | 2 | 0 | 0 | 0 | 2026-10-18T23:28:06.493445Z |
+| iOS | 172 | 0 | 0 | 0 | 0 | 2026-10-19T01:40:45Z |
+| Web | 172 | 0 | 0 | 0 | 0 | 2026-10-18T23:22:48.414Z |
 
-Pass on all three platforms: 169 of 171, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+Pass on all three platforms: 170 of 172, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
 the 17) and 33 on a decision basis (Android 33, iOS 35, web 35 of the 35).
 
 - **Two Android storage differences are pinned: KS-B08 and KL-BE10.** Subtracting 1 from the smallest
@@ -29,19 +32,26 @@ the 17) and 33 on a decision basis (Android 33, iOS 35, web 35 of the 35).
 
 ## Changes after the 32-bit integer cases
 
-The previous canonical corpus SHA256 was `844fa232eafa…` (137 cases). The 34 new cases cover numbers
-outside the signed 32-bit range and its two ends in keySound, keyLED file names and events, and
-autoPlay. A number outside the range is a format error; only its line or file is skipped and the next
-valid one is kept. A keyLED file name uses 240 digits in place of 400 to fit the 255-byte name limit.
-The two ends remain numbers, with the existing range checks and storage rules for each field.
+The current default-branch corpus was `98d8f5fb401f…` (138 cases). This update adds 34 cases covering
+numbers outside the signed 32-bit range and its two ends in keySound, keyLED file names and events,
+and autoPlay. A number outside the range is a format error; only its line or file is skipped and the
+next valid one is kept. A keyLED file name uses 240 digits in place of 400 to fit the 255-byte name
+limit. The two ends remain numbers, with the existing range checks and storage rules for each field.
+
+The earlier integer-case corpus was `ba80283d9b32…` (171 cases). All its cases are unchanged; the
+172-case corpus also retains RUN-RP-005 from the default branch, which checks that turning autoPlay
+off stops its endless sound while a sound held by the person keeps playing. All 138 default-branch
+cases are unchanged too.
 
 - Android no longer wraps the smallest 32-bit integer to `2147483647` when storing a sound loop or LED
   coordinate or chain 0-based. Its two remaining storage differences are pinned as described above.
-- The corpus does not cover the two ends in a keySound wormhole: Android warns and clamps a wormhole
-  outside the pack, whereas iOS and the web keep it without warning. Android's own range test checks
-  the wraparound fix there. Other missing positions and spellings are listed in the README.
-- The corpus and its app copies have not changed in this documentation update. The platform results
-  are the previously recorded runs, not new device runs.
+- The corpus does not cover the two ends in a keySound wormhole. Android and the web warn and clamp a
+  wormhole outside the pack, whereas iOS keeps it without warning. Although the web now agrees with
+  Android, iOS still differs; those end values remain excluded rather than choosing a new common
+  expectation here. Android's own range test checks the wraparound fix there. Other missing positions
+  and spellings are listed in the README.
+- All three platform result files were written by new runs on the committed checkouts above, not
+  reused from the earlier 171-case corpus.
 
 ## Changes after the Android `info` fix
 
