@@ -1,12 +1,16 @@
 # Results (reported 2026-10-19, Korea time)
 
-Corpus `aae2cc7215f5afdfb2220c1f160ec96edc058bd111f45d1a499e759c1c3c2f56` (sha256 of `corpus.json`), 172 cases. These are fresh asserting runs
+Corpus `aae2cc7215f5afdfb2220c1f160ec96edc058bd111f45d1a499e759c1c3c2f56` (sha256 of `corpus.json`), 172 cases. These results were recorded by tests that assert the expected outcomes
 on committed checkouts: unipad-android `b27171e7386f88b111f14956345fd97343a2f7c7`, unipad-ios
 `f24c22ad099995e14f80bfe35112d657808c4e98` and unipad.io `5227ad7f56c3b9074f35ec0e41b057f2ee1c714d`.
-Each commit existed before its run started. The app commits are the pull request heads in
-`copies.json`, not merge commits; both app pull requests are still open. The web commit combines the
-current default branch with the integer cases; the subsequent documentation update leaves the corpus
-and all tested sources unchanged.
+Each commit existed before its run started. The app results were recorded on the pull request
+commits above, before the pull requests merged. `copies.json` now pins their main-branch merge
+commits: Android `45bc80c203429b8b327e6344bcde4fcdd927970e` and iOS
+`7110eb27702cb2bd002db07d23ea7fdf95418e46`. Both merge commits contain byte-identical corpus
+copies to the tested commits and this canonical directory (`sync.mjs --check`).
+The web result was recorded after merging default-branch commit `f0c3d6056d67cf3628e1590701414981b7225bb1`
+with the integer cases. A later merge of `acda043` and the copy-pin and documentation updates
+leave the canonical corpus unchanged; the table retains the recorded results and timestamps above.
 
 The table comes from `report.mjs` on these new result files (README, "Running it"). It describes these
 172 cases only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
@@ -27,12 +31,12 @@ the 17) and 33 on a decision basis (Android 33, iOS 35, web 35 of the 35).
   The report counts the pins as failures, not passes; all other cases pass on all three platforms.
 - **No case is unverified or undetermined.** On iOS, leaving the play screen is observed up to the main
   screen's clear call to the MIDI driver, not what a physical Launchpad receives.
-- **After the app pull requests merge**, move `copies.json` to their merge commits, check both copies
-  and regenerate this table from results on those commits before merging the web pull request.
+- **The app pull requests are merged and their copies are pinned.** The table was regenerated from
+  the retained result files above; it does not claim new app test runs on the merge commits.
 
 ## Changes after the 32-bit integer cases
 
-The current default-branch corpus was `98d8f5fb401f…` (138 cases). This update adds 34 cases covering
+The default-branch corpus before the integer cases was `98d8f5fb401f…` (138 cases). This update adds 34 cases covering
 numbers outside the signed 32-bit range and its two ends in keySound, keyLED file names and events,
 and autoPlay. A number outside the range is a format error; only its line or file is skipped and the
 next valid one is kept. A keyLED file name uses 240 digits in place of 400 to fit the 255-byte name

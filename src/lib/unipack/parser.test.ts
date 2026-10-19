@@ -6,7 +6,7 @@ import { NO_WORMHOLE } from './types';
 import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, SILENT_WAV, packZip, parseWithLeds, rawNameZip } from './testUtils';
 
 describe('parseUniPack', () => {
-  test('opens a complete pack wrapped in a top folder', async () => {
+  test('F-05 opens a complete pack wrapped in a top folder', async () => {
     const pack = await parseUniPack(await packZip({
       'My Pack/info': INFO_2X2_2CHAIN,
       'My Pack/keySound': '1 1 1 a.wav\n2 2 2 a.wav',
@@ -34,6 +34,42 @@ describe('parseUniPack', () => {
       { type: 'delay', delay: 10 },
       { type: 'off', x: 0, y: 0 },
     ]);
+  });
+
+  test('F-05 opens a unique pack through nested folders and ignores archive sidecars', async () => {
+    const files = {
+      info: INFO_2X2_2CHAIN,
+      keySound: '1 1 1 a.wav\n2 2 2 a.wav',
+      'sounds/a.wav': SILENT_WAV,
+      'keyLed/1 1 1': 'o 1 1 a 5\nd 10\nf 1 1',
+      autoPlay: 'o 1 1\nd 100\nf 1 1',
+    };
+    const direct = await parseUniPack(await packZip(files));
+    const wrapped = await parseUniPack(await packZip({
+      'readme.txt': 'Not part of the pack',
+      '__MACOSX/._info': 'Finder metadata',
+      '.DS_Store': 'Finder metadata',
+      'outer/readme.txt': 'A sibling of the next folder',
+      'outer/inner/.hidden': 'Not part of the pack',
+      ...Object.fromEntries(Object.entries(files).map(([name, data]) => [`outer/inner/My Pack/${name}`, data])),
+    }));
+    assert.deepEqual(direct.errors, []);
+    assert.equal(direct.info.title, 'Test');
+    assert.equal(direct.soundCount, 2);
+    assert.equal(direct.ledCount, 1);
+    assert.deepEqual(direct.autoPlay!.elements, [
+      { type: 'on', x: 0, y: 0, currChain: 0, num: 0 },
+      { type: 'delay', delay: 100 },
+      { type: 'off', x: 0, y: 0, currChain: 0 },
+    ]);
+    const prefix = 'outer/inner/My Pack/';
+    assert.deepEqual({
+      ...wrapped,
+      soundTable: wrapped.soundTable.map(chain => chain.map(column => column.map(sounds =>
+        sounds?.map(sound => ({ ...sound, file: sound.file.slice(prefix.length) })) ?? null))),
+      soundFiles: new Map([...wrapped.soundFiles].map(([name, data]) => [name.slice(prefix.length), data])),
+    }, direct);
+    assert.deepEqual(new Uint8Array(wrapped.soundFiles.get(`${prefix}sounds/a.wav`)!), SILENT_WAV);
   });
 
   describe('required information', () => {
@@ -151,7 +187,7 @@ describe('parseUniPack', () => {
       assert.equal(pack.info.title, '한글');
     });
 
-    test('reads a CP949 file name inside the archive that has no UTF-8 mark', async () => {
+    test('F-06 reads a CP949 file name inside the archive that has no UTF-8 mark', async () => {
       const pack = await parseUniPack(rawNameZip([
         [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
         [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
@@ -162,15 +198,33 @@ describe('parseUniPack', () => {
       assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
     });
 
-    test('reads an unmarked file name that is valid UTF-8 as UTF-8', async () => {
+    test('F-06 reads a file name explicitly marked as UTF-8', async () => {
       const pack = await parseUniPack(rawNameZip([
         [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
         [new TextEncoder().encode('keySound'), '1 1 1 소리.wav'],
         [new TextEncoder().encode('sounds/소리.wav'), SILENT_WAV],
-      ]));
-
+      ], true));
       assert.deepEqual(pack.errors, []);
       assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), ['sounds/소리.wav']);
+      assert.deepEqual(new Uint8Array(pack.soundFiles.get('sounds/소리.wav')!), SILENT_WAV);
+    });
+
+    test('F-06 reads an unmarked file name that is valid UTF-8 as UTF-8', async () => {
+      // Keep both the CP949-invalid case and bytes that strictly decode in either encoding.
+      const ambiguous = new TextEncoder().encode('차카.wav');
+      assert.doesNotThrow(() => new TextDecoder('euc-kr', { fatal: true }).decode(ambiguous));
+      assert.notEqual(new TextDecoder('euc-kr', { fatal: true }).decode(ambiguous), '차카.wav');
+      for (const name of ['소리.wav', '차카.wav']) {
+        const pack = await parseUniPack(rawNameZip([
+          [new TextEncoder().encode('info'), INFO_2X2_2CHAIN],
+          [new TextEncoder().encode('keySound'), `1 1 1 ${name}`],
+          [new TextEncoder().encode(`sounds/${name}`), SILENT_WAV],
+        ]));
+
+        assert.deepEqual(pack.errors, [], name);
+        assert.deepEqual(pack.soundTable[0][0][0]!.map((s) => s.file), [`sounds/${name}`]);
+        assert.deepEqual(new Uint8Array(pack.soundFiles.get(`sounds/${name}`)!), SILENT_WAV);
+      }
     });
   });
 
