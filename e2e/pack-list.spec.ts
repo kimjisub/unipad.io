@@ -118,3 +118,102 @@ test('rows hold no separate controls and the empty search result sits outside th
   await expect(page.getByText('no pack has this name')).toBeVisible();
   await expect(page.getByRole('listbox')).toHaveCount(0);
 });
+
+/**
+ * Selects the middle pack, then focuses the theme button as Tab does. Safari's Tab reaches buttons
+ * only with its "Press Tab to highlight each item" setting, so the button is focused directly.
+ */
+async function focusThemeButtonWithPackSelected(page: Page) {
+  await option(page, middle).click();
+  await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
+
+  const theme = page.getByRole('button', { name: 'Theme', exact: true });
+  await theme.focus();
+  await expect(theme).toBeFocused();
+}
+
+/** The main screen is still showing the list with the middle pack selected, and nothing is open over it. */
+async function expectListUntouched(page: Page) {
+  await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/[?&]pack=/);
+}
+
+test('Enter on a focused button presses that button and leaves the selected pack closed', async ({ page }) => {
+  await openListWithThreePacks(page);
+  await focusThemeButtonWithPackSelected(page);
+
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Enter');
+  await chooser;
+  await expectListUntouched(page);
+
+  // Enter on the focused row still plays the selected pack.
+  await option(page, middle).focus();
+  await page.keyboard.press('Enter');
+  await expectPads(page);
+  await expect(page).toHaveTitle(/^Chain Release v1 manual \|/);
+});
+
+test('Backspace and Delete on a focused button leave the selected pack alone', async ({ page }) => {
+  await openListWithThreePacks(page);
+  await focusThemeButtonWithPackSelected(page);
+  // WebKit's own Backspace on a button goes back a page, which here would reopen an imported pack;
+  // a second entry for this page keeps it on the list.
+  await page.evaluate(() => history.pushState(null, '', location.href));
+
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Delete');
+  await expectListUntouched(page);
+
+  // On the focused row they still ask to delete the selected pack.
+  await option(page, middle).focus();
+  await page.keyboard.press('Backspace');
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+});
+
+test('Enter on the delete confirmation presses the focused button, and deletes from anywhere else', async ({ page }) => {
+  await openListWithThreePacks(page);
+  const confirmation = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  const askToDeleteMiddle = async () => {
+    // A click on the selected row would clear its selection.
+    if (await option(page, middle).getAttribute('aria-selected') !== 'true') await option(page, middle).click();
+    await expect(option(page, middle)).toHaveAttribute('aria-selected', 'true');
+    await option(page, middle).focus();
+    await page.keyboard.press('Delete');
+    await expect(confirmation).toBeVisible();
+  };
+
+  // The dialog opens on its Delete button; Enter on a focused Cancel only cancels.
+  await askToDeleteMiddle();
+  await expect(confirmation.getByRole('button', { name: 'Delete', exact: true })).toBeFocused();
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(confirmation).toHaveCount(0);
+  await expect(list(page).getByRole('option')).toHaveCount(3);
+
+  await askToDeleteMiddle();
+  await page.keyboard.press('Escape');
+  await expect(confirmation).toHaveCount(0);
+  await expect(list(page).getByRole('option')).toHaveCount(3);
+
+  // With focus off its buttons, after a click on the question, Enter still deletes.
+  await askToDeleteMiddle();
+  await confirmation.getByText(`Delete “${middle.replace(/ by .*$/, '')}”?`).click();
+  await expect(page.locator('body')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(confirmation).toHaveCount(0);
+  await expect(option(page, middle)).toHaveCount(0);
+  await expect(list(page).getByRole('option')).toHaveCount(2);
+
+  // Enter on the Delete button it opens on deletes that one pack.
+  await option(page, last).click();
+  await expect(option(page, last)).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Delete');
+  await expect(confirmation.getByRole('button', { name: 'Delete', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(confirmation).toHaveCount(0);
+  await expect(list(page).getByRole('option')).toHaveCount(1);
+  await expect(option(page, first)).toBeVisible();
+});
