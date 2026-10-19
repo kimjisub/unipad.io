@@ -240,10 +240,17 @@ class TimelineSimulation {
     }
     const budget = events.length * Math.max(1, animation.led.loop) + 1;
     let played = 0;
+    // LedRunner ends a finite animation after a pass that started in this tick and took no time.
+    let passStart = animation.index === 0 ? animation.due : NaN;
     for (;;) {
       if (animation.index >= events.length) {
         animation.loopProgress++;
         animation.index = 0;
+        if (animation.led.loop !== 0 && animation.due <= passStart) {
+          animation.playing = false;
+          return;
+        }
+        passStart = animation.due;
       }
       if (animation.led.loop !== 0 && animation.led.loop <= animation.loopProgress) {
         animation.playing = false;
