@@ -220,6 +220,13 @@ describe('LedRunner', () => {
     test('a keyLed file repeated 2147483647 times whose delays go back in time does not hang a tick', async () => {
       assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd -1' }), [['padOn', 0, 0, RED, 5]]);
     });
+
+    test('a keyLed file repeated 2147483647 times whose first pass spans ticks but whose delays sum to zero ends after its second pass', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd 4\nf 1 1\nd -4' }), [
+        ['padOn', 0, 0, RED, 5], ['padOff', 0, 0],
+        ['padOn', 0, 0, RED, 5], ['padOff', 0, 0],
+      ]);
+    });
   });
 
   describe('chain switching', () => {

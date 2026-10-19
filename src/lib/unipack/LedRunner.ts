@@ -72,7 +72,8 @@ export class LedRunner {
         // This runs on the rAF (UI) thread: an animation that never advances state.delay (no
         // events, or loop 0 with no delay event) used to spin `while (true)` and freeze the tab.
         // Android guards the empty case (Crashlytics a1376611) and survives the other on a worker
-        // thread; here both get a per-frame budget as well.
+        // thread; here both get a per-frame budget as well. A finite animation with a huge repeat count
+        // whose pass takes no time would spin as long, so it ends after such a pass (see passStart).
         const events = state.ledAnimation?.ledEvents;
         if (!events || events.length === 0) {
           state.isPlaying = false;
