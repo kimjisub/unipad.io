@@ -23,6 +23,7 @@ async function openStore(page: Page, context: BrowserContext) {
   await database.publish(PACKS.length);
   await page.getByRole('button', { name: /^Store/ }).first().click();
   await expect(store(page).getByRole('option')).toHaveCount(PACKS.length, { timeout: stateTimeout });
+  await expect(search(page)).toBeFocused({ timeout: stateTimeout });
 }
 
 /** Records every pack download the store starts; each one fails at once, so none blocks the next. */
@@ -124,7 +125,7 @@ test('arrows inside a composed Hangul syllable in the search field do not move t
   await expectSelected(page, second);
 });
 
-test('Enter on a focused store button presses that button instead of downloading', async ({ page, context }) => {
+test('Enter on a focused store button presses that button instead of downloading', async ({ page, context }, testInfo) => {
   const downloads = await recordDownloads(page);
   await openStore(page, context);
   await expectSelected(page, first);
@@ -132,6 +133,9 @@ test('Enter on a focused store button presses that button instead of downloading
   await store(page).getByRole('button', { name: 'LED', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(store(page).getByRole('option')).toHaveCount(1);
+  await expect(store(page).getByRole('button', { name: 'LED', exact: true })).toBeFocused();
+  expect(downloads).toEqual([]);
+  await testInfo.attach('store-button-focus', { body: await page.screenshot(), contentType: 'image/png' });
 
   await store(page).getByRole('button', { name: 'Close', exact: true }).focus();
   await page.keyboard.press('Enter');

@@ -114,12 +114,13 @@ export function StoreModal({
   }
 
   useEffect(() => {
-    if (!visible) return;
-    const timer = window.setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 80);
-    return () => window.clearTimeout(timer);
-  }, [visible]);
+    if (!visible || loading || error) return;
+    const searchInput = searchInputRef.current;
+    const dialog = searchInput?.closest('[role="dialog"]');
+    // Set the first focus when content appears, preserving any choice made inside the dialog.
+    if (dialog?.contains(document.activeElement)) return;
+    searchInput?.focus();
+  }, [visible, loading, error]);
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();

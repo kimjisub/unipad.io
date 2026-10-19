@@ -123,3 +123,32 @@ test('manual selection, search, filters, sorting, keyboard and reopen stay usabl
   view.rerender(wrapped(StoreModal, props));
   assert.equal(selected(view), 'second');
 });
+
+
+test('store initial focus does not take focus back from a chosen button', async () => {
+  const view = render(wrapped(StoreModal, { ...storeProps, visible: true }));
+  const led = view.getByRole('button', { name: 'LED', exact: true });
+  led.focus();
+  assert.equal(document.activeElement === led, true, 'the chosen LED button keeps focus');
+  // Real timers: the old pending focus runs before this later timer resolves.
+  await delay(100);
+  assert.equal(document.activeElement === led, true, 'the chosen LED button keeps focus');
+});
+
+test('store initial focus reaches search when loading finishes later', async () => {
+  const props = { ...storeProps, visible: true };
+  const view = render(wrapped(StoreModal, { ...props, loading: true }));
+  await delay(100);
+  view.rerender(wrapped(StoreModal, props));
+  assert.equal(document.activeElement === view.getByRole('textbox'), true, 'search receives focus when the result view first appears');
+});
+
+test('store initial focus preserves a button selected while loading', async () => {
+  const props = { ...storeProps, visible: true };
+  const view = render(wrapped(StoreModal, { ...props, loading: true }));
+  const close = view.getByRole('button', { name: 'Close', exact: true });
+  close.focus();
+  view.rerender(wrapped(StoreModal, props));
+  await delay(100);
+  assert.equal(document.activeElement === close, true, 'the chosen Close button keeps focus');
+});
