@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 // A dialog over the player owns the keyboard: Space (auto-play), pad keys, chain keys and the
 // Alt shortcuts must not act behind it, wherever focus sits after a click on its title or text.
@@ -17,7 +17,7 @@ async function load(page: Page, baseURL: string | undefined, locale: string, pac
   await page.context().addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL }]);
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(pack));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
 }
