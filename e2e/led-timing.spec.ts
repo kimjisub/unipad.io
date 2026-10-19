@@ -22,6 +22,8 @@ interface Run {
   /** The command reaching output.send, ms after the Auto button was clicked. */
   sent: LedCommand[];
   roundMessages: number;
+  /** Pad messages on every non-target output, including connection/setup before autoplay. */
+  otherOutputPads: { id: string; name: string; count: number }[];
   /** Wall time from the click to the last command, and the page's main-thread work in it (ms): tasks
    *  and scripts as wall time, cpuMs as CPU time, which a busy machine does not inflate. */
   wallMs: number;
@@ -34,7 +36,7 @@ interface Run {
 }
 
 declare global {
-  interface Window { ledTiming: { sent: number[]; ticks: number[]; autoStart: number | null } }
+  interface Window { ledTiming: { sent: number[]; otherOutputs: Record<string, { name: string; sent: number[] }>; ticks: number[]; autoStart: number | null } }
 }
 
 // Store packs play their sounds; nothing should reach the speakers of the machine running the tests.
@@ -51,7 +53,7 @@ async function recordMidiOutput(page: Page) {
   await page.addInitScript((tickMs) => {
     const sent: number[] = [];
     const ticks: number[] = [];
-    window.ledTiming = { sent, ticks, autoStart: null };
+    window.ledTiming = { sent, otherOutputs: {}, ticks, autoStart: null };
     const tick = () => {
       ticks.push(performance.now());
       setTimeout(tick, tickMs);
@@ -66,9 +68,13 @@ async function recordMidiOutput(page: Page) {
         for (const output of access.outputs.values()) {
           if (wrapped.has(output)) continue;
           wrapped.add(output);
+          // Select the virtual Launchpad itself, not every port the browser exposes. Keep other
+          // ports observable so Auto Detect leaking light notes to a synth cannot silently pass.
+          const destination = output.id === 'test-output' ? sent :
+            (window.ledTiming.otherOutputs[output.id] = { name: output.name ?? '', sent: [] }).sent;
           const send = output.send.bind(output);
           output.send = (data: number[] | Uint8Array, timestamp?: number) => {
-            sent.push(performance.now(), data[0], data[1] ?? 0, data[2] ?? 0);
+            destination.push(performance.now(), data[0], data[1] ?? 0, data[2] ?? 0);
             // The shared probe already supplied the virtual output. Keep only this timestamped
             // recording during playback instead of allocating a second copy of every message.
             if (window.ledTiming.autoStart === null) send(data, timestamp);
@@ -132,23 +138,40 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
   await waitForMidiQuiet(page, lastT0);
 
   const after = await metrics();
-  const { sent, ticks, autoStart } = await page.evaluate(() => window.ledTiming);
+  const { sent, otherOutputs, ticks, autoStart } = await page.evaluate(() => window.ledTiming);
   const run: Run = {
     sent: [], roundMessages: 0,
+    otherOutputPads: Object.entries(otherOutputs).map(([id, output]) => ({
+      id, name: output.name, count: padCommands(output.sent, 0).length,
+    })),
     wallMs: sent.length ? sent[sent.length - 4] - autoStart! : 0,
     taskMs: (after.TaskDuration - before.TaskDuration) * 1000,
     scriptMs: (after.ScriptDuration - before.ScriptDuration) * 1000,
     cpuMs: (after.ThreadTime - before.ThreadTime) * 1000,
     timerSpanMs: longestTimerSpan(ticks, autoStart!, Math.max(autoStart! + lastT0, sent.length ? sent[sent.length - 4] : 0)),
   };
+  run.sent = padCommands(sent, autoStart!);
+  for (let i = 0; i < sent.length; i += 4) {
+    if ((sent[i + 1] & 0xf0) === 0xb0) run.roundMessages++;
+  }
+  return run;
+}
+
+function padCommands(sent: readonly number[], start: number): LedCommand[] {
+  const commands: LedCommand[] = [];
   for (let i = 0; i < sent.length; i += 4) {
     const [time, status, note, velocity] = sent.slice(i, i + 4);
     const kind = status & 0xf0;
     const pad = kind === 0x90 || kind === 0x80 ? padOfNote(note) : null;
-    if (pad) run.sent.push({ ms: time - autoStart!, ...pad, code: kind === 0x90 ? velocity : 0 });
-    else if (kind === 0xb0) run.roundMessages++;
+    if (pad) commands.push({ ms: time - start, ...pad, code: kind === 0x90 ? velocity : 0 });
   }
-  return run;
+  return commands;
+}
+
+function expectOnlyLaunchpadPads(outputs: Run['otherOutputPads']) {
+  for (const output of outputs) {
+    expect(output.count, `Auto Detect sent pad lights to ${output.name} (${output.id})`).toBe(0);
+  }
 }
 
 /** Wait past the intended tail and for a full quiet second after the last actual send. A continuing
@@ -161,11 +184,33 @@ async function waitForMidiQuiet(page: Page, lastT0: number) {
   }, lastT0, { timeout: Math.max(60_000, lastT0 + 30_000) });
 }
 
+test('records only Launchpad output commands and keeps synthesizer sends separate', async ({ page }) => {
+  await recordMidiOutput(page);
+  await page.goto('/play');
+  test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
+  await page.evaluate(async () => {
+    const access = await navigator.requestMIDIAccess({ sysex: true });
+    window.ledTiming.sent.length = 0;
+    window.ledTiming.autoStart = performance.now();
+    access.outputs.get('test-output')!.send([0x90, 81, 5]);
+    access.outputs.get('test-synth')!.send([0x90, 81, 5]);
+  });
+  const recording = await page.evaluate(() => window.ledTiming);
+  expect(recording.sent.length / 4).toBe(1);
+  const synth = recording.otherOutputs['test-synth'];
+  expect(synth.name).toBe('Microsoft GS Wavetable Synth');
+  expect(padCommands(synth.sent, 0)).toHaveLength(1);
+  // An injected leak must fail the same assertion used by dense and store playback, even if a
+  // timer stall would otherwise make the timing comparison inconclusive.
+  expect(() => expectOnlyLaunchpadPads([{ id: 'test-synth', name: synth.name, count: 1 }])).toThrow(/Auto Detect sent pad lights/);
+
+});
+
 test('records late tail commands until the MIDI output has gone quiet', async ({ page }) => {
   await page.goto('/play');
   await page.evaluate(() => {
     const sent: number[] = [];
-    window.ledTiming = { sent, ticks: [], autoStart: performance.now() };
+    window.ledTiming = { sent, otherOutputs: {}, ticks: [], autoStart: performance.now() };
     const send = () => sent.push(performance.now(), 0x90, 81, 5);
     send();
     setTimeout(send, 900);
@@ -192,6 +237,7 @@ function report(name: string, timeline: IntendedTimeline, run: Run, browserVersi
     `  pack -> output.send (pads): expected ${result.expected}, arrived ${result.arrived}, matched ${result.matched}, ` +
       `reordered ${result.reordered}, missing ${result.missing}, extra ${result.extra}, ` +
       `overtaken by more than ${OVERTAKE_MS} ms ${result.overtaken}; round and logo messages left out ${run.roundMessages}`,
+    `  other output pad commands (setup and autoplay): ${run.otherOutputPads.map((o) => `${o.name} (${o.id}): ${o.count}`).join('; ') || 'none'}`,
     `  T2-T0 ms: median ${ms(latency.median)}, p95 ${ms(latency.p95)}, max ${ms(latency.max)}, ` +
       `build-up ${ms(latency.buildUpPerMinute)} ms/min, median by tenth ${latency.medianByTenth.map(ms).join(' ')}`,
     `  page main thread: tasks ${ms(run.taskMs)} ms, scripts ${ms(run.scriptMs)} ms, CPU ${ms(run.cpuMs)} ms ` +
@@ -293,6 +339,8 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
   const { result, latency, text } = report('in-repo dense pack', timeline, run, browser.version());
   await record(testInfo, 'dense-pack', text, { ...result, latencies: undefined, latency, ...run, sent: undefined });
 
+  expectOnlyLaunchpadPads(run.otherOutputPads);
+
   // The same excessive timer stall can truncate an animation or insert the final redraw among its
   // late steps. Preserve both differences in the record, but neither proves a player regression then.
   // Extras always fail; below the smallest slack, reorders and missing commands always fail too.
@@ -339,6 +387,7 @@ if (!packsFolder || measured.length === 0) {
       const { result, latency, text } = report(code, timeline, run, browser.version());
       await record(testInfo, code, text, { ...result, latencies: undefined, latency, ...run, sent: undefined });
 
+      expectOnlyLaunchpadPads(run.otherOutputPads);
       expect(result.reordered, text).toBe(0);
       expect(result.missing, text).toBe(0);
     });
