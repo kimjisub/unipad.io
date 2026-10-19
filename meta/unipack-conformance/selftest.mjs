@@ -111,17 +111,23 @@ test('a determined case needs a doc, intent, agreed or decision basis, and an ag
 
 test('a decided case is checked like any other, and the report counts it apart from doc and agreed ones', () => {
   const decidedIds = corpus.cases.filter(restsOnDecision).map((c) => c.id);
-  assert.deepEqual(decidedIds, ['KL-024']);
+  const int32Ids = ['KS-B', 'KL-BN', 'KL-BE', 'AP-B'].flatMap((area) => ['01', '02', '03', '04', '05', '06', '07', '08'].map((n) => `${area}${n}`));
+  assert.deepEqual([...decidedIds].sort(), ['KL-024', ...int32Ids, 'KL-BE09', 'KL-BE10'].sort());
   assert.equal(decidedIds.filter((id) => corpus.cases.find((c) => c.id === id).basis.some((b) => b.type === 'agreed')).length, 0);
 
+  // A platform still pinned on a decided case is unverified there, not a pass.
+  const n = decidedIds.length;
+  const pinnedOn = (platform) => decidedIds.filter((id) => corpus.cases.find((c) => c.id === id).known?.[platform]).length;
+  assert.deepEqual(PLATFORMS.map(pinnedOn), [2, 0, 0]);
+  const pass = Object.fromEntries(PLATFORMS.map((p) => [p, n - pinnedOn(p)]));
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
-  assert.equal(report.decided.cases, decidedIds.length);
-  assert.deepEqual(report.decided.pass, { android: 1, ios: 1, web: 1 });
-  assert.equal(report.decided.passOnAllThree, 1);
+  assert.equal(report.decided.cases, n);
+  assert.deepEqual(report.decided.pass, pass);
+  assert.equal(report.decided.passOnAllThree, n - 2);
   const text = renderText(report);
-  assert.match(text, /, 1 on a decision basis$/m);
-  assert.match(text, /^decision basis: 1 cases .* pass android 1, ios 1, web 1$/m);
+  assert.match(text, new RegExp(`, ${n - 2} on a decision basis$`, 'm'));
+  assert.match(text, new RegExp(`^decision basis: ${n} cases .* pass android ${pass.android}, ios ${pass.ios}, web ${pass.web}$`, 'm'));
   assert.match(text, /^KL-024 .*\[decision\]$/m);
 
   // While a platform's difference is pinned, its pinned result is a fail, any other wrong result is a fail,
