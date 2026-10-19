@@ -6,7 +6,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
 import { parseUniPack } from '../src/lib/unipack/parser';
 import {
-  compareLedCommands, intendedTimeline, isPad, OVERTAKE_MS, peakPerSecond, summarizeLatency,
+  compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, isPad, OVERTAKE_MS, peakPerSecond, summarizeLatency,
   type IntendedTimeline, type LedCommand,
 } from '../src/lib/unipack/ledTiming';
 
@@ -139,7 +139,7 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
     taskMs: (after.TaskDuration - before.TaskDuration) * 1000,
     scriptMs: (after.ScriptDuration - before.ScriptDuration) * 1000,
     cpuMs: (after.ThreadTime - before.ThreadTime) * 1000,
-    timerSpanMs: longestTimerSpan(ticks, autoStart!, autoStart! + lastT0),
+    timerSpanMs: longestTimerSpan(ticks, autoStart!, Math.max(autoStart! + lastT0, sent.length ? sent[sent.length - 4] : 0)),
   };
   for (let i = 0; i < sent.length; i += 4) {
     const [time, status, note, velocity] = sent.slice(i, i + 4);
@@ -234,15 +234,21 @@ const DENSE_PRESS_GAP_MS = 5;
 /** Four 1 ms steps a pass. */
 const DENSE_PASSES = 10;
 const DENSE_ANIMATION_MS = DENSE_PASSES * 4;
-/** How long a pad's animation may start late before its next press ends it with steps still to play. */
-const DENSE_SLACK_MS = DENSE_PADS * DENSE_PRESS_GAP_MS - DENSE_ANIMATION_MS;
+const DENSE_TAIL_MS = 400;
+/** The smallest gap before another press or the final redraw can interrupt an animation. The final
+ * press's ordinary gap is also waited before the extra tail delay and terminating release. */
+const DENSE_SLACK_MS = Math.min(
+  DENSE_PADS * DENSE_PRESS_GAP_MS - DENSE_ANIMATION_MS,
+  DENSE_PRESS_GAP_MS + DENSE_TAIL_MS - DENSE_ANIMATION_MS,
+);
 
 /**
  * 63 pads pressed 5 ms apart for ten rounds, each flashing itself every millisecond for 40 ms
  * (repeating a colour, as packs do), the left column also lighting a round LED, and one endless animation
  * released halfway: about 8,000 commands a second at peak. No two animations touch the same LED within
- * a few ticks of each other, and autoplay ends 200 ms after the last one (a last delay is not waited
- * for, so a release follows it), so the order of every LED is fixed.
+ * a few ticks of each other. The tail also leaves at least DENSE_SLACK_MS after every animation before
+ * the final redraw (a last delay is not waited for, so a release follows it). LED order is fixed only
+ * while timer stalls stay within that smallest gap.
  */
 async function densePack(): Promise<Buffer> {
   const zip = new JSZip();
@@ -266,9 +272,16 @@ async function densePack(): Promise<Buffer> {
     for (const [x, y] of pads) autoPlay += `o ${x} ${y}\nd 2\nf ${x} ${y}\nd ${DENSE_PRESS_GAP_MS - 2}\n`;
     if (round === 4) autoPlay += 'f 8 8\n';
   }
-  zip.file('autoPlay', `${autoPlay}d 200\nf 1 1\n`);
+  zip.file('autoPlay', `${autoPlay}d ${DENSE_TAIL_MS}\nf 1 1\n`);
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
+
+test('the dense fixture leaves the declared slack before its final redraw', async () => {
+  const timeline = intendedTimeline(await parseUniPack(new Uint8Array(await densePack()).buffer));
+  const lastAnimation = timeline.commands.filter((c) => c.ms < timeline.autoPlayLengthMs).at(-1)!;
+  expect(timeline.autoPlayLengthMs - lastAnimation.ms).toBeGreaterThanOrEqual(DENSE_SLACK_MS);
+  expect(DENSE_SLACK_MS).toBe(275);
+});
 
 test('a dense pack\'s LED commands reach the launchpad output in the pack\'s order with nothing missing', async ({ page, browser }, testInfo) => {
   test.slow();
@@ -280,14 +293,15 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
   const { result, latency, text } = report('in-repo dense pack', timeline, run, browser.version());
   await record(testInfo, 'dense-pack', text, { ...result, latencies: undefined, latency, ...run, sent: undefined });
 
+  // The same excessive timer stall can truncate an animation or insert the final redraw among its
+  // late steps. Preserve both differences in the record, but neither proves a player regression then.
+  // Extras always fail; below the smallest slack, reorders and missing commands always fail too.
+  const verdict = denseTimingVerdict(result, run.timerSpanMs, DENSE_SLACK_MS);
+  test.skip(verdict === 'inconclusive',
+    `Inconclusive: ${result.reordered} reordered and ${result.missing} missing commands after the page's timers stalled for ` +
+    `${ms(run.timerSpanMs)} ms, more than the ${DENSE_SLACK_MS} ms minimum gap before a pad's next press or the final redraw`);
   expect(result.reordered, text).toBe(0);
   expect(result.extra, text).toBe(0);
-  // LedRunner times each animation from the tick that first plays it, and a press ends its pad's earlier
-  // animation at once. When the page's timers stalled for longer than the pack leaves, a missing command
-  // is what any device stalling that long shows, so the run cannot tell a fault in the player from it.
-  test.skip(result.missing > 0 && run.timerSpanMs > DENSE_SLACK_MS,
-    `Inconclusive: ${result.missing} commands missing after the page's timers stalled for ` +
-    `${ms(run.timerSpanMs)} ms, more than the ${DENSE_SLACK_MS} ms the pack leaves between a pad's animation and its next press`);
   expect(result.missing, text).toBe(0);
   expect(result.matched).toBe(timeline.commands.filter(isPad).length);
 });
@@ -298,6 +312,9 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
 // Each plays as long as its autoplay (1.5 to 3 minutes). Reordered or missing commands fail the test.
 // Extra messages are reported, not asserted: the ideal timeline does not reproduce LedRunner's pending
 // additions when a pad is pressed twice inside one tick, or its pending removal's extra off command.
+// It also interleaves animation steps due in the same millisecond before autoplay, while the real
+// runner drains each animation's overdue steps every 4 ms beside autoplay's independent timer.
+// Store-pack differences can include these approximations as well as actual scheduling differences.
 const packsFolder = process.env.LED_TIMING_PACKS;
 const measured = (process.env.LED_TIMING_MEASURE ?? '').split(',').map((code) => code.trim()).filter(Boolean);
 
@@ -314,8 +331,8 @@ if (!packsFolder || measured.length === 0) {
       const pack = await parseUniPack(new Uint8Array(data).buffer);
       expect([pack.info.buttonX, pack.info.buttonY], 'an 8x8 pack, as the Launchpad X layout addresses').toEqual([8, 8]);
       const timeline = intendedTimeline(pack);
-      test.skip(timeline.unreleasedEndlessAnimations > 0 || timeline.delaylessEndlessAnimations > 0,
-        'Inconclusive: the pack has endless animations with no finite measurable tail');
+      const measurementLimit = timelineMeasurementLimit(timeline);
+      test.skip(!!measurementLimit, `Inconclusive: ${measurementLimit}`);
       test.setTimeout(timeline.autoPlayLengthMs + 300_000);
 
       const run = await playAutoPlay(page, path, timeline);

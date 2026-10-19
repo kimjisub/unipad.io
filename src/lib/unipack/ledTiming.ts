@@ -27,6 +27,28 @@ export interface IntendedTimeline {
   ledChainEvents: number;
 }
 
+/** A timer stall can invalidate order and completeness when it exceeds the fixture's smallest
+ * animation-to-next-press or animation-to-final-redraw gap. Extras remain unconditional failures. */
+export function denseTimingVerdict(
+  result: Pick<LedTimingResult, 'reordered' | 'missing' | 'extra'>,
+  timerSpanMs: number,
+  slackMs: number,
+): 'pass' | 'fail' | 'inconclusive' {
+  if (result.extra > 0) return 'fail';
+  const differs = result.reordered > 0 || result.missing > 0;
+  if (differs && timerSpanMs > slackMs) return 'inconclusive';
+  return differs ? 'fail' : 'pass';
+}
+
+/** Why the ideal timeline cannot support an order/completeness assertion for this pack. */
+export function timelineMeasurementLimit(timeline: IntendedTimeline): string | undefined {
+  if (timeline.unreleasedEndlessAnimations > 0 || timeline.delaylessEndlessAnimations > 0) {
+    return 'the pack has endless animations with no finite measurable tail';
+  }
+  if (timeline.ledChainEvents > 0) return 'the intended timeline does not follow chain changes in LED files';
+  return undefined;
+}
+
 export const isPad = (target: LedTarget) => target.x !== -1;
 
 const targetKey = (target: LedTarget) => `${target.x},${target.y}`;

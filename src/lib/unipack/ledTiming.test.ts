@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { describe, test } from 'node:test';
-import { compareLedCommands, intendedTimeline, peakPerSecond, summarizeLatency, type LedCommand } from './ledTiming';
+import { compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, peakPerSecond, summarizeLatency, type LedCommand } from './ledTiming';
 import { parseUniPack } from './parser';
 import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, packZip, SILENT_WAV } from './testUtils';
 
@@ -145,5 +145,49 @@ describe('summaries', () => {
     assert.equal(summary.max, 10 + 99 * 0.1);
     assert.ok(Math.abs(summary.buildUpPerMinute - 10) < 1e-9);
     assert.equal(summary.medianByTenth.length, 10);
+  });
+});
+
+
+describe('denseTimingVerdict', () => {
+  const result = { reordered: 0, missing: 0, extra: 0 };
+  test('keeps a complete ordered run conclusive even after a stall', () => {
+    assert.equal(denseTimingVerdict(result, 430, 275), 'pass');
+  });
+  test('marks reorder-only differences after an excessive stall inconclusive', () => {
+    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 283.3, 275), 'inconclusive');
+  });
+  test('marks reorders and missing commands after an excessive stall inconclusive', () => {
+    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, 430, 275), 'inconclusive');
+  });
+  test('still fails order and completeness at or below the smallest slack', () => {
+    for (const span of [100, 275]) {
+      assert.equal(denseTimingVerdict({ ...result, reordered: 1 }, span, 275), 'fail');
+      assert.equal(denseTimingVerdict({ ...result, missing: 1 }, span, 275), 'fail');
+    }
+  });
+  test('uses the tail slack when it is smaller than the next-press slack', () => {
+    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 200, Math.min(275, 165)), 'inconclusive');
+  });
+  test('still fails extra commands regardless of timer stalls', () => {
+    assert.equal(denseTimingVerdict({ reordered: 4, missing: 10, extra: 1 }, 430, 275), 'fail');
+  });
+});
+
+describe('timelineMeasurementLimit', () => {
+  test('excludes LED chain changes that the intended timeline does not follow', async () => {
+    const timeline = intendedTimeline(await packWith('o 1 1\nd 100\nf 1 1\n', {
+      '1 1 1 1': 'o 1 1 a 5\nc 2\nd 10\nf 1 1\n',
+    }));
+    assert.ok(timeline.ledChainEvents > 0);
+    assert.match(timelineMeasurementLimit(timeline) ?? '', /chain changes/);
+  });
+  test('allows finite timelines without LED chain changes', async () => {
+    const timeline = intendedTimeline(await packWith('o 1 1\nd 100\nf 1 1\n', {
+      '1 1 1 1': 'o 1 1 a 5\nd 10\nf 1 1\n',
+    }));
+    assert.equal(timelineMeasurementLimit(timeline), undefined);
+    assert.match(timelineMeasurementLimit({ ...timeline, unreleasedEndlessAnimations: 1 }) ?? '', /endless/);
+    assert.match(timelineMeasurementLimit({ ...timeline, delaylessEndlessAnimations: 1 }) ?? '', /endless/);
   });
 });
