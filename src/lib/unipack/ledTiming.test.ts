@@ -85,6 +85,27 @@ describe('intendedTimeline', () => {
     assert.deepEqual(queue(), before);
   });
 
+  test('ends a finite animation after a pass that takes no time, as LedRunner does', async () => {
+    const pack = await packWith('o 1 1\nd 10\nd 10\n', { '1 1 1 3': 'o 1 2 a 5\nf 1 2\n' });
+
+    const animation = intendedTimeline(pack).commands.filter((c) => c.x === 0 && c.y === 1 && c.ms === 0);
+
+    // Starting autoplay redraws every pad twice; the animation then sends one pass, not three.
+    assert.deepEqual(lines(animation), ['0 pad 0,1=0', '0 pad 0,1=0', '0 pad 0,1=5', '0 pad 0,1=0']);
+  });
+
+  test('ends a delayless animation repeated 2147483647 times right away', async () => {
+    const pack = await packWith('o 1 1\nd 10\nd 10\n', { '1 1 1 2147483647': 'o 1 2 a 5\nf 1 2\n' });
+    const run = spawnSync(process.execPath, ['-e', `
+      const { intendedTimeline } = require(process.argv[1]);
+      const fs = require('node:fs');
+      console.log(JSON.stringify(intendedTimeline(JSON.parse(fs.readFileSync(0, 'utf8')))));
+    `, require.resolve('./ledTiming')], { input: JSON.stringify(pack), encoding: 'utf8', timeout: 5000 });
+    assert.equal(run.status, 0, String(run.error ?? run.stderr));
+    const timeline = JSON.parse(run.stdout);
+    assert.equal(timeline.commands.filter((c: LedCommand) => c.x === 0 && c.y === 1 && c.code !== 0).length, 1);
+  });
+
   test('counts round LEDs as their own targets and leaves out pads outside the grid', async () => {
     const pack = await packWith('o 1 1\nd 10\n', { '1 1 1 1': 'o mc 1 a 5\no 3 3 a 5\nd 5\nf mc 1\n' });
 
