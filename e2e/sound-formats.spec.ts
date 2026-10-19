@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
-import { openBasicWith } from './basic-pack';
+import { basicTone, openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
 import { pad } from './touch';
 
@@ -10,6 +11,7 @@ const audio = (page: Page) => page.evaluate(() => window.browserProbe.audio);
  * basic.uni without its lights and auto play, with the given files written over it. tone.wav is basic.uni's
  * 100 ms 440 Hz PCM tone; e2e/fixtures/tone.m4a is that tone encoded as AAC by macOS:
  *   afconvert -f m4af -d aac -b 64000 tone.wav tone.m4a
+ * tone.ogg is the same PCM tone encoded with FFmpeg native Vorbis (see fixtures/README.md);
  * and tone-440.mp3 is the conformance corpus's MP3 (see meta/unipack-conformance/lib.mjs).
  */
 function loadPack(page: Page, files: Record<string, string | Uint8Array>) {
@@ -22,23 +24,57 @@ async function tap(page: Page, position: string) {
   await page.mouse.up();
 }
 
-test('WAV, MP3, M4A and an MP3 named .wav all decode and play', async ({ page }) => {
-  const mp3 = await readFile('meta/unipack-conformance/assets/tone-440.mp3');
-  await loadPack(page, {
-    keySound: '1 1 1 tone.wav\n1 2 1 tone.mp3\n1 3 1 tone.m4a\n1 4 1 mp3-named.wav\n',
-    'sounds/tone.mp3': mp3,
-    'sounds/tone.m4a': await readFile('e2e/fixtures/tone.m4a'),
-    'sounds/mp3-named.wav': mp3,
-  });
-  await expect.poll(async () => (await audio(page)).decoded.length).toBe(4);
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+const formats = [
+  ['A-01', 'WAV PCM', 'tone.wav', () => basicTone()],
+  ['A-02', 'MP3', 'tone.mp3', () => readFile('meta/unipack-conformance/assets/tone-440.mp3')],
+  ['A-03', 'OGG Vorbis', 'tone.ogg', () => readFile('e2e/fixtures/tone.ogg')],
+  ['A-04', 'M4A AAC', 'tone.m4a', () => readFile('e2e/fixtures/tone.m4a')],
+  ['A-05', 'MP3 named .wav', 'mp3-named.wav', () => readFile('meta/unipack-conformance/assets/tone-440.mp3')],
+] as const;
 
-  for (const [i, position] of ['0,0', '1,0', '2,0', '3,0'].entries()) {
-    await tap(page, position);
-    await expect.poll(async () => (await audio(page)).starts.length).toBe(i + 1);
-  }
-  for (const start of (await audio(page)).starts) expect(start.duration).toBeGreaterThan(0);
-});
+for (const [index, [item, format, filename, bytes]] of formats.entries()) {
+  test(`${item} ${format} decodes and plays its own buffer with an output signal`, async ({ page, browser }, info) => {
+    const entries = await Promise.all(formats.map(async ([, , name, read]) => [name, await read()] as const));
+    const expectedHash = createHash('sha256').update(await bytes()).digest('hex');
+    await loadPack(page, {
+      keySound: formats.map(([, , name], i) => `1 ${i + 1} 1 ${name} 0\n`).join(''),
+      ...Object.fromEntries(entries.map(([name, data]) => [`sounds/${name}`, data])),
+    });
+    await expect.poll(async () => (await audio(page)).decodedBuffers.length).toBe(5);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    const decodedBuffers = (await audio(page)).decodedBuffers;
+    const decoded = decodedBuffers.find(buffer => buffer.encodedSha256 === expectedHash)!;
+    expect(decoded, 'the expected encoded file must reach native decoding').toBeDefined();
+    expect(decoded.duration).toBeGreaterThan(0);
+    expect(decoded.duration).toBeLessThan(1);
+    const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
+    await expect.poll(rms).toBe(0);
+    await pad(page, `${index},0`).hover();
+    await page.mouse.down();
+    try {
+      await expect.poll(async () => (await audio(page)).starts.length).toBe(1);
+      const [started] = (await audio(page)).starts;
+      const playedBuffer = decodedBuffers.find(buffer => buffer.id === started.bufferId);
+      expect(playedBuffer?.encodedSha256).toBe(expectedHash);
+      expect(started.duration).toBe(playedBuffer!.duration);
+      expect(started.loop).toBe(true);
+      let playingRms: number | null = null;
+      await expect.poll(async () => {
+        playingRms = await rms();
+        return playingRms;
+      }).toBeGreaterThan(0.001);
+      await info.attach('grammar-audio', {
+        body: JSON.stringify({ item, format, filename, decoded: playedBuffer, started, playingRms,
+          browser: info.project.name, browserVersion: browser.version(),
+          measurement: 'RMS after application output gain, before native destination', humanListening: false }),
+        contentType: 'application/json',
+      });
+    } finally {
+      await page.mouse.up();
+    }
+    await expect.poll(rms).toBe(0);
+  });
+}
 
 test('a sound that cannot be decoded is silent once and the pad goes on to its next sound', async ({ page }) => {
   await loadPack(page, {

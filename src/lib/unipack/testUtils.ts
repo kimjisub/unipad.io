@@ -20,11 +20,11 @@ export async function packZip(files: Record<string, string | Uint8Array>): Promi
 }
 
 /**
- * A stored (uncompressed) ZIP whose entry names are the given bytes with no UTF-8 mark, as an archiver
- * on Korean Windows writes them. JSZip always marks or annotates a non-ASCII name as UTF-8, so it cannot
- * write one. The CRC is left 0; JSZip does not check it unless asked to.
+ * A stored ZIP with literal name bytes and an optional UTF-8 mark. The default models older Korean
+ * Windows archives. JSZip always marks or annotates non-ASCII names as UTF-8, so raw headers let us
+ * test the unmarked path too. CRC is left 0; JSZip does not check it unless asked to.
  */
-export function rawNameZip(entries: [name: Uint8Array, data: Uint8Array | string][]): ArrayBuffer {
+export function rawNameZip(entries: [name: Uint8Array, data: Uint8Array | string][], utf8 = false): ArrayBuffer {
   const chunks: Uint8Array[] = [];
   const central: Uint8Array[] = [];
   let offset = 0;
@@ -41,8 +41,8 @@ export function rawNameZip(entries: [name: Uint8Array, data: Uint8Array | string
   };
   for (const [name, content] of entries) {
     const data = typeof content === 'string' ? new TextEncoder().encode(content) : content;
-    // version, flags (no UTF-8 bit), method (stored), time, date, crc, sizes, name length, extra length
-    const common: [number, 2 | 4][] = [[10, 2], [0, 2], [0, 2], [0, 2], [0, 2], [0, 4], [data.length, 4], [data.length, 4], [name.length, 2], [0, 2]];
+    // version, flags (optional UTF-8 bit), method (stored), time, date, crc, sizes, name length, extra length
+    const common: [number, 2 | 4][] = [[10, 2], [utf8 ? 0x800 : 0, 2], [0, 2], [0, 2], [0, 2], [0, 4], [data.length, 4], [data.length, 4], [name.length, 2], [0, 2]];
     const local = header([[0x04034b50, 4], ...common], name);
     central.push(header([[0x02014b50, 4], [20, 2], ...common, [0, 2], [0, 2], [0, 2], [0, 4], [offset, 4]], name));
     chunks.push(local, data);
