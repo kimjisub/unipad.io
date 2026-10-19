@@ -20,17 +20,16 @@ type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
 async function openList(page: Page, files: readonly PackFile[]) {
   await test.step('Prepare saved pack list', async () => {
     await page.goto('/play');
-    for (const file of files) {
-      const previousUrl = page.url();
+    for (const [index, file] of files.entries()) {
       await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
-      // The same input works on the player. Wait for this import's save, not the previous pack's pads or URL.
-      await expect(page).toHaveURL(url => url.pathname.endsWith('/play') && !!url.searchParams.get('pack') && url.href !== previousUrl);
       await expectPads(page);
+      // The import shows the pads before it saves the pack; the URL changes once it is saved.
+      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      // Return through the UI instead of reloading and initializing the application for each pack.
+      await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+      await page.getByRole('button', { name: 'Quit', exact: true }).click();
+      await expect(list(page).getByRole('option')).toHaveCount(index + 1);
     }
-    // Return through the UI so setup never reloads the application for each saved pack.
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-    await page.getByRole('button', { name: 'Quit', exact: true }).click();
-    await expect(list(page).getByRole('option')).toHaveCount(files.length);
   });
 }
 
