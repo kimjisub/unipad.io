@@ -174,7 +174,17 @@
     },
     "terms": {
       "title": "Terms of Use",
-      "description": "Check the privacy policy and app usage scope."
+      "description": "Check the privacy policy and app usage scope.",
+      "intro": "Review the privacy policy and the app usage scope.",
+      "privacy": {
+        "title": "Privacy Policy",
+        "description": "Review the privacy policy of the UniPad app.",
+        "effectiveDate": "Effective date: October 03, 2018"
+      },
+      "usage": {
+        "title": "App Usage Scope Notice",
+        "description": "Review the commercial and non-commercial usage scope of the UniPad app."
+      }
     }
   },
   "notices": {
