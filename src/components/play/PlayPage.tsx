@@ -834,12 +834,6 @@ export function PlayPage() {
     window.open(getStoreYoutubeSearchUrl(item), '_blank', 'noopener,noreferrer');
   }, [trackStoreEvent]);
 
-  const handleStoreWebsite = useCallback((item: StoreItem) => {
-    if (!item.url) return;
-    trackStoreEvent('store_website_click', { code: item.code });
-    window.open(item.url, '_blank', 'noopener,noreferrer');
-  }, [trackStoreEvent]);
-
   const handlePlayDownloadedStoreItem = useCallback((item: StoreItem) => {
     const pack = savedPacks.find((p) => p.storeCode === item.code);
     if (!pack) {
@@ -1035,7 +1029,6 @@ export function PlayPage() {
           onPlayDownloaded={handlePlayDownloadedStoreItem}
           onCancelDownload={handleCancelStoreDownload}
           onYoutube={handleStoreYoutube}
-          onWebsite={handleStoreWebsite}
         />
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
