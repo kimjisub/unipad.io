@@ -30,7 +30,7 @@ describe('LedRunner', () => {
     runner.launch();
     return {
       runner,
-      /** eventOn queues the animation; the next tick adopts it and the one after plays it. */
+      /** The next tick adopts the animation and plays every step due since the press. */
       press: (x: number, y: number) => {
         runner.eventOn(x, y);
         clock.tick(4);
@@ -221,9 +221,8 @@ describe('LedRunner', () => {
       assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd -1' }), [['padOn', 0, 0, RED, 5]]);
     });
 
-    test('a keyLed file repeated 2147483647 times whose first pass spans ticks but whose delays sum to zero ends after its second pass', async () => {
+    test('a keyLed file repeated 2147483647 times whose delays sum to zero ends after its first pass from the press time', async () => {
       assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd 4\nf 1 1\nd -4' }), [
-        ['padOn', 0, 0, RED, 5], ['padOff', 0, 0],
         ['padOn', 0, 0, RED, 5], ['padOff', 0, 0],
       ]);
     });

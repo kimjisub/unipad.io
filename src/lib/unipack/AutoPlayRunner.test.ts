@@ -71,6 +71,24 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  test('late ticks report the scheduled press and release times', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\nf 1 1\nd 10\no 1 1\nd 10\nf 1 1\nd 100',
+    }));
+    const events: [string, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {},
+      onPadTouchOn: (_x, _y, at) => { events.push(['on', at]); },
+      onPadTouchOff: (_x, _y, at) => { events.push(['off', at]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.launch();
+    clock.tick(25);
+    assert.deepEqual(events, [['on', 1000], ['off', 1000], ['on', 1010], ['off', 1020]]);
+    runner.stop();
+  });
+
   // The second chain is reached only through the wormhole of pad (1, 1) on the first.
   const wormholePack = async (wormhole: string) => parseUniPack(await packZip({
     info: INFO_2X2_2CHAIN,

@@ -32,17 +32,15 @@ export interface IntendedTimeline {
   ledChainEvents: number;
 }
 
-/** Extras always fail. Reorders and missing commands fail unless the timers stalled for longer than
- * `slackMs`, the fixture's smallest gap before a press or the final redraw can interrupt an animation, and
- * that stall explains every one of them (see stallExplains); the comparison is then inconclusive rather
- * than a pass. */
+/** Missing and extra commands always fail. Only an order difference caused entirely by autoplay's
+ * final redraw overtaking late steps can be inconclusive after an excessive stall. */
 export function denseTimingVerdict(
   result: Pick<LedTimingResult, 'reordered' | 'missing' | 'extra'>,
   timerSpanMs: number,
   slackMs: number,
   stallExplained: boolean,
 ): 'pass' | 'fail' | 'inconclusive' {
-  if (result.extra > 0) return 'fail';
+  if (result.extra > 0 || result.missing > 0) return 'fail';
   if (result.reordered === 0 && result.missing === 0) return 'pass';
   return timerSpanMs > slackMs && stallExplained ? 'inconclusive' : 'fail';
 }
@@ -79,26 +77,8 @@ export function stalledThrough(ticks: readonly number[], from: number, to: numbe
   return after > 0 && after + 3 < ticks.length && ticks[after + 3] >= to;
 }
 
-/**
- * Whether late animation steps account for every LED whose arrived commands differ from the intended
- * ones. LedRunner starts an animation when it next runs after the press, so a late start delays all its
- * steps, and they can fall behind three things:
- * - the same pad's next press, which ends the animation: its remaining steps never arrive, and if one of
- *   them had the LED lit the press turns it off first;
- * - the same pad's next press before the animation started, which does not end it: both animations play
- *   in full, side by side, but an off for the pad the other one already turned off sends nothing;
- * - autoplay's final redraw, which does not end it: the redraw arrives before the remaining steps.
- * Each such step must also have been held back in the record itself (`arrived` and `ticks` share one
- * clock, from the click that starts autoplay): the overtaking command arrived no earlier than its press or
- * redraw was due, and the page's timers stalled from when the step was due until that press or redraw took
- * effect (see stalledThrough). Presses and redraws are timed by autoplay's clock, from one start for every
- * LED (see autoPlayStarts), and a step by the animation's first arrived step, or at its intended time when
- * none arrived: LedRunner keeps an animation's steps on the schedule it started, however late a tick sends
- * one. That takes an animation's first step on an LED to be due at its press, as in the dense pack; the
- * steps that did arrive must be no later than such stalls allow either. A command missing or out of order
- * anywhere else, such as a hole inside an animation that kept playing, or a whole animation that was due
- * while the timers still ran, is not explained.
- */
+/** Whether every order difference is the final redraw overtaking late animation steps. Represses
+ * cannot explain missing or interleaved steps: LedRunner drains their earlier scheduled work first. */
 export function stallExplains(expected: readonly LedCommand[], arrived: readonly LedCommand[], ticks: readonly number[]): boolean {
   const wantByLed = groupByLed(expected);
   const gotByLed = groupByLed(arrived);
@@ -154,111 +134,39 @@ function runsOf(want: readonly LedCommand[]): CommandRun[] {
 export const LED_TICK_MS = 4;
 const NEXT_TICK_MS = LED_TICK_MS - 1;
 
-/** One LED, with autoplay started `startMs` after the click: every run arrives whole and in order, except
- * that an animation run may arrive only in part, its remaining steps either cut off by the next press or
- * arriving after the run of redraws behind it, or interleaved with the animation runs right behind it.
- * Nothing arrives before it was intended: autoplay never runs early, nor does an animation step. A press
- * that cuts an animation off is handled between LedRunner's ticks: the tick after the last step sent
- * turns the LED off, and the new animation starts a tick later still. */
+/** One LED's complete animation runs, with only a final redraw allowed to overtake their tail. */
 function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[], ticks: readonly number[], startMs: number): boolean {
+  if (want.length !== got.length) return false;
   const runs = runsOf(want);
   const failed = new Set<string>();
-  /** Whether `commands` arrived as got[j], got[j + 1], ..., none before autoplay's clock had it due but the
-   *  redraw switching the mode, which comes just before autoplay starts. */
   const arrivedAt = (commands: readonly LedCommand[], j: number) =>
     commands.every((c, k) => got[j + k]?.code === c.code && got[j + k].ms >= c.ms + (j + k === 0 ? 0 : startMs));
-  /** When `steps[kept]` was due, after steps[0..kept) arrived from got[j - kept] on. */
-  const dueAt = (steps: readonly LedCommand[], kept: number, j: number) =>
-    kept > 0 ? got[j - kept].ms + steps[kept].ms - steps[0].ms : steps[0].ms + startMs;
-  /** Whether a step due at `dueMs` can have been held back until `untilMs`: within two ticks, or by the
-   *  timers stalling from when it was due (see stalledThrough). */
   const heldBack = (dueMs: number, untilMs: number) =>
     untilMs - dueMs <= OVERTAKE_MS || stalledThrough(ticks, dueMs, untilMs - OVERTAKE_MS);
-  /** Whether got[j], caused by a press or redraw intended at `causeMs` that took effect by `effectMs` (or
-   *  else no earlier than it was due), can have overtaken `steps[kept]` after steps[0..kept) arrived from
-   *  got[j - kept] on. */
-  const overtaken = (steps: readonly LedCommand[], kept: number, j: number, causeMs: number, effectMs = causeMs + startMs) =>
-    !!got[j] && got[j].ms >= causeMs + startMs && heldBack(dueAt(steps, kept, j), effectMs);
-  /** Whether `group`'s animations, started in one tick, arrived from got[j] on, followed by what `then`
-   *  explains from the index after them: each in order and whole, except that an off (0) the LED is
-   *  already off for sends nothing, as the animations share its owner. Each tick plays them in the order of
-   *  their presses, so a step of an earlier press's animation that follows a later one's arrives a tick
-   *  later. */
-  const interleaved = (group: readonly (readonly LedCommand[])[], j: number, then: (end: number) => boolean): boolean => {
-    const tried = new Set<string>();
-    const merge = (sent: readonly number[], p: number, previous: number): boolean => {
-      if (sent.every((n, s) => n === group[s].length)) return then(p);
-      const key = `${sent.join(',')} ${p} ${previous}`;
-      if (tried.has(key)) return false;
-      tried.add(key);
-      return group.some((steps, s) => {
-        const step = steps[sent[s]];
-        if (!step) return false;
-        const after = sent.map((n, i) => (i === s ? n + 1 : n));
-        if (step.code === 0 && (got[p - 1]?.code ?? 0) === 0) return merge(after, p, previous);
-        if (got[p]?.code !== step.code || got[p].ms < step.ms + startMs) return false;
-        if (s < previous && got[p].ms < got[p - 1].ms + NEXT_TICK_MS) return false;
-        return merge(after, p + 1, s);
-      });
-    };
-    return merge(group.map(() => 0), j, -1);
-  };
-  // stepsFrom: the earliest the next animation step can arrive, after a cut.
-  const visit = (r: number, j: number, cut: readonly number[], stepsFrom: number): boolean => {
+  const visit = (r: number, j: number): boolean => {
     if (r === runs.length) return j === got.length;
-    const key = `${r} ${j} ${cut.join(',')} ${stepsFrom}`;
+    const key = `${r} ${j}`;
     if (failed.has(key)) return false;
     const { animation, commands } = runs[r];
-    let explained = false;
-    if (animation === undefined) {
-      explained = arrivedAt(commands, j) && visit(r + 1, j + commands.length, cut, stepsFrom);
-    } else if (cut.includes(animation)) {
-      explained = visit(r + 1, j, cut, stepsFrom);
-    } else {
-      const cutMs = commands[0].cutMs ?? Infinity;
-      const redraws = runs[r + 1]?.animation === undefined ? runs[r + 1]?.commands : undefined;
-      for (let kept = 0; !explained && kept <= commands.length; kept++) {
+    if (arrivedAt(commands, j) && visit(r + 1, j + commands.length)) return true;
+    // Autoplay's final redraw is outside LedRunner. A stalled tick can still send its tail after it.
+    const redraws = r + 2 === runs.length && runs[r + 1]?.animation === undefined ? runs[r + 1].commands : undefined;
+    if (animation !== undefined && redraws) {
+      for (let kept = 0; kept < commands.length; kept++) {
         const next = j + kept;
-        if (kept > 0 && !arrivedAt([commands[kept - 1]], next - 1)) break;
-        if (kept === 1 && got[j].ms < stepsFrom) break;
-        // A step that arrived came no later than stalls allow.
-        if (kept > 0 && !heldBack(dueAt(commands, kept - 1, next - 1), got[next - 1].ms)) break;
-        if (kept === commands.length) {
-          explained = visit(r + 1, next, cut, -Infinity);
-          continue;
-        }
-        const lastAt = got[next - 1]?.ms;
-        // The next press ends the animation, first turning off the LED if its last step left it lit. The
-        // press takes effect by that off, or else no earlier than it was due.
-        const lit = kept > 0 && commands[kept - 1].code !== 0;
-        if (Number.isFinite(cutMs) && overtaken(commands, kept, next, cutMs, lit ? got[next]?.ms : undefined)) {
-          if (kept === 0) explained = visit(r + 1, next, [...cut, animation], stepsFrom);
-          else if (!lit) explained = visit(r + 1, next, [...cut, animation], lastAt + 2 * NEXT_TICK_MS);
-          else {
-            explained = got[next].code === 0 && got[next].ms >= lastAt + NEXT_TICK_MS &&
-              visit(r + 1, next + 1, [...cut, animation], got[next].ms + NEXT_TICK_MS);
-          }
-        }
-        // The final redraw arrives first, as autoplay sends it; the remaining steps follow it, in a later tick.
-        const rest = next + (redraws?.length ?? 0);
-        explained ||= !!redraws && arrivedAt(redraws, next) && overtaken(commands, kept, next, redraws[0].ms, got[next]?.ms) &&
-          arrivedAt(commands.slice(kept), rest) && (kept === 0 || got[rest].ms >= lastAt + NEXT_TICK_MS) &&
-          visit(r + 2, rest + commands.length - kept, cut, -Infinity);
-      }
-      // The same pad's next presses came before LedRunner started this animation, in one tick: a press ends
-      // only the animations already running, so this one and theirs all play in full, side by side.
-      for (let last = r + 1; !explained && runs[last]?.animation !== undefined; last++) {
-        if ((got[j]?.ms ?? -Infinity) < stepsFrom) break;
-        const pressMs = runs[last - 1].commands[0].cutMs ?? Infinity;
-        if (!overtaken(commands, 0, j, pressMs)) break;
-        const group = runs.slice(r, last + 1).map((run) => run.commands);
-        explained = interleaved(group, j, (end) => visit(last + 1, end, cut, -Infinity));
+        if (!arrivedAt(commands.slice(0, kept), j)) break;
+        const rest = next + redraws.length;
+        if (arrivedAt(redraws, next) && got[next].ms >= redraws[0].ms + startMs &&
+            heldBack(commands[kept].ms + startMs, got[next].ms) &&
+            arrivedAt(commands.slice(kept), rest) &&
+            (kept === 0 || got[rest].ms >= got[next - 1].ms + NEXT_TICK_MS) &&
+            visit(r + 2, rest + commands.length - kept)) return true;
       }
     }
-    if (!explained) failed.add(key);
-    return explained;
+    failed.add(key);
+    return false;
   };
-  return visit(0, 0, [], -Infinity);
+  return visit(0, 0);
 }
 
 /** Why the ideal timeline cannot support an order/completeness assertion for this pack. */
