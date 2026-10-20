@@ -62,9 +62,11 @@ export function longestTimerSpan(ticks: readonly number[], from: number, to: num
 /**
  * Whether late animation steps account for every LED whose arrived commands differ from the intended
  * ones. LedRunner starts an animation when it next runs after the press, so a late start delays all its
- * steps, and they can fall behind two things:
+ * steps, and they can fall behind three things:
  * - the same pad's next press, which ends the animation: its remaining steps never arrive, and if one of
  *   them had the LED lit the press turns it off first;
+ * - the same pad's next press before the animation started, which does not end it: both animations play
+ *   in full, side by side;
  * - autoplay's final redraw, which does not end it: the redraw arrives before the remaining steps.
  * Each such step must also have been overtaken in the record itself (`arrived` and `ticks` share one
  * clock, from the click that starts autoplay): the overtaking command arrived no earlier than its press or
@@ -107,7 +109,8 @@ export const LED_TICK_MS = 4;
 const NEXT_TICK_MS = LED_TICK_MS - 1;
 
 /** One LED: every run arrives whole and in order, except that an animation run may arrive only in part,
- * its remaining steps either cut off by the next press or arriving after the run of redraws behind it.
+ * its remaining steps either cut off by the next press or arriving after the run of redraws behind it, or
+ * interleaved with the animation runs right behind it.
  * Nothing arrives before it was intended: autoplay never runs early, nor does an animation step. A press
  * that cuts an animation off is handled between LedRunner's ticks: the tick after the last step sent
  * turns the LED off, and the new animation starts a tick later still. */
@@ -126,6 +129,26 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
       ? [got[j - 1].ms, arrival.ms - (got[j - 1].ms + steps[kept].ms - steps[kept - 1].ms)]
       : [got[j - 1]?.ms ?? -Infinity, causeMs - steps[0].ms];
     return gap <= OVERTAKE_MS || gap <= OVERTAKE_MS + longestTimerSpan(ticks, from, arrival.ms);
+  };
+  /** Whether `group`'s animations, started in one tick, arrived from got[j] on: each in order and whole,
+   *  and since each tick plays them in the order of their presses, a step of an earlier press's animation
+   *  that follows a later one's arrives a tick later. */
+  const interleaved = (group: readonly (readonly LedCommand[])[], j: number): boolean => {
+    const tried = new Set<string>();
+    const merge = (sent: readonly number[], previous: number): boolean => {
+      if (sent.every((n, s) => n === group[s].length)) return true;
+      const key = `${sent.join(',')} ${previous}`;
+      if (tried.has(key)) return false;
+      tried.add(key);
+      const p = j + sent.reduce((sum, n) => sum + n, 0);
+      return group.some((steps, s) => {
+        const step = steps[sent[s]];
+        if (!step || got[p]?.code !== step.code || got[p].ms < step.ms) return false;
+        if (s < previous && got[p].ms < got[p - 1].ms + NEXT_TICK_MS) return false;
+        return merge(sent.map((n, i) => (i === s ? n + 1 : n)), s);
+      });
+    };
+    return merge(group.map(() => 0), -1);
   };
   // stepsFrom: the earliest the next animation step can arrive, after a cut.
   const visit = (r: number, j: number, cut: readonly number[], stepsFrom: number): boolean => {
@@ -164,6 +187,15 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
         explained ||= !!redraws && arrivedAt(redraws, next) && overtaken(commands, kept, next, redraws[0].ms) &&
           arrivedAt(commands.slice(kept), rest) && (kept === 0 || got[rest].ms >= lastAt + NEXT_TICK_MS) &&
           visit(r + 2, rest + commands.length - kept, cut, -Infinity);
+      }
+      // The same pad's next presses came before LedRunner started this animation, in one tick: a press ends
+      // only the animations already running, so this one and theirs all play in full, side by side.
+      for (let last = r + 1; !explained && runs[last]?.animation !== undefined; last++) {
+        if ((got[j]?.ms ?? -Infinity) < stepsFrom) break;
+        if (!overtaken(commands, 0, j, runs[last - 1].commands[0].cutMs ?? Infinity)) break;
+        const group = runs.slice(r, last + 1).map((run) => run.commands);
+        const length = group.reduce((sum, steps) => sum + steps.length, 0);
+        explained = interleaved(group, j) && visit(last + 1, j + length, cut, -Infinity);
       }
     }
     if (!explained) failed.add(key);

@@ -241,6 +241,34 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, got, ticks([284, 650])), true);
   });
 
+  test('explains the recorded pad 2,6: two presses in one tick after a stall, their animations side by side', async () => {
+    const want = await padTimeline();
+    const [first, second] = [want.slice(step(2, 0), step(3, 0)), want.slice(step(3, 0), step(4, 0))];
+    // Another Chromium run stalled the page's timers from 2630.5 to 3244.4 ms, past pad 2,6's next press at
+    // 2945 ms. Its two animations then arrived in these ticks (less 2000 ms), each sending this many steps
+    // of the first animation, then of the second.
+    const sideBySide = (sent: [number, number, number][]) => {
+      let [a, b] = [0, 0];
+      return sent.flatMap(([ms, fromFirst, fromSecond]) => {
+        const steps = [...first.slice(a, a + fromFirst), ...second.slice(b, b + fromSecond)];
+        [a, b] = [a + fromFirst, b + fromSecond];
+        return steps.map((c) => ({ ...c, ms }));
+      });
+    };
+    const recorded: [number, number, number][] = [
+      [1244.4, 1, 1], [1256.6, 12, 0], [1257, 0, 12], [1273.2, 16, 0], [1293.2, 0, 16], [1308.4, 11, 0], [1309.1, 0, 11],
+    ];
+    const got = [...want.slice(0, step(2, 0)), ...sideBySide(recorded), ...later(want.slice(-2), 28.2)];
+    assert.equal(stallExplains(want, got, ticks([630.5, 1244.4])), true);
+    // Without a stall the first animation started before the next press, which would have ended it.
+    assert.equal(stallExplains(want, got, ticks()), false);
+    // A step missing, or two out of order, while they play side by side.
+    assert.equal(stallExplains(want, got.filter((_, i) => i !== step(2, 20)), ticks([630.5, 1244.4])), false);
+    const swapped = [...got];
+    [swapped[step(2, 4)], swapped[step(2, 5)]] = [swapped[step(2, 5)], swapped[step(2, 4)]];
+    assert.equal(stallExplains(want, swapped, ticks([630.5, 1244.4])), false);
+  });
+
   test('does not explain a hole inside an animation that kept playing, even after a stall elsewhere', async () => {
     const want = await padTimeline();
     // Four steps make one pass, so by their codes the hole looks like the last pass cut off.
