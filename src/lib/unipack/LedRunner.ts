@@ -72,7 +72,8 @@ export class LedRunner {
         // This runs on the rAF (UI) thread: an animation that never advances state.delay (no
         // events, or loop 0 with no delay event) used to spin `while (true)` and freeze the tab.
         // Android guards the empty case (Crashlytics a1376611) and survives the other on a worker
-        // thread; here both get a per-frame budget as well.
+        // thread; here both get a per-frame budget as well. A finite animation with a huge repeat count
+        // whose pass takes no time would spin as long, so it ends after such a pass (see passStart).
         const events = state.ledAnimation?.ledEvents;
         if (!events || events.length === 0) {
           state.isPlaying = false;
@@ -81,11 +82,20 @@ export class LedRunner {
         const loopCount = Math.max(1, state.ledAnimation!.loop);
         const budget = events.length * loopCount + 1;
         let processed = 0;
+        // A pass that started in this tick and ends no later than it started (no delays, only `d 0`, or
+        // delays that sum to zero or less) had every event due in this tick, so every further pass is due
+        // too and replays the same events in the same order, leaving the LEDs as this one did. A finite
+        // animation then ends here instead of replaying up to 2^31 passes in one tick.
+        let passStart = state.index === 0 ? state.delay : NaN;
 
         while (true) {
           if (state.index >= events.length) {
             state.loopProgress++;
             state.index = 0;
+            if (state.delay <= passStart && state.ledAnimation!.loop !== 0) {
+              state.loopProgress = state.ledAnimation!.loop;
+            }
+            passStart = state.delay;
           }
 
           if (state.ledAnimation!.loop !== 0 && state.ledAnimation!.loop <= state.loopProgress) {
