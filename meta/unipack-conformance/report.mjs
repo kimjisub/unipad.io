@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Joins the three platforms' conformance results into one row per case.
 //   node meta/unipack-conformance/report.mjs --web web.json [--android android.json] [--ios ios.json] [--json]
+// It also says, per item of the grammar (GRAMMAR.md), whether the item is confirmed on each platform.
 // The status of a case is worked out here from the result (`actual`) the platform recorded; the status
 // the platform wrote is only cross-checked. A platform that was not given, whose file belongs to
 // another platform, that ran another corpus or other input, or that claims a status without the result
@@ -10,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { HARNESS_LIMITS, readGrammar } from './grammar.mjs';
 import { restsOnAgreement, restsOnDecision } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,8 +56,32 @@ export function parseResults(text) {
 export function classify(c, actual, platform) {
   const known = c.known?.[platform];
   if (isDeepStrictEqual(actual, c.expected)) return known ? 'unverified' : 'pass';
-  if (known && isDeepStrictEqual(actual, known.actual)) return known.status;
+  if (known && [known.actual, ...(known.otherActuals ?? []).map((o) => o.actual)].some((a) => isDeepStrictEqual(actual, a))) return known.status;
   return 'fail';
+}
+
+// T-09 permits these two internal forms of INT_MIN - 1. Keep the harness classification
+// and its pinned observations intact; only the report treats these exact forms as equivalent.
+// Compare everything else, including every warning, without normalization.
+function allowedStorageRepresentation(c, actual, platform) {
+  if (platform !== 'android' || !c.items?.includes('T-09')) return false;
+  const paths = {
+    'KS-B08': [['sounds', 0, 'queue', 0, 'loop']],
+    'KL-BE10': [
+      ['leds', 0, 'queue', 0, 'events', 0, 1],
+      ['leds', 0, 'queue', 0, 'events', 1, 2],
+      ['leds', 0, 'queue', 0, 'events', 2, 1],
+    ],
+  }[c.id];
+  if (!paths) return false;
+  const normalized = structuredClone(actual);
+  for (const path of paths) {
+    const get = (object) => path.reduce((o, key) => o?.[key], object);
+    if (get(c.expected) !== -2147483649) return false;
+    if (get(actual) !== -2147483649 && get(actual) !== -2147483648) return false;
+    path.slice(0, -1).reduce((o, key) => o[key], normalized)[path.at(-1)] = -2147483649;
+  }
+  return isDeepStrictEqual(normalized, c.expected);
 }
 
 /** One case of one platform: the status this tool can stand behind, and why when it is unverified. */
@@ -74,6 +100,15 @@ function verdict(c, r, platform) {
   }
   const status = classify(c, r.actual, platform);
   if (status !== r.status) return unverified(`${platform} reported ${r.status} but its result classifies as ${status}`);
+  if (allowedStorageRepresentation(c, r.actual, platform)) {
+    return {
+      status: 'pass',
+      detail: 'T-09 permits the -2147483648 and -2147483649 storage representations in these fields; all other values and warnings equal the expected result.',
+      actual: r.actual,
+      reportedStatus: r.status,
+      reportedDetail: r.detail ?? '',
+    };
+  }
   return { status, detail: r.detail ?? '', actual: r.actual };
 }
 
@@ -94,6 +129,43 @@ export function judge({ corpus, sha256 }, platform, results) {
     else out.set(c.id, verdict(c, r, platform));
   }
   return out;
+}
+
+/**
+ * Whether one grammar item is confirmed on one platform: a case checks it, every such case passes there,
+ * an output item has a run or palette case among them, and the platform's harness can observe the item
+ * (HARNESS_LIMITS). `result` is the platform's result file, for the flag a limit may name.
+ */
+function itemVerdict(item, linked, platform, rowById, result) {
+  if (linked.length === 0) return { confirmed: false, detail: 'no case checks this item' };
+  const limit = HARNESS_LIMITS[platform]?.[item.id];
+  if (limit && !(limit.unless && result?.[limit.unless] === true)) return { confirmed: false, detail: `the ${platform} harness cannot observe it: ${limit.reason}` };
+  if (item.kind === 'output' && !linked.some((c) => c.layer === 'run' || c.layer === 'palette')) {
+    return { confirmed: false, detail: 'an output item is confirmed by a run or palette case, and none checks it' };
+  }
+  const short = linked.filter((c) => rowById.get(c.id)[platform].status !== 'pass');
+  if (short.length) return { confirmed: false, detail: `not every case passes: ${short.map((c) => `${c.id} ${rowById.get(c.id)[platform].status}`).join(', ')}` };
+  return { confirmed: true, detail: '' };
+}
+
+/** One row per grammar item, and the four numbers: confirmed per platform, on all three, and with a case. */
+export function buildItems(corpus, rows, results, grammar = readGrammar()) {
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  const itemRows = grammar.items.map((item) => {
+    const linked = corpus.cases.filter((c) => c.items?.includes(item.id));
+    const row = { id: item.id, kind: item.kind, cases: linked.map((c) => c.id) };
+    for (const p of PLATFORMS) row[p] = itemVerdict(item, linked, p, rowById, results[p]);
+    return row;
+  });
+  return {
+    edition: grammar.edition,
+    corpusEdition: corpus.grammar ?? null,
+    items: itemRows.length,
+    confirmed: Object.fromEntries(PLATFORMS.map((p) => [p, itemRows.filter((r) => r[p].confirmed).length])),
+    confirmedOnAllThree: itemRows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length,
+    withCases: itemRows.filter((r) => r.cases.length > 0).length,
+    rows: itemRows,
+  };
 }
 
 export function buildReport(canonical, results) {
@@ -130,6 +202,7 @@ export function buildReport(canonical, results) {
     agreed: apart('agreed'),
     decided: apart('decided'),
     rows,
+    grammar: buildItems(canonical.corpus, rows, results),
   };
 }
 
@@ -148,8 +221,12 @@ export function renderText(report) {
   const passes = (counted) => PLATFORMS.map((p) => `${p} ${counted.pass[p]}`).join(', ');
   out.push(`pass on all three platforms: ${report.passOnAllThree} of ${report.cases} cases, ${report.agreed.passOnAllThree} of them on an agreed basis, ${report.decided.passOnAllThree} on a decision basis`);
   out.push(`agreed basis: ${report.agreed.cases} cases hold what Android, iOS and the web all did, mostly where no doc decides (README, "Agreed behaviour", names the one that goes against a doc); pass ${passes(report.agreed)}`);
-  out.push(`decision basis: ${report.decided.cases} cases hold what the maintainers chose where the platforms differed and no doc decides; pass ${passes(report.decided)}`);
+  out.push(`decision basis: ${report.decided.cases} cases hold what the maintainers chose (KL-024, and the items GRAMMAR.md decides) where the platforms, or the docs and the platforms, differed; pass ${passes(report.decided)}`);
   out.push('This is a result for the cases in this corpus only. It does not show that every UniPack is compatible.');
+  out.push('');
+  const g = report.grammar;
+  if (g.corpusEdition !== g.edition) out.push(`the corpus was built against grammar ${g.corpusEdition}, this tool reads ${g.edition}: item numbers may not match`);
+  out.push(`grammar ${g.edition}: confirmed ${PLATFORMS.map((p) => `${p} ${g.confirmed[p]}`).join(', ')} of ${g.items} items; on all three platforms ${g.confirmedOnAllThree} of ${g.items}; ${g.withCases} of ${g.items} have a case`);
   out.push('');
   const short = { pass: 'pass', fail: 'FAIL', unsupported: 'UNSUPP', 'intended-difference': 'INTENDED', unverified: '-' };
   out.push(`${'case'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}title`);
@@ -158,8 +235,13 @@ export function renderText(report) {
     const tail = r.observed ? ` [undetermined: observed results ${r.observed}]` : r.expectation === 'undetermined' ? ' [undetermined]' : r.agreed ? ' [agreed]' : r.decided ? ' [decision]' : '';
     out.push(`${r.id.padEnd(11)}${cells}${r.title}${tail}`);
   }
-  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => r[p].status !== 'pass' && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
+  out.push('');
+  out.push(`${'item'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}cases`);
+  for (const r of g.rows) out.push(`${r.id.padEnd(11)}${PLATFORMS.map((p) => (r[p].confirmed ? 'ok' : '-').padEnd(10)).join('')}${r.cases.join(' ') || '(none)'}`);
+  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => (r[p].status !== 'pass' || r[p].reportedStatus) && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (notes.length) out.push('', 'notes', ...notes);
+  const itemNotes = g.rows.flatMap((r) => PLATFORMS.filter((p) => !r[p].confirmed).map((p) => `${r.id} ${p}: ${r[p].detail}`));
+  if (itemNotes.length) out.push('', 'items not confirmed', ...itemNotes);
   return out.join('\n');
 }
 
