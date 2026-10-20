@@ -174,7 +174,17 @@
     },
     "terms": {
       "title": "이용약관",
-      "description": "개인정보 처리방침 및 앱 사용 범위를 확인하세요."
+      "description": "개인정보 처리방침 및 앱 사용 범위를 확인하세요.",
+      "intro": "개인정보 처리방침 및 앱 사용 범위를 확인할 수 있습니다.",
+      "privacy": {
+        "title": "개인정보 처리방침",
+        "description": "UniPad 앱의 개인정보 처리방침을 확인하세요.",
+        "effectiveDate": "시행일: 2018년 10월 3일"
+      },
+      "usage": {
+        "title": "앱 사용 범위 고지",
+        "description": "UniPad 앱의 상업적/비상업적 사용 범위를 확인하세요."
+      }
     }
   },
   "notices": {

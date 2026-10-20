@@ -1,17 +1,15 @@
 import { Link } from '@/i18n/navigation';
-import { setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { ChevronLeft, Shield, AppWindow } from 'lucide-react';
 
 const termPages = [
   {
-    title: 'Privacy Policy',
-    description: 'UniPad 앱의 개인정보 처리방침을 확인하세요.',
+    key: 'privacy' as const,
     href: '/docs/terms/privacy',
     icon: Shield,
   },
   {
-    title: '앱 사용 범위 고지',
-    description: 'UniPad 앱의 상업적/비상업적 사용 범위를 확인하세요.',
+    key: 'usage' as const,
     href: '/docs/terms/usage',
     icon: AppWindow,
   },
@@ -24,6 +22,7 @@ export default async function TermsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations('docs');
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-6 py-16">
@@ -32,12 +31,12 @@ export default async function TermsPage({
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
       >
         <ChevronLeft className="w-4 h-4" />
-        Documentation
+        {t('title')}
       </Link>
 
-      <h1 className="text-3xl md:text-4xl font-bold mb-4">Terms of Use</h1>
+      <h1 className="text-3xl md:text-4xl font-bold mb-4">{t('terms.title')}</h1>
       <p className="text-muted-foreground mb-12 max-w-2xl">
-        개인정보 처리방침 및 앱 사용 범위를 확인할 수 있습니다.
+        {t('terms.intro')}
       </p>
 
       <div className="grid gap-4">
@@ -52,9 +51,9 @@ export default async function TermsPage({
             </div>
             <div>
               <h2 className="font-semibold text-foreground group-hover:text-accent transition-colors">
-                {page.title}
+                {t(`terms.${page.key}.title`)}
               </h2>
-              <p className="text-sm text-muted-foreground">{page.description}</p>
+              <p className="text-sm text-muted-foreground">{t(`terms.${page.key}.description`)}</p>
             </div>
           </Link>
         ))}
