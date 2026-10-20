@@ -17,7 +17,7 @@ packs' location as an argument; results identify a pack by an id and a fingerpri
 | `run-web.mjs` | The web parser over every pack folder: `<out>/web/<id>.json`. |
 | `compare.mjs` | Joins `android/`, `ios/` and `web/` results: same, different (which part, which platform) or failed, per pack. |
 | `packs.mjs` | Pack folders: listing, fingerprint (the corpus formula over every file), file and line counts. |
-| `tools.test.mjs` | Tests of these tools (`pnpm test`). |
+| `tools.test.mjs`, `run-web.test.mjs` | Tests of these tools, including direct-parser agreement (`pnpm test`). |
 
 The app runners live with the conformance harness of each app:
 `unipad-android` `app/src/test/java/com/kimjisub/launchpad/unipack/conformance/RealPackResultsTest.kt` and
@@ -68,6 +68,13 @@ grid, chain count and `squareButton`; keySound entries and the pads that have th
 and events; autoPlay commands by kind; error counts by kind; and a short hash of each part. From the
 pack itself, the same for every platform: file count, bytes, non-blank keySound and autoPlay lines,
 keyLED and sound file counts. Lines a parser skipped are the non-blank lines minus the entries it kept.
+
+The web runner's in-memory archive preserves empty directories as well as files. An empty `keyLED/`
+is different from an absent LED folder to the product parser. Folder fingerprints use the corpus's
+file formula plus each empty directory's relative path (ending in `/`) and zero bytes. Parent folders
+are implied by those paths and file paths. File counts and byte totals still count only files. Existing
+fingerprints stay the same for packs without empty directories; regenerate comparison reports to
+identify inputs that do contain them. The shared synthetic corpus and its fingerprint formula are unchanged.
 
 `stages.json` records, per store pack: the list entry, the server's HEAD status, size and ETag, whether
 the kept copy was reused or downloaded, and the unzip (files, single top folders unwrapped as the apps'

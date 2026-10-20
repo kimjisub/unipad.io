@@ -11,13 +11,16 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { parseOrRefuse, parseResult } from '../../../src/lib/unipack/conformanceHarness.ts';
-import { listPacks, onlyIds, packFiles, parseArgs } from './packs.mjs';
+import { listPacks, onlyIds, packEntries, parseArgs } from './packs.mjs';
 
 const PLATFORM = 'web';
 
 async function zipFolder(root) {
   const zip = new JSZip();
-  for (const file of packFiles(root)) zip.file(file.path, readFileSync(file.full));
+  for (const entry of packEntries(root)) {
+    if (entry.directory) zip.folder(entry.path);
+    else zip.file(entry.path, readFileSync(entry.full));
+  }
   return zip.generateAsync({ type: 'arraybuffer' });
 }
 

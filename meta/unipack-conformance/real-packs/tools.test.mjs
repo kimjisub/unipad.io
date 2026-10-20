@@ -44,6 +44,36 @@ test('a pack folder hashes to the corpus fingerprint of the same files', () => {
   }
 });
 
+test('empty directories change the input fingerprint without becoming files', () => {
+  const dir = scratch();
+  try {
+    writeFileSync(join(dir, 'info'), 'title=x');
+    const absent = folderFingerprint(dir);
+    mkdirSync(join(dir, 'keyLED'));
+    const empty = folderFingerprint(dir);
+    assert.notEqual(empty, absent);
+    assert.deepEqual(describePack(dir), { files: 1, bytes: 7, keySoundLines: null, autoPlayLines: null, keyLedFiles: 0, soundFiles: 0 });
+    rmSync(join(dir, 'keyLED'), { recursive: true });
+    mkdirSync(join(dir, 'sounds'));
+    assert.notEqual(folderFingerprint(dir), empty);
+    assert.notEqual(folderFingerprint(dir), absent);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('nested empty directories contribute their full paths to the input fingerprint', () => {
+  const dir = scratch();
+  try {
+    mkdirSync(join(dir, 'keyLED', 'nested'), { recursive: true });
+    const nested = folderFingerprint(dir);
+    rmSync(join(dir, 'keyLED', 'nested'), { recursive: true });
+    assert.notEqual(folderFingerprint(dir), nested);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('three identical results are the same', () => {
   assert.deepEqual(verdictOf(three(PACK)), { verdict: 'same', differing: [] });
 });

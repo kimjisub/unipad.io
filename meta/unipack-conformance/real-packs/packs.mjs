@@ -20,11 +20,15 @@ export function listPacks(dir, only = null) {
   return all.filter((p) => wanted.has(p.id));
 }
 
-/** Every file under `root` as `{ path, full }`, `path` relative with forward slashes. */
-export function packFiles(root) {
+/** Files and empty directories, with relative forward-slash paths and a trailing slash for directories. */
+export function packEntries(root) {
   const out = [];
   const walk = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    if (entries.length === 0 && dir !== root) {
+      out.push({ path: `${relative(root, dir).split(sep).join('/')}/`, full: dir, directory: true });
+    }
+    for (const entry of entries) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) out.push({ path: relative(root, full).split(sep).join('/'), full });
@@ -34,9 +38,14 @@ export function packFiles(root) {
   return out;
 }
 
-/** The corpus input fingerprint (lib.mjs) of a pack folder: the same formula a case's files hash with. */
+/** Every file under `root` as `{ path, full }`, `path` relative with forward slashes. */
+export function packFiles(root) {
+  return packEntries(root).filter((entry) => !entry.directory);
+}
+
+/** The corpus formula over files plus empty directory paths with zero bytes. */
 export function folderFingerprint(root) {
-  return fingerprintOf(packFiles(root), (f) => readFileSync(f.full));
+  return fingerprintOf(packEntries(root), (entry) => entry.directory ? Buffer.alloc(0) : readFileSync(entry.full));
 }
 
 /** The file at the pack root whose name matches `name` regardless of case, as the parsers look it up. */
