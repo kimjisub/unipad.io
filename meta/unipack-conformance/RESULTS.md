@@ -1,24 +1,61 @@
-# Results (2026-10-18, Korea time)
+# Results (reported 2026-10-19, Korea time)
 
-Corpus `844fa232eafa…` (sha256 of `corpus.json`), 137 cases, run on unipad-android 9e00b363 and
-unipad-ios ead429bc (the merge commits of the app pull requests that copy this corpus, the commits in
-`copies.json`) and on this unipad.io branch, all on October 18. Regenerate this table with `report.mjs` (README, "Running
-it"). It describes these 137 cases only; it does not show that every UniPack is compatible, and 100%
-compatibility is not known.
+Corpus `aae2cc7215f5afdfb2220c1f160ec96edc058bd111f45d1a499e759c1c3c2f56` (sha256 of `corpus.json`), 172 cases. These results were recorded by tests that assert the expected outcomes
+on committed checkouts: unipad-android `b27171e7386f88b111f14956345fd97343a2f7c7`, unipad-ios
+`f24c22ad099995e14f80bfe35112d657808c4e98` and unipad.io `5227ad7f56c3b9074f35ec0e41b057f2ee1c714d`.
+Each commit existed before its run started. The app results were recorded on the pull request
+commits above, before the pull requests merged. `copies.json` now pins their main-branch merge
+commits: Android `45bc80c203429b8b327e6344bcde4fcdd927970e` and iOS
+`7110eb27702cb2bd002db07d23ea7fdf95418e46`. Both merge commits contain byte-identical corpus
+copies to the tested commits and this canonical directory (`sync.mjs --check`).
+The web result was recorded after merging default-branch commit `f0c3d6056d67cf3628e1590701414981b7225bb1`
+with the integer cases. A later merge of `acda043` and the copy-pin and documentation updates
+leave the canonical corpus unchanged; the table retains the recorded results and timestamps above.
+
+The table comes from `report.mjs` on these new result files (README, "Running it"). It describes these
+172 cases only; it does not show that every UniPack is compatible, and 100% compatibility is not known.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
-| Android | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:41:48 |
-| iOS | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:50:42 |
-| Web | 137 | 0 | 0 | 0 | 0 | 2026-10-17 19:33:22 |
+| Android | 170 | 2 | 0 | 0 | 0 | 2026-10-18T23:28:06.493445Z |
+| iOS | 172 | 0 | 0 | 0 | 0 | 2026-10-19T01:40:45Z |
+| Web | 172 | 0 | 0 | 0 | 0 | 2026-10-18T23:22:48.414Z |
 
-Pass on all three platforms: 137 of 137, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
-the 17) and 1 on a decision basis (Android 1, iOS 1, web 1 of the 1).
+Pass on all three platforms: 170 of 172, 17 of them on an agreed basis (Android 17, iOS 17, web 17 of
+the 17) and 33 on a decision basis (Android 33, iOS 35, web 35 of the 35).
 
-- **No case fails, and no difference is pinned.** No case in `divergences.json` carries a pin.
-- **No case is unverified or undetermined.** The six exit and autoPlay cases pass on iOS from the
-  results its harness recorded. On iOS, leaving the play screen is observed up to the main screen's
-  clear call to the MIDI driver, not what a physical Launchpad receives.
+- **Two Android storage differences are pinned: KS-B08 and KL-BE10.** Subtracting 1 from the smallest
+  32-bit integer gives `-2147483649` on iOS and the web; Android keeps `-2147483648` in its 32-bit
+  fields. Both sound loop values play once; both LED coordinates and chains stay outside the pack.
+  The grammar does not define this stored value, and the user-visible result is the same.
+  The report counts the pins as failures, not passes; all other cases pass on all three platforms.
+- **No case is unverified or undetermined.** On iOS, leaving the play screen is observed up to the main
+  screen's clear call to the MIDI driver, not what a physical Launchpad receives.
+- **The app pull requests are merged and their copies are pinned.** The table was regenerated from
+  the retained result files above; it does not claim new app test runs on the merge commits.
+
+## Changes after the 32-bit integer cases
+
+The default-branch corpus before the integer cases was `98d8f5fb401f…` (138 cases). This update adds 34 cases covering
+numbers outside the signed 32-bit range and its two ends in keySound, keyLED file names and events,
+and autoPlay. A number outside the range is a format error; only its line or file is skipped and the
+next valid one is kept. A keyLED file name uses 240 digits in place of 400 to fit the 255-byte name
+limit. The two ends remain numbers, with the existing range checks and storage rules for each field.
+
+The earlier integer-case corpus was `ba80283d9b32…` (171 cases). All its cases are unchanged; the
+172-case corpus also retains RUN-RP-005 from the default branch, which checks that turning autoPlay
+off stops its endless sound while a sound held by the person keeps playing. All 138 default-branch
+cases are unchanged too.
+
+- Android no longer wraps the smallest 32-bit integer to `2147483647` when storing a sound loop or LED
+  coordinate or chain 0-based. Its two remaining storage differences are pinned as described above.
+- The corpus does not cover the two ends in a keySound wormhole. Android and the web warn and clamp a
+  wormhole outside the pack, whereas iOS keeps it without warning. Although the web now agrees with
+  Android, iOS still differs; those end values remain excluded rather than choosing a new common
+  expectation here. Android's own range test checks the wraparound fix there. Other missing positions
+  and spellings are listed in the README.
+- All three platform result files were written by new runs on the committed checkouts above, not
+  reused from the earlier 171-case corpus.
 
 ## Changes after the Android `info` fix
 
