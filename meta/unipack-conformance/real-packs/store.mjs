@@ -114,19 +114,18 @@ export function sameAsServer(copySize, recorded, served) {
 }
 
 const READABLE = ['reused', 'downloaded', 'reused-unchecked'];
-const REUSED = ['reused', 'reused-unchecked'];
 const PLATFORMS = ['android', 'ios', 'web'];
 
 /**
  * One list entry through every step. `heads` (the archive's record of what the server served) is
  * updated only when the kept copy is that file: reused, or downloaded just now. The pack folder of an
  * earlier run is removed first, so a pack not unzipped this time leaves nothing for the runners to read;
- * its earlier results are removed too unless the same kept copy was unzipped again, so a comparison
- * never reads results of another version of the pack.
+ * its earlier results are always removed too. Reusing an archive does not establish that earlier
+ * results for this list id came from that archive, so every prepared input needs fresh parser results.
  */
 export async function bringPack(options) {
   const record = await bringPackFolder(options);
-  if (record.copy.action !== 'invalid-key' && !(REUSED.includes(record.copy.action) && record.unzip?.ok === true)) {
+  if (record.copy.action !== 'invalid-key') {
     for (const platform of PLATFORMS) rmSync(join(options.work, 'results', platform, `${record.id}.json`), { force: true });
   }
   return record;

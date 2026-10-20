@@ -227,7 +227,7 @@ test('a broken result file fails that pack only, and a pack without a title stil
   }
 });
 
-test('results of an earlier version of a pack are removed when its copy is not reused', async () => {
+test('results of an earlier version of a pack are removed whenever input is prepared', async () => {
   const dir = scratch();
   try {
     const archive = join(dir, 'archive');
@@ -247,10 +247,12 @@ test('results of an earlier version of a pack are removed when its copy is not r
 
     writeResults();
     assert.equal((await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: same })).copy.action, 'reused');
-    assert.ok(['android', 'ios', 'web'].every((p) => existsSync(resultOf(p))));
+    assert.ok(['android', 'ios', 'web'].every((p) => !existsSync(resultOf(p))));
+    writeResults();
     assert.equal((await bringPack({ key: '0001', item, archive, work: dir, heads: {}, offline: true })).copy.action, 'reused-unchecked');
-    assert.ok(['android', 'ios', 'web'].every((p) => existsSync(resultOf(p))));
+    assert.ok(['android', 'ios', 'web'].every((p) => !existsSync(resultOf(p))));
 
+    writeResults();
     const downloaded = await bringPack({ key: '0001', item, archive, work: dir, heads: {}, net: changed });
     assert.equal(downloaded.copy.action, 'downloaded');
     assert.equal(downloaded.unzip.ok, true);
@@ -285,3 +287,59 @@ test('a list key that is not a plain folder name removes nothing', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const offline of [false, true]) {
+  test(`a list id switched to a different kept copy cannot reuse earlier results (${offline ? 'offline' : 'online'})`, async () => {
+    const dir = scratch();
+    try {
+      const archive = join(dir, 'archive');
+      const results = join(dir, 'results');
+      const packs = join(dir, 'packs');
+      mkdirSync(archive);
+      const sizes = {};
+      for (const [code, width] of [['first', 8], ['second', 4]]) {
+        const zip = new JSZip();
+        zip.file('info', `title=x\nbuttonX=${width}`);
+        const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+        writeFileSync(join(archive, `${code}.zip`), bytes);
+        sizes[code] = bytes.length;
+      }
+      const heads = {};
+      const prepare = (code) => bringPack({
+        key: '0001', item: { URL: `https://example.invalid/${code}.zip`, code },
+        archive, work: dir, heads, offline,
+        net: {
+          head: async () => ({ status: 200, size: sizes[code], etag: `"${code}"` }),
+          download: async () => { throw new Error('downloaded a kept copy'); },
+        },
+      });
+      const first = await prepare('first');
+      assert.equal(first.unzip.ok, true);
+      assert.match(readFileSync(join(packs, 'store_0001', 'info'), 'utf8'), /buttonX=8/);
+      for (const platform of ['android', 'ios', 'web']) {
+        mkdirSync(join(results, platform), { recursive: true });
+        for (const id of ['store_0001', 'store_0002']) {
+          writeFileSync(join(results, platform, `${id}.json`), JSON.stringify({ platform, id, actual: PACK }));
+        }
+      }
+      const [before] = comparePacks({ resultsDir: results, ids: ['store_0001'], packsDir: packs });
+      assert.equal(before.verdict, 'same');
+      assert.equal(before.summary.web.info.buttonX, 8);
+
+      const second = await prepare('second');
+      assert.equal(second.copy.action, offline ? 'reused-unchecked' : 'reused');
+      assert.equal(second.unzip.ok, true);
+      assert.match(readFileSync(join(packs, 'store_0001', 'info'), 'utf8'), /buttonX=4/);
+      const [after] = comparePacks({ resultsDir: results, ids: ['store_0001'], packsDir: packs, stages: { packs: [second] } });
+      assert.notEqual(after.fingerprint, before.fingerprint);
+      assert.equal(after.verdict, 'failed');
+      assert.deepEqual(after.failed, { android: 'no result', ios: 'no result', web: 'no result' });
+      for (const platform of ['android', 'ios', 'web']) {
+        assert.equal(existsSync(join(results, platform, 'store_0001.json')), false);
+        assert.equal(existsSync(join(results, platform, 'store_0002.json')), true);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

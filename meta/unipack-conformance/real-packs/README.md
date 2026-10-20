@@ -81,10 +81,11 @@ What a run trusts from an earlier one:
   next run tries again instead of taking the old copy for the new file.
 - `<work>/packs/<id>` is removed before each pack is brought in. A pack that is not served, not
   downloaded or not unzipped in this run has no folder, so the runners cannot read an earlier one.
-- `<work>/results/<platform>/<id>.json` of an earlier run is removed too, unless the same kept copy was
-  unzipped again (`reused`). A pack downloaded anew has no results until the runners read it, so a
-  comparison never mixes results of two versions of a pack. Keep the results under `<work>/results` for
-  this to hold.
+- `<work>/results/<platform>/<id>.json` of an earlier run is always removed for each prepared list id,
+  including a reused archive in online or offline mode. A list id can point to a different kept archive;
+  archive reuse alone cannot identify the input behind earlier parser results. Rerun all three parsers
+  for the selected ids after preparing them. Results for unselected ids stay untouched. Keep results
+  under `<work>/results` for this to hold.
 - A list key or code that is not a plain name (`[A-Za-z0-9_][A-Za-z0-9_.-]*`) is recorded as
   `invalid-key` or `invalid-code` and never used as a path.
 - With `--stages`, `compare.mjs` lists every pack of that run and reports one that was not unzipped as
