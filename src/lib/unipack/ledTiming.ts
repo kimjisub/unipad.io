@@ -66,7 +66,7 @@ export function longestTimerSpan(ticks: readonly number[], from: number, to: num
  * - the same pad's next press, which ends the animation: its remaining steps never arrive, and if one of
  *   them had the LED lit the press turns it off first;
  * - the same pad's next press before the animation started, which does not end it: both animations play
- *   in full, side by side;
+ *   in full, side by side, but an off for the pad the other one already turned off sends nothing;
  * - autoplay's final redraw, which does not end it: the redraw arrives before the remaining steps.
  * Each such step must also have been overtaken in the record itself (`arrived` and `ticks` share one
  * clock, from the click that starts autoplay): the overtaking command arrived no earlier than its press or
@@ -130,25 +130,29 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
       : [got[j - 1]?.ms ?? -Infinity, causeMs - steps[0].ms];
     return gap <= OVERTAKE_MS || gap <= OVERTAKE_MS + longestTimerSpan(ticks, from, arrival.ms);
   };
-  /** Whether `group`'s animations, started in one tick, arrived from got[j] on: each in order and whole,
-   *  and since each tick plays them in the order of their presses, a step of an earlier press's animation
-   *  that follows a later one's arrives a tick later. */
-  const interleaved = (group: readonly (readonly LedCommand[])[], j: number): boolean => {
+  /** Whether `group`'s animations, started in one tick, arrived from got[j] on, followed by what `then`
+   *  explains from the index after them: each in order and whole, except that an off (0) the LED is
+   *  already off for sends nothing, as the animations share its owner. Each tick plays them in the order of
+   *  their presses, so a step of an earlier press's animation that follows a later one's arrives a tick
+   *  later. */
+  const interleaved = (group: readonly (readonly LedCommand[])[], j: number, then: (end: number) => boolean): boolean => {
     const tried = new Set<string>();
-    const merge = (sent: readonly number[], previous: number): boolean => {
-      if (sent.every((n, s) => n === group[s].length)) return true;
-      const key = `${sent.join(',')} ${previous}`;
+    const merge = (sent: readonly number[], p: number, previous: number): boolean => {
+      if (sent.every((n, s) => n === group[s].length)) return then(p);
+      const key = `${sent.join(',')} ${p} ${previous}`;
       if (tried.has(key)) return false;
       tried.add(key);
-      const p = j + sent.reduce((sum, n) => sum + n, 0);
       return group.some((steps, s) => {
         const step = steps[sent[s]];
-        if (!step || got[p]?.code !== step.code || got[p].ms < step.ms) return false;
+        if (!step) return false;
+        const after = sent.map((n, i) => (i === s ? n + 1 : n));
+        if (step.code === 0 && (got[p - 1]?.code ?? 0) === 0) return merge(after, p, previous);
+        if (got[p]?.code !== step.code || got[p].ms < step.ms) return false;
         if (s < previous && got[p].ms < got[p - 1].ms + NEXT_TICK_MS) return false;
-        return merge(sent.map((n, i) => (i === s ? n + 1 : n)), s);
+        return merge(after, p + 1, s);
       });
     };
-    return merge(group.map(() => 0), -1);
+    return merge(group.map(() => 0), j, -1);
   };
   // stepsFrom: the earliest the next animation step can arrive, after a cut.
   const visit = (r: number, j: number, cut: readonly number[], stepsFrom: number): boolean => {
@@ -194,8 +198,7 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
         if ((got[j]?.ms ?? -Infinity) < stepsFrom) break;
         if (!overtaken(commands, 0, j, runs[last - 1].commands[0].cutMs ?? Infinity)) break;
         const group = runs.slice(r, last + 1).map((run) => run.commands);
-        const length = group.reduce((sum, steps) => sum + steps.length, 0);
-        explained = interleaved(group, j) && visit(last + 1, j + length, cut, -Infinity);
+        explained = interleaved(group, j, (end) => visit(last + 1, end, cut, -Infinity));
       }
     }
     if (!explained) failed.add(key);

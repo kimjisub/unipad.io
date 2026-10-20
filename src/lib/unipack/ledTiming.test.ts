@@ -241,32 +241,51 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, got, ticks([284, 650])), true);
   });
 
+  /** Pad 0,0's third and fourth animations, started in one tick: in each of these ticks, this many steps of
+   *  the third, then this many of the fourth. */
+  const sideBySide = (want: LedCommand[], sent: [number, number, number][]) => {
+    const [third, fourth] = [want.slice(step(2, 0), step(3, 0)), want.slice(step(3, 0), step(4, 0))];
+    let [a, b] = [0, 0];
+    return sent.flatMap(([ms, fromThird, fromFourth]) => {
+      const steps = [...third.slice(a, a + fromThird), ...fourth.slice(b, b + fromFourth)];
+      [a, b] = [a + fromThird, b + fromFourth];
+      return steps.map((c) => ({ ...c, ms }));
+    });
+  };
+
   test('explains the recorded pad 2,6: two presses in one tick after a stall, their animations side by side', async () => {
     const want = await padTimeline();
-    const [first, second] = [want.slice(step(2, 0), step(3, 0)), want.slice(step(3, 0), step(4, 0))];
     // Another Chromium run stalled the page's timers from 2630.5 to 3244.4 ms, past pad 2,6's next press at
-    // 2945 ms. Its two animations then arrived in these ticks (less 2000 ms), each sending this many steps
-    // of the first animation, then of the second.
-    const sideBySide = (sent: [number, number, number][]) => {
-      let [a, b] = [0, 0];
-      return sent.flatMap(([ms, fromFirst, fromSecond]) => {
-        const steps = [...first.slice(a, a + fromFirst), ...second.slice(b, b + fromSecond)];
-        [a, b] = [a + fromFirst, b + fromSecond];
-        return steps.map((c) => ({ ...c, ms }));
-      });
-    };
+    // 2945 ms. Its two animations then arrived in these ticks (here less 2000 ms).
     const recorded: [number, number, number][] = [
       [1244.4, 1, 1], [1256.6, 12, 0], [1257, 0, 12], [1273.2, 16, 0], [1293.2, 0, 16], [1308.4, 11, 0], [1309.1, 0, 11],
     ];
-    const got = [...want.slice(0, step(2, 0)), ...sideBySide(recorded), ...later(want.slice(-2), 28.2)];
+    const got = [...want.slice(0, step(2, 0)), ...sideBySide(want, recorded), ...later(want.slice(-2), 28.2)];
     assert.equal(stallExplains(want, got, ticks([630.5, 1244.4])), true);
-    // Without a stall the first animation started before the next press, which would have ended it.
+    // Without a stall the third animation started before the next press, which would have ended it.
     assert.equal(stallExplains(want, got, ticks()), false);
     // A step missing, or two out of order, while they play side by side.
     assert.equal(stallExplains(want, got.filter((_, i) => i !== step(2, 20)), ticks([630.5, 1244.4])), false);
     const swapped = [...got];
     [swapped[step(2, 4)], swapped[step(2, 5)]] = [swapped[step(2, 5)], swapped[step(2, 4)]];
     assert.equal(stallExplains(want, swapped, ticks([630.5, 1244.4])), false);
+  });
+
+  test('explains the recorded pad 1,0: side by side, an off for a pad the other animation turned off sends nothing', async () => {
+    const want = await padTimeline();
+    // A run with the timers stalled past pad 1,0's next press (here less 1270 ms): the third animation's
+    // last step turned the pad off at 1112.5 ms, so the fourth's off right after it was not sent.
+    const recorded: [number, number, number][] = [
+      [1068.3, 1, 1], [1074.2, 5, 0], [1074.4, 0, 5], [1090.9, 17, 0], [1091.4, 0, 17], [1112.5, 17, 0], [1112.8, 0, 17],
+    ];
+    const played = sideBySide(want, recorded);
+    const unsent = played.findIndex((c) => c.ms === 1112.8);
+    assert.equal(played[unsent - 1].code, 0);
+    assert.equal(played[unsent].code, 0);
+    const got = [...want.slice(0, step(2, 0)), ...played.filter((_, i) => i !== unsent), ...want.slice(-2)];
+    assert.equal(stallExplains(want, got, ticks([600, 1068.3])), true);
+    // That off cannot arrive: the pad was already off.
+    assert.equal(stallExplains(want, [...want.slice(0, step(2, 0)), ...played, ...want.slice(-2)], ticks([600, 1068.3])), false);
   });
 
   test('does not explain a hole inside an animation that kept playing, even after a stall elsewhere', async () => {
