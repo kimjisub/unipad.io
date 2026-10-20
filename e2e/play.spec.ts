@@ -477,6 +477,53 @@ for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', 
   }
 }
 
+// Stock X and Mini MK3 share a grid; also exercise two genuinely different layouts.
+for (const [name, note] of [
+  ['Launchpad Mini MK3', 81],
+  ['Launchpad Mini', 0],
+  ['Launchpad Mini MK3 MINI MK3 (MIDI)', 64],
+] as const) {
+  for (const otherFirst of [false, true]) {
+    test(`Auto reads each input in its own layout: ${name} ${otherFirst ? 'before' : 'after'} X`, async ({ page }) => {
+      await skipWithoutWebMidi(page);
+      await page.addInitScript(([name, first]) => {
+        const request = navigator.requestMIDIAccess.bind(navigator);
+        Object.defineProperty(navigator, 'requestMIDIAccess', {
+          configurable: true,
+          value: async (options: MIDIOptions) => {
+            const access = await request(options);
+            const input = { id: 'other-input', name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null };
+            const inputs = access.inputs as unknown as Map<string, unknown>;
+            const listed = [...inputs];
+            inputs.clear();
+            for (const [id, port] of first ? [[input.id, input], ...listed] : [...listed, [input.id, input]]) inputs.set(id as string, port);
+            (window as unknown as { emitOther: (data: number[]) => void }).emitOther = data => {
+              if (!input.onmidimessage) throw new Error('No second input listener attached');
+              input.onmidimessage({ data: new Uint8Array(data) });
+            };
+            return access;
+          },
+        });
+      }, [name, otherFirst] as const);
+      await loadPack(page);
+      await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+      for (const source of ['X', 'other'] as const) {
+        const send = (status: number, velocity: number) => page.evaluate(({ source, status, velocity, note }) => {
+          if (source === 'X') window.browserProbe.midi.emit([status, 81, velocity]);
+          else (window as unknown as { emitOther: (data: number[]) => void }).emitOther([status, note, velocity]);
+        }, { source, status, velocity, note });
+        await send(0x90, 127);
+        await test.info().attach(`${source}-pressed`, { body: await page.screenshot(), contentType: 'image/png' });
+        await expect(pressed(page, '0,0')).toBeVisible();
+        await expect.poll(() => starts(page)).toBe(source === 'X' ? 1 : 2);
+        await send(0x80, 0);
+        await expect(pressed(page, '0,0')).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops.length)).toBe(source === 'X' ? 1 : 2);
+      }
+    });
+  }
+}
+
 // The basic pack with two chains, where its two sound pads (rows 1 and 2 of column 1) light round
 // button 9 (chain 1's button) and round button 10 (chain 2's button), each for a second.
 async function roundLightPack(chains = 2, keyLeds: Record<string, string> = {
