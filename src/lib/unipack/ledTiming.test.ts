@@ -173,18 +173,22 @@ describe('summaries', () => {
 describe('denseTimingVerdict', () => {
   const result = { reordered: 0, missing: 0, extra: 0 };
   test('passes a complete ordered run whatever the stall', () => {
-    assert.equal(denseTimingVerdict(result, false), 'pass');
-    assert.equal(denseTimingVerdict(result, true), 'pass');
+    assert.equal(denseTimingVerdict(result, 0, 275, false), 'pass');
+    assert.equal(denseTimingVerdict(result, 376.3, 275, true), 'pass');
   });
   test('fails reorders and missing commands that no stall explains', () => {
-    assert.equal(denseTimingVerdict({ ...result, missing: 673 }, false), 'fail');
-    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, false), 'fail');
+    assert.equal(denseTimingVerdict({ ...result, missing: 673 }, 376.3, 275, false), 'fail');
+    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 376.3, 275, false), 'fail');
   });
   test('leaves differences a stall explains inconclusive', () => {
-    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, true), 'inconclusive');
+    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, 376.3, 275, true), 'inconclusive');
+  });
+  test('fails differences after a stall no longer than the fixture allows, whatever explains them', () => {
+    assert.equal(denseTimingVerdict({ ...result, missing: 40 }, 275, 275, true), 'fail');
+    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 12, 275, true), 'fail');
   });
   test('still fails extra commands regardless of timer stalls', () => {
-    assert.equal(denseTimingVerdict({ reordered: 4, missing: 10, extra: 1 }, true), 'fail');
+    assert.equal(denseTimingVerdict({ reordered: 4, missing: 10, extra: 1 }, 376.3, 275, true), 'fail');
   });
 });
 
@@ -244,19 +248,54 @@ describe('stallExplains', () => {
     // timers stalled only from 500 to 900 ms, which delayed the third animation.
     const got = [...want.slice(0, step(1, 0)), ...later(want.slice(step(2, 0), step(3, 0)), 274), ...later(want.slice(step(3, 0)), 8)];
     assert.equal(stallExplains(want, got, ticks([500, 900])), false);
-    assert.equal(denseTimingVerdict(compareLedCommands(want, got), stallExplains(want, got, ticks([500, 900]))), 'fail');
+    assert.equal(denseTimingVerdict(compareLedCommands(want, got), 400, 275, stallExplains(want, got, ticks([500, 900]))), 'fail');
     // A stall from when it was due until the next press could have held it back that long.
     assert.equal(stallExplains(want, got, ticks([314, 900])), true);
   });
 
-  test('times presses from when autoplay started, by its first redraw', async () => {
+  test('times presses and steps by one clock, from the redraw autoplay starts with', async () => {
     const want = await padTimeline();
-    // Autoplay started 200 ms after the click: its first tick redrew the pad then, and every press came
+    // Autoplay started 200 ms after the click, with the redraw that switches the mode, and every press came
     // 200 ms late. The second animation, due from 515 ms by autoplay's clock, never arrived.
-    const got = [want[0], { ...want[1], ms: 200 }, ...later(want.slice(step(0, 0), step(1, 0)), 200),
+    const got = [...later(want.slice(0, step(1, 0)), 200),
       ...later(want.slice(step(2, 0), step(3, 0)), 474), ...later(want.slice(step(3, 0)), 208)];
     assert.equal(stallExplains(want, got, ticks([514, 1100])), true);
     assert.equal(stallExplains(want, got, ticks([700, 1100])), false);
+    // Nothing arrives before autoplay's clock says it is due.
+    assert.equal(stallExplains(want, [...got.slice(0, step(0, 1)), { ...got[step(0, 1)], ms: 200.5 }, ...got.slice(step(0, 2))], ticks([514, 1100])), false);
+  });
+
+  test('finds when autoplay started between the redraw switching the mode and the next timer tick', async () => {
+    const want = await padTimeline();
+    // The recorded pad 0,0, with the timers also stalled from the mode switch at 0.5 ms until autoplay's first
+    // tick at 100 ms: only autoplay starting about then has the second animation due within the later stall.
+    const recorded = [...want.slice(0, step(1, 0)), { ...want[step(1, 0)], ms: 660.7 }, off(666.4), ...afterCut(want)];
+    const got = [{ ...recorded[0], ms: 0.5 }, ...later(recorded.slice(1), 100)];
+    const stalled = ticks().filter((t) => !(t > 0 && t < 100) && !(t > 384 && t < 760));
+    assert.equal(stallExplains(want, got, stalled), true);
+    // A timer tick at 48 ms shows autoplay had started by then, with the second animation due while timers ran.
+    assert.equal(stallExplains(want, got, [...stalled.slice(0, 1), 48, ...stalled.slice(1)]), false);
+  });
+
+  test('does not explain a whole animation missing by shifting its steps but not the press that cut it', async () => {
+    const want = await padTimeline();
+    // Only the redraw autoplay's first tick sends came late; the second animation never arrived. Whichever
+    // the clock, it was due over 300 ms before the next press while the timers ran, or stalled only from 512
+    // to 640 ms.
+    for (const [lag, stall] of [[0, undefined], [200, [512, 640]], [400, undefined]] as const) {
+      const got = [want[0], ...later([...want.slice(1, step(1, 0)), ...want.slice(step(2, 0))], lag)];
+      const timerTicks = Array.from({ length: 700 }, (_, i) => i * 4).filter((t) => !stall || t <= stall[0] || t >= stall[1]);
+      assert.equal(stallExplains(want, got, timerTicks), false, `autoplay's first tick ${lag} ms late`);
+    }
+  });
+
+  test('does not carry one late step over to the next, as LedRunner keeps an animation on schedule', async () => {
+    const want = await padTimeline();
+    // The first animation's steps, a millisecond apart, came 9 ms apart while the timers ran every 4 ms, and
+    // its last four never arrived: each step is late by what LedRunner's schedule says, not by one gap.
+    const got = [...want.slice(0, 2), ...want.slice(step(0, 0), step(0, 36)).map((c, i) => ({ ...c, ms: i * 9 })),
+      ...later(want.slice(step(1, 0), step(2, 0)), 6), ...want.slice(step(2, 0))];
+    assert.equal(stallExplains(want, got, Array.from({ length: 700 }, (_, i) => i * 4)), false);
   });
 
   test('does not explain a cut long after the remaining steps were due, by the stall before them', async () => {

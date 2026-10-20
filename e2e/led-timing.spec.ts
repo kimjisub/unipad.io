@@ -335,7 +335,7 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
   // A timer stall longer than DENSE_SLACK_MS can delay an animation until the pad's next press cuts it
   // off, plays beside it (both presses in one tick) or the final redraw overtakes its last steps; none is
   // a player regression. Any other difference is.
-  const verdict = denseTimingVerdict(result, stallExplains(timeline.commands.filter(isPad), run.sent, run.ticks));
+  const verdict = denseTimingVerdict(result, run.timerSpanMs, DENSE_SLACK_MS, stallExplains(timeline.commands.filter(isPad), run.sent, run.ticks));
   // Every command that arrived and every timer tick go in the record when they differ, so each
   // difference can be traced.
   const traced = verdict !== 'pass';
@@ -347,7 +347,8 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
 
   test.skip(verdict === 'inconclusive',
     `Inconclusive: ${result.reordered} reordered and ${result.missing} missing commands, all of them late animation steps ` +
-    `that the same pad's next press cut off or played beside, or the final redraw overtook (page timers stalled for up to ${ms(run.timerSpanMs)} ms)`);
+    `that the same pad's next press cut off or played beside, or the final redraw overtook, after the page's timers stalled for ` +
+    `${ms(run.timerSpanMs)} ms, more than the ${DENSE_SLACK_MS} ms minimum gap before a pad's next press or the final redraw`);
   expect(result.reordered, text).toBe(0);
   expect(result.extra, text).toBe(0);
   expect(result.missing, text).toBe(0);
