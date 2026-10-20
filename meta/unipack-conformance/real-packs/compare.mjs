@@ -6,15 +6,16 @@
 //
 // --results holds android/, ios/ and web/ as the runners write them. Each pack is "same" when the three
 // results are identical, "different" (naming the parts that differ) when all three read it but
-// disagree, and "failed" when a platform has no result or its runner threw. With --stages every pack of
-// that run is a row, and one it did not unzip is "not-read" (its step says why). The printed table and the
-// JSON carry the pack id, its fingerprint and counts only: no title, producer or file content.
+// disagree, and "failed" when a platform has no usable result or its runner threw. With --stages every
+// pack of that run is a row, and one it did not unzip is "not-read" (its step says why). The printed
+// table and the JSON carry the pack id, its fingerprint and counts only: no title, producer or file
+// content.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { describePack, folderFingerprint, listPacks, onlyIds, parseArgs } from './packs.mjs';
+import { describePack, folderFingerprint, listPacks, onlyIds, packEntries, parseArgs } from './packs.mjs';
 
 export const PLATFORMS = ['android', 'ios', 'web'];
 /** The parts of a normalized parse result compared one by one, in the order they are reported. */
@@ -81,9 +82,15 @@ function readResult(resultsDir, platform, id) {
   } catch (error) {
     return { error: `unreadable result: ${error.message}` };
   }
+  if (!isObject(record)) return { error: 'the result is not an object' };
   if (record.platform !== platform || record.id !== id) return { error: `the file says ${record.platform}/${record.id}` };
-  return record.error !== undefined ? { error: record.error.split('\n')[0] } : { actual: record.actual };
+  if (record.error !== undefined) {
+    return { error: typeof record.error === 'string' ? record.error.split('\n')[0] : `the runner failed with error ${JSON.stringify(record.error)}` };
+  }
+  return isObject(record.actual) ? { actual: record.actual } : { error: 'the result has no actual' };
 }
+
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** The verdict for one pack from the three results: same, different (with the parts) or failed. */
 export function verdictOf(results) {
@@ -113,8 +120,9 @@ export function comparePacks({ resultsDir, ids, packsDir = null, stages = null }
     const row = { id, ...verdictOf(results) };
     if (packsDir) {
       const root = join(packsDir, id);
-      row.fingerprint = folderFingerprint(root);
-      row.pack = describePack(root);
+      const entries = packEntries(root);
+      row.fingerprint = folderFingerprint(root, entries);
+      row.pack = describePack(root, entries);
     }
     if (stageRow) row.stages = stageRow;
     row.summary = Object.fromEntries(PLATFORMS.map((p) => [p, results[p].actual ? summarize(results[p].actual) : null]));
@@ -131,14 +139,23 @@ function idsIn(resultsDir) {
   return [...ids].sort();
 }
 
+/** The ids to compare: the run's packs with `stages`, else the pack folders, else what has results. */
+export function idsToCompare({ resultsDir, only = null, packsDir = null, stages = null }) {
+  if (stages) {
+    const all = stages.packs.map((p) => p.id);
+    const unknown = (only ?? []).filter((id) => !all.includes(id));
+    if (unknown.length > 0) throw new Error(`not in the stages: ${unknown.join(', ')}`);
+    return only ? all.filter((id) => only.includes(id)) : all;
+  }
+  return packsDir ? listPacks(packsDir, only).map((p) => p.id) : (only ?? idsIn(resultsDir));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (typeof args.results !== 'string') throw new Error('usage: compare.mjs --results <dir> [--packs <dir>] [--stages <file>] [--only <ids>] [--json <file>]');
-  const only = onlyIds(args);
   const packsDir = typeof args.packs === 'string' ? args.packs : null;
   const stages = typeof args.stages === 'string' ? JSON.parse(readFileSync(args.stages, 'utf8')) : null;
-  const ids = stages ? stages.packs.map((p) => p.id).filter((id) => !only || only.includes(id))
-    : packsDir ? listPacks(packsDir, only).map((p) => p.id) : (only ?? idsIn(args.results));
+  const ids = idsToCompare({ resultsDir: args.results, only: onlyIds(args), packsDir, stages });
   const rows = comparePacks({ resultsDir: args.results, ids, packsDir, stages });
 
   const count = (v) => rows.filter((r) => r.verdict === v).length;
