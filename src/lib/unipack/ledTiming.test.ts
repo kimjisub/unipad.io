@@ -180,8 +180,8 @@ describe('denseTimingVerdict', () => {
     assert.equal(denseTimingVerdict({ ...result, missing: 673 }, 376.3, 275, false), 'fail');
     assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 376.3, 275, false), 'fail');
   });
-  test('leaves differences a stall explains inconclusive', () => {
-    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, 376.3, 275, true), 'inconclusive');
+  test('fails missing commands even when a stall explains the old truncation', () => {
+    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, 376.3, 275, true), 'fail');
   });
   test('fails differences after a stall no longer than the fixture allows, whatever explains them', () => {
     assert.equal(denseTimingVerdict({ ...result, missing: 40 }, 275, 275, true), 'fail');
@@ -225,10 +225,10 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, later(want, 100), ticks()), true);
   });
 
-  test('explains the recorded pad 0,0: a late animation the next press cut off while it had the pad lit', async () => {
+  test('rejects the old truncation or interleaving recorded on pad 0,0: a late animation the next press cut off while it had the pad lit', async () => {
     const want = await padTimeline();
     const got = [...want.slice(0, step(1, 0)), { ...want[step(1, 0)], ms: 660.7 }, off(666.4), ...afterCut(want)];
-    assert.equal(stallExplains(want, got, ticks([284, 660])), true);
+    assert.equal(stallExplains(want, got, ticks([284, 660])), false);
     // Without the off the press sends, or with it in the tick of the last step, the cut is not what LedRunner does.
     assert.equal(stallExplains(want, got.filter((c) => c.ms !== 666.4), ticks([284, 660])), false);
     assert.equal(stallExplains(want, got.map((c) => (c.ms === 666.4 ? { ...c, ms: 660.7 } : c)), ticks([284, 660])), false);
@@ -250,29 +250,29 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, got, ticks([500, 900])), false);
     assert.equal(denseTimingVerdict(compareLedCommands(want, got), 400, 275, stallExplains(want, got, ticks([500, 900]))), 'fail');
     // A stall from when it was due until the next press could have held it back that long.
-    assert.equal(stallExplains(want, got, ticks([314, 900])), true);
+    assert.equal(stallExplains(want, got, ticks([314, 900])), false);
   });
 
-  test('times presses and steps by one clock, from the redraw autoplay starts with', async () => {
+  test('rejects old cuts even when all presses share the correct autoplay clock', async () => {
     const want = await padTimeline();
     // Autoplay started 200 ms after the click, with the redraw that switches the mode, and every press came
     // 200 ms late. The second animation, due from 515 ms by autoplay's clock, never arrived.
     const got = [...later(want.slice(0, step(1, 0)), 200),
       ...later(want.slice(step(2, 0), step(3, 0)), 474), ...later(want.slice(step(3, 0)), 208)];
-    assert.equal(stallExplains(want, got, ticks([514, 1100])), true);
+    assert.equal(stallExplains(want, got, ticks([514, 1100])), false);
     assert.equal(stallExplains(want, got, ticks([700, 1100])), false);
     // Nothing arrives before autoplay's clock says it is due.
     assert.equal(stallExplains(want, [...got.slice(0, step(0, 1)), { ...got[step(0, 1)], ms: 200.5 }, ...got.slice(step(0, 2))], ticks([514, 1100])), false);
   });
 
-  test('finds when autoplay started between the redraw switching the mode and the next timer tick', async () => {
+  test('rejects old cuts even when autoplay started between a redraw and a timer tick', async () => {
     const want = await padTimeline();
     // The recorded pad 0,0, with the timers also stalled from the mode switch at 0.5 ms until autoplay's first
     // tick at 100 ms: only autoplay starting about then has the second animation due within the later stall.
     const recorded = [...want.slice(0, step(1, 0)), { ...want[step(1, 0)], ms: 660.7 }, off(666.4), ...afterCut(want)];
     const got = [{ ...recorded[0], ms: 0.5 }, ...later(recorded.slice(1), 100)];
     const stalled = ticks().filter((t) => !(t > 0 && t < 100) && !(t > 384 && t < 760));
-    assert.equal(stallExplains(want, got, stalled), true);
+    assert.equal(stallExplains(want, got, stalled), false);
     // A timer tick at 48 ms shows autoplay had started by then, with the second animation due while timers ran.
     assert.equal(stallExplains(want, got, [...stalled.slice(0, 1), 48, ...stalled.slice(1)]), false);
   });
@@ -304,7 +304,7 @@ describe('stallExplains', () => {
     // 300 ms before the off.
     const got = [...want.slice(0, step(1, 0)), { ...want[step(1, 0)], ms: 660.7 }, off(990), ...later(want.slice(step(2, 0)), 400)];
     assert.equal(stallExplains(want, got, ticks([284, 660])), false);
-    assert.equal(stallExplains(want, got, ticks([284, 990])), true);
+    assert.equal(stallExplains(want, got, ticks([284, 990])), false);
   });
 
   test('does not explain an animation that started late with no stall', async () => {
@@ -314,10 +314,10 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, got, ticks([400, 660])), false);
   });
 
-  test('explains the recorded pad 0,7: a late animation cut off between passes, with nothing lit to turn off', async () => {
+  test('rejects the old truncation or interleaving recorded on pad 0,7: a late animation cut off between passes, with nothing lit to turn off', async () => {
     const want = await padTimeline();
     const got = [...want.slice(0, step(1, 0)), ...later(want.slice(step(1, 0), step(1, 8)), 335.1), ...afterCut(want)];
-    assert.equal(stallExplains(want, got, ticks([284, 650])), true);
+    assert.equal(stallExplains(want, got, ticks([284, 650])), false);
   });
 
   /** Pad 0,0's third and fourth animations, started in one tick: in each of these ticks, this many steps of
@@ -332,7 +332,7 @@ describe('stallExplains', () => {
     });
   };
 
-  test('explains the recorded pad 2,6: two presses in one tick after a stall, their animations side by side', async () => {
+  test('rejects the old truncation or interleaving recorded on pad 2,6: two presses in one tick after a stall, their animations side by side', async () => {
     const want = await padTimeline();
     // Another Chromium run stalled the page's timers from 2630.5 to 3244.4 ms, past pad 2,6's next press at
     // 2945 ms. Its two animations then arrived in these ticks (here less 2000 ms).
@@ -340,7 +340,7 @@ describe('stallExplains', () => {
       [1244.4, 1, 1], [1256.6, 12, 0], [1257, 0, 12], [1273.2, 16, 0], [1293.2, 0, 16], [1308.4, 11, 0], [1309.1, 0, 11],
     ];
     const got = [...want.slice(0, step(2, 0)), ...sideBySide(want, recorded), ...later(want.slice(-2), 28.2)];
-    assert.equal(stallExplains(want, got, ticks([630.5, 1244.4])), true);
+    assert.equal(stallExplains(want, got, ticks([630.5, 1244.4])), false);
     // Without a stall the third animation started before the next press, which would have ended it.
     assert.equal(stallExplains(want, got, ticks()), false);
     // A step missing, or two out of order, while they play side by side.
@@ -350,7 +350,7 @@ describe('stallExplains', () => {
     assert.equal(stallExplains(want, swapped, ticks([630.5, 1244.4])), false);
   });
 
-  test('explains the recorded pad 1,0: side by side, an off for a pad the other animation turned off sends nothing', async () => {
+  test('rejects the old truncation or interleaving recorded on pad 1,0: side by side, an off for a pad the other animation turned off sends nothing', async () => {
     const want = await padTimeline();
     // A run with the timers stalled past pad 1,0's next press (here less 1270 ms): the third animation's
     // last step turned the pad off at 1112.5 ms, so the fourth's off right after it was not sent.
@@ -362,7 +362,7 @@ describe('stallExplains', () => {
     assert.equal(played[unsent - 1].code, 0);
     assert.equal(played[unsent].code, 0);
     const got = [...want.slice(0, step(2, 0)), ...played.filter((_, i) => i !== unsent), ...want.slice(-2)];
-    assert.equal(stallExplains(want, got, ticks([600, 1068.3])), true);
+    assert.equal(stallExplains(want, got, ticks([600, 1068.3])), false);
     // That off cannot arrive: the pad was already off.
     assert.equal(stallExplains(want, [...want.slice(0, step(2, 0)), ...played, ...want.slice(-2)], ticks([600, 1068.3])), false);
   });
