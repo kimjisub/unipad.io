@@ -1,9 +1,12 @@
-# UniPack grammar, edition G1
+# UniPack grammar, edition G3
+
+G3 corrects E-09: a negative delay shortens later waits but never takes back time already waited.
+G2 added T-09: numeric fields are signed decimal 32-bit integers; larger numbers are format errors.
 
 What a UniPack is, item by item: how the Android, iOS and web apps read a pack, and what they play and
 light, in which order and when. Every conformance case names the items it checks (`items` in
 `cases.mjs`), and `report.mjs` reports each item as confirmed or not per platform. The denominator of
-every number it prints is the **103 items** below; what is left out is listed at the end.
+every number it prints is the **104 items** below; what is left out is listed at the end.
 
 An item number never changes meaning. To change or add a rule the edition goes up (G2, …) and the change
 is written at the top of this file; a number that is dropped is not used again. An expected result in
@@ -63,7 +66,7 @@ releasing after the chain changed (Android, web).
 | F-06 | File names inside a zip are read as UTF-8; a name without the UTF-8 flag that is not valid UTF-8 is read as CP949 (Korean Windows). | parse | G1 decision | Not in the docs. iOS `UniPackImporter.swift` 282-289 (UTF-8, CP949, Latin-1), Android zip4j default (UTF-8 only), web JSZip (UTF-8). Decided: real packs carry sound names outside ASCII, such as Korean. |
 | F-07 | Only the files directly inside the `keyLED` folder are LED files (files in sub folders are not read). | parse | apps agree | web `parser.ts` parseKeyLed comment, the Android and iOS folder listings |
 
-### T. Text files: encoding, lines, columns (8)
+### T. Text files: encoding, lines, columns (9)
 
 | Item | Rule | Kind | Basis | Where |
 |---|---|---|---|---|
@@ -75,6 +78,8 @@ releasing after the chain changed (Android, web).
 | T-06 | Columns are split on runs of spaces and tabs, and spaces around a line are ignored, so a file name cannot contain a space. | parse | apps agree | cases.mjs WHITESPACE |
 | T-07 | Blank lines are ignored. | parse | doc | key-sound.mdx validation |
 | T-08 | There is no comment syntax. A line starting with `#` is handled by the file's usual rules (ignored when it has too few columns, a format warning when its command is unknown). | parse | apps agree | cases.mjs AGREED |
+
+| T-09 | Numeric fields in keySound lines, keyLED file names and events, and autoPlay lines are signed decimal integers from -2147483648 to 2147483647. A number outside that range is a format error: skip only its line (or the file for a keyLED file name). In-range values follow each field's rules: out-of-pack chains and coordinates are range errors; delay and the velocity after a hex colour are kept as written. Storing the smallest number minus one internally may saturate at -2147483648 on Android instead of -2147483649; this representation difference does not change output. | parse | G2 decision | parser.ts strictInt, Android toIntOrNull. Leading plus signs and leading zeroes are not exercised. |
 
 ### I. info (11)
 
@@ -146,7 +151,7 @@ releasing after the chain changed (Android, web).
 | E-06 | `l` is the logo light (the 33rd round button position). `o l colour`, `o l auto v`, `o l _ colour` and `f l` are read; a malformed logo line is a format warning. | parse | G1 decision | key-led.mdx says "not supported, ignored"; all three apps light it (cases.mjs LOGO). Decided: keep the apps, correct the docs. |
 | E-07 | `off x y` with too few coordinates, or letters, is a format warning. | parse | apps agree | cases.mjs KL-M08 to M10 |
 | E-08 | `delay ms` that is not an integer, or has no value, is a format warning. | parse | apps agree | cases.mjs KL-M20 to M22 |
-| E-09 | `delay 0` does not wait, and a negative delay brings the following events forward by that much (it is added to the timeline as written). | output | apps agree | The three apps' code (Android `LedRunner.kt` 161, iOS 130-154, web 165) |
+| E-09 | A delay moves the next event to the sum of all delays before it. `delay 0` does not wait. A negative delay is added as written too, but an event never comes before the one above it: time already waited is not taken back, only the waits after it get shorter. Example: `d 100`, `d -60`, `f 1 1`, `d 100`, `o 2 1` turns the light off at 100 ms and on at 140 ms. | output | apps agree | key-led.mdx "Waits the specified milliseconds before the next event" (negative values are not mentioned). Android `LedRunner.kt`, iOS `LedRunner.swift` and web `LedRunner.ts` take the next event only once `delay <= currTime`. |
 | E-10 | `chain N` that is not an integer, or has no value, is a format warning. A chain number the pack does not have is kept as written. | parse | apps agree | cases.mjs KL-M23, M24, KL-023 |
 | E-11 | The columns of an `on` line: `on x y colour`, `on x y colour v` or `on x y auto v` only. Too few, too many, or a velocity in letters is a format warning. | parse | doc | key-led.mdx validation ("4 tokens / 5 tokens") |
 | E-12 | A line with an unknown command is skipped with a format warning. | parse | doc | key-led.mdx validation ("skipped") |

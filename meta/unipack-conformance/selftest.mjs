@@ -116,6 +116,7 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.ok(decidedIds.includes('KL-024'));
   assert.equal(decided.filter((c) => c.basis.some((b) => b.type === 'agreed')).length, 0);
 
+  // A platform still pinned on a decided case is unverified there, not a pass.
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
   assert.equal(report.decided.cases, decidedIds.length);
@@ -146,12 +147,12 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
 });
 
-test('GRAMMAR.md lists 103 items of edition G1, each of kind parse or output, and the corpus names its edition', () => {
+test('GRAMMAR.md lists 104 items of edition G3, each of kind parse or output, and the corpus names its edition', () => {
   const grammar = readGrammar();
-  assert.equal(grammar.edition, 'G1');
-  assert.equal(corpus.grammar, 'G1');
-  assert.equal(grammar.items.length, 103);
-  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 103);
+  assert.equal(grammar.edition, 'G3');
+  assert.equal(corpus.grammar, 'G3');
+  assert.equal(grammar.items.length, 104);
+  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 104);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
   for (const limits of Object.values(HARNESS_LIMITS)) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
   assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
@@ -168,7 +169,7 @@ test('every case names the grammar items it checks, and the build refuses one wi
   const editing = (edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === 'KS-001' ? edit(structuredClone(c)) : c)));
   assert.throws(editing((c) => { delete c.items; return c; }), /KS-001: names no grammar item/);
   assert.throws(editing((c) => ({ ...c, items: [] })), /KS-001: names no grammar item/);
-  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G1/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G3/);
   assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-01'] })), /KS-001: names an item twice/);
 });
 
@@ -229,13 +230,13 @@ describe('an item is confirmed on a platform', () => {
     const results = allPass();
     const { grammar } = buildReport(canonical, results);
     const rows = grammar.rows;
-    assert.equal(grammar.items, 103);
+    assert.equal(grammar.items, 104);
     for (const p of PLATFORMS) assert.equal(grammar.confirmed[p], rows.filter((r) => r[p].confirmed).length, p);
     assert.equal(grammar.confirmedOnAllThree, rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length);
     assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
     assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
     const text = renderText(buildReport(canonical, results));
-    assert.match(text, new RegExp(`^grammar G1: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 103 items; on all three platforms ${grammar.confirmedOnAllThree} of 103; ${grammar.withCases} of 103 have a case$`, 'm'));
+    assert.match(text, new RegExp(`^grammar G3: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 104 items; on all three platforms ${grammar.confirmedOnAllThree} of 104; ${grammar.withCases} of 104 have a case$`, 'm'));
     assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
   });
 });
@@ -492,4 +493,18 @@ test('report rows cover every platform', () => {
  test('the grammar reads the same edition and items with CRLF line endings', () => {
   const lf = readFileSync(join(here, 'GRAMMAR.md'), 'utf8');
   assert.deepEqual(readGrammar(lf.replace(/\r?\n/g, '\r\n')), readGrammar(lf));
+});
+
+ test('G3 never takes back an elapsed wait and exercises the later shortened waits', () => {
+  const first = corpus.cases.find((c) => c.id === 'RUN-L-009');
+  assert.deepEqual(first.expected.checkpoints, [
+    [['ledOn', 0, 0, 'ffff0000', 4], ['ledOn', 1, 0, 'ff00ff00', 4]], [],
+    [['ledOff', 0, 0], ['ledOff', 1, 0]],
+  ]);
+  const later = corpus.cases.find((c) => c.id === 'RUN-L-014');
+  assert.deepEqual(later.items, ['E-09']);
+  assert.deepEqual(later.expected.checkpoints, [
+    [['ledOn', 0, 0, 'ffff0000', 4]], [['ledOff', 0, 0]], [['ledOn', 1, 0, 'ff00ff00', 4]],
+    [['ledOn', 2, 0, 'ff0000ff', 4], ['ledOn', 3, 0, 'ffff0000', 4]], [],
+  ]);
 });

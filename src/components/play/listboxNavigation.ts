@@ -17,3 +17,25 @@ export function listboxTargetIndex(key: string, current: number, count: number):
       return null;
   }
 }
+
+/**
+ * A key an input method spends on composing text, such as the Enter that finishes a Hangul
+ * syllable. Chrome and Firefox flag it; Safari sends that Enter after the composition ends,
+ * marked only by the legacy key code 229.
+ */
+export function isComposingKey(event: Pick<KeyboardEvent, 'isComposing' | 'keyCode'>): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+const OWN_KEY_CONTROLS = 'button, a[href], select, summary, [role="button"], [role="link"]';
+
+/**
+ * Whether the key's target handles keys such as Enter itself, as a button reached with Tab does,
+ * so a list's page-wide keys for its selected option leave it alone. Buttons left out of the Tab
+ * order only hold focus after a mouse press, so keys there stay with the selected option.
+ */
+export function targetHandlesOwnKeys(event: KeyboardEvent): boolean {
+  if (!(event.target instanceof Element)) return false;
+  const control = event.target.closest<HTMLElement>(OWN_KEY_CONTROLS);
+  return control !== null && control.tabIndex >= 0;
+}

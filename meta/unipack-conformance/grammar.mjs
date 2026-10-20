@@ -2,7 +2,7 @@
 // platform's harness cannot see at all, whatever the cases.
 import { readFileSync } from 'node:fs';
 
-const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G1 decision) \| .* \|$/;
+const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G[1-3] decision) \| .* \|$/;
 
 /** `{ edition, items: [{ id, rule, kind, basis }] }` in the order GRAMMAR.md lists them. */
 export function readGrammar(text = readFileSync(new URL('./GRAMMAR.md', import.meta.url), 'utf8')) {

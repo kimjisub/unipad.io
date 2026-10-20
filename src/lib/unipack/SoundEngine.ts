@@ -5,6 +5,25 @@ export const AUTO_PLAY_INPUT = 'autoplay';
 
 interface Press { key: string; node: AudioBufferSourceNode; infinite: boolean }
 
+/** WebKit's Audio Session API, not yet in TypeScript's DOM types. */
+interface AudioSessionNavigator {
+  audioSession: { type: 'auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record' };
+}
+
+/**
+ * Safari plays Web Audio in the "ambient" session by default, which the iPhone's silent switch
+ * mutes. "playback" plays through it, as the iOS app does; it can also pause audio another app
+ * is playing. Browsers without the API are left as they are.
+ */
+function requestPlaybackAudioSession(): void {
+  if (typeof navigator === 'undefined' || !('audioSession' in navigator)) return;
+  try {
+    (navigator as Navigator & AudioSessionNavigator).audioSession.type = 'playback';
+  } catch {
+    console.warn('Failed to set the audio session to playback');
+  }
+}
+
 export class SoundEngine {
   private audioContext: AudioContext;
   private gainNode: GainNode;
@@ -32,6 +51,7 @@ export class SoundEngine {
     this.setChain = setChain;
     this.onLoadProgress = onLoadProgress;
 
+    requestPlaybackAudioSession();
     this.audioContext = new AudioContext({
       latencyHint: 'interactive',
       sampleRate: 44100,

@@ -12,6 +12,7 @@ import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
+import { PlayerHolds } from './PlayerHolds';
 import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 import type { Sound, UniPackData } from './types';
 
@@ -129,7 +130,7 @@ export function normalizeError(message: string): string {
   const section = /^([A-Za-z.]+)\s*:/.exec(message)?.[1] ?? 'unknown';
   let kind: string;
   if (/format is (incorrect|not found)/.test(message)) kind = 'format';
-  else if (/\b(chain|x|y|loop|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
+  else if (/\b(chain|x|y|loop|wormhole|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
   else if (/was not found|directory not found|doesn't exist/.test(message)) kind = 'missing-file';
   else if (/was missing/.test(message)) kind = 'missing-field';
   else kind = `other(${message})`;
@@ -380,6 +381,9 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   const checkpoints: Json[] = [];
   let led: LedRunner | null = null;
   let autoPlay: AutoPlayRunner | null = null;
+  const playerHolds = new PlayerHolds();
+  const startedAt = new Map<StartedSource, [number, number]>();
+
   try {
     clock.install();
     g.AudioContext = FakeAudioContext;
@@ -426,11 +430,12 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
         const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
         const file = started.name.replace(/^(?:.*\/)?sounds\//i, '');
         started.pad = [at, x, y, file];
+        startedAt.set(started, [x, y]);
         events.push(['sound', at, x, y, file, loop]);
       }
       scenarioLed.eventOn(x, y);
     };
-    const releasePad = (x: number, y: number, input: string) => {
+    const releasePad = (x: number, y: number, input?: string) => {
       engine.soundOff(x, y, input);
       scenarioLed.eventOff(x, y);
     };
@@ -438,10 +443,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
+          playerHolds.press(step.x!, step.y!);
           pressPad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'release':
-          releasePad(step.x!, step.y!, PLAYER_INPUT);
+          releasePad(step.x!, step.y!, playerHolds.release(step.x!, step.y!) ? undefined : PLAYER_INPUT);
           break;
         case 'chain':
           switchChain(step.c!, null);
@@ -461,7 +467,13 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y, AUTO_PLAY_INPUT); },
+            onPadTouchOn: (x, y) => {
+              events.push(['autoOn', x, y]);
+              if (toPads) {
+                playerHolds.autoPlayPressed(x, y);
+                pressPad(x, y, AUTO_PLAY_INPUT);
+              }
+            },
             onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
             onChainChange: (next) => switchChain(next, 'autoChain'),
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
@@ -477,6 +489,20 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           led.stop();
           engine.destroy();
           break;
+        case 'autoplayOff':
+          // useUniPadEngine turning autoplay off: the runner stops and padInit releases every pad the
+          // player is not holding.
+          autoPlay?.stop();
+          playerHolds.releaseOthers(pack.info.buttonX, pack.info.buttonY, (x, y) => releasePad(x, y));
+          break;
+        case 'looping': {
+          const looping = FakeAudioContext.started
+            .filter((s) => s.loop && s.stopAt === null && !s.stopped && startedAt.has(s))
+            .map((s) => startedAt.get(s)!)
+            .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          for (const [x, y] of looping) events.push(['looping', x, y]);
+          break;
+        }
         default:
           throw new Error(`${c.id}: unknown scenario step ${step.do}`);
       }
