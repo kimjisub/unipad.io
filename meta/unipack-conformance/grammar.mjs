@@ -118,13 +118,29 @@ export const NATIVE_TESTS = {
   },
 };
 
-/** Refuses a table in which an item lists no test or one test twice: such an entry would confirm nothing. */
-export function checkNativeTests(table) {
+/**
+ * Per web item NATIVE_TESTS lists, the run its tests must come from and the browser project each record
+ * must name (none for the parser run). The web file says which run an item came from and which browser a
+ * record ran in; a record counts only where both match this, so a WebKit record, or one naming no browser
+ * or another run, never confirms a sound item.
+ */
+export const WEB_RUNS = {
+  'F-05': { run: 'parser' },
+  'F-06': { run: 'parser' },
+  ...Object.fromEntries(['A-01', 'A-02', 'A-03', 'A-04', 'A-05'].map((id) => [id, { run: 'browser', project: 'chromium' }])),
+};
+
+/**
+ * Refuses a table in which an item lists no test or one test twice, or a web item has no registered run:
+ * such an entry would confirm nothing, or anything.
+ */
+export function checkNativeTests(table, webRuns = WEB_RUNS) {
   for (const [platform, items] of Object.entries(table)) {
     for (const [id, names] of Object.entries(items)) {
       if (!Array.isArray(names) || names.length === 0) throw new Error(`NATIVE_TESTS.${platform}["${id}"] lists no test`);
       const twice = names.filter((name, i) => names.indexOf(name) !== i);
       if (twice.length) throw new Error(`NATIVE_TESTS.${platform}["${id}"] lists ${twice.join(', ')} more than once`);
+      if (platform === 'web' && !webRuns[id]?.run) throw new Error(`NATIVE_TESTS.web["${id}"] has no run in WEB_RUNS`);
     }
   }
   return table;

@@ -138,14 +138,16 @@ export function judge({ corpus, sha256 }, platform, results) {
 export const BASES = { common: 'common', native: 'app tests', both: 'common and app tests' };
 
 /**
- * Whether the app test results of one platform confirm one item: the item is reported as passed and every
- * test NATIVE_TESTS lists for it ran exactly once and passed. Other tests in the file are not counted.
+ * Whether the app test results of one platform confirm one item: the item is reported as passed, from the
+ * run it must come from, and every test NATIVE_TESTS lists for it ran exactly once and passed. Other tests
+ * in the file are not counted.
  */
 function nativeVerdict(id, platform, native) {
   const reported = native.items[id];
   if (!reported) return { confirmed: false, detail: `the ${platform} app test results do not report it` };
   const problems = [];
   if (!reported.passed) problems.push(`the ${platform} app test results mark it ${reported.status}`);
+  if (reported.unfit) problems.push(`the ${platform} app test results ${reported.unfit}`);
   const short = NATIVE_TESTS[platform][id].map((name) => [name, reported.test(name)]).filter(([, status]) => status !== 'passed');
   if (short.length) problems.push(`required ${platform} app tests did not pass exactly once: ${short.map(([name, status]) => `${name} ${status}`).join(', ')}`);
   return { confirmed: problems.length === 0, detail: problems.join('; ') };

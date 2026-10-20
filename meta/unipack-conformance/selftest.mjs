@@ -787,6 +787,37 @@ describe('app test results', () => {
   test('10. NATIVE_TESTS refuses an item that lists no test', () => {
     assert.throws(() => checkNativeTests({ web: { 'F-05': [] } }), /NATIVE_TESTS.web\["F-05"\] lists no test/);
     assert.throws(() => checkNativeTests({ ios: { 'A-04': ['a', 'a'] } }), /lists a more than once/);
+    assert.throws(() => checkNativeTests({ web: { 'F-05': ['a'] } }, {}), /NATIVE_TESTS.web\["F-05"\] has no run in WEB_RUNS/);
     assert.equal(checkNativeTests(NATIVE_TESTS), NATIVE_TESTS);
+  });
+
+  test('11. a web item counts only from its registered run and browser, whatever the file says of itself', () => {
+    const name = NATIVE_TESTS.web['A-03'][0];
+    /** The web file with A-03 changed by `change`, its other items as they pass. */
+    const withA03 = (change) => {
+      const file = nativeFile('web');
+      return { ...file, items: file.items.map((item) => (item.item === 'A-03' ? change(item) : item)) };
+    };
+    // A field set to undefined is left out of the file, as `read` writes it as JSON.
+    const browser = (project) => (item) => ({ ...item, results: item.results.map((r) => ({ ...r, project })) });
+    const cell = (file, id = 'A-03') => items({ web: read('web', file) }).get(id).web;
+    assert.deepEqual(cell(withA03((item) => item)), { confirmed: true, detail: '', basis: BASES.native });
+    const runs = [
+      ['no run', (item) => ({ ...item, run: undefined }), /report it from the unnamed run, not the browser run/],
+      ['the parser run', (item) => ({ ...item, run: 'parser' }), /report it from the parser run, not the browser run/],
+      ['no browser', browser(undefined), new RegExp(`${name} missing`)],
+      ['WebKit', browser('webkit'), new RegExp(`${name} missing`)],
+      ['WebKit, run named parser', (item) => browser('webkit')({ ...item, run: 'parser' }), /not the browser run.*missing/],
+    ];
+    for (const [why, change, detail] of runs) {
+      const got = cell(withA03(change));
+      assert.equal(got.confirmed, false, why);
+      assert.match(got.detail, detail, why);
+    }
+    // The parser items still count from the parser run, whose records name no browser, and only from it.
+    for (const id of ['F-05', 'F-06']) assert.deepEqual(cell(nativeFile('web'), id), { confirmed: true, detail: '', basis: BASES.native }, id);
+    const parser = (change) => ({ ...nativeFile('web'), items: nativeFile('web').items.map((item) => (item.item === 'F-05' ? change(item) : item)) });
+    assert.match(cell(parser((item) => ({ ...item, run: 'browser' })), 'F-05').detail, /not the parser run/);
+    assert.match(cell(parser(browser('chromium')), 'F-05').detail, /missing/);
   });
 });

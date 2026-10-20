@@ -109,7 +109,11 @@ A-05) are for each platform's own tests.
 exactly once and passed; the list is reviewed and fixed there, never taken from what a result file
 names, and an `output` item lists only tests that measure the sound played. A test missing, failed,
 skipped or run more than once (a retry included) does not count, nor does an item the file does not
-mark passed. Then, for one item on one platform:
+mark passed. On the web, `WEB_RUNS` in `grammar.mjs` fixes which run each item comes from (`parser` for
+F-05 and F-06, `browser` for A-01 to A-05) and the browser its records must name (Chromium for the
+sound items, none for the parser): an item the file reports from another run, or from none, does not
+count, and a record of another browser, or naming none, is not counted. Then, for one item on one
+platform:
 
 - no case checks it (F-05, F-06, A-03 to A-05): confirmed only by the listed app tests;
 - the harness cannot observe it (`HARNESS_LIMITS`, F-01 without `caseSensitiveFileSystem`): confirmed

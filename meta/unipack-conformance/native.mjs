@@ -1,12 +1,13 @@
 // Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web
 // `items.json`) into one shape, for the items the common cases cannot confirm (see report.mjs):
-//   { platform, commit, sha256, items: { [item]: { status, passed, test(name) } } }
+//   { platform, commit, sha256, items: { [item]: { status, passed, test(name), unfit? } } }
 // where `test(name)` is what that test did: `passed` (ran exactly once and passed), `failed`, `skipped`,
 // `missing` (not run) or `repeated` (run more than once, a retry included). Only `passed` counts.
+// `unfit` says why the item's report cannot count however its tests went.
 // A file that is not fit to count is refused with every reason; one that is fit but reports a failed or
 // unverified item is read as it is.
 import { createHash } from 'node:crypto';
-import { grammarRecord, readGrammar } from './grammar.mjs';
+import { grammarRecord, readGrammar, WEB_RUNS } from './grammar.mjs';
 
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -73,8 +74,9 @@ const FORMATS = {
         (run) => (run.result === 'Passed' ? 'passed' : run.result === 'Skipped' ? 'skipped' : 'failed')),
     })),
   }),
-  // The web file names no platform; it is the web's because it was given as the web's. Only Chromium
-  // records of the browser run count.
+  // The web file names no platform; it is the web's because it was given as the web's. Which run an item
+  // must come from and which browser its records must name are WEB_RUNS's, not the file's: an item from
+  // another run cannot count, and a record of another browser, or naming none, is not counted.
   web: (file) => ({
     platform: file.platform ?? 'web',
     commit: file.source?.commit,
@@ -82,13 +84,17 @@ const FORMATS = {
     purpose: null,
     edition: file.grammar?.version,
     revision: file.grammar?.revision,
-    items: (Array.isArray(file.items) ? file.items : []).map((item) => ({
-      id: item.item,
-      status: item.status,
-      passed: item.status === 'confirmed',
-      tests: (name) => testStatus((item.results ?? []).filter((r) => r.name === name && (item.run !== 'browser' || r.project === 'chromium')),
-        (record) => (record.status === 'passed' ? 'passed' : 'failed')),
-    })),
+    items: (Array.isArray(file.items) ? file.items : []).map((item) => {
+      const expected = WEB_RUNS[item.item];
+      return {
+        id: item.item,
+        status: item.status,
+        passed: item.status === 'confirmed',
+        tests: (name) => testStatus((item.results ?? []).filter((r) => r.name === name && expected && r.project === expected.project),
+          (record) => (record.status === 'passed' ? 'passed' : 'failed')),
+        unfit: expected && item.run !== expected.run ? `report it from the ${item.run ?? 'unnamed'} run, not the ${expected.run} run` : undefined,
+      };
+    }),
   }),
 };
 
@@ -124,6 +130,6 @@ export function readNative(platform, bytes, record = grammarRecord(), grammar = 
     platform,
     commit: read.commit,
     sha256: createHash('sha256').update(bytes).digest('hex'),
-    items: Object.fromEntries(read.items.map((i) => [i.id, { status: i.status, passed: i.passed, test: i.tests }])),
+    items: Object.fromEntries(read.items.map((i) => [i.id, { status: i.status, passed: i.passed, test: i.tests, ...(i.unfit && { unfit: i.unfit }) }])),
   };
 }
