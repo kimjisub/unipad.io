@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import { sourceState, recordBuild, assertCurrentBuild } from './build-source.mjs';
 
 const launcher = resolve('e2e/start-server.mjs');
+const builder = resolve('scripts/build.mjs');
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 function fixture(t) {
@@ -101,5 +102,44 @@ test('a source change during the build cannot receive a valid record', t => {
   const before = sourceState(cwd);
   writeFileSync(join(cwd, 'source.txt'), 'changed during build');
   assert.throws(() => recordBuild(before, cwd), /Source changed during the build/);
+  assert.equal(existsSync(join(cwd, '.next/build-source.json')), false);
+});
+
+
+test('a Git-free deployment can build without creating trusted browser metadata', t => {
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, '.next/build-source.json'), '{"version":1,"commit":"old","files":"old"}');
+  rmSync(join(cwd, '.git'), { recursive: true, force: true });
+  const result = runBuild(cwd);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(cwd, '.next/BUILD_ID')), true);
+  assert.equal(existsSync(join(cwd, '.next/build-source.json')), false);
+  assert.throws(() => assertCurrentBuild(cwd), /Cannot read the current Git source state/);
+});
+
+
+function runBuild(cwd, program = `
+  const fs = require('node:fs');
+  fs.rmSync('.next', { recursive: true, force: true });
+  fs.mkdirSync('.next');
+  fs.writeFileSync('.next/BUILD_ID', 'built');
+`) {
+  writeFileSync(join(cwd, 'node_modules/next/dist/bin/next'), program);
+  return spawnSync(process.execPath, [builder], { cwd, encoding: 'utf8' });
+}
+
+test('a checkout records its source after Next clears the output folder', t => {
+  const cwd = fixture(t);
+  const result = runBuild(cwd);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(cwd, '.next/BUILD_ID'), 'utf8'), 'built');
+  assert.doesNotThrow(() => assertCurrentBuild(cwd));
+});
+
+test('a failed Next build clears the old source record even without clearing its output', t => {
+  const cwd = fixture(t);
+  recordBuild(sourceState(cwd), cwd);
+  const result = runBuild(cwd, 'process.exit(3);');
+  assert.equal(result.status, 3, result.stderr);
   assert.equal(existsSync(join(cwd, '.next/build-source.json')), false);
 });

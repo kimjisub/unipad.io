@@ -100,7 +100,7 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm build` records the Git commit and a content fingerprint of tracked and
+In a Git checkout, `pnpm build` records the commit and a content fingerprint of tracked and
 untracked, non-ignored files in `.next/build-source.json` after a successful build.
 The browser launcher checks both before opening a port. A missing, invalid or stale
 record stops the tests, prints the built and current commits, and asks you to run
@@ -108,7 +108,9 @@ record stops the tests, prints the built and current commits, and asks you to ru
 Source changes during a build fail that build instead of recording mixed inputs.
 Ignored files (including local environment files) and shell environment values are
 outside this fingerprint; rebuild after changing those. Use `pnpm build` rather
-than calling `next build` directly to create the record. There is no bypass flag.
+than calling `next build` directly to create the record. Source archives without
+Git metadata still build, but do not receive a browser-test record. Browser tests
+require rebuilding in a Git checkout. There is no bypass flag.
 
 `pnpm test:e2e` starts the production build on a free `localhost` port between
 20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
