@@ -1,4 +1,32 @@
-# Results (reported 2026-10-19, Korea time)
+# Results (reported 2026-10-20, Korea time)
+
+Corpus `241f719f594cf6156db9c0084cc37e70ddad2c19d8a52858e0727e76ade9890b`, 204 cases,
+grammar G3 (104 items). The report was regenerated from retained, asserting result files, not from
+new app runs: Android `d34406a71f050b849a4e9d667b64795aedc896f0`, iOS
+`a396cb12d0acd8c3eeecadb100660cac9af73c97`, and web `7d05e704629327eac6897e161f03e542a8a7f183`.
+Both app commits are pinned in `copies.json` and contain byte-identical copies of this corpus.
+
+| Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
+|---|---|---|---|---|---|---|
+| Android | 203 | 1 | 0 | 0 | 0 | 2026-10-20T09:35:42.705798Z |
+| iOS | 199 | 0 | 0 | 0 | 5 | 2026-10-20T08:58:14Z |
+| Web | 204 | 0 | 0 | 0 | 0 | 2026-10-20T09:24:30.575Z |
+
+Pass on all three platforms: 198 of 204. Confirmed grammar items: Android 94/104, iOS 95/104,
+web 97/104; 90/104 on all three; 99/104 have a case. These figures describe the corpus and what the
+harnesses can observe, not compatibility with every UniPack.
+
+T-09 explicitly allows the two Android internal storage representations in KS-B08 and KL-BE10.
+The report now counts those exact results as passes while retaining their original values and
+harness classifications (`reportedStatus`, `reportedDetail`). Only the four specified fields may
+differ between `-2147483648` and `-2147483649`; all other fields and warnings must match exactly.
+Positive wraparound and changed format or range warnings still fail. The expected values, pins,
+corpus bytes and app copies are unchanged.
+
+The remaining Android pin is RUN-A-003's observation order. iOS cannot observe sound stops in
+RUN-S-008 through RUN-S-010 or chain-change counter resets in RUN-S-012 and RUN-S-013.
+
+## Earlier report (2026-10-19)
 
 Corpus `aae2cc7215f5afdfb2220c1f160ec96edc058bd111f45d1a499e759c1c3c2f56` (sha256 of `corpus.json`), 172 cases. These results were recorded by tests that assert the expected outcomes
 on committed checkouts: unipad-android `b27171e7386f88b111f14956345fd97343a2f7c7`, unipad-ios
