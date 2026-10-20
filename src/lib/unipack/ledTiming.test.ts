@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { describe, test } from 'node:test';
-import { compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, peakPerSecond, summarizeLatency, type LedCommand } from './ledTiming';
+import { compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, peakPerSecond, stallExplains, summarizeLatency, type LedCommand } from './ledTiming';
 import { parseUniPack } from './parser';
 import { INFO_2X2_2CHAIN, KEYSOUND_1_1_1, packZip, SILENT_WAV } from './testUtils';
 
@@ -172,26 +172,105 @@ describe('summaries', () => {
 
 describe('denseTimingVerdict', () => {
   const result = { reordered: 0, missing: 0, extra: 0 };
-  test('keeps a complete ordered run conclusive even after a stall', () => {
-    assert.equal(denseTimingVerdict(result, 430, 275), 'pass');
+  test('passes a complete ordered run whatever the stall', () => {
+    assert.equal(denseTimingVerdict(result, false), 'pass');
+    assert.equal(denseTimingVerdict(result, true), 'pass');
   });
-  test('marks reorder-only differences after an excessive stall inconclusive', () => {
-    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 283.3, 275), 'inconclusive');
+  test('fails reorders and missing commands that no stall explains', () => {
+    assert.equal(denseTimingVerdict({ ...result, missing: 673 }, false), 'fail');
+    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, false), 'fail');
   });
-  test('marks reorders and missing commands after an excessive stall inconclusive', () => {
-    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, 430, 275), 'inconclusive');
-  });
-  test('still fails order and completeness at or below the smallest slack', () => {
-    for (const span of [100, 275]) {
-      assert.equal(denseTimingVerdict({ ...result, reordered: 1 }, span, 275), 'fail');
-      assert.equal(denseTimingVerdict({ ...result, missing: 1 }, span, 275), 'fail');
-    }
-  });
-  test('uses the tail slack when it is smaller than the next-press slack', () => {
-    assert.equal(denseTimingVerdict({ ...result, reordered: 4 }, 200, Math.min(275, 165)), 'inconclusive');
+  test('leaves differences a stall explains inconclusive', () => {
+    assert.equal(denseTimingVerdict({ ...result, reordered: 18, missing: 2066 }, true), 'inconclusive');
   });
   test('still fails extra commands regardless of timer stalls', () => {
-    assert.equal(denseTimingVerdict({ reordered: 4, missing: 10, extra: 1 }, 430, 275), 'fail');
+    assert.equal(denseTimingVerdict({ reordered: 4, missing: 10, extra: 1 }, true), 'fail');
+  });
+});
+
+describe('stallExplains', () => {
+  // Pad 1,1 pressed every 315 ms and flashing itself every millisecond for 40 ms, as in the dense pack of
+  // e2e/led-timing.spec.ts. A Chromium run of that pack recorded 673 of 25,458 commands missing, with the
+  // page's timers stalled for up to 376.3 ms: on pad 0,0 the second animation's first step arrived at
+  // 660.7 ms instead of 315 ms, the third press turned the pad off at 666.4 ms and the rest of the second
+  // animation never came; on pad 0,7 two passes of one animation arrived and the other eight did not.
+  const pass = 'o 1 1 a 5\nd 1\no 1 1 a 5\nd 1\no 1 1 a 21\nd 1\nf 1 1\nd 1\n';
+  const padTimeline = async () => intendedTimeline(await packWith(
+    `${'o 1 1\nd 2\nf 1 1\nd 313\n'.repeat(4)}d 400\nf 2 2\n`, { '1 1 1 1': pass.repeat(10) },
+  )).commands.filter((c) => c.x === 0 && c.y === 0);
+  /** Pad 0,0's commands: two redraws, four animations of 40 steps, two redraws. */
+  const step = (animation: number, index: number) => 2 + animation * 40 + index;
+  const off = (ms: number): LedCommand => ({ ms, x: 0, y: 0, code: 0 });
+  const later = (commands: LedCommand[], by: number) => commands.map((c) => ({ ...c, ms: c.ms + by }));
+  /** A 4 ms timer's ticks through the run, none between `stall`'s two times. */
+  const ticks = (stall?: [number, number]) => Array.from({ length: 560 }, (_, i) => i * 4)
+    .filter((t) => !stall || t <= stall[0] || t >= stall[1]);
+
+  test('dates each step by the next press of its pad', async () => {
+    const want = await padTimeline();
+    assert.equal(want.length, 2 + 4 * 40 + 2);
+    assert.deepEqual([want[step(0, 0)].cutMs, want[step(2, 39)].cutMs, want[step(3, 0)].cutMs], [315, 945, Infinity]);
+    assert.equal(want[0].animation, undefined);
+  });
+
+  test('accepts LEDs that match exactly', async () => {
+    const want = await padTimeline();
+    assert.equal(stallExplains(want, later(want, 100), ticks()), true);
+  });
+
+  test('explains the recorded pad 0,0: a late animation the next press cut off while it had the pad lit', async () => {
+    const want = await padTimeline();
+    const got = [...want.slice(0, step(1, 0)), { ...want[step(1, 0)], ms: 660.7 }, off(666.4), ...later(want.slice(step(2, 0)), 40)];
+    assert.equal(stallExplains(want, got, ticks([284, 660])), true);
+    // Without the off the press sends, or with it in the tick of the last step, the cut is not what LedRunner does.
+    assert.equal(stallExplains(want, got.filter((c) => c.ms !== 666.4), ticks([284, 660])), false);
+    assert.equal(stallExplains(want, got.map((c) => (c.ms === 666.4 ? { ...c, ms: 660.7 } : c)), ticks([284, 660])), false);
+  });
+
+  test('does not explain an animation cut off long after its steps were due', async () => {
+    const want = await padTimeline();
+    // The second animation started on time, so its next step was due 300 ms before the press that cut it.
+    const got = [...want.slice(0, step(1, 1)), off(666.4), ...later(want.slice(step(2, 0)), 40)];
+    assert.equal(stallExplains(want, got, ticks()), false);
+    assert.equal(stallExplains(want, got, ticks([1000, 1376.3])), false);
+  });
+
+  test('explains the recorded pad 0,7: a late animation cut off between passes, with nothing lit to turn off', async () => {
+    const want = await padTimeline();
+    const got = [...want.slice(0, step(1, 0)), ...later(want.slice(step(1, 0), step(1, 8)), 335.1), ...later(want.slice(step(2, 0)), 40)];
+    assert.equal(stallExplains(want, got, ticks([284, 650])), true);
+  });
+
+  test('does not explain a hole inside an animation that kept playing, even after a stall elsewhere', async () => {
+    const want = await padTimeline();
+    // Four steps make one pass, so by their codes the hole looks like the last pass cut off.
+    const got = [...want.slice(0, step(1, 10)), ...want.slice(step(1, 14))];
+    assert.equal(stallExplains(want, got, ticks()), false);
+    assert.equal(stallExplains(want, got, ticks([1000, 1376.3])), false);
+  });
+
+  test('does not explain a step missing from an animation sent all at once after a stall', async () => {
+    const want = await padTimeline();
+    // LedRunner caught up with the whole second animation in one tick, one step short: the rest arrived
+    // in that same tick, so no press came between them.
+    const drained = want.slice(step(1, 0), step(2, 0)).map((c) => ({ ...c, ms: 660.7 }));
+    const got = [...want.slice(0, step(1, 0)), ...drained.slice(0, 20), ...drained.slice(21), ...later(want.slice(step(2, 0)), 40)];
+    assert.equal(stallExplains(want, got, ticks([284, 660])), false);
+  });
+
+  test('does not explain steps out of order', async () => {
+    const want = await padTimeline();
+    const got = [...want];
+    [got[step(1, 2)], got[step(1, 3)]] = [{ ...got[step(1, 3)], ms: 317 }, { ...got[step(1, 2)], ms: 318 }];
+    assert.equal(stallExplains(want, got, ticks([284, 660])), false);
+  });
+
+  test('explains the final redraw overtaking the last steps only when the timers stalled until it', async () => {
+    const want = await padTimeline();
+    // The 31st step of the last animation was due at 975 ms, the redraw at 1660 ms.
+    const got = [...want.slice(0, step(3, 30)), ...later(want.slice(-2), 0.5), ...later(want.slice(step(3, 30), -2), 686)];
+    assert.equal(stallExplains(want, got, ticks([976, 1660])), true);
+    assert.equal(stallExplains(want, got, ticks()), false);
   });
 });
 

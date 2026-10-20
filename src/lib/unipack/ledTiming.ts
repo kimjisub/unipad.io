@@ -13,6 +13,11 @@ export interface LedTarget {
 export interface LedCommand extends LedTarget {
   ms: number;
   code: number;
+  /** An animation step in an intended timeline: the animation (one per press) it belongs to. */
+  animation?: number;
+  /** When the same pad's next press, or a release of an endless animation, ends that animation: a step
+   *  delayed past this is cut off by it. Infinity when nothing does. */
+  cutMs?: number;
 }
 
 export interface IntendedTimeline {
@@ -27,17 +32,144 @@ export interface IntendedTimeline {
   ledChainEvents: number;
 }
 
-/** A timer stall can invalidate order and completeness when it exceeds the fixture's smallest
- * animation-to-next-press or animation-to-final-redraw gap. Extras remain unconditional failures. */
+/** Extras always fail. Reorders and missing commands fail unless a timer stall explains every one of
+ * them (see stallExplains); the comparison is then inconclusive rather than a pass. */
 export function denseTimingVerdict(
   result: Pick<LedTimingResult, 'reordered' | 'missing' | 'extra'>,
-  timerSpanMs: number,
-  slackMs: number,
+  stallExplained: boolean,
 ): 'pass' | 'fail' | 'inconclusive' {
   if (result.extra > 0) return 'fail';
-  const differs = result.reordered > 0 || result.missing > 0;
-  if (differs && timerSpanMs > slackMs) return 'inconclusive';
-  return differs ? 'fail' : 'pass';
+  if (result.reordered === 0 && result.missing === 0) return 'pass';
+  return stallExplained ? 'inconclusive' : 'fail';
+}
+
+/** The longest span of three consecutive `ticks` (ascending) of a timer as frequent as LedRunner's that
+ * overlaps `from`..`to`: how long a press could wait in it for LedRunner to start its animation and play a
+ * step. */
+export function longestTimerSpan(ticks: readonly number[], from: number, to: number): number {
+  let first = 0;
+  let end = Math.max(0, ticks.length - 3);
+  while (first < end) {
+    const middle = (first + end) >> 1;
+    if (ticks[middle + 3] < from) first = middle + 1;
+    else end = middle;
+  }
+  let longest = 0;
+  for (let i = first; i + 3 < ticks.length && ticks[i] <= to; i++) longest = Math.max(longest, ticks[i + 3] - ticks[i]);
+  return longest;
+}
+
+/**
+ * Whether late animation steps account for every LED whose arrived commands differ from the intended
+ * ones. LedRunner starts an animation when it next runs after the press, so a late start delays all its
+ * steps, and they can fall behind two things:
+ * - the same pad's next press, which ends the animation: its remaining steps never arrive, and if one of
+ *   them had the LED lit the press turns it off first;
+ * - autoplay's final redraw, which does not end it: the redraw arrives before the remaining steps.
+ * Each such step must also have been overtaken in the record itself (`arrived` and `ticks` share one
+ * clock, from the click that starts autoplay): the overtaking command arrived no earlier than its press or
+ * redraw was due, and before the step was due by the animation's last arrived step, give or take two
+ * ticks, or the page's timers stalled in between for at least the difference. A command missing or out of
+ * order anywhere else, such as a hole inside an animation that kept playing, is not explained.
+ */
+export function stallExplains(expected: readonly LedCommand[], arrived: readonly LedCommand[], ticks: readonly number[]): boolean {
+  const wantByLed = groupByLed(expected);
+  const gotByLed = groupByLed(arrived);
+  for (const key of new Set([...wantByLed.keys(), ...gotByLed.keys()])) {
+    const want = wantByLed.get(key) ?? [];
+    const got = gotByLed.get(key) ?? [];
+    const same = want.length === got.length && want.every((c, i) => c.code === got[i].code);
+    if (!same && !stallExplainsLed(want, got, ticks)) return false;
+  }
+  return true;
+}
+
+/** One LED's intended commands in runs: an animation's consecutive steps, or the commands between them
+ * that belong to no animation (redraws, and the offs a press or release sends). */
+interface CommandRun {
+  animation?: number;
+  commands: LedCommand[];
+}
+
+function runsOf(want: readonly LedCommand[]): CommandRun[] {
+  const runs: CommandRun[] = [];
+  for (const command of want) {
+    const run = runs.at(-1);
+    if (run && run.animation === command.animation) run.commands.push(command);
+    else runs.push({ animation: command.animation, commands: [command] });
+  }
+  return runs;
+}
+
+/** LedRunner's tick. It schedules the next tick that long after one ends, so a later tick's commands
+ * arrive at least NEXT_TICK_MS (the tick, less timer rounding) after an earlier tick's. */
+export const LED_TICK_MS = 4;
+const NEXT_TICK_MS = LED_TICK_MS - 1;
+
+/** One LED: every run arrives whole and in order, except that an animation run may arrive only in part,
+ * its remaining steps either cut off by the next press or arriving after the run of redraws behind it.
+ * Nothing arrives before it was intended: autoplay never runs early, nor does an animation step. A press
+ * that cuts an animation off is handled between LedRunner's ticks: the tick after the last step sent
+ * turns the LED off, and the new animation starts a tick later still. */
+function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[], ticks: readonly number[]): boolean {
+  const runs = runsOf(want);
+  const failed = new Set<string>();
+  /** Whether `commands` arrived as got[j], got[j + 1], ... */
+  const arrivedAt = (commands: readonly LedCommand[], j: number) =>
+    commands.every((c, k) => got[j + k]?.code === c.code && got[j + k].ms >= c.ms);
+  /** Whether got[j], caused by a press or redraw intended at `causeMs`, can have overtaken `steps[kept]`
+   *  after steps[0..kept) arrived from got[j - kept] on. */
+  const overtaken = (steps: readonly LedCommand[], kept: number, j: number, causeMs: number) => {
+    const arrival = got[j];
+    if (!arrival || arrival.ms < causeMs) return false;
+    const [from, gap] = kept > 0
+      ? [got[j - 1].ms, arrival.ms - (got[j - 1].ms + steps[kept].ms - steps[kept - 1].ms)]
+      : [got[j - 1]?.ms ?? -Infinity, causeMs - steps[0].ms];
+    return gap <= OVERTAKE_MS || gap <= OVERTAKE_MS + longestTimerSpan(ticks, from, arrival.ms);
+  };
+  // stepsFrom: the earliest the next animation step can arrive, after a cut.
+  const visit = (r: number, j: number, cut: readonly number[], stepsFrom: number): boolean => {
+    if (r === runs.length) return j === got.length;
+    const key = `${r} ${j} ${cut.join(',')} ${stepsFrom}`;
+    if (failed.has(key)) return false;
+    const { animation, commands } = runs[r];
+    let explained = false;
+    if (animation === undefined) {
+      explained = arrivedAt(commands, j) && visit(r + 1, j + commands.length, cut, stepsFrom);
+    } else if (cut.includes(animation)) {
+      explained = visit(r + 1, j, cut, stepsFrom);
+    } else {
+      const cutMs = commands[0].cutMs ?? Infinity;
+      const redraws = runs[r + 1]?.animation === undefined ? runs[r + 1]?.commands : undefined;
+      for (let kept = 0; !explained && kept <= commands.length; kept++) {
+        if (kept > 0 && !arrivedAt([commands[kept - 1]], j + kept - 1)) break;
+        if (kept === 1 && got[j].ms < stepsFrom) break;
+        const next = j + kept;
+        if (kept === commands.length) {
+          explained = visit(r + 1, next, cut, -Infinity);
+          continue;
+        }
+        const lastAt = got[next - 1]?.ms;
+        // The next press ends the animation, first turning off the LED if its last step left it lit.
+        if (Number.isFinite(cutMs) && overtaken(commands, kept, next, cutMs)) {
+          if (kept === 0) explained = visit(r + 1, next, [...cut, animation], stepsFrom);
+          else if (commands[kept - 1].code === 0) explained = visit(r + 1, next, [...cut, animation], lastAt + 2 * NEXT_TICK_MS);
+          else {
+            explained = got[next].code === 0 && got[next].ms >= lastAt + NEXT_TICK_MS &&
+              visit(r + 1, next + 1, [...cut, animation], got[next].ms + NEXT_TICK_MS);
+          }
+        }
+        // The final redraw arrives first; the remaining steps follow it, in a later tick.
+        const rest = next + (redraws?.length ?? 0);
+        explained ||= !!redraws && arrivedAt(redraws, next) && overtaken(commands, kept, next, redraws[0].ms) &&
+          arrivedAt(commands.slice(kept), rest) && (kept === 0 || got[rest].ms >= lastAt + NEXT_TICK_MS) &&
+          visit(r + 2, rest + commands.length - kept, cut, -Infinity);
+      }
+    }
+    if (!explained) failed.add(key);
+    return explained;
+  };
+  return visit(0, 0, [], -Infinity);
 }
 
 /** Why the ideal timeline cannot support an order/completeness assertion for this pack. */
@@ -52,6 +184,18 @@ export function timelineMeasurementLimit(timeline: IntendedTimeline): string | u
 export const isPad = (target: LedTarget) => target.x !== -1;
 
 const targetKey = (target: LedTarget) => `${target.x},${target.y}`;
+
+/** Each LED's commands, in order. */
+function groupByLed(commands: readonly LedCommand[]): Map<string, LedCommand[]> {
+  const byLed = new Map<string, LedCommand[]>();
+  for (const command of commands) {
+    const key = targetKey(command);
+    let list = byLed.get(key);
+    if (!list) byLed.set(key, list = []);
+    list.push(command);
+  }
+  return byLed;
+}
 
 /** MIDIOutput data bytes, as MidiConnection clamps a code before sending it. */
 const sentCode = (code: number) => Math.max(0, Math.min(127, Math.trunc(Number.isFinite(code) ? code : 0)));
@@ -74,12 +218,15 @@ export function intendedTimeline(pack: UniPackData): IntendedTimeline {
 interface Owner { x: number; y: number; chain: number }
 
 interface Animation {
+  id: number;
   owner: Owner;
   led: LedAnimation;
   due: number;
   index: number;
   loopProgress: number;
   playing: boolean;
+  /** See LedCommand.cutMs. */
+  cutMs: number;
 }
 
 const sameOwner = (a: Owner | null | undefined, b: Owner) => !!a && a.x === b.x && a.y === b.y && a.chain === b.chain;
@@ -93,6 +240,8 @@ class TimelineSimulation {
   private readonly pads: (Owner | null)[][];
   private readonly rounds = new Map<number, Owner>();
   private running: Animation[] = [];
+  private readonly animations: Animation[] = [];
+  private readonly lastByOwner = new Map<string, Animation>();
   private readonly out: LedCommand[] = [];
   private delayless = 0;
   private chain = 0;
@@ -142,6 +291,9 @@ class TimelineSimulation {
           ended = true;
         }
       }
+    }
+    for (const command of this.out) {
+      if (command.animation !== undefined) command.cutMs = this.animations[command.animation].cutMs;
     }
     return {
       commands: this.out,
@@ -193,11 +345,19 @@ class TimelineSimulation {
 
   private press(x: number, y: number, t: number): void {
     const owner = { x, y, chain: this.chain };
+    const ownerKey = `${x},${y},${this.chain}`;
+    const previous = this.lastByOwner.get(ownerKey);
+    if (previous) previous.cutMs = Math.min(previous.cutMs, t);
     this.end(t, (a) => sameOwner(a.owner, owner));
     const anims = this.queue(x, y);
     const led = anims?.[0];
     if (anims && anims.length > 1) anims.push(anims.shift()!);
-    if (led) this.running.push({ owner, led, due: t, index: 0, loopProgress: 0, playing: true });
+    if (led) {
+      const animation = { id: this.animations.length, owner, led, due: t, index: 0, loopProgress: 0, playing: true, cutMs: Infinity };
+      this.animations.push(animation);
+      this.lastByOwner.set(ownerKey, animation);
+      this.running.push(animation);
+    }
   }
 
   private release(x: number, y: number, t: number): void {
@@ -208,6 +368,7 @@ class TimelineSimulation {
   private end(t: number, which: (a: Animation) => boolean): void {
     const ended = this.running.filter(which);
     for (const animation of ended) {
+      animation.cutMs = Math.min(animation.cutMs, t);
       for (let x = 0; x < this.buttonX; x++) {
         for (let y = 0; y < this.buttonY; y++) {
           if (sameOwner(this.pads[x][y], animation.owner)) {
@@ -264,32 +425,32 @@ class TimelineSimulation {
         return;
       }
       const event = events[animation.index];
-      if (event.type === 'on') this.light(event.x, event.y, event.velocity, animation.owner, t);
-      else if (event.type === 'off') this.dim(event.x, event.y, animation.owner, t);
+      if (event.type === 'on') this.light(event.x, event.y, event.velocity, animation, t);
+      else if (event.type === 'off') this.dim(event.x, event.y, animation, t);
       else if (event.type === 'delay') animation.due += event.delay;
       animation.index++;
     }
   }
 
-  private light(x: number, y: number, velocity: number, owner: Owner, t: number): void {
+  private light(x: number, y: number, velocity: number, animation: Animation, t: number): void {
     if (x === -1) {
-      this.rounds.set(y, owner);
+      this.rounds.set(y, animation.owner);
     } else {
       if (this.pads[x]?.[y] === undefined) return;
-      this.pads[x][y] = owner;
+      this.pads[x][y] = animation.owner;
     }
-    this.out.push({ ms: t, x, y, code: sentCode(velocity) });
+    this.out.push({ ms: t, x, y, code: sentCode(velocity), animation: animation.id });
   }
 
-  private dim(x: number, y: number, owner: Owner, t: number): void {
+  private dim(x: number, y: number, animation: Animation, t: number): void {
     if (x === -1) {
-      if (!sameOwner(this.rounds.get(y), owner)) return;
+      if (!sameOwner(this.rounds.get(y), animation.owner)) return;
       this.rounds.delete(y);
     } else {
-      if (!sameOwner(this.pads[x]?.[y], owner)) return;
+      if (!sameOwner(this.pads[x]?.[y], animation.owner)) return;
       this.pads[x][y] = null;
     }
-    this.out.push({ ms: t, x, y, code: 0 });
+    this.out.push({ ms: t, x, y, code: 0, animation: animation.id });
   }
 
   private countLedChainEvents(): number {
@@ -345,18 +506,8 @@ const MAX_DIFF_CELLS = 20_000_000;
 const MAX_REPORTED_DIFFERENCES = 10;
 
 export function compareLedCommands(expected: readonly LedCommand[], arrived: readonly LedCommand[]): LedTimingResult {
-  const group = (commands: readonly LedCommand[]) => {
-    const byLed = new Map<string, LedCommand[]>();
-    for (const command of commands) {
-      const key = targetKey(command);
-      let list = byLed.get(key);
-      if (!list) byLed.set(key, list = []);
-      list.push(command);
-    }
-    return byLed;
-  };
-  const wantByLed = group(expected);
-  const gotByLed = group(arrived);
+  const wantByLed = groupByLed(expected);
+  const gotByLed = groupByLed(arrived);
   const result: LedTimingResult = {
     expected: expected.length, arrived: arrived.length,
     matched: 0, reordered: 0, missing: 0, extra: 0, overtaken: 0, latencies: [], differences: [],

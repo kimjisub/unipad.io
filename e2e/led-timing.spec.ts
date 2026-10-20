@@ -6,7 +6,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { test, expect } from './browser';
 import { parseUniPack } from '../src/lib/unipack/parser';
 import {
-  compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, isPad, OVERTAKE_MS, peakPerSecond, summarizeLatency,
+  compareLedCommands, denseTimingVerdict, timelineMeasurementLimit, intendedTimeline, isPad, LED_TICK_MS, OVERTAKE_MS, longestTimerSpan, peakPerSecond, stallExplains, summarizeLatency,
   type IntendedTimeline, type LedCommand,
 } from '../src/lib/unipack/ledTiming';
 
@@ -30,8 +30,10 @@ interface Run {
   taskMs: number;
   scriptMs: number;
   cpuMs: number;
-  /** The longest span of three ticks of a 4 ms timer the page runs beside LedRunner's (ms): how long a
-   *  press could wait, on this machine, for LedRunner to start its animation and play the last step. */
+  /** The ticks of a 4 ms timer the page runs beside LedRunner's, ms after the click. */
+  ticks: number[];
+  /** The longest span of three of those ticks (ms): how long a press could wait, on this machine, for
+   *  LedRunner to start its animation and play the last step. */
   timerSpanMs: number;
 }
 
@@ -43,7 +45,7 @@ declare global {
 test.use({ launchOptions: { args: ['--mute-audio'] } });
 
 /** LedRunner's tick, which the probe timer copies to see how late the page's timers ran. */
-const TICK_MS = 4;
+const TICK_MS = LED_TICK_MS;
 
 /**
  * Records each MIDI message the player hands the virtual output, with when it was handed over, and the
@@ -84,16 +86,6 @@ async function recordMidiOutput(page: Page) {
       },
     });
   }, TICK_MS);
-}
-
-/** LedRunner starts an animation on its second tick after the press and plays a step on the first tick at or after its time. */
-function longestTimerSpan(ticks: readonly number[], from: number, to: number): number {
-  let longest = 0;
-  for (let i = 0; i + 3 < ticks.length; i++) {
-    if (ticks[i + 3] < from || ticks[i] > to) continue;
-    longest = Math.max(longest, ticks[i + 3] - ticks[i]);
-  }
-  return longest;
 }
 
 /** Launchpad X programmer layout: pad x,y (row from the top, column) is note (8 - x) * 10 + y + 1. */
@@ -139,16 +131,19 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
 
   const after = await metrics();
   const { sent, otherOutputs, ticks, autoStart } = await page.evaluate(() => window.ledTiming);
+  const lastSent = sent.length ? sent[sent.length - 4] - autoStart! : 0;
+  const clickTicks = ticks.map((t) => t - autoStart!);
   const run: Run = {
     sent: [], roundMessages: 0,
     otherOutputPads: Object.entries(otherOutputs).map(([id, output]) => ({
       id, name: output.name, count: padCommands(output.sent, 0).length,
     })),
-    wallMs: sent.length ? sent[sent.length - 4] - autoStart! : 0,
+    wallMs: lastSent,
     taskMs: (after.TaskDuration - before.TaskDuration) * 1000,
     scriptMs: (after.ScriptDuration - before.ScriptDuration) * 1000,
     cpuMs: (after.ThreadTime - before.ThreadTime) * 1000,
-    timerSpanMs: longestTimerSpan(ticks, autoStart!, Math.max(autoStart! + lastT0, sent.length ? sent[sent.length - 4] : 0)),
+    ticks: clickTicks,
+    timerSpanMs: longestTimerSpan(clickTicks, 0, Math.max(lastT0, lastSent)),
   };
   run.sent = padCommands(sent, autoStart!);
   for (let i = 0; i < sent.length; i += 4) {
@@ -337,17 +332,22 @@ test('a dense pack\'s LED commands reach the launchpad output in the pack\'s ord
 
   const run = await playAutoPlay(page, { name: 'led-timing.zip', mimeType: 'application/zip', buffer }, timeline);
   const { result, latency, text } = report('in-repo dense pack', timeline, run, browser.version());
-  await record(testInfo, 'dense-pack', text, { ...result, latencies: undefined, latency, ...run, sent: undefined });
+  // A timer stall longer than DENSE_SLACK_MS can delay an animation until the pad's next press cuts it
+  // off or the final redraw overtakes its last steps; neither is a player regression. Any other
+  // difference is.
+  const verdict = denseTimingVerdict(result, stallExplains(timeline.commands.filter(isPad), run.sent, run.ticks));
+  // Every command that arrived and every timer tick go in the record when they differ, so each
+  // difference can be traced.
+  const traced = verdict !== 'pass';
+  await record(testInfo, 'dense-pack', text, {
+    ...result, latencies: undefined, latency, ...run, sent: traced ? run.sent : undefined, ticks: traced ? run.ticks : undefined,
+  });
 
   expectOnlyLaunchpadPads(run.otherOutputPads);
 
-  // The same excessive timer stall can truncate an animation or insert the final redraw among its
-  // late steps. Preserve both differences in the record, but neither proves a player regression then.
-  // Extras always fail; below the smallest slack, reorders and missing commands always fail too.
-  const verdict = denseTimingVerdict(result, run.timerSpanMs, DENSE_SLACK_MS);
   test.skip(verdict === 'inconclusive',
-    `Inconclusive: ${result.reordered} reordered and ${result.missing} missing commands after the page's timers stalled for ` +
-    `${ms(run.timerSpanMs)} ms, more than the ${DENSE_SLACK_MS} ms minimum gap before a pad's next press or the final redraw`);
+    `Inconclusive: ${result.reordered} reordered and ${result.missing} missing commands, all of them late animation steps ` +
+    `that the same pad's next press cut off or the final redraw overtook (page timers stalled for up to ${ms(run.timerSpanMs)} ms)`);
   expect(result.reordered, text).toBe(0);
   expect(result.extra, text).toBe(0);
   expect(result.missing, text).toBe(0);
@@ -385,7 +385,7 @@ if (!packsFolder || measured.length === 0) {
 
       const run = await playAutoPlay(page, path, timeline);
       const { result, latency, text } = report(code, timeline, run, browser.version());
-      await record(testInfo, code, text, { ...result, latencies: undefined, latency, ...run, sent: undefined });
+      await record(testInfo, code, text, { ...result, latencies: undefined, latency, ...run, sent: undefined, ticks: undefined });
 
       expectOnlyLaunchpadPads(run.otherOutputPads);
       expect(result.reordered, text).toBe(0);
