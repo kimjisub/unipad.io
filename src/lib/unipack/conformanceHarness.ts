@@ -11,6 +11,7 @@ import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
+import { PlayerHolds } from './PlayerHolds';
 import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 import type { Sound, UniPackData } from './types';
 
@@ -120,7 +121,7 @@ export function normalizeError(message: string): string {
   const section = /^([A-Za-z.]+)\s*:/.exec(message)?.[1] ?? 'unknown';
   let kind: string;
   if (/format is (incorrect|not found)/.test(message)) kind = 'format';
-  else if (/\b(chain|x|y|loop|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
+  else if (/\b(chain|x|y|loop|wormhole|coordinate) is incorrect\b|out of range/.test(message)) kind = 'range';
   else if (/was not found|directory not found|doesn't exist/.test(message)) kind = 'missing-file';
   else if (/was missing/.test(message)) kind = 'missing-field';
   else kind = `other(${message})`;
@@ -311,10 +312,12 @@ class VirtualClock {
   }
 }
 
+interface StartedSource { name: string; loop: boolean; stopAt: number | null; stopped: boolean }
+
 /** The part of the Web Audio API SoundEngine touches, recording every started source. */
 class FakeAudioContext {
   static decodeNames: string[] = [];
-  static started: { name: string; loop: boolean; stopAt: number | null }[] = [];
+  static started: StartedSource[] = [];
   state = 'running';
   currentTime = 0;
   destination = {};
@@ -323,7 +326,7 @@ class FakeAudioContext {
   async close() {}
   async decodeAudioData() { return { name: FakeAudioContext.decodeNames.shift() ?? '?', duration: 0.01 }; }
   createBufferSource() {
-    const record = { name: '', loop: false, stopAt: null as number | null };
+    const record: StartedSource = { name: '', loop: false, stopAt: null, stopped: false };
     const node = {
       buffer: null as { name: string } | null,
       get loop() { return record.loop; },
@@ -331,7 +334,7 @@ class FakeAudioContext {
       connect() {},
       onended: null as (() => void) | null,
       start() { record.name = node.buffer?.name ?? '?'; FakeAudioContext.started.push(record); },
-      stop(when?: number) { if (when !== undefined) record.stopAt = when; },
+      stop(when?: number) { if (when !== undefined) record.stopAt = when; else record.stopped = true; },
     };
     return node;
   }
@@ -365,6 +368,8 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   await sound.load();
   led.launch();
   let autoPlay: AutoPlayRunner | null = null;
+  const playerHolds = new PlayerHolds();
+  const startedAt = new Map<StartedSource, [number, number]>();
 
   // A pad press and release as the play screen sends them to the sound engine and the LED runner,
   // named by the input holding the pad: the scenario's press/release steps are one player input,
@@ -377,10 +382,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
       // Once: no loop. Endless: loop with no stop time. N repeats: stop scheduled after N+1 plays of 10 ms.
       const loop = started.stopAt === null ? (started.loop ? -1 : 0) : Math.round(started.stopAt / 0.01) - 1;
       events.push(['sound', at, x, y, started.name.replace(/^(?:.*\/)?sounds\//i, ''), loop]);
+      startedAt.set(started, [x, y]);
     }
     led.eventOn(x, y);
   };
-  const releasePad = (x: number, y: number, input: string) => {
+  const releasePad = (x: number, y: number, input?: string) => {
     sound.soundOff(x, y, input);
     led.eventOff(x, y);
   };
@@ -389,10 +395,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
+          playerHolds.press(step.x!, step.y!);
           pressPad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'release':
-          releasePad(step.x!, step.y!, PLAYER_INPUT);
+          releasePad(step.x!, step.y!, playerHolds.release(step.x!, step.y!) ? undefined : PLAYER_INPUT);
           break;
         case 'chain':
           chain = step.c!;
@@ -409,7 +416,13 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => { events.push(['autoOn', x, y]); if (toPads) pressPad(x, y, AUTO_PLAY_INPUT); },
+            onPadTouchOn: (x, y) => {
+              events.push(['autoOn', x, y]);
+              if (toPads) {
+                playerHolds.autoPlayPressed(x, y);
+                pressPad(x, y, AUTO_PLAY_INPUT);
+              }
+            },
             onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
             onChainChange: (next) => { chain = next; events.push(['autoChain', next]); },
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
@@ -423,6 +436,20 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           led.stop();
           sound.destroy();
           break;
+        case 'autoplayOff':
+          // useUniPadEngine turning autoplay off: the runner stops and padInit releases every pad the
+          // player is not holding.
+          autoPlay?.stop();
+          playerHolds.releaseOthers(pack.info.buttonX, pack.info.buttonY, (x, y) => releasePad(x, y));
+          break;
+        case 'looping': {
+          const looping = FakeAudioContext.started
+            .filter((s) => s.loop && s.stopAt === null && !s.stopped && startedAt.has(s))
+            .map((s) => startedAt.get(s)!)
+            .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          for (const [x, y] of looping) events.push(['looping', x, y]);
+          break;
+        }
         default:
           throw new Error(`${c.id}: unknown scenario step ${step.do}`);
       }

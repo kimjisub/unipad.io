@@ -17,8 +17,9 @@ const LOGO_TOKEN = 'l';
 const AUTO_TOKENS = new Set(['auto', 'a']);
 
 /**
- * `mc 1`..`mc 32` as a round LED index, or null. Anything else is dropped without a warning, as Android's
- * drivers dropped it before; index 32 would otherwise light the logo. A non-number is NaN and reported.
+ * `mc 1`..`mc 32` as a round LED index, or null. Any other 32-bit integer is dropped without a warning, as
+ * Android's drivers dropped it before; index 32 would otherwise light the logo. A non-number or a value
+ * beyond 32 bits is NaN and reported.
  */
 function roundLedIndex(token: string | undefined): number | null {
   const index = strictInt(token) - 1;
@@ -295,7 +296,7 @@ async function parseKeySoundFromFile(
     const y = strictInt(parts[2]) - 1;
     const soundURL: string | undefined = parts[3];
     const loop = parts.length >= 5 ? strictInt(parts[4]) - 1 : 0;
-    const wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
+    let wormhole = parts.length >= 6 ? strictInt(parts[5]) - 1 : NO_WORMHOLE;
 
     // Android records "format is incorrect" for a short or non-numeric line and keeps going;
     // here a 3-token line reached findSoundFile with undefined and threw out of the whole parse,
@@ -304,6 +305,13 @@ async function parseKeySoundFromFile(
       || !Number.isFinite(loop) || !Number.isFinite(wormhole)) {
       errors.push(`keySound: [${trimmed}] format is incorrect`);
       continue;
+    }
+
+    // A move to a chain the pack lacks goes to the nearest one: the autoPlay order built from it
+    // otherwise made practice wait for a chain button that does not exist.
+    if (wormhole !== NO_WORMHOLE && (wormhole < 0 || wormhole >= info.chain)) {
+      errors.push(`keySound: [${trimmed}] wormhole is incorrect`);
+      wormhole = Math.max(0, Math.min(wormhole, info.chain - 1));
     }
 
     if (c < 0 || c >= info.chain) {
@@ -377,11 +385,17 @@ function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
 }
 
+const INT32_MIN = -2147483648;
+const INT32_MAX = 2147483647;
+
 /** parseInt is lenient ("3abc" -> 3, "1 1 1.txt" -> 1), so a pack authored here had dead pads on
- *  Android, which rejects those lines. Only a complete integer counts. */
+ *  Android, which rejects those lines. Only a complete integer counts, and only one that fits in 32 bits,
+ *  as Android's toInt reads it: a larger value is a format error, not a number outside the pack. Number()
+ *  rounds monotonically and both bounds are exact doubles, so the range check is exact for any length. */
 function strictInt(token: string | undefined): number {
   if (token === undefined || !/^[+-]?\d+$/.test(token)) return NaN;
-  return Number(token);
+  const value = Number(token);
+  return value >= INT32_MIN && value <= INT32_MAX ? value : NaN;
 }
 
 /** Android parses the colour with a 32-bit toInt(16): more than six hex digits overflow and the
