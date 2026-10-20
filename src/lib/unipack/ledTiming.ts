@@ -59,6 +59,22 @@ export function longestTimerSpan(ticks: readonly number[], from: number, to: num
   return longest;
 }
 
+/** Whether a timer as frequent as LedRunner's, ticking at `ticks` (ascending), stalled from `from` until
+ * `to`: four consecutive ticks span both, so the page's timers ran at most three times in between, as few as
+ * a step due at `from` can take to be sent: autoplay's run that presses the pad, LedRunner's that takes in
+ * the new animation, and LedRunner's that plays it. */
+export function stalledThrough(ticks: readonly number[], from: number, to: number): boolean {
+  if (to <= from) return true;
+  let after = 0;
+  let end = ticks.length;
+  while (after < end) {
+    const middle = (after + end) >> 1;
+    if (ticks[middle] <= from) after = middle + 1;
+    else end = middle;
+  }
+  return after > 0 && after + 3 < ticks.length && ticks[after + 3] >= to;
+}
+
 /**
  * Whether late animation steps account for every LED whose arrived commands differ from the intended
  * ones. LedRunner starts an animation when it next runs after the press, so a late start delays all its
@@ -68,11 +84,14 @@ export function longestTimerSpan(ticks: readonly number[], from: number, to: num
  * - the same pad's next press before the animation started, which does not end it: both animations play
  *   in full, side by side, but an off for the pad the other one already turned off sends nothing;
  * - autoplay's final redraw, which does not end it: the redraw arrives before the remaining steps.
- * Each such step must also have been overtaken in the record itself (`arrived` and `ticks` share one
+ * Each such step must also have been held back in the record itself (`arrived` and `ticks` share one
  * clock, from the click that starts autoplay): the overtaking command arrived no earlier than its press or
- * redraw was due, and before the step was due by the animation's last arrived step, give or take two
- * ticks, or the page's timers stalled in between for at least the difference. A command missing or out of
- * order anywhere else, such as a hole inside an animation that kept playing, is not explained.
+ * redraw was due, and the page's timers stalled from when the step was due until that press or redraw took
+ * effect (see stalledThrough). A step is due by the animation's last arrived step, or at its intended time
+ * when none arrived, which takes an animation's first step on an LED to be due at its press, as in the
+ * dense pack; the steps that did arrive before must be no later than such stalls allow either. A command
+ * missing or out of order anywhere else, such as a hole inside an animation that kept playing, or a whole
+ * animation that was due while the timers still ran, is not explained.
  */
 export function stallExplains(expected: readonly LedCommand[], arrived: readonly LedCommand[], ticks: readonly number[]): boolean {
   const wantByLed = groupByLed(expected);
@@ -120,16 +139,23 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
   /** Whether `commands` arrived as got[j], got[j + 1], ... */
   const arrivedAt = (commands: readonly LedCommand[], j: number) =>
     commands.every((c, k) => got[j + k]?.code === c.code && got[j + k].ms >= c.ms);
-  /** Whether got[j], caused by a press or redraw intended at `causeMs`, can have overtaken `steps[kept]`
-   *  after steps[0..kept) arrived from got[j - kept] on. */
-  const overtaken = (steps: readonly LedCommand[], kept: number, j: number, causeMs: number) => {
-    const arrival = got[j];
-    if (!arrival || arrival.ms < causeMs) return false;
-    const [from, gap] = kept > 0
-      ? [got[j - 1].ms, arrival.ms - (got[j - 1].ms + steps[kept].ms - steps[kept - 1].ms)]
-      : [got[j - 1]?.ms ?? -Infinity, causeMs - steps[0].ms];
-    return gap <= OVERTAKE_MS || gap <= OVERTAKE_MS + longestTimerSpan(ticks, from, arrival.ms);
-  };
+  // Autoplay keeps time from when it starts, which can be later than the click the record counts from.
+  // Its first tick sends the last of the redraws intended at 0 ms, so it started no later than that arrived:
+  // a step is taken to be due as late as that allows, and a press to take effect as early as it could.
+  const startRedraws = runs[0]?.animation === undefined ? runs[0].commands.filter((c) => c.ms === 0).length : 0;
+  const autoPlayLagMs = startRedraws > 0 && arrivedAt(runs[0].commands.slice(0, startRedraws), 0) ? got[startRedraws - 1].ms : 0;
+  /** When `steps[kept]` was due, after steps[0..kept) arrived from got[j - kept] on; LedRunner times an
+   *  animation from its first step. */
+  const dueAt = (steps: readonly LedCommand[], kept: number, j: number) =>
+    kept > 0 ? got[j - 1].ms + steps[kept].ms - steps[kept - 1].ms : steps[0].ms + autoPlayLagMs;
+  /** Whether a step due at `dueMs` can have been held back until `untilMs`: within two ticks, or by the
+   *  timers stalling from when it was due (see stalledThrough). */
+  const heldBack = (dueMs: number, untilMs: number) =>
+    untilMs - dueMs <= OVERTAKE_MS || stalledThrough(ticks, dueMs, untilMs - OVERTAKE_MS);
+  /** Whether got[j], caused by a press or redraw intended at `causeMs` that took effect by `effectMs`, can
+   *  have overtaken `steps[kept]` after steps[0..kept) arrived from got[j - kept] on. */
+  const overtaken = (steps: readonly LedCommand[], kept: number, j: number, causeMs: number, effectMs: number) =>
+    !!got[j] && got[j].ms >= causeMs && heldBack(dueAt(steps, kept, j), effectMs);
   /** Whether `group`'s animations, started in one tick, arrived from got[j] on, followed by what `then`
    *  explains from the index after them: each in order and whole, except that an off (0) the LED is
    *  already off for sends nothing, as the animations share its owner. Each tick plays them in the order of
@@ -169,26 +195,30 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
       const cutMs = commands[0].cutMs ?? Infinity;
       const redraws = runs[r + 1]?.animation === undefined ? runs[r + 1]?.commands : undefined;
       for (let kept = 0; !explained && kept <= commands.length; kept++) {
-        if (kept > 0 && !arrivedAt([commands[kept - 1]], j + kept - 1)) break;
-        if (kept === 1 && got[j].ms < stepsFrom) break;
         const next = j + kept;
+        if (kept > 0 && !arrivedAt([commands[kept - 1]], next - 1)) break;
+        if (kept === 1 && got[j].ms < stepsFrom) break;
+        // A step that arrived came no later than stalls allow, and its delay carries over to the next.
+        if (kept > 0 && !heldBack(dueAt(commands, kept - 1, next - 1), got[next - 1].ms)) break;
         if (kept === commands.length) {
           explained = visit(r + 1, next, cut, -Infinity);
           continue;
         }
         const lastAt = got[next - 1]?.ms;
-        // The next press ends the animation, first turning off the LED if its last step left it lit.
-        if (Number.isFinite(cutMs) && overtaken(commands, kept, next, cutMs)) {
+        // The next press ends the animation, first turning off the LED if its last step left it lit. The
+        // press takes effect by that off, or else no earlier than it was due.
+        const lit = kept > 0 && commands[kept - 1].code !== 0;
+        if (Number.isFinite(cutMs) && overtaken(commands, kept, next, cutMs, lit ? got[next]?.ms ?? cutMs : cutMs)) {
           if (kept === 0) explained = visit(r + 1, next, [...cut, animation], stepsFrom);
-          else if (commands[kept - 1].code === 0) explained = visit(r + 1, next, [...cut, animation], lastAt + 2 * NEXT_TICK_MS);
+          else if (!lit) explained = visit(r + 1, next, [...cut, animation], lastAt + 2 * NEXT_TICK_MS);
           else {
             explained = got[next].code === 0 && got[next].ms >= lastAt + NEXT_TICK_MS &&
               visit(r + 1, next + 1, [...cut, animation], got[next].ms + NEXT_TICK_MS);
           }
         }
-        // The final redraw arrives first; the remaining steps follow it, in a later tick.
+        // The final redraw arrives first, as autoplay sends it; the remaining steps follow it, in a later tick.
         const rest = next + (redraws?.length ?? 0);
-        explained ||= !!redraws && arrivedAt(redraws, next) && overtaken(commands, kept, next, redraws[0].ms) &&
+        explained ||= !!redraws && arrivedAt(redraws, next) && overtaken(commands, kept, next, redraws[0].ms, got[next].ms) &&
           arrivedAt(commands.slice(kept), rest) && (kept === 0 || got[rest].ms >= lastAt + NEXT_TICK_MS) &&
           visit(r + 2, rest + commands.length - kept, cut, -Infinity);
       }
@@ -196,7 +226,8 @@ function stallExplainsLed(want: readonly LedCommand[], got: readonly LedCommand[
       // only the animations already running, so this one and theirs all play in full, side by side.
       for (let last = r + 1; !explained && runs[last]?.animation !== undefined; last++) {
         if ((got[j]?.ms ?? -Infinity) < stepsFrom) break;
-        if (!overtaken(commands, 0, j, runs[last - 1].commands[0].cutMs ?? Infinity)) break;
+        const pressMs = runs[last - 1].commands[0].cutMs ?? Infinity;
+        if (!overtaken(commands, 0, j, pressMs, pressMs)) break;
         const group = runs.slice(r, last + 1).map((run) => run.commands);
         explained = interleaved(group, j, (end) => visit(last + 1, end, cut, -Infinity));
       }
