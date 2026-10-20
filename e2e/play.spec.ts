@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { expectLandscapePads } from './pad-layout';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -663,20 +664,6 @@ test('a pack light ending under the open option panel leaves its top-row lights'
 // right of the menu, 61 px right of the screen's centre line on every landscape screen, and with
 // the menu hidden it centred the pads together with the chain column, half a column to the left,
 // and drew them at zero size, then at fractional sizes with seams between them.
-const padGrid = (page: Page) => page.evaluate(() => {
-  const pads = [...document.querySelectorAll('[data-pad]')].map(pad => pad.getBoundingClientRect());
-  const left = Math.min(...pads.map(pad => pad.left));
-  const right = Math.max(...pads.map(pad => pad.right));
-  const top = Math.min(...pads.map(pad => pad.top));
-  const bottom = Math.max(...pads.map(pad => pad.bottom));
-  return {
-    offCentre: Math.abs((left + right) / 2 - window.innerWidth / 2),
-    heightShare: (bottom - top) / window.innerHeight,
-    // Pads of a fractional width leave thin seams between neighbours.
-    wholePixelPads: pads.every(pad => Number.isInteger(pad.width) && Number.isInteger(pad.height)),
-  };
-});
-
 for (const [name, file] of [
   ['without a chain column', pack],
   ['with a chain column', resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni')],
@@ -691,9 +678,7 @@ for (const [name, file] of [
       for (const [width, height] of [[915, 402], [844, 390], [1280, 720], [1920, 1080]]) {
         await page.setViewportSize({ width, height });
         const screen = `${width}x${height}${hideUI ? ' menu hidden' : ''}`;
-        await expect.poll(async () => (await padGrid(page)).offCentre, screen).toBeLessThanOrEqual(1);
-        await expect.poll(async () => (await padGrid(page)).heightShare, screen).toBeGreaterThan(0.8);
-        await expect.poll(async () => (await padGrid(page)).wholePixelPads, screen).toBe(true);
+        await expectLandscapePads(page, screen);
       }
     }
   });

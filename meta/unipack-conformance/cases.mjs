@@ -512,6 +512,92 @@ export function buildCases(palette) {
     expected: loaded(withSounds({ autoPlay: [ap.on(0, 0, 0, 0)], errors: ['autoPlay:format'] })),
     basis: [AGREED('auto-play.mdx lists the commands but does not say what a line starting with another word does (key-led.mdx says "skipped", for keyLED files only); all three skip it with a format warning. The same as AP-022.')],
   });
+
+  // ---------------------------------------------------------------------------------------------
+  // numbers that do not fit in 32 bits, and the two 32-bit ends
+  // ---------------------------------------------------------------------------------------------
+  // Each pack puts every numeric field of one file kind at the same value, then a line or file that is
+  // fine and must still be read. A number past 32 bits is a format error; one that fits is range-checked
+  // where the field has a range, and otherwise kept, 1 less where the field is stored 0-based.
+  const INT32 = decision('maintainers, 2026-10-17', 'A number in a pack is a signed decimal integer from -2147483648 to 2147483647, as Android always read it. A larger one is a format error and only its line or file is skipped; one that fits but is outside the pack is a range error. The platforms differed: iOS read numbers up to 64 bits and the web any number, so the same value was a range error there, and the web rounded numbers past 2^53.');
+  const tooLarge = [
+    ['01', '2147483648', 'one past the largest 32-bit number'],
+    ['02', '-2147483649', 'one below the smallest 32-bit number'],
+    ['03', '99999999999', 'eleven digits'],
+    ['04', '9007199254740993', 'past 2^53, where the web rounded'],
+    ['05', '9223372036854775808', 'one past the largest 64-bit number'],
+    ['06', '9'.repeat(400), '400 digits'],
+  ];
+  const repeat = (n, item) => Array.from({ length: n }, () => item);
+  for (const [n, value, what] of tooLarge) {
+    add({
+      id: `KS-B${n}`, area: 'keySound', title: `a number past 32 bits is a format error in every field: ${what}`,
+      files: pack({ keySound: lines(`${value} 1 1 a.wav`, `1 ${value} 1 a.wav`, `1 1 ${value} a.wav`, `1 1 1 a.wav ${value}`, `1 1 1 a.wav 1 ${value}`, '1 1 2 b.wav') }),
+      expected: loaded({ sounds: [cell(0, 0, 1, [q('b.wav')])], errors: repeat(5, 'keySound:format') }),
+      basis: [INT32],
+    });
+    // A file name is at most 255 bytes, so the 400-digit number is cut to 240 digits there.
+    const name = value.length > 240 ? value.slice(0, 240) : value;
+    add({
+      id: `KL-BN${n}`, area: 'keyLed', title: `a file name number past 32 bits is a format error: ${value.length > 240 ? '240 digits' : what}`,
+      ...led({ [`${name} 1 1`]: 'f 1 1', [`1 ${name} 1`]: 'f 1 1', [`1 1 ${name}`]: 'f 1 1', [`1 1 1 ${name}`]: 'f 1 1', '1 1 1': 'f 1 1' }),
+      expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.off(0, 0)])])], errors: repeat(4, 'keyLed:format') }),
+      basis: [INT32],
+    });
+    add({
+      id: `KL-BE${n}`, area: 'keyLed', title: `an event number past 32 bits is a format error: ${what}`,
+      ...led({ '1 1 1': lines(`o ${value} 1 a 5`, `o 1 ${value} a 5`, `f ${value} 1`, `f 1 ${value}`, `o mc ${value} a 5`, `f mc ${value}`, `o 1 1 FF0000 ${value}`, `o 1 1 a ${value}`, `d ${value}`, `c ${value}`, 'f 1 1') }),
+      expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.off(0, 0)])])], errors: repeat(10, 'keyLed:format') }),
+      basis: [INT32],
+    });
+    add({
+      id: `AP-B${n}`, area: 'autoPlay', title: `a number past 32 bits is a format error: ${what}`,
+      ...play(lines(`on ${value} 1`, `off 1 ${value}`, `touch ${value} 1`, `chain ${value}`, `delay ${value}`, 'on 1 1')),
+      expected: loaded(withSounds({ autoPlay: [ap.on(0, 0, 0, 0)], errors: repeat(5, 'autoPlay:format') })),
+      basis: [INT32],
+    });
+  }
+  // At the two ends a field with a range is a range error. A field without one keeps the number as the
+  // cases without big numbers do (a negative keyLED loop drops its file as in KL-005, a hex colour keeps any
+  // velocity as in KL-020, an event outside the grid or a chain the pack lacks is kept as in KL-024 and
+  // KL-023), and a field stored 0-based keeps 1 less for the smallest number too: -2147483649.
+  const ends = [['07', 2147483647, 'the largest 32-bit number'], ['08', -2147483648, 'the smallest 32-bit number']];
+  for (const [n, value, what] of ends) {
+    add({
+      id: `KS-B${n}`, area: 'keySound', title: `${what} is a number: outside the pack, or a loop`,
+      files: pack({ keySound: lines(`${value} 1 1 a.wav`, `1 ${value} 1 a.wav`, `1 1 ${value} a.wav`, `1 1 1 a.wav ${value}`, '1 1 2 b.wav') }),
+      expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav', value - 1)]), cell(0, 0, 1, [q('b.wav')])], errors: repeat(3, 'keySound:range') }),
+      basis: [INT32, doc('key-sound.mdx', 'Loop Values: the loop value is internally stored with 1 subtracted')],
+    });
+    add({
+      id: `KL-BN${n}`, area: 'keyLed', title: `${what} in a file name is a number: outside the pack, or a loop`,
+      ...led({ [`${value} 1 1`]: 'f 1 1', [`1 ${value} 1`]: 'f 1 1', [`1 1 ${value}`]: 'f 1 1', [`1 1 1 ${value}`]: 'f 1 1', '1 1 2': 'f 1 1' }),
+      expected: loaded({
+        sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true,
+        leds: value > 0 ? [ledCell(0, 0, 0, [anim(value, [ev.off(0, 0)])]), ledCell(0, 0, 1, [anim(1, [ev.off(0, 0)])])] : [ledCell(0, 0, 1, [anim(1, [ev.off(0, 0)])])],
+        errors: repeat(value > 0 ? 3 : 4, 'keyLed:range'),
+      }),
+      basis: [INT32],
+    });
+    add({
+      id: `KL-BE${n}`, area: 'keyLed', title: `${what} in an event: kept as a velocity and a delay, a round LED of it dropped`,
+      ...led({ '1 1 1': lines(`o mc ${value} a 5`, `f mc ${value}`, `o 1 1 FF0000 ${value}`, `o 1 1 a ${value}`, `d ${value}`, 'f 1 1') }),
+      expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(0, 0, 'ffff0000', value), ev.delay(value), ev.off(0, 0)])])], errors: ['keyLed:format'] }),
+      basis: [INT32, ROUND, doc('key-led.mdx', 'velocity: MIDI velocity (0~127)')],
+    });
+    add({
+      id: `KL-BE${n === '07' ? '09' : '10'}`, area: 'keyLed', title: `${what} as an event coordinate or chain is kept 1 less`,
+      ...led({ '1 1 1': lines(`o ${value} 1 a 5`, `f 1 ${value}`, `c ${value}`, 'f 1 1') }),
+      expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [auto(value - 1, 0, 5), ev.off(0, value - 1), ev.chain(value - 1), ev.off(0, 0)])])] }),
+      basis: [INT32],
+    });
+    add({
+      id: `AP-B${n}`, area: 'autoPlay', title: `${what} is a number: outside the pack, or a delay`,
+      ...play(lines(`on ${value} 1`, `off 1 ${value}`, `touch ${value} 1`, `chain ${value}`, `delay ${value}`, 'on 1 1')),
+      expected: loaded(withSounds({ autoPlay: [ap.delay(value), ap.on(0, 0, 0, 0)], errors: repeat(4, 'autoPlay:range') })),
+      basis: [INT32],
+    });
+  }
   add({
     id: 'AP-020', area: 'autoPlay', title: 'an empty autoPlay file exists with no elements',
     ...play(''),
@@ -550,6 +636,7 @@ export function buildCases(palette) {
   const release = (x, y) => ({ do: 'release', x, y });
   const advance = (ms) => ({ do: 'advance', ms });
   const observe = { do: 'observe' };
+  const looping = { do: 'looping' };
   const snd = (c, x, y, file, loop = 0) => ['sound', c, x, y, file, loop];
   const RED = 'ffff0000';
   const GREEN = 'ff00ff00';
@@ -716,6 +803,15 @@ export function buildCases(palette) {
       intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless animation ends when the pad is released (RUN-L-003)'),
       intent('unipad-android 3e5a2fd6 (#101), ce6af172 (#86), unipad.io 8019666 (#32), AutoPlayRunner.stop', 'after leaving the screen no light and no press follows (RUN-L-006, RUN-A-002)'),
       VEL4,
+    ]);
+  run('RUN-RP-005', 'realPack', 'turning autoPlay off releases the endless sound it held, not the one the user holds',
+    pack({ keySound: lines('1 1 1 a.wav 0', '1 2 1 a.wav 0'), sounds: ['a.wav'], autoPlay: lines('on 1 1', 'delay 300', 'off 1 1') }),
+    [press(1, 0), autoToPads, advance(20), looping, observe, { do: 'autoplayOff' }, looping, observe, advance(400), observe, release(1, 0), looping, observe],
+    [[snd(0, 1, 0, 'a.wav', -1), ['autoOn', 0, 0], snd(0, 0, 0, 'a.wav', -1), ['looping', 0, 0], ['looping', 1, 0]], [['looping', 1, 0]], [], []],
+    [
+      doc('key-sound.mdx', 'Loop Values: 0 loops indefinitely'),
+      intent('unipad.io LedRunner.test.ts "turns a looping animation off on release and stays dark", unipad-android LedRunnerToggleTest', 'an endless loop lasts while its pad is held and ends when the pad is released (RUN-L-003)'),
+      intent('unipad.io src/lib/unipack/PlayerHolds.test.ts', 'a pad autoPlay holds counts as released when autoPlay is turned off, as any input that goes away counts as a release, so its endless sound stops; a pad the user still holds keeps sounding until the user lets go'),
     ]);
 
   return cases;

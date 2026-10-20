@@ -11,6 +11,9 @@ const CENTERED_CONTENT_CLASS = 'justify-center gap-2';
 /** 소개 페이지의 큰 버튼 공통 모양(내용 가운데 정렬). 좌우 여백과 색은 쓰는 쪽에서 붙인다. */
 export const LARGE_BUTTON_CLASS = `${LARGE_BUTTON_BASE_CLASS} ${CENTERED_CONTENT_CLASS}`;
 
+/** 큰 버튼의 좌우 여백. 큰 글씨에서도 24px까지만 늘려 좁은 화면에서 아이콘과 글자 자리를 남긴다. */
+export const LARGE_BUTTON_PADDING_X_CLASS = 'px-[min(1.5rem,24px)]';
+
 /** 주황 바탕 위 버튼의 키보드 초점 테두리. 사이트 공통 테두리는 주황이라 이 바탕에서는 보이지 않는다. */
 export const ON_ACCENT_FOCUS_CLASS = 'focus-visible:outline-accent-foreground';
 

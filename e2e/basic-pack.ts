@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { expectPads } from './browser';
+import { expect, expectPads } from './browser';
 
 export const BASIC_PACK = 'e2e/fixtures/basic.uni';
 
@@ -21,4 +21,14 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expectPads(page);
+}
+
+/** Presses basic.uni's first pad once and releases it. Requires a fresh page with no earlier audio starts. */
+export async function playFirstPad(page: Page) {
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+  await page.locator('[data-pad="0,0"]').hover();
+  await page.mouse.down();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
 }
