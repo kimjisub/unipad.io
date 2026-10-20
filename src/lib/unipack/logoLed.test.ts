@@ -192,7 +192,7 @@ async function playOnLaunchpad(keyLed: string, proLightMode = true, profile: Lau
 
   runner.launch();
   runner.eventOn(0, 0);
-  // The first tick only takes the press in; the second plays it.
+  // The first tick takes in the press and plays the steps due since then.
   tick(4);
   tick(4);
   return { runner, midi, sent, tick };
@@ -243,9 +243,9 @@ test('round LED 33 does not light the logo', async (t) => {
   assert.deepEqual(sent, []);
 });
 
-test('stopping the LEDs turns a lit logo off', async (t) => {
+test('stopping a running animation turns its lit logo off', async (t) => {
   t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
-  const { runner, sent } = await playOnLaunchpad('o l a 5');
+  const { runner, sent } = await playOnLaunchpad('o l a 5\nd 1000\nf l');
   sent.length = 0;
 
   runner.stop();

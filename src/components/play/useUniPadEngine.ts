@@ -19,6 +19,7 @@ import {
   releaseThemeUrls,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
@@ -388,38 +389,12 @@ export function useUniPadEngine() {
   const setChain = useCallback((c: number) => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    // Math.min/max pass NaN through; a NaN chain made soundTable[NaN] undefined for every pad.
-    if (!Number.isInteger(c)) return;
-    // Android: ChainObserver clamps to valid range instead of ignoring
-    c = Math.max(0, Math.min(c, unipack.info.chain - 1));
+    const next = changeChain(unipack, c, soundEngineRef.current);
+    if (next === null) return;
+    c = next;
 
     const prevChain = chainRef.current;
     chainRef.current = c;
-
-    // Android: chain 변경 시 sound/LED 인덱스를 0으로 리셋
-    const se = soundEngineRef.current;
-    if (se) {
-      for (let x = 0; x < unipack.info.buttonX; x++) {
-        for (let y = 0; y < unipack.info.buttonY; y++) {
-          se.soundPushToNum(c, x, y, 0);
-        }
-      }
-    }
-    const table = unipack.ledAnimationTable;
-    if (table) {
-      for (let x = 0; x < unipack.info.buttonX; x++) {
-        for (let y = 0; y < unipack.info.buttonY; y++) {
-          const anims = table[c]?.[x]?.[y];
-          if (anims && anims.length > 0) {
-            for (let i = 0; i < anims.length; i++) {
-              if (anims[0].num === 0) break;
-              const first = anims.shift()!;
-              anims.push(first);
-            }
-          }
-        }
-      }
-    }
 
     recorderRef.current.recordChain(c);
 
@@ -436,7 +411,7 @@ export function useUniPadEngine() {
   }, [refreshChain, scheduleFlush]);
 
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
-  const padTouchOn = useCallback((x: number, y: number, input?: string) => {
+  const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
@@ -446,7 +421,7 @@ export function useUniPadEngine() {
     }
 
     se?.soundOn(x, y, input);
-    lr?.eventOn(x, y);
+    lr?.eventOn(x, y, eventAt);
     recorderRef.current.recordOn(x, y);
 
     if (traceLogRef.current) {
@@ -486,13 +461,13 @@ export function useUniPadEngine() {
   }, [userPadTouchOn]);
 
   /** Without `input`, every press of the pad is released. */
-  const padTouchOff = useCallback((x: number, y: number, input?: string) => {
+  const padTouchOff = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
     se?.soundOff(x, y, input);
-    lr?.eventOff(x, y);
+    lr?.eventOff(x, y, eventAt);
     recorderRef.current.recordOff(x, y);
 
     // A pad pressed with the press light off has nothing to clear on the launchpad.
@@ -943,11 +918,11 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => {
+          onPadTouchOn: (x: number, y: number, pressedAt: number) => {
             playerHoldsRef.current.autoPlayPressed(x, y);
-            padTouchOn(x, y, AUTO_PLAY_INPUT);
+            padTouchOn(x, y, AUTO_PLAY_INPUT, pressedAt);
           },
-          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOff: (x: number, y: number, releasedAt: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT, releasedAt); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
             cm.add(x, y, Channel.GUIDE, -1, 17);
@@ -1037,18 +1012,6 @@ export function useUniPadEngine() {
         const soundPushToNum = (c: number, x: number, y: number, num: number) => {
           soundEngine.soundPushToNum(c, x, y, num);
         };
-        const ledPushToNum = (c: number, x: number, y: number, num: number) => {
-          const table = unipack.ledAnimationTable;
-          if (!table) return;
-          const anims = table[c]?.[x]?.[y];
-          if (!anims || anims.length === 0) return;
-          const targetNum = num % anims.length;
-          for (let i = 0; i < anims.length; i++) {
-            if (anims[0].num === targetNum) break;
-            const first = anims.shift()!;
-            anims.push(first);
-          }
-        };
 
         autoPlayListenerRef.current = autoPlayListener;
         const autoPlayRunner = new AutoPlayRunner(
@@ -1057,7 +1020,7 @@ export function useUniPadEngine() {
           () => chainRef.current,
           setChain,
           soundPushToNum,
-          ledPushToNum,
+          (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
         );
         autoPlayRunnerRef.current = autoPlayRunner;
 
@@ -1436,25 +1399,13 @@ export function useUniPadEngine() {
             const soundPushToNum = (c: number, x: number, y: number, num: number) => {
               soundEngine.soundPushToNum(c, x, y, num);
             };
-            const ledPushToNum = (c: number, x: number, y: number, num: number) => {
-              const table = unipack.ledAnimationTable;
-              if (!table) return;
-              const anims = table[c]?.[x]?.[y];
-              if (!anims || anims.length === 0) return;
-              const targetNum = num % anims.length;
-              for (let i = 0; i < anims.length; i++) {
-                if (anims[0].num === targetNum) break;
-                const first = anims.shift()!;
-                anims.push(first);
-              }
-            };
             const newRunner = new AutoPlayRunner(
               unipack,
               listener,
               () => chainRef.current,
               setChain,
               soundPushToNum,
-              ledPushToNum,
+              (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
             );
             autoPlayRunnerRef.current = newRunner;
           }
