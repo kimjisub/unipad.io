@@ -10,6 +10,7 @@
 // Playwright stops its web server only when a run ends normally or on Ctrl+C; a run ended by
 // SIGTERM, SIGHUP or SIGKILL leaves the server running. Playwright holds the server's stdin open,
 // so the run's end, however it happens, closes stdin and this stops the server it started.
+import { assertCurrentBuild } from '../scripts/build-source.mjs';
 import { spawn } from 'node:child_process';
 import { lookup } from 'node:dns/promises';
 import { createConnection, createServer } from 'node:net';
@@ -181,6 +182,12 @@ if (import.meta.main) {
   const nextStart = port => [process.execPath, 'node_modules/next/dist/bin/next', 'start', '--hostname', 'localhost', '--port', String(port)];
   if (flag !== undefined && (flag !== '--port' || !/^\d+$/.test(value ?? '') || Number(value) < 1 || Number(value) > 65535)) {
     console.error('port must be an integer between 1 and 65535');
+    process.exit(1);
+  }
+  try {
+    assertCurrentBuild();
+  } catch (error) {
+    console.error(error.message);
     process.exit(1);
   }
   const server = startServer(candidatePorts(flag === '--port' ? Number(value) : undefined), nextStart);

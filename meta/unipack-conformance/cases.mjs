@@ -32,12 +32,6 @@ const utf16 = (text, endian = 'le') => {
 const CP949 = { 한글: 'c7d1b1db', 소리: 'bcd2b8ae' };
 const cp949 = (...parts) => Buffer.concat(parts.map((p) => (CP949[p] ? Buffer.from(CP949[p], 'hex') : Buffer.from(p, 'ascii')))).toString('base64');
 
-// Why a harness cannot observe a case (`unobserved`).
-const IOS_STOPS = 'the iOS harness runs the real sound engine, which keeps no record a test can read of the voices it stops';
-const QUEUE_RESET = {
-  ios: 'the harness runs the sound engine and the LED runner without PlayViewModel, which resets the queues on a chain change',
-};
-
 // A keySound that leaves the pad pressed in LED scenarios silent.
 const OTHER_PAD_SOUND = '1 4 3 c.wav';
 
@@ -819,20 +813,17 @@ export function buildCases(palette) {
     pack({ keySound: lines('1 1 1 a.wav 0', '1 1 1 b.wav', '1 2 1 c.wav', '1 2 1 a.wav 0') }),
     [watchStops, press(0, 0), observe, release(0, 0), observe, press(0, 0), release(0, 0), observe, press(1, 0), release(1, 0), observe],
     [[snd(0, 0, 0, 'a.wav', -1)], [stopped(0, 0, 0, 'a.wav')], [snd(0, 0, 0, 'b.wav')], [snd(0, 1, 0, 'c.wav')]],
-    [intent('unipad-android SoundRunner.kt soundOff, unipad-ios SoundEngine.swift soundOff, unipad.io SoundEngine.ts heldNodes', 'a release stops the endless sound its press started; a sound played once or N times plays to its end')],
-    { unobserved: { ios: IOS_STOPS } });
+    [intent('unipad-android SoundRunner.kt soundOff, unipad-ios SoundEngine.swift soundOff, unipad.io SoundEngine.ts heldNodes', 'a release stops the endless sound its press started; a sound played once or N times plays to its end')]);
   run('RUN-S-009', ['RS-06'], 'sound', 'a release after the chain changed still stops the endless sound its press started',
     pack({ keySound: lines('1 1 1 a.wav 0', '2 1 1 b.wav') }),
     [watchStops, press(0, 0), observe, pickChain(1), release(0, 0), observe],
     [[snd(0, 0, 0, 'a.wav', -1)], [stopped(0, 0, 0, 'a.wav')]],
-    [intent('unipad-ios SoundEngine.swift soundOff, unipad.io SoundEngine.ts heldNodes', 'the press owns the voice it started, whatever the chain is at the release')],
-    { unobserved: { ios: IOS_STOPS } });
+    [intent('unipad-ios SoundEngine.swift soundOff, unipad.io SoundEngine.ts heldNodes', 'the press owns the voice it started, whatever the chain is at the release')]);
   run('RUN-S-010', ['RS-07'], 'sound', 'pressing a pad again stops its previous sound, another pad\'s sound plays on',
     pack({ keySound: lines('1 1 1 a.wav', '1 1 1 b.wav', '1 2 1 c.wav') }),
     [watchStops, press(0, 0), release(0, 0), press(1, 0), release(1, 0), observe, press(0, 0), release(0, 0), observe],
     [[snd(0, 0, 0, 'a.wav'), snd(0, 1, 0, 'c.wav')], [stopped(0, 0, 0, 'a.wav'), snd(0, 0, 0, 'b.wav')]],
-    [intent('unipad-android SoundRunner.kt soundOn, unipad-ios SoundEngine.swift soundOn, unipad.io SoundEngine.ts soundOn', 'a press first stops the voice the pad started last')],
-    { unobserved: { ios: IOS_STOPS } });
+    [intent('unipad-android SoundRunner.kt soundOn, unipad-ios SoundEngine.swift soundOn, unipad.io SoundEngine.ts soundOn', 'a press first stops the voice the pad started last')]);
   run('RUN-S-011', ['RS-09'], 'sound', 'a wormhole switches the chain 100 ms after the press, not when the sound ends',
     pack({ keySound: lines('1 1 1 a.wav 1 2', '2 1 1 b.wav') }),
     [press(0, 0), release(0, 0), advance(50), observe, advance(100), observe],
@@ -843,14 +834,12 @@ export function buildCases(palette) {
     pack({ keySound: lines('1 1 1 a.wav', '1 1 1 b.wav'), keyLed: { '1 1 1': lines('o 1 1 FF0000', 'd 20', 'f 1 1'), '1 1 1 1': lines('o 1 1 00FF00', 'd 20', 'f 1 1') } }),
     [press(0, 0), release(0, 0), advance(40), observe, pickChain(0), press(0, 0), release(0, 0), advance(40), observe],
     [[snd(0, 0, 0, 'a.wav'), ['ledOn', 0, 0, RED, 4], ['ledOff', 0, 0]], [snd(0, 0, 0, 'a.wav'), ['ledOn', 0, 0, RED, 4], ['ledOff', 0, 0]]],
-    [RESET, VEL4],
-    { unobserved: QUEUE_RESET });
+    [RESET, VEL4]);
   run('RUN-S-013', ['RS-10'], 'sound', 'a wormhole into a chain sets its pads back to their first sound',
     pack({ keySound: lines('1 1 1 a.wav 1 2', '2 1 1 b.wav', '2 1 1 c.wav') }),
     [pickChain(1), press(0, 0), release(0, 0), observe, pickChain(0), press(0, 0), release(0, 0), advance(200), observe, press(0, 0), release(0, 0), observe],
     [[snd(1, 0, 0, 'b.wav')], [snd(0, 0, 0, 'a.wav'), ['chain', 1]], [snd(1, 0, 0, 'b.wav')]],
-    [RESET],
-    { unobserved: QUEUE_RESET });
+    [RESET]);
   run('RUN-S-006', ['S-12'], 'sound', 'a pad whose sound name differs from its file only in case plays that file',
     pack({ keySound: lines('1 1 1 End.wav', '1 1 2 FX/S.wav'), sounds: ['END.wav', 'fx/s.wav'] }),
     [press(0, 0), release(0, 0), press(0, 1), release(0, 1), observe],

@@ -2,8 +2,8 @@ import { AutoPlay, UniPackData } from './types';
 
 export interface AutoPlayListener {
   onStart(): void;
-  onPadTouchOn(x: number, y: number): void;
-  onPadTouchOff(x: number, y: number): void;
+  onPadTouchOn(x: number, y: number, pressedAt: number): void;
+  onPadTouchOff(x: number, y: number, releasedAt: number): void;
   onChainChange(c: number): void;
   onGuidePadOn(x: number, y: number, targetWallTimeMs: number): void;
   onGuidePadOff(x: number, y: number): void;
@@ -219,7 +219,7 @@ export class AutoPlayRunner {
                   }
                   this.soundPushToNum(element.currChain, element.x, element.y, element.num);
                   this.ledPushToNum(element.currChain, element.x, element.y, element.num);
-                  this.listener.onPadTouchOn(element.x, element.y);
+                  this.listener.onPadTouchOn(element.x, element.y, this.startTime + this.delayAccum);
                 }
                 break;
               case 'off':
@@ -227,7 +227,7 @@ export class AutoPlayRunner {
                   if (this.chainValue() !== element.currChain) {
                     this.listener.onChainChange(element.currChain);
                   }
-                  this.listener.onPadTouchOff(element.x, element.y);
+                  this.listener.onPadTouchOff(element.x, element.y, this.startTime + this.delayAccum);
                 }
                 break;
               case 'delay':
