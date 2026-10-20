@@ -130,7 +130,7 @@ platform until someone decides. `basis[].type` says which: `doc` (checked to exi
 `intent` (a commit or test that states it), `reference` (the Android implementation, for the palette),
 `agreed` and `decision` (below). No case is undetermined today; the harnesses' own checks make one from a
 determined case to show that it is never a pass.
-`decision` also stands for an item the grammar decides (`G1 decision` in GRAMMAR.md); its `ref` names the
+`decision` also stands for an item the grammar decides (`G1 decision` or `G2 decision` in GRAMMAR.md); its `ref` names the
 item.
 
 **Agreed behaviour.** When an undetermined case gives the same result on Android, iOS and the web, that
@@ -312,7 +312,7 @@ result; an undetermined case never counts as a pass; a case marked `unobserved` 
 unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
 without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
 iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
-`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 103 items,
+`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 104 items,
 `build-corpus.mjs` refuses a case without items or with an unknown or repeated one, and an item is
 confirmed only as described in [What `report.mjs` counts](#running-it).
 
