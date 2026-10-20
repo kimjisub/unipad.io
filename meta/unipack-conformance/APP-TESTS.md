@@ -1,9 +1,10 @@
 # Archive and native audio checks
 
 These app tests supplement the common corpus; they do not change its grammar,
-limitations, fixtures or counters. G2 names the second grammar baseline; F item
-identifiers cover archive handling and A identifiers cover audio content. The
-table states the expectations used here without requiring a separate document.
+limitations or fixtures. `report.mjs` counts them for the items no case or harness
+reaches, through the tests `NATIVE_TESTS` lists. F item identifiers cover archive
+handling and A identifiers cover audio content. The table states the expectations
+used here without requiring a separate document.
 
 | Item | Mapped tests | Same expectation |
 | --- | --- | --- |
@@ -28,16 +29,18 @@ quality and latency are unverified.
 After a production browser-test build (see the repository README), run:
 
 ```sh
-node scripts/grammar-results.mjs <new-output-directory> <grammar-revision>
+node scripts/grammar-results.mjs <new-output-directory>
 ```
 
 The command runs the five mapped parser tests and five Chromium audio tests,
 then automatically writes `items.json`. It records the checked-out commit,
-dirty state and tracked patch hash, G2 and the supplied source-document revision,
-test names, host and Node environment, actual browser version, commands, process
-exit codes, native measurements, original reports and their SHA-256 hashes.
-Pass the revision of the source grammar being checked; it is provenance rather
-than a new grammar definition. Use a clean committed checkout for review evidence.
+dirty state and tracked patch hash, the grammar edition named in this
+directory's `GRAMMAR.md` and that file's SHA-256 as its revision, test names,
+host and Node environment, actual browser version, commands, process exit
+codes, native measurements, original reports and their SHA-256 hashes.
+`report.mjs --web-native items.json` refuses a file whose edition or revision is
+not that of the `GRAMMAR.md` it reads. Use a clean committed checkout for review
+evidence.
 
 Every test mapped to an item must execute exactly once and pass. Missing,
 skipped, retried, interrupted and failed tests, unknown browser environments,
@@ -46,7 +49,8 @@ directory is mandatory to preserve earlier runs. Archive the entire output,
 including Playwright traces, before running again. Keep failed runs as evidence;
 later results never replace them.
 
-This is a proposed app-result format, separate from the common runner. Only
+This app-result format is separate from the common runner; `report.mjs` reads it
+with `--web-native` (see the README). Only
 Chromium executes these sound-format tests in the default configuration.
 WebKit and Firefox remain explicitly unexecuted in this report; no compatibility
 claim for those engines follows from the Chromium results. F-01 stays with the
