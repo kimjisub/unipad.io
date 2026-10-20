@@ -111,15 +111,15 @@ test('disconnecting cancels a mode switch still waiting to be sent', async (t) =
   assert.ok(!log.some(isSysEx));
 });
 
-test('a connection with no output goes back to the Auto layout when Auto is chosen again', async (t) => {
+test('a connection with no output detects its input layout when Auto is chosen again', async (t) => {
   const { midi, log, pads, press } = await connect(t, { profile: 'launchpad_x', withOutput: false });
 
   midi.setProfile('auto');
   assert.deepEqual(log, ['status:none']);
-  // Note 11 is the bottom-left pad of the X layout but the top-left pad of the Auto layout with no
-  // output, as after connecting on Auto.
+  // As Android's per-device driver, Auto recognises the input even without an output.
+  // The displayed output profile stays none, but note 11 is the X's bottom-left pad.
   press(11);
-  assert.deepEqual(pads, [[0, 0]]);
+  assert.deepEqual(pads, [[7, 0]]);
 });
 
 test('choosing a model after disconnecting reports nothing and leaves no model in use', async (t) => {

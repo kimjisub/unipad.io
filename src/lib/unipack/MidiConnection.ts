@@ -131,7 +131,7 @@ function drumRackPadNote(x: number, y: number): number | null {
   return null;
 }
 
-/** The profile Auto Detect picks for an output port name. */
+/** The profile Auto Detect picks for a MIDI port name. */
 export function detectLaunchpadProfile(portName: string): ResolvedProfile {
   const name = portName.toLowerCase();
   const coreFwModel = COREFW_PORT_NAME.exec(name)?.[1];
@@ -220,7 +220,9 @@ export class MidiConnection {
 
     this.midiAccess.inputs.forEach((input) => {
       this.inputs.push(input);
-      input.onmidimessage = (e) => this.handleMessage(e);
+      // Decode the originating device, as Android's per-session driver does. Resolve on each
+      // message so a manual model change applies to every input immediately.
+      input.onmidimessage = (e) => this.handleMessage(e, this.resolveProfile(input.name ?? '', this.requestedProfile));
     });
 
     this.midiAccess.outputs.forEach((output) => {
@@ -266,8 +268,8 @@ export class MidiConnection {
 
   /** Re-resolves the profile and the outputs that get lights, and sends each output its mode
    *  switch, replacing one still waiting; returns when the last message goes out, or null when
-   *  there is none. Input is read in one layout: as iOS's scan, the first lit controller's, else the
-   *  first device's that has a layout at all (a master keyboard). */
+   *  there is none. The status shows the first lit controller, else the first known output;
+   *  input decoding uses the originating input's own profile. */
   private sendInitSysExToAllOutputs(): number | null {
     this.cancelPendingInit();
     this.lightOutputs = [];
@@ -299,8 +301,8 @@ export class MidiConnection {
     return lastDelay;
   }
 
-  private resolveProfile(outputName: string, requested: LaunchpadProfile): ResolvedProfile {
-    return requested !== 'auto' ? requested : detectLaunchpadProfile(outputName);
+  private resolveProfile(portName: string, requested: LaunchpadProfile): ResolvedProfile {
+    return requested !== 'auto' ? requested : detectLaunchpadProfile(portName);
   }
 
   private getInitSysExMessages(profile: ResolvedProfile): number[][] {
@@ -341,14 +343,13 @@ export class MidiConnection {
     };
   }
 
-  private handleMessage(event: MIDIMessageEvent): void {
+  private handleMessage(event: MIDIMessageEvent, profile: ResolvedProfile = this.getMappingProfile()): void {
     if (!this.listener || !event.data) return;
 
     const [status = 0, note = 0, velocity = 0] = event.data;
     const kind = this.getEventKind(status, velocity);
     if (!kind) return;
 
-    const profile = this.getMappingProfile();
     switch (profile) {
       case 'launchpad_x':
       case 'launchpad_mini_mk3':
