@@ -74,6 +74,15 @@ the kept copy was reused or downloaded, and the unzip (files, single top folders
 import does, or the error). It names the store code and URL and stays on the machine that ran it; the
 comparison output does not.
 
+Before extraction, `store.mjs` checks every decoded original ZIP entry, including directories, before
+JSZip can normalize or overwrite names in its file map. Absolute paths, parent or current-folder
+segments, repeated separators, backslashes and duplicate paths fail the unzip step before output is
+created. This includes `info` colliding with `../info` in either archive order, even without explicit
+folder entries. Failed input leaves no pack folder or previous parser results, and comparison with
+`--stages` records it as `not-read`. Normal nested folders and the usual top-folder unwrapping still work.
+The preflight uses JSZip's internal entry reader to share its Unicode and ZIP64 decoding; the tooling
+tests must pass when upgrading JSZip.
+
 What a run trusts from an earlier one:
 
 - `<archive>/heads.json` keeps the size and ETag of the file the server served when a kept copy was last

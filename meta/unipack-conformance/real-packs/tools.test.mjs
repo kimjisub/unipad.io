@@ -127,7 +127,81 @@ test('unzipping unwraps single top folders past __MACOSX and refuses an entry ou
     bad.file('../escape', 'x');
     writeFileSync(join(dir, 'b.zip'), await bad.generateAsync({ type: 'nodebuffer' }));
     await assert.rejects(unzipPack(join(dir, 'b.zip'), join(dir, 'out2', 'inner')), /outside the pack folder/);
-    assert.deepEqual(readdirSync(dir).sort(), ['a.zip', 'b.zip', 'out', 'out2']);
+    assert.deepEqual(readdirSync(dir).sort(), ['a.zip', 'b.zip', 'out']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// No explicit folder records: JSZip can discard a bad file before the old path check sees it.
+for (const names of [
+  ['../info'],
+  ['info', '../info'],
+  ['../info', 'info'],
+  ['nested/../info', 'info'],
+  ['info', './info'],
+  ['info', 'nested//info'],
+  ['info', '/info'],
+  ['info', 'nested/../'],
+]) {
+  test(`unzipping rejects original non-canonical paths before creating output (${names.join(', ')})`, async () => {
+    const dir = scratch();
+    try {
+      const zip = new JSZip();
+      for (const [i, name] of names.entries()) {
+        zip.file(name, `buttonX=${i === 0 ? 8 : 4}`, { createFolders: false });
+      }
+      const source = join(dir, 'input.zip');
+      const out = join(dir, 'out');
+      writeFileSync(source, await zip.generateAsync({ type: 'nodebuffer' }));
+      await assert.rejects(unzipPack(source, out), /original path|outside the pack folder/);
+      assert.equal(existsSync(out), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('unzipping rejects duplicate archive entries before JSZip overwrites one', async () => {
+  const dir = scratch();
+  try {
+    const zip = new JSZip();
+    zip.file('info', 'buttonX=8', { createFolders: false });
+    zip.file('infX', 'buttonX=4', { createFolders: false });
+    // Replace the equal-length name in both ZIP headers; JSZip's writer cannot emit duplicates.
+    const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+    for (let i = bytes.indexOf('infX'); i !== -1; i = bytes.indexOf('infX', i + 4)) bytes.write('info', i);
+    const source = join(dir, 'input.zip');
+    writeFileSync(source, bytes);
+    await assert.rejects(unzipPack(source, join(dir, 'out')), /duplicate archive path/);
+    assert.equal(existsSync(join(dir, 'out')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an invalid original path records failed unzip, removes old input and results, and is not compared', async () => {
+  const dir = scratch();
+  try {
+    const zip = new JSZip();
+    zip.file('info', 'buttonX=8', { createFolders: false });
+    zip.file('../info', 'buttonX=4', { createFolders: false });
+    writeFileSync(join(dir, 'p.zip'), await zip.generateAsync({ type: 'nodebuffer' }));
+    mkdirSync(join(dir, 'packs', 'store_0001'), { recursive: true });
+    writeFileSync(join(dir, 'packs', 'store_0001', 'info'), 'buttonX=8');
+    for (const platform of ['android', 'ios', 'web']) {
+      mkdirSync(join(dir, 'results', platform), { recursive: true });
+      writeFileSync(join(dir, 'results', platform, 'store_0001.json'), JSON.stringify({ platform, id: 'store_0001', actual: PACK }));
+    }
+    const record = await bringPack({ key: '0001', item: { code: 'p', URL: 'https://example.invalid/p.zip' }, archive: dir, work: dir, heads: {}, offline: true });
+    assert.equal(record.copy.action, 'reused-unchecked');
+    assert.equal(record.unzip.ok, false);
+    assert.match(record.unzip.error, /original path/);
+    assert.equal(existsSync(join(dir, 'packs', 'store_0001')), false);
+    for (const platform of ['android', 'ios', 'web']) assert.equal(existsSync(join(dir, 'results', platform, 'store_0001.json')), false);
+    const [row] = comparePacks({ resultsDir: join(dir, 'results'), ids: ['store_0001'], stages: { packs: [record] } });
+    assert.equal(row.verdict, 'not-read');
+    assert.equal(row.stages.unzip, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

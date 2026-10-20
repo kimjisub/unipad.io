@@ -14,11 +14,12 @@
 // kept copies as they are (the stages say so).
 // The packs and stages.json stay on the machine that ran this; see README.md.
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
+import { dirname, isAbsolute, join, normalize, resolve, win32 } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
+import ZipEntries from 'jszip/lib/zipEntries.js';
 import { ID_PATTERN, onlyIds, parseArgs } from './packs.mjs';
 
 export const STORE_LIST_URL = 'https://unipad-e41ab.firebaseio.com/store.json';
@@ -76,9 +77,31 @@ async function download(url, target) {
   return statSync(target).size;
 }
 
+/** Check every decoded original entry before JSZip normalizes names into its keyed file map. */
+export function validateArchivePaths(bytes) {
+  // JSZip's public loader has already lost overwritten entries, and exposes original names only for
+  // files. Use its entry reader for this preflight so directories, Unicode names and ZIP64 follow the
+  // same decoding as extraction, without maintaining a second ZIP implementation.
+  const entries = new ZipEntries({ decodeFileName: (name) => Buffer.from(name).toString('utf8') });
+  entries.load(bytes);
+  const paths = new Set();
+  for (const entry of entries.files) {
+    const name = entry.fileNameStr;
+    const path = entry.dir && name.endsWith('/') ? name.slice(0, -1) : name;
+    if (!path || isAbsolute(path) || win32.isAbsolute(path) || path.includes('\\') || path.includes('\0') ||
+        path.split('/').some((part) => part === '.' || part === '..') || normalize(path) !== path) {
+      throw new Error('an original path is non-canonical or points outside the pack folder');
+    }
+    if (paths.has(path)) throw new Error('a duplicate archive path would overwrite another entry');
+    paths.add(path);
+  }
+}
+
 /** Unzips `zipPath` into `dir` and unwraps single top folders the way the apps' import does. */
 export async function unzipPack(zipPath, dir) {
-  const zip = await JSZip.loadAsync(readFileSync(zipPath));
+  const bytes = readFileSync(zipPath);
+  validateArchivePaths(bytes);
+  const zip = await JSZip.loadAsync(bytes);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   let files = 0;
