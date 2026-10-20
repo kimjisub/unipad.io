@@ -116,15 +116,15 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.ok(decidedIds.includes('KL-024'));
   assert.equal(decided.filter((c) => c.basis.some((b) => b.type === 'agreed')).length, 0);
 
-  // A platform still pinned on a decided case is unverified there, not a pass.
+  // Pinned differences are unverified, except the two storage forms explicitly allowed by T-09.
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
   assert.equal(report.decided.cases, decidedIds.length);
-  // fullResults leaves a case pinned or unobserved on a platform unverified there.
-  const clean = (p) => decided.filter((c) => !c.known?.[p] && !c.unobserved?.[p]);
+  const allowedStorage = (c, p) => p === 'android' && ['KS-B08', 'KL-BE10'].includes(c.id);
+  const clean = (p) => decided.filter((c) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p]);
   const pass = Object.fromEntries(PLATFORMS.map((p) => [p, clean(p).length]));
   assert.deepEqual(report.decided.pass, pass);
-  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => !c.known?.[p] && !c.unobserved?.[p])).length;
+  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p])).length;
   assert.equal(report.decided.passOnAllThree, onAllThree);
   const text = renderText(report);
   assert.match(text, new RegExp(`, ${onAllThree} on a decision basis$`, 'm'));
@@ -349,6 +349,91 @@ test('a status the platform reports is checked against its own actual result', (
   assert.match(judge(canonical, 'web', lying).get(determined.id).detail, /classifies as fail/);
   const honest = fullResults('web', { [determined.id]: { status: 'pass', actual: determined.expected } });
   assert.equal(judge(canonical, 'web', honest).get(determined.id).status, 'pass');
+});
+
+describe('T-09 allows only the specified Android storage representations', () => {
+  const pathsByCase = {
+    'KS-B08': [['sounds', 0, 'queue', 0, 'loop']],
+    'KL-BE10': [
+      ['leds', 0, 'queue', 0, 'events', 0, 1],
+      ['leds', 0, 'queue', 0, 'events', 1, 2],
+      ['leds', 0, 'queue', 0, 'events', 2, 1],
+    ],
+  };
+  const set = (object, path, value) => { path.slice(0, -1).reduce((o, key) => o[key], object)[path.at(-1)] = value; };
+  const seen = (c, actual, platform = 'android', overrides = {}) => judge(canonical, platform, fullResults(platform, {
+    [c.id]: { actual, status: classify(c, actual, platform), detail: 'original harness note', ...overrides },
+  })).get(c.id);
+
+  test('both values and every combination pass without changing the actual result or its original status', () => {
+    for (const [id, paths] of Object.entries(pathsByCase)) {
+      const c = corpus.cases.find((c) => c.id === id);
+      for (let mask = 0; mask < 2 ** paths.length; mask++) {
+        const actual = structuredClone(c.expected);
+        paths.forEach((path, index) => {
+          assert.equal(path.reduce((o, key) => o[key], actual), -2147483649);
+          if (mask & (1 << index)) set(actual, path, -2147483648);
+        });
+        const before = structuredClone(actual);
+        const result = seen(c, actual);
+        assert.equal(result.status, 'pass', `${id} combination ${mask}`);
+        assert.equal(result.reportedStatus, classify(c, before, 'android'));
+        assert.equal(result.reportedDetail, 'original harness note');
+        assert.match(result.detail, /T-09.*representation/);
+        assert.deepEqual(result.actual, before);
+        assert.deepEqual(actual, before);
+      }
+    }
+  });
+
+  test('positive wraparound, other integers, malformed values and missing fields still fail', () => {
+    for (const [id, paths] of Object.entries(pathsByCase)) {
+      const c = corpus.cases.find((c) => c.id === id);
+      for (const path of paths) {
+        for (const wrong of [2147483647, -2147483647, -2147483650, '-2147483648', null, undefined]) {
+          const actual = structuredClone(c.known.android.actual);
+          set(actual, path, wrong);
+          assert.equal(seen(c, actual).status, 'fail', `${id} ${path.join('.')} ${wrong}`);
+        }
+      }
+    }
+  });
+
+  test('format and range warnings and every other field are still compared exactly', () => {
+    for (const id of Object.keys(pathsByCase)) {
+      const c = corpus.cases.find((c) => c.id === id);
+      for (const edit of [
+        (a) => { a.errors.push('keyLED:format'); },
+        (a) => { a.errors.push('keySound:range'); },
+        (a) => { a.errors.pop(); if (!c.expected.errors.length) a.errors.push('keyLED:range'); },
+        (a) => { a.sounds[0].queue[0].file = 'wrong.wav'; },
+        (a) => { a.loaded = false; },
+      ]) {
+        const actual = structuredClone(c.known.android.actual);
+        edit(actual);
+        assert.equal(seen(c, actual).status, 'fail', id);
+      }
+    }
+  });
+
+  test('does not accept other platforms, other pins, dishonest statuses or mismatched inputs', () => {
+    const c = corpus.cases.find((c) => c.id === 'KS-B08');
+    for (const platform of ['web', 'ios']) assert.equal(seen(c, c.known.android.actual, platform).status, 'fail');
+    assert.equal(seen(c, c.known.android.actual, 'android', { status: 'pass' }).status, 'unverified');
+    assert.equal(seen(c, c.known.android.actual, 'android', { fingerprint: '0'.repeat(64) }).status, 'unverified');
+    const other = corpus.cases.find((c) => c.id === 'RUN-A-003');
+    assert.equal(seen(other, other.known.android.actual).status, 'fail');
+  });
+
+  test('confirms T-09 from the allowed representations and keeps their reasons visible in text', () => {
+    const android = fullResults('android', Object.fromEntries(Object.keys(pathsByCase).map((id) => {
+      const c = corpus.cases.find((c) => c.id === id);
+      return [id, { status: 'fail', actual: c.known.android.actual }];
+    })));
+    const report = buildReport(canonical, { android });
+    assert.equal(report.grammar.rows.find((r) => r.id === 'T-09').android.confirmed, true);
+    for (const id of Object.keys(pathsByCase)) assert.match(renderText(report), new RegExp(`${id} android: .*T-09`));
+  });
 });
 
 test('a case the platform could not drive is unverified with its own reason', () => {

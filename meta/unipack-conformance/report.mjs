@@ -60,6 +60,30 @@ export function classify(c, actual, platform) {
   return 'fail';
 }
 
+// T-09 permits these two internal forms of INT_MIN - 1. Keep the harness classification
+// and its pinned observations intact; only the report treats these exact forms as equivalent.
+// Compare everything else, including every warning, without normalization.
+function allowedStorageRepresentation(c, actual, platform) {
+  if (platform !== 'android' || !c.items?.includes('T-09')) return false;
+  const paths = {
+    'KS-B08': [['sounds', 0, 'queue', 0, 'loop']],
+    'KL-BE10': [
+      ['leds', 0, 'queue', 0, 'events', 0, 1],
+      ['leds', 0, 'queue', 0, 'events', 1, 2],
+      ['leds', 0, 'queue', 0, 'events', 2, 1],
+    ],
+  }[c.id];
+  if (!paths) return false;
+  const normalized = structuredClone(actual);
+  for (const path of paths) {
+    const get = (object) => path.reduce((o, key) => o?.[key], object);
+    if (get(c.expected) !== -2147483649) return false;
+    if (get(actual) !== -2147483649 && get(actual) !== -2147483648) return false;
+    path.slice(0, -1).reduce((o, key) => o[key], normalized)[path.at(-1)] = -2147483649;
+  }
+  return isDeepStrictEqual(normalized, c.expected);
+}
+
 /** One case of one platform: the status this tool can stand behind, and why when it is unverified. */
 function verdict(c, r, platform) {
   const unverified = (detail) => ({ status: 'unverified', detail, actual: r.actual ?? undefined });
@@ -76,6 +100,15 @@ function verdict(c, r, platform) {
   }
   const status = classify(c, r.actual, platform);
   if (status !== r.status) return unverified(`${platform} reported ${r.status} but its result classifies as ${status}`);
+  if (allowedStorageRepresentation(c, r.actual, platform)) {
+    return {
+      status: 'pass',
+      detail: 'T-09 permits the -2147483648 and -2147483649 storage representations in these fields; all other values and warnings equal the expected result.',
+      actual: r.actual,
+      reportedStatus: r.status,
+      reportedDetail: r.detail ?? '',
+    };
+  }
   return { status, detail: r.detail ?? '', actual: r.actual };
 }
 
@@ -205,7 +238,7 @@ export function renderText(report) {
   out.push('');
   out.push(`${'item'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}cases`);
   for (const r of g.rows) out.push(`${r.id.padEnd(11)}${PLATFORMS.map((p) => (r[p].confirmed ? 'ok' : '-').padEnd(10)).join('')}${r.cases.join(' ') || '(none)'}`);
-  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => r[p].status !== 'pass' && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
+  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => (r[p].status !== 'pass' || r[p].reportedStatus) && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (notes.length) out.push('', 'notes', ...notes);
   const itemNotes = g.rows.flatMap((r) => PLATFORMS.filter((p) => !r[p].confirmed).map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (itemNotes.length) out.push('', 'items not confirmed', ...itemNotes);

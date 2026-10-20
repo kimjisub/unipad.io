@@ -117,11 +117,24 @@ Each case is reported per platform as exactly one of:
 
 | Status | Meaning |
 |---|---|
-| `pass` | The platform's result equals the expected result. |
+| `pass` | The platform's result equals the expected result, including the two equivalent Android storage representations allowed by T-09 (below). |
 | `fail` | It does not, and nothing in the corpus calls that intended. Pinned in `divergences.json` when it is a known difference, so the suite stays green while the report shows it. |
 | `unsupported` | The platform does not support this format. Pinned like `fail`, with the observed result. |
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
 | `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`) and recorded no result for it, or the case is `undetermined` (below). Never counted as a pass. |
+
+**T-09 storage representations.** In Android KS-B08, the first sound's loop may be `-2147483648`
+or `-2147483649`. In Android KL-BE10, the first LED command's x coordinate, the second command's y
+coordinate and the third command's chain may each use either value. The report compares every other
+field and warning exactly and counts only these equivalent results as `pass`, so they can confirm
+T-09. Positive wraparound, other values and changed format or range warnings still fail. Other
+platforms and pinned differences get no exception.
+
+The app harnesses still record their exact comparisons against the unchanged corpus and pins.
+The report first verifies that original classification, then checks the allowed representations.
+Its JSON keeps the original `actual`, `reportedStatus` and `reportedDetail`, with the T-09 reason
+in `detail`; the text report includes that reason too. This does not change the corpus, expected
+values, pins or app copies, and existing result files for the same corpus can be reported again.
 
 A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
