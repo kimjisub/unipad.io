@@ -421,8 +421,13 @@ describe('T-09 allows only the specified Android storage representations', () =>
     for (const platform of ['web', 'ios']) assert.equal(seen(c, c.known.android.actual, platform).status, 'fail');
     assert.equal(seen(c, c.known.android.actual, 'android', { status: 'pass' }).status, 'unverified');
     assert.equal(seen(c, c.known.android.actual, 'android', { fingerprint: '0'.repeat(64) }).status, 'unverified');
-    const other = corpus.cases.find((c) => c.id === 'RUN-A-003');
-    assert.equal(seen(other, other.known.android.actual).status, 'fail');
+    const pinned = structuredClone(canonical);
+    const other = pinned.corpus.cases.find((c) => c.id === 'RUN-A-003');
+    const actual = structuredClone(other.expected);
+    actual.checkpoints[5].unshift(['autoChain', 1]);
+    other.known = { android: { status: 'fail', actual, note: 'Synthetic non-storage divergence' } };
+    const result = fullResults('android', { [other.id]: { status: 'fail', actual } });
+    assert.equal(judge(pinned, 'android', result).get(other.id).status, 'fail');
   });
 
   test('confirms T-09 from the allowed representations and keeps their reasons visible in text', () => {
