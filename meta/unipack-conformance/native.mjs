@@ -18,6 +18,22 @@ function testStatus(runs, outcome) {
   return outcome(runs[0]);
 }
 
+/**
+ * The runs one xcresult test record stands for: each Repetition node nested in it (a retry is one too,
+ * possibly under a Device or Test Case Run node), or the record itself when it holds none. A repetition
+ * passed only when the record it belongs to passed as well.
+ */
+function iosRuns(record) {
+  const repetitions = [];
+  const walk = (node) => (node.children ?? []).forEach((child) => {
+    if (child.nodeType === 'Repetition') repetitions.push(child);
+    walk(child);
+  });
+  walk(record);
+  if (repetitions.length === 0) return [record];
+  return repetitions.map((r) => ({ result: record.result === 'Passed' ? r.result : record.result }));
+}
+
 /** The first key that appears twice in one object of `text`, which JSON.parse would silently drop. */
 function duplicateKey(text) {
   const open = [];
@@ -70,7 +86,7 @@ const FORMATS = {
       id,
       status: rule.status,
       passed: rule.status === 'passed',
-      tests: (name) => testStatus((rule.tests ?? []).filter((t) => t.name === name).flatMap((t) => t.runs ?? []),
+      tests: (name) => testStatus((rule.tests ?? []).filter((t) => t.name === name).flatMap((t) => (t.runs ?? []).flatMap(iosRuns)),
         (run) => (run.result === 'Passed' ? 'passed' : run.result === 'Skipped' ? 'skipped' : 'failed')),
     })),
   }),

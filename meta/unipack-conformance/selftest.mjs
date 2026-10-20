@@ -820,4 +820,29 @@ describe('app test results', () => {
     assert.match(cell(parser((item) => ({ ...item, run: 'browser' })), 'F-05').detail, /not the parser run/);
     assert.match(cell(parser(browser('chromium')), 'F-05').detail, /missing/);
   });
+
+  test('12. an iOS test record counts each repetition nested in it as a run, so a repeated or retried test is not confirmed', () => {
+    const name = NATIVE_TESTS.ios['A-04'][0];
+    const repetition = (result, i) => ({ nodeType: 'Repetition', name: String(i + 1), result });
+    /** The iOS file with A-04's one test record holding `children`, as xcresult nests repetitions and retries. */
+    const withRecord = (children) => {
+      const file = nativeFile('ios');
+      const record = { nodeType: 'Test Case', nodeIdentifier: name, result: 'Passed', children };
+      return { ...file, rules: { ...file.rules, 'A-04': { ...file.rules['A-04'], tests: [{ name, runs: [record] }] } } };
+    };
+    const cell = (children) => items({ ios: read('ios', withRecord(children)) }).get('A-04').ios;
+    const confirmed = { confirmed: true, detail: '', basis: BASES.native };
+    assert.deepEqual(cell([]), confirmed);
+    assert.deepEqual(cell([repetition('Passed', 0)]), confirmed);
+    const repeated = {
+      'two passed repetitions': ['Passed', 'Passed'].map(repetition),
+      'a retry that passed after a failure': ['Failed', 'Passed'].map(repetition),
+      'two passed repetitions under a device': [{ nodeType: 'Device', name: 'iPhone', result: 'Passed', children: ['Passed', 'Passed'].map(repetition) }],
+    };
+    for (const [why, children] of Object.entries(repeated)) {
+      const got = cell(children);
+      assert.equal(got.confirmed, false, why);
+      assert.ok(got.detail.includes(`${name} repeated`), `${why}: ${got.detail}`);
+    }
+  });
 });
