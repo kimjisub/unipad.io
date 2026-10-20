@@ -223,59 +223,95 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
 });
 
-test('Web MIDI discovers devices, receives notes, emits LED bytes and disconnects', async ({ page }) => {
-  await skipWithoutWebMidi(page);
-  test.setTimeout(90_000); // Keep connection checks bounded even on projects with a longer setup budget.
-  await loadPack(page);
-  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
-  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
-  await expect(dialog).toContainText('Input: Launchpad X Test Input');
-  await expect(dialog).toContainText('Output: Launchpad X Test Output');
-  await expect(dialog).toContainText('Resolved Type: launchpad_x');
-  // The hint promises what the model picker does: a connected device is re-initialised at once.
-  await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
-  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-  await dialog.locator('select').selectOption('launchpad_mini_mk3');
-  await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
-  // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
-  const modelChange = await midiMessages(page);
-  const firstSysEx = modelChange.findIndex(m => m[0] === 0xf0);
-  expect(firstSysEx, 'lights go off before the mode switch').toBeGreaterThan(0);
-  expect(modelChange.slice(0, firstSysEx).every(m => m[2] === 0), 'only lights off before the mode switch').toBe(true);
-  expect(modelChange.slice(firstSysEx, firstSysEx + 2)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]]);
-  const redrawn = modelChange.slice(firstSysEx + 2);
-  expect(redrawn.filter(m => m[0] === 0xf0), 'one mode switch only').toEqual([]);
-  expect(new Set(redrawn.filter(m => (m[0] & 0xe0) === 0x80).map(m => m[1])).size, 'every pad redrawn').toBeGreaterThanOrEqual(64);
-  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-  await dialog.locator('select').selectOption('auto');
-  await expect(dialog).toContainText('Resolved Type: launchpad_x');
-  expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);
-  expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 81, 127]); });
-  await expect(pressed(page, '0,0')).toBeVisible();
-  await expect.poll(() => starts(page)).toBe(1);
-  await expect(led(page, '0,1')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x90, 82, 5]);
-  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
-  await expect(pressed(page, '0,0')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x80, 82, 0]);
-  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
-  await expect(dialog).toContainText('Disconnected');
-  await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeDisabled();
-  // With nothing connected the choice waits for the next connect; no model is shown as in use.
-  await dialog.locator('select').selectOption('launchpad_mini_mk3');
-  await expect(dialog).toContainText('Requested Type: launchpad_mini_mk3');
-  await expect(dialog).toContainText('Resolved Type: none');
-  await dialog.locator('select').selectOption('auto');
-  await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
-  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
-});
+for (const delayedInspection of [false, true]) {
+  test(`Web MIDI discovers devices, receives notes, emits LED bytes and disconnects${delayedInspection ? ' after delayed inspection' : ''}`, async ({ page }, testInfo) => {
+    await skipWithoutWebMidi(page);
+    test.setTimeout(90_000); // Keep connection checks bounded even on projects with a longer setup budget.
+    await loadPack(page);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+    await expect(dialog).toContainText('Input: Launchpad X Test Input');
+    await expect(dialog).toContainText('Output: Launchpad X Test Output');
+    await expect(dialog).toContainText('Resolved Type: launchpad_x');
+    // The hint promises what the model picker does: a connected device is re-initialised at once.
+    await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+    await dialog.locator('select').selectOption('launchpad_mini_mk3');
+    await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
+    // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
+    const modelChange = await midiMessages(page);
+    const firstSysEx = modelChange.findIndex(m => m[0] === 0xf0);
+    expect(firstSysEx, 'lights go off before the mode switch').toBeGreaterThan(0);
+    expect(modelChange.slice(0, firstSysEx).every(m => m[2] === 0), 'only lights off before the mode switch').toBe(true);
+    expect(modelChange.slice(firstSysEx, firstSysEx + 2)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7]]);
+    const redrawn = modelChange.slice(firstSysEx + 2);
+    expect(redrawn.filter(m => m[0] === 0xf0), 'one mode switch only').toEqual([]);
+    expect(new Set(redrawn.filter(m => (m[0] & 0xe0) === 0x80).map(m => m[1])).size, 'every pad redrawn').toBeGreaterThanOrEqual(64);
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+    await dialog.locator('select').selectOption('auto');
+    await expect(dialog).toContainText('Resolved Type: launchpad_x');
+    expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);
+    expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    // Observe rendered DOM in the browser before input: driver round trips can outlast the LED.
+    const light = await pad(page, '0,1').evaluateHandle(element => {
+      const transitions: { color: string | null; at: number }[] = [];
+      let frame = 0;
+      const sample = () => {
+        const overlay = element.querySelector<HTMLElement>('div[style*="background-color"]');
+        const style = overlay && getComputedStyle(overlay);
+        const rect = overlay?.getBoundingClientRect();
+        const color = style && rect && rect.width > 0 && rect.height > 0
+          && style.visibility === 'visible' && style.opacity !== '0' ? style.backgroundColor : null;
+        if (!transitions.length || transitions[transitions.length - 1].color !== color) {
+          transitions.push({ color, at: performance.now() });
+        }
+        frame = requestAnimationFrame(sample);
+      };
+      sample();
+      return { transitions, stop: () => cancelAnimationFrame(frame) };
+    });
+    try {
+      expect(await light.evaluate(observation => observation.transitions.map(item => item.color))).toEqual([null]);
+      await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.emit([0x90, 81, 127]); });
+      if (delayedInspection) {
+        // Deliberately consume the result after the unchanged 1,200 ms pulse has disappeared.
+        await page.waitForTimeout(1500);
+        await expect(led(page, '0,1')).toHaveCount(0);
+      }
+      await expect(pressed(page, '0,0')).toBeVisible();
+      await expect.poll(() => starts(page)).toBe(1);
+      await expect.poll(() => light.evaluate(observation => observation.transitions.map(item => item.color)))
+        .toEqual([null, 'rgb(239, 83, 80)', null]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x90, 82, 5]);
+      await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+      await expect(pressed(page, '0,0')).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x80, 82, 0]);
+    } finally {
+      await light.evaluate(observation => observation.stop());
+      await testInfo.attach('rendered-led-transitions', {
+        body: JSON.stringify(await light.evaluate(observation => observation.transitions)),
+        contentType: 'application/json',
+      });
+      await light.dispose();
+    }
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    await expect(dialog).toContainText('Disconnected');
+    await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeDisabled();
+    // With nothing connected the choice waits for the next connect; no model is shown as in use.
+    await dialog.locator('select').selectOption('launchpad_mini_mk3');
+    await expect(dialog).toContainText('Requested Type: launchpad_mini_mk3');
+    await expect(dialog).toContainText('Resolved Type: none');
+    await dialog.locator('select').selectOption('auto');
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
+    await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(2);
+  });
+}
 
 // CoreFW keeps the stock product name but names its ports "<model> (MIDI)", and plays and lights the
 // drum-rack layout on channel 1: pad 0,0 is note 64, pad 0,1 note 65 (its src/utils/layout.rs).
@@ -474,6 +510,53 @@ for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', 
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
       for (const light of otherLights) expect(await otherMessages()).toContainEqual(light);
       if (otherLights.length === 0) expect(await otherMessages()).toEqual([]);
+    });
+  }
+}
+
+// Stock X and Mini MK3 share a grid; also exercise two genuinely different layouts.
+for (const [name, note] of [
+  ['Launchpad Mini MK3', 81],
+  ['Launchpad Mini', 0],
+  ['Launchpad Mini MK3 MINI MK3 (MIDI)', 64],
+] as const) {
+  for (const otherFirst of [false, true]) {
+    test(`Auto reads each input in its own layout: ${name} ${otherFirst ? 'before' : 'after'} X`, async ({ page }) => {
+      await skipWithoutWebMidi(page);
+      await page.addInitScript(([name, first]) => {
+        const request = navigator.requestMIDIAccess.bind(navigator);
+        Object.defineProperty(navigator, 'requestMIDIAccess', {
+          configurable: true,
+          value: async (options: MIDIOptions) => {
+            const access = await request(options);
+            const input = { id: 'other-input', name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null };
+            const inputs = access.inputs as unknown as Map<string, unknown>;
+            const listed = [...inputs];
+            inputs.clear();
+            for (const [id, port] of first ? [[input.id, input], ...listed] : [...listed, [input.id, input]]) inputs.set(id as string, port);
+            (window as unknown as { emitOther: (data: number[]) => void }).emitOther = data => {
+              if (!input.onmidimessage) throw new Error('No second input listener attached');
+              input.onmidimessage({ data: new Uint8Array(data) });
+            };
+            return access;
+          },
+        });
+      }, [name, otherFirst] as const);
+      await loadPack(page);
+      await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+      for (const source of ['X', 'other'] as const) {
+        const send = (status: number, velocity: number) => page.evaluate(({ source, status, velocity, note }) => {
+          if (source === 'X') window.browserProbe.midi.emit([status, 81, velocity]);
+          else (window as unknown as { emitOther: (data: number[]) => void }).emitOther([status, note, velocity]);
+        }, { source, status, velocity, note });
+        await send(0x90, 127);
+        await test.info().attach(`${source}-pressed`, { body: await page.screenshot(), contentType: 'image/png' });
+        await expect(pressed(page, '0,0')).toBeVisible();
+        await expect.poll(() => starts(page)).toBe(source === 'X' ? 1 : 2);
+        await send(0x80, 0);
+        await expect(pressed(page, '0,0')).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops.length)).toBe(source === 'X' ? 1 : 2);
+      }
     });
   }
 }

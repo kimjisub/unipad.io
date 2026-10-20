@@ -181,9 +181,17 @@ Store lookup returns cached items or a connection message within five seconds;
 downloads stop after five seconds without incoming data, so longer transfers can
 continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
 fallbacks, progress across that idle limit, and cancellation.
+Store loading, connection errors and completed results replace one another immediately;
+these network states do not wait for an exit animation. A regression test holds
+real database replies until the loading view is shown, pauses only its native
+exit animation, then requires the completed list within the same 6.5-second
+limit. The clocks remain real. Transition attachments record both clocks and
+native animation creation, finish and cancellation for the reconnect tests.
 The cached and uncached store-list reconnect tests wait for an actual stalled SDK
-request before advancing the browser clock through that five-second deadline,
-then require fresh server data. The shared-link retry test uses the real clock.
+request, then wait on the real clock for the five-second request deadline and
+require fresh server data. Reload readiness and the completed list are checked
+concurrently within one 6.5-second limit. The shared-link retry test also uses
+the real clock.
 
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a

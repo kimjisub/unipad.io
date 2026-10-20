@@ -1,3 +1,4 @@
+import { getTranslations } from 'next-intl/server';
 import { DocsContentPage } from '@/components/docs/DocsContentPage';
 
 export default async function UsageScopePage({
@@ -6,14 +7,15 @@ export default async function UsageScopePage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: 'docs' });
 
   return (
     <DocsContentPage
       locale={locale}
       slug="terms/usage"
-      title="앱 사용 범위 고지"
+      title={t('terms.usage.title')}
       backHref="/docs/terms"
-      backLabel="Terms of Use"
+      backLabel={t('terms.title')}
     />
   );
 }
