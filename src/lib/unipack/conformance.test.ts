@@ -121,6 +121,29 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
   });
 
+  test('leaving out what the play screen does on a chain change fails a queue reset case', async () => {
+    const c = byId('RUN-S-012');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const clampOnly: Deps = { ...REAL, changeChain: (pack, next) => (Number.isInteger(next) ? Math.max(0, Math.min(next, pack.info.chain - 1)) : null) };
+    assert.equal(classify(c, await actualFor(c, corpus, clampOnly)).status, 'fail');
+  });
+
+  test('the decoder stand-in fails a sound that is not audio and nothing else', async () => {
+    const c = byId('RUN-S-001');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    assert.equal(classify(byId('RUN-RP-002'), await actualFor(byId('RUN-RP-002'), corpus)).status, 'pass');
+    const notAudio: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'sounds/a.wav' ? { ...f, asset: 'not-audio' } : f)) };
+    // A silent queue entry still advances to the next playable sound.
+    assert.deepEqual(await actualFor(notAudio, corpus), { checkpoints: [[['sound', 0, 0, 0, 'b.wav', 0]]] });
+  });
+
+  test('a sound stop is reported only in a scenario that watches stops', async () => {
+    const c = byId('RUN-S-010');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const unwatched: CorpusCase = { ...c, scenario: c.scenario!.filter((s) => s.do !== 'watchStops') };
+    assert.equal(classify(c, await actualFor(unwatched, corpus)).status, 'fail');
+  });
+
   test('RUN-RP-005 fails when endless sounds ignore release', async () => {
     const c = byId('RUN-RP-005');
     assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
@@ -152,6 +175,31 @@ describe('the checks can fail', () => {
     assert.equal(typeof playerOn[1], 'string');
     assert.notEqual(playerOn[1], AUTO_PLAY_INPUT);
     assert.deepEqual([playerOff, autoOn, autoOff], [['off', playerOn[1]], ['on', AUTO_PLAY_INPUT], ['off', AUTO_PLAY_INPUT]]);
+  });
+
+  test('a failure preparing a scenario restores the clock and audio context', async () => {
+    const before = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout, now: performance.now,
+      window: (globalThis as { window?: unknown }).window, hadWindow: 'window' in globalThis,
+      audio: (globalThis as { AudioContext?: unknown }).AudioContext };
+    class BrokenSoundEngine extends SoundEngine {
+      async load(): Promise<string[]> { throw new Error('scenario preparation failed'); }
+    }
+    try {
+      await assert.rejects(actualFor(byId('RUN-S-001'), corpus, { ...REAL, SoundEngine: BrokenSoundEngine }), /scenario preparation failed/);
+      assert.equal(globalThis.setTimeout, before.setTimeout);
+      assert.equal(globalThis.clearTimeout, before.clearTimeout);
+      assert.equal((globalThis as { AudioContext?: unknown }).AudioContext, before.audio);
+      assert.equal('window' in globalThis, before.hadWindow);
+      assert.equal((globalThis as { window?: unknown }).window, before.window);
+      assert.equal(classify(byId('RUN-S-008'), await actualFor(byId('RUN-S-008'), corpus)).status, 'pass');
+    } finally {
+      globalThis.setTimeout = before.setTimeout;
+      globalThis.clearTimeout = before.clearTimeout;
+      performance.now = before.now;
+      (globalThis as { AudioContext?: unknown }).AudioContext = before.audio;
+      if (before.hadWindow) (globalThis as { window?: unknown }).window = before.window;
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
   });
 
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
