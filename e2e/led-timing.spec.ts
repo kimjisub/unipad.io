@@ -42,7 +42,7 @@ declare global {
 }
 
 // Store packs play their sounds; nothing should reach the speakers of the machine running the tests.
-test.use({ launchOptions: { args: ['--mute-audio'] } });
+test.use({ launchOptions: { args: ['--mute-audio'] }, video: 'on' });
 
 /** LedRunner's tick, which the probe timer copies to see how late the page's timers ran. */
 const TICK_MS = LED_TICK_MS;
@@ -96,7 +96,7 @@ function padOfNote(note: number): { x: number; y: number } | null {
   return { x: 8 - row, y: column - 1 };
 }
 
-async function playAutoPlay(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }, timeline: IntendedTimeline): Promise<Run> {
+async function playAutoPlay(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }, timeline: IntendedTimeline, forceStalls = false): Promise<Run> {
   await recordMidiOutput(page);
   await page.goto('/play');
   test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
@@ -122,6 +122,20 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
     window.ledTiming.ticks.length = 0;
     window.addEventListener('click', () => { window.ledTiming.autoStart = performance.now(); }, { capture: true, once: true });
   });
+  if (forceStalls) {
+    // Block the actual page thread, leaving both autoplay and LED timers on the real clock. Two
+    // separate stalls used to delay an animation's start then cut its tail at the next press.
+    await page.evaluate(() => {
+      window.addEventListener('click', () => {
+        for (const [after, duration] of [[200, 180], [420, 200], [1200, 400]]) {
+          setTimeout(() => {
+            const until = performance.now() + duration;
+            while (performance.now() < until) { /* deliberate foreground work */ }
+          }, after);
+        }
+      }, { capture: true, once: true });
+    });
+  }
   const before = await metrics();
   await auto.click();
   await expect(auto).toHaveAttribute('aria-pressed', 'true');
@@ -324,36 +338,38 @@ test('the dense fixture leaves the declared slack before its final redraw', asyn
   expect(DENSE_SLACK_MS).toBe(275);
 });
 
-test('a dense pack\'s LED commands reach the launchpad output in the pack\'s order with nothing missing', async ({ page, browser }, testInfo) => {
+for (const forceStalls of [false, true]) {
+test(`a dense pack's LED commands reach the launchpad output in the pack's order with nothing missing${forceStalls ? ' with deliberate timer stalls' : ''}`, async ({ page, browser }, testInfo) => {
   test.slow();
   const buffer = await densePack();
   const timeline = intendedTimeline(await parseUniPack(new Uint8Array(buffer).buffer));
   expect(peakPerSecond(timeline.commands), 'commands a second at peak').toBeGreaterThan(5000);
 
-  const run = await playAutoPlay(page, { name: 'led-timing.zip', mimeType: 'application/zip', buffer }, timeline);
+  const run = await playAutoPlay(page, { name: 'led-timing.zip', mimeType: 'application/zip', buffer }, timeline, forceStalls);
   const { result, latency, text } = report('in-repo dense pack', timeline, run, browser.version());
-  // A timer stall longer than DENSE_SLACK_MS can delay an animation until the pad's next press cuts it
-  // off, plays beside it (both presses in one tick) or the final redraw overtakes its last steps; none is
-  // a player regression. Any other difference is.
+  // Represses preserve all due work. Only autoplay's final redraw can still overtake a late tail;
+  // missing commands always fail, however long the page stalled.
   const verdict = denseTimingVerdict(result, run.timerSpanMs, DENSE_SLACK_MS, stallExplains(timeline.commands.filter(isPad), run.sent, run.ticks));
   // Every command that arrived and every timer tick go in the record when they differ, so each
   // difference can be traced.
-  const traced = verdict !== 'pass';
+  const traced = forceStalls || verdict !== 'pass';
   await record(testInfo, 'dense-pack', text, {
     ...result, latencies: undefined, latency, ...run, sent: traced ? run.sent : undefined, ticks: traced ? run.ticks : undefined,
   });
 
   expectOnlyLaunchpadPads(run.otherOutputPads);
+  expect(result.missing, text).toBe(0);
 
   test.skip(verdict === 'inconclusive',
     `Inconclusive: ${result.reordered} reordered and ${result.missing} missing commands, all of them late animation steps ` +
-    `that the same pad's next press cut off or played beside, or the final redraw overtook, after the page's timers stalled for ` +
+    `that the final redraw overtook, after the page's timers stalled for ` +
     `${ms(run.timerSpanMs)} ms, more than the ${DENSE_SLACK_MS} ms minimum gap before a pad's next press or the final redraw`);
   expect(result.reordered, text).toBe(0);
   expect(result.extra, text).toBe(0);
   expect(result.missing, text).toBe(0);
   expect(result.matched).toBe(timeline.commands.filter(isPad).length);
 });
+}
 
 // Store packs: LED_TIMING_PACKS names a folder of store zips (they stay out of the repository), and
 // LED_TIMING_MEASURE the pack codes to play, e.g.

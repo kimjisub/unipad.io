@@ -69,6 +69,22 @@ test('corpus.json is what the sources build, and corpus.sha256 is its hash', () 
   assert.equal(readFileSync(join(here, 'corpus.sha256'), 'utf8'), digestLine(Buffer.from(text)));
 });
 
+test('iOS sound-stop and chain-reset cases require observed results', () => {
+  const ids = ['RUN-S-008', 'RUN-S-009', 'RUN-S-010', 'RUN-S-012', 'RUN-S-013'];
+  const passing = fullResults('ios');
+  const judged = judge(canonical, 'ios', passing);
+  const missing = judge(canonical, 'ios', { ...passing, cases: [] });
+  for (const id of ids) {
+    const c = corpus.cases.find((entry) => entry.id === id);
+    assert.ok(c, id);
+    assert.equal(c.unobserved?.ios, undefined, id);
+    assert.equal(judged.get(id).status, 'pass', id);
+    assert.equal(missing.get(id).status, 'unverified', id);
+    const changed = fullResults('ios', { [id]: { status: 'fail', actual: { checkpoints: [] } } });
+    assert.equal(judge(canonical, 'ios', changed).get(id).status, 'fail', id);
+  }
+});
+
 test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
   const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
   assert.ok(startsWithMpegFrame(mp3));

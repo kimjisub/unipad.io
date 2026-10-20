@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "test:unipack": "rm -rf .next/cache/unipack-test && tsc -p src/lib/unipack/tsconfig.test.json && node --test \".next/cache/unipack-test/**/*.test.js\"",
