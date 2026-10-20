@@ -13,7 +13,13 @@ interface LedAnimationState {
   index: number;
   delay: number;
   isPlaying: boolean;
-  isShutdown: boolean;
+  startedAt: number;
+  order: number;
+  shutdownAt: number | null;
+  shutdownOrder: number;
+  finishedAt: number | null;
+  passStart: number;
+  processed: number;
   remove: boolean;
   loopProgress: number;
   ledAnimation: LedAnimation | null;
@@ -27,6 +33,53 @@ export interface LedRunnerListener {
 }
 
 const LOOP_INTERVAL_MS = 4;
+// Autoplay can deliver a scheduled press after the animation's last step already ran.
+const LATE_PRESS_MS = 1000;
+
+interface Step {
+  state: LedAnimationState;
+  at: number;
+  rank: number;
+  order: number;
+  shutdown: boolean;
+}
+
+const compareSteps = (a: Step, b: Step) => a.at - b.at || a.rank - b.rank || a.order - b.order;
+
+/** A tick's next steps, earliest first, without repeatedly sorting the whole backlog. */
+class DueSteps {
+  private heap: Step[] = [];
+
+  push(step: Step | null): void {
+    if (!step) return;
+    let i = this.heap.length;
+    this.heap.push(step);
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (compareSteps(this.heap[parent], step) <= 0) break;
+      this.heap[i] = this.heap[parent];
+      i = parent;
+    }
+    this.heap[i] = step;
+  }
+
+  pop(): Step | undefined {
+    const first = this.heap[0];
+    const last = this.heap.pop();
+    if (last && this.heap.length > 0) {
+      let i = 0;
+      while (i * 2 + 1 < this.heap.length) {
+        let child = i * 2 + 1;
+        if (child + 1 < this.heap.length && compareSteps(this.heap[child + 1], this.heap[child]) < 0) child++;
+        if (compareSteps(last, this.heap[child]) <= 0) break;
+        this.heap[i] = this.heap[child];
+        i = child;
+      }
+      this.heap[i] = last;
+    }
+    return first;
+  }
+}
 
 export class LedRunner {
   private unipack: UniPackData;
@@ -40,6 +93,7 @@ export class LedRunner {
   private ledAnimationStatesAdd: LedAnimationState[] = [];
 
   private rafId: number | null = null;
+  private requests = 0;
 
   active = false;
 
@@ -65,81 +119,78 @@ export class LedRunner {
 
     const currTime = performance.now();
 
+    for (const state of this.ledAnimationStatesAdd) this.ledAnimationStates.push(state);
+    this.ledAnimationStatesAdd.length = 0;
+    const due = new DueSteps();
     for (const state of this.ledAnimationStates) {
-      if (state.isPlaying && !state.isShutdown) {
-        if (state.delay === 0) state.delay = currTime;
-
-        // This runs on the rAF (UI) thread: an animation that never advances state.delay (no
-        // events, or loop 0 with no delay event) used to spin `while (true)` and freeze the tab.
-        // Android guards the empty case (Crashlytics a1376611) and survives the other on a worker
-        // thread; here both get a per-frame budget as well. A finite animation with a huge repeat count
-        // whose pass takes no time would spin as long, so it ends after such a pass (see passStart).
-        const events = state.ledAnimation?.ledEvents;
-        if (!events || events.length === 0) {
-          state.isPlaying = false;
-          continue;
-        }
-        const loopCount = Math.max(1, state.ledAnimation!.loop);
-        const budget = events.length * loopCount + 1;
-        let processed = 0;
-        // A pass that started in this tick and ends no later than it started (no delays, only `d 0`, or
-        // delays that sum to zero or less) had every event due in this tick, so every further pass is due
-        // too and replays the same events in the same order, leaving the LEDs as this one did. A finite
-        // animation then ends here instead of replaying up to 2^31 passes in one tick.
-        let passStart = state.index === 0 ? state.delay : NaN;
-
-        while (true) {
-          if (state.index >= events.length) {
-            state.loopProgress++;
-            state.index = 0;
-            if (state.delay <= passStart && state.ledAnimation!.loop !== 0) {
-              state.loopProgress = state.ledAnimation!.loop;
-            }
-            passStart = state.delay;
-          }
-
-          if (state.ledAnimation!.loop !== 0 && state.ledAnimation!.loop <= state.loopProgress) {
-            state.isPlaying = false;
-            break;
-          }
-
-          // Only endless (loop 0) animations reach the budget. They yield to the next tick and keep
-          // playing, so eventOff and stop still find them and turn their LEDs off (Android
-          // LedRunner.kt). The backlog is dropped: a strobe shorter than a tick or a late tick in a
-          // background tab would otherwise fall further behind real time every tick.
-          if (++processed > budget) {
-            state.delay = currTime;
-            break;
-          }
-
-          if (state.delay <= currTime) {
-            try {
-              const event = events[state.index];
-              this.processEvent(event, state);
-            } catch {
-              // Android: ArrayIndexOutOfBoundsException을 catch하고 계속 진행
-            }
-          } else {
-            break;
-          }
-          state.index++;
-        }
-      } else if (state.isShutdown) {
+      state.processed = 0;
+      due.push(this.nextStep(state, currTime));
+    }
+    for (let step = due.pop(); step; step = due.pop()) {
+      const state = step.state;
+      if (step.shutdown) {
         this.cleanupState(state);
         state.remove = true;
       } else {
-        state.remove = true;
+        state.processed++;
+        try {
+          this.processEvent(state.ledAnimation!.ledEvents[state.index], state);
+        } catch {
+          // Invalid event coordinates must not stop the rest of the animation.
+        }
+        state.index++;
+        this.finishIfDone(state);
+        if (!state.isPlaying) state.finishedAt = step.at;
       }
+      due.push(this.nextStep(state, currTime));
     }
-
-    for (const item of this.ledAnimationStatesAdd) {
-      this.ledAnimationStates.push(item);
-    }
-    this.ledAnimationStatesAdd.length = 0;
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
     this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
   };
+
+  /** Events already running at a time precede shutdowns there, then new starts, in request order. */
+  private nextStep(state: LedAnimationState, currTime: number): Step | null {
+    if (state.remove) return null;
+    const shutdown: Step | null = state.shutdownAt === null ? null : {
+      state, at: state.shutdownAt, rank: 1, order: state.shutdownOrder, shutdown: true,
+    };
+    if (!state.isPlaying) {
+      // A late scheduled press only cleans up if this animation was still running at that time.
+      if (shutdown && state.finishedAt !== null && shutdown.at < state.finishedAt && shutdown.at <= currTime) return shutdown;
+      if (state.finishedAt === null || currTime - state.finishedAt > LATE_PRESS_MS) state.remove = true;
+      return null;
+    }
+    let event: Step | null = {
+      state, at: state.delay, rank: state.delay === state.startedAt ? 2 : 0, order: state.order, shutdown: false,
+    };
+    // Endless animations keep the existing per-tick budget and drop excess backlog so even a
+    // delayless loop yields to input. Finite zero-time repeats finish in finishIfDone instead.
+    if (state.ledAnimation!.loop === 0 && state.delay <= currTime && state.processed > state.ledAnimation!.ledEvents.length) {
+      state.delay = currTime;
+      event = null;
+    }
+    const next = !event || (shutdown && compareSteps(shutdown, event) < 0) ? shutdown : event;
+    return next && next.at <= currTime ? next : null;
+  }
+
+  private finishIfDone(state: LedAnimationState): void {
+    const animation = state.ledAnimation!;
+    if (state.index >= animation.ledEvents.length) {
+      state.loopProgress++;
+      state.index = 0;
+      if (animation.loop !== 0 && state.delay <= state.passStart) state.loopProgress = animation.loop;
+      state.passStart = state.delay;
+    }
+    if (animation.loop !== 0 && animation.loop <= state.loopProgress) state.isPlaying = false;
+  }
+
+  private shutDownAt(state: LedAnimationState, at: number, order: number): void {
+    if (state.shutdownAt === null || at < state.shutdownAt) {
+      state.shutdownAt = at;
+      state.shutdownOrder = order;
+    }
+  }
 
   private processEvent(event: LedEvent, state: LedAnimationState): void {
     switch (event.type) {
@@ -216,7 +267,7 @@ export class LedRunner {
       this.rafId = null;
     }
     for (const state of this.ledAnimationStates) {
-      this.cleanupState(state);
+      if (state.isPlaying) this.cleanupState(state);
     }
     this.ledAnimationStates.length = 0;
     this.ledAnimationStatesAdd.length = 0;
@@ -239,14 +290,15 @@ export class LedRunner {
     anims.push(first);
   }
 
-  eventOn(x: number, y: number): void {
+  eventOn(x: number, y: number, pressedAt = performance.now()): void {
     if (!this.active) return;
 
     const chain = this.chainValue();
+    const order = ++this.requests;
 
-    for (const state of this.ledAnimationStates) {
+    for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
       if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === chain) {
-        state.isShutdown = true;
+        this.shutDownAt(state, pressedAt, order);
       }
     }
 
@@ -259,9 +311,15 @@ export class LedRunner {
         buttonY: y,
         chainAtCreation: chain,
         index: 0,
-        delay: 0,
-        isPlaying: true,
-        isShutdown: false,
+        delay: pressedAt,
+        isPlaying: animation.ledEvents.length > 0,
+        startedAt: pressedAt,
+        order,
+        shutdownAt: null,
+        shutdownOrder: 0,
+        finishedAt: null,
+        passStart: pressedAt,
+        processed: 0,
         remove: false,
         loopProgress: 0,
         ledAnimation: animation,
@@ -269,11 +327,12 @@ export class LedRunner {
     }
   }
 
-  eventOff(x: number, y: number): void {
+  eventOff(x: number, y: number, releasedAt = performance.now()): void {
     if (!this.active) return;
-    for (const state of this.ledAnimationStates) {
+    const order = ++this.requests;
+    for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
       if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === this.chainValue() && state.ledAnimation?.loop === 0) {
-        state.isShutdown = true;
+        this.shutDownAt(state, releasedAt, order);
       }
     }
   }

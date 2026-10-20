@@ -436,7 +436,7 @@ export function useUniPadEngine() {
   }, [refreshChain, scheduleFlush]);
 
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
-  const padTouchOn = useCallback((x: number, y: number, input?: string) => {
+  const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
@@ -446,7 +446,7 @@ export function useUniPadEngine() {
     }
 
     se?.soundOn(x, y, input);
-    lr?.eventOn(x, y);
+    lr?.eventOn(x, y, eventAt);
     recorderRef.current.recordOn(x, y);
 
     if (traceLogRef.current) {
@@ -486,13 +486,13 @@ export function useUniPadEngine() {
   }, [userPadTouchOn]);
 
   /** Without `input`, every press of the pad is released. */
-  const padTouchOff = useCallback((x: number, y: number, input?: string) => {
+  const padTouchOff = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
     se?.soundOff(x, y, input);
-    lr?.eventOff(x, y);
+    lr?.eventOff(x, y, eventAt);
     recorderRef.current.recordOff(x, y);
 
     // A pad pressed with the press light off has nothing to clear on the launchpad.
@@ -943,11 +943,11 @@ export function useUniPadEngine() {
               autoPlayPlaying: startingMode === 'stepPractice' ? false : prev.autoPlayPlaying,
             }));
           },
-          onPadTouchOn: (x: number, y: number) => {
+          onPadTouchOn: (x: number, y: number, pressedAt: number) => {
             playerHoldsRef.current.autoPlayPressed(x, y);
-            padTouchOn(x, y, AUTO_PLAY_INPUT);
+            padTouchOn(x, y, AUTO_PLAY_INPUT, pressedAt);
           },
-          onPadTouchOff: (x: number, y: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT); },
+          onPadTouchOff: (x: number, y: number, releasedAt: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT, releasedAt); },
           onChainChange: (c: number) => { setChain(c); },
           onGuidePadOn: (x: number, y: number, targetWallTimeMs: number) => {
             cm.add(x, y, Channel.GUIDE, -1, 17);

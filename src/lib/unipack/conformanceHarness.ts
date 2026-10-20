@@ -374,7 +374,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   // A pad press and release as the play screen sends them to the sound engine and the LED runner,
   // named by the input holding the pad: the scenario's press/release steps are one player input,
   // auto play holds pads under its own name as useUniPadEngine does.
-  const pressPad = (x: number, y: number, input: string) => {
+  const pressPad = (x: number, y: number, input: string, pressedAt?: number) => {
     const before = FakeAudioContext.started.length;
     const at = chain;
     sound.soundOn(x, y, input);
@@ -384,11 +384,11 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
       events.push(['sound', at, x, y, started.name.replace(/^(?:.*\/)?sounds\//i, ''), loop]);
       startedAt.set(started, [x, y]);
     }
-    led.eventOn(x, y);
+    led.eventOn(x, y, pressedAt);
   };
-  const releasePad = (x: number, y: number, input?: string) => {
+  const releasePad = (x: number, y: number, input?: string, releasedAt?: number) => {
     sound.soundOff(x, y, input);
-    led.eventOff(x, y);
+    led.eventOff(x, y, releasedAt);
   };
 
   try {
@@ -416,14 +416,14 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
             onStart() {}, onEnd() {}, onProgressUpdate() {},
-            onPadTouchOn: (x, y) => {
+            onPadTouchOn: (x, y, pressedAt) => {
               events.push(['autoOn', x, y]);
               if (toPads) {
                 playerHolds.autoPlayPressed(x, y);
-                pressPad(x, y, AUTO_PLAY_INPUT);
+                pressPad(x, y, AUTO_PLAY_INPUT, pressedAt);
               }
             },
-            onPadTouchOff: (x, y) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT); },
+            onPadTouchOff: (x, y, releasedAt) => { events.push(['autoOff', x, y]); if (toPads) releasePad(x, y, AUTO_PLAY_INPUT, releasedAt); },
             onChainChange: (next) => { chain = next; events.push(['autoChain', next]); },
             onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
           };
