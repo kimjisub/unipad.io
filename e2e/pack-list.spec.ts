@@ -18,15 +18,20 @@ const option = (page: Page, name: string) => list(page).getByRole('option', { na
 type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
 
 async function openList(page: Page, files: readonly PackFile[]) {
-  for (const file of files) {
+  await test.step('Prepare saved pack list', async () => {
     await page.goto('/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
-    await expectPads(page);
-    // The import shows the pads before it saves the pack; the URL changes once it is saved.
-    await expect(page).toHaveURL(/\/play\?pack=.+/);
-  }
-  await page.goto('/play');
-  await expect(list(page).getByRole('option')).toHaveCount(files.length);
+    for (const [index, file] of files.entries()) {
+      await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
+      await expectPads(page);
+      // The import shows the pads before it saves the pack; the URL changes once it is saved.
+      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      // Setup needs the buttons' actions, not pointer hit testing during their animations.
+      // Keep the page alive and return to the list before the next import.
+      await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+      await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
+      await expect(list(page).getByRole('option')).toHaveCount(index + 1);
+    }
+  });
 }
 
 const openListWithThreePacks = (page: Page) => openList(page, packs.map(([file]) => file));
