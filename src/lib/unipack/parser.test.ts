@@ -110,6 +110,23 @@ describe('parseUniPack', () => {
     });
   });
 
+  test('numeric zero columns address round lights while zero rows stay pad coordinates', async () => {
+    const pack = await parseWithLeds({ '1 1 1': [
+      'on 0 1 ffa726 61', 'o 0 32 a 5', 'off 0 1', 'f 0 32',
+      'on 8 0 ffa726 61', 'off 8 0', 'o 0 0 FF0000', 'f 0 0',
+    ].join('\n') });
+    assert.deepEqual(pack.errors, []);
+    assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [
+      { type: 'on', x: -1, y: 0, color: 0xffffa726, velocity: 61 },
+      { type: 'on', x: -1, y: 31, color: LAUNCHPAD_ARGB[5], velocity: 5 },
+      { type: 'off', x: -1, y: 0 }, { type: 'off', x: -1, y: 31 },
+      { type: 'on', x: 7, y: -1, color: 0xffffa726, velocity: 61 },
+      { type: 'off', x: 7, y: -1 },
+      { type: 'on', x: -1, y: -1, color: 0xffff0000, velocity: 4 },
+      { type: 'off', x: -1, y: -1 },
+    ]);
+  });
+
   test('keeps an empty keyLed file as an animation with no events', async () => {
     const pack = await parseWithLeds({ '1 1 1': '' });
 
@@ -273,12 +290,14 @@ describe('parseUniPack', () => {
         });
       }
 
-      test(`${command} drops x=0 with a format error, as -1 addresses the round LEDs`, async () => {
+      test(`${command} keeps x=0 as a round light address without a warning`, async () => {
         const line = ledLine(command, 'x', '0');
         const pack = await parseWithLeds({ '1 1 1': `${line}\n${validLines}` });
-
-        assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, validEvents);
-        assert.deepEqual(pack.errors, [`keyLed: [1 1 1].[${line}] format is incorrect`]);
+        const kept = command === 'o' || command === 'on'
+          ? { type: 'on', x: -1, y: 0, color: 0xFFFF0000, velocity: 4 }
+          : { type: 'off', x: -1, y: 0 };
+        assert.deepEqual(pack.ledAnimationTable![0][0][0]![0].ledEvents, [kept, ...validEvents]);
+        assert.deepEqual(pack.errors, []);
       });
     }
 

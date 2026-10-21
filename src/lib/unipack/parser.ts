@@ -28,17 +28,6 @@ function roundLedIndex(token: string | undefined): number | null {
 }
 
 /**
- * The 0-based pad column of a keyLED line, or null for `0`, whose -1 is the round LED address. A column
- * outside the grid is kept as written: the LED runner skips it when it is lit, as Android and iOS do, so a
- * pack that lights positions beyond its grid opens without a warning per line. A non-number is NaN and is
- * reported by the caller's format check.
- */
-function padLedX(token: string | undefined): number | null {
-  const x = strictInt(token) - 1;
-  return x === -1 ? null : x;
-}
-
-/**
  * The colour tokens of a logo line, read as iOS reads them: `o l color`, `o l auto velocity`, and the forms
  * with a placeholder where other lines have y, `o l _ color` and `o l _ color|auto velocity`.
  */
@@ -516,12 +505,8 @@ async function parseKeyLed(
             ledY = LOGO_FUNCTION_KEY;
             colorTokens = logoColorTokens(split);
           } else {
-            const padX = padLedX(xToken);
-            if (padX === null) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-            ledX = padX;
+            // Numeric column 0 shares the circular address -1 with mc/*, as in both apps.
+            ledX = strictInt(xToken) - 1;
             ledY = strictInt(split[2]) - 1;
             colorTokens = split.slice(3);
           }
@@ -565,12 +550,8 @@ async function parseKeyLed(
             ledX = -1;
             ledY = LOGO_FUNCTION_KEY;
           } else {
-            const padX = padLedX(xToken);
-            if (padX === null) {
-              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
-              continue;
-            }
-            ledX = padX;
+            // Numeric column 0 shares the circular address -1 with mc/*, as in both apps.
+            ledX = strictInt(xToken) - 1;
             ledY = strictInt(split[2]) - 1;
           }
           if (!Number.isFinite(ledY) || (ledX !== -1 && !Number.isFinite(ledX))) {

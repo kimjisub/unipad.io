@@ -611,6 +611,33 @@ test('in Pro light mode a pack light shows on a round button and turns off when 
   await expect.poll(() => roundLightMessages(page, 79)).toEqual([[0xb0, 79, 21], [0xb0, 79, 0]]);
 });
 
+test('numeric zero columns show a round light without warnings and clear it on release', async ({ page }, testInfo) => {
+  const file = await roundLightPack(2, { '1 1 1 0': 'on 0 10 FF0000\nd 10000\noff 0 10\nd 10000' });
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await expectPads(page);
+  const warning = page.getByRole('alertdialog');
+  const warningCount = await warning.count();
+  if (warningCount) {
+    await testInfo.attach('import-warnings', { body: await warning.innerText(), contentType: 'text/plain' });
+    await warning.getByRole('button', { name: 'OK', exact: true }).click();
+  }
+  await page.keyboard.press('Alt+p');
+  const light = page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div[style*="background-color"]');
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => starts(page)).toBe(1);
+  try {
+    await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+  } finally {
+    await testInfo.attach('numeric-zero-held', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  await page.mouse.up();
+  await expect(light).toHaveCount(0);
+  await testInfo.attach('numeric-zero-released', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(warningCount, 'numeric zero coordinates do not warn').toBe(0);
+});
+
 test('switching chains moves the chain light on the launchpad', async ({ page }) => {
   await loadPack(page, await roundLightPack());
   await connectLaunchpadAndClear(page);
