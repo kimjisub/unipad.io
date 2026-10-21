@@ -69,7 +69,7 @@ const inAndroidApp = (...names) => names.map((name) => `com.kimjisub.launchpad.$
  * result file, for the item to count where no case checks it or the harness cannot observe it (see
  * report.mjs). The list is reviewed and fixed here; it is never taken from what a result file names or
  * passed. An output item lists only tests that measure what is played. An item the app's tests cannot yet
- * confirm (Android A-01 to A-05, iOS A-03) is not listed.
+ * confirm (Android A-01 to A-05) is not listed.
  */
 export const NATIVE_TESTS = {
   android: {
@@ -103,6 +103,7 @@ export const NATIVE_TESTS = {
     'F-06': ['UniPackArchiveNameTests/flaggedUTF8NamesResolveTheSound()',
       'UniPackArchiveNameTests/unflaggedUTF8NamesResolveTheSound()',
       'UniPackArchiveNameTests/unflaggedCP949NamesResolveTheSound()'],
+    'A-03': ['SoundEngineDecodingTests/anOggVorbisSoundPlays()'],
     'A-04': ['SoundEngineDecodingTests/anM4ASoundPlays()'],
     'A-05': ['SoundEngineDecodingTests/mp3DataInAFileNamedWavPlays()'],
   },

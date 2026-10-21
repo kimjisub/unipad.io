@@ -684,15 +684,14 @@ describe('app test results', () => {
     }
   });
 
-  test('3. iOS A-03 stays unconfirmed: unverified without tests, and passed with any test, as no test is listed for it', () => {
-    assert.equal(NATIVE_TESTS.ios['A-03'], undefined);
-    const unverified = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': [] }, status: { 'A-03': 'unverified' } });
-    const claimed = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': ['SoundEngineDecodingTests/anOggSoundPlays()'] } });
-    for (const file of [unverified, claimed]) {
-      const cell = items({ ios: read('ios', file) }).get('A-03').ios;
-      assert.equal(cell.confirmed, false);
-      assert.match(cell.detail, /no ios app test is listed for it/);
-    }
+  test('3. iOS A-03 is confirmed by the listed test that measures the OGG sound played, and by no other test', () => {
+    const listed = 'SoundEngineDecodingTests/anOggVorbisSoundPlays()';
+    assert.deepEqual(NATIVE_TESTS.ios['A-03'], [listed]);
+    assert.deepEqual(items({ ios: read('ios', nativeFile('ios')) }).get('A-03').ios, { confirmed: true, detail: '', basis: BASES.native });
+    const unverified = nativeFile('ios', { status: { 'A-03': 'unverified' } });
+    const decoderOnly = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': ['OggVorbisDecoderTests/decodesTheWholeToneInTheFilesLayout()'] } });
+    for (const file of [unverified, decoderOnly]) assert.equal(items({ ios: read('ios', file) }).get('A-03').ios.confirmed, false);
+    assert.match(items({ ios: read('ios', decoderOnly) }).get('A-03').ios.detail, /anOggVorbisSoundPlays\(\) missing/);
   });
 
   test('4. a listed test that is missing, failed, skipped or run twice leaves the item unconfirmed and is named', () => {
@@ -849,5 +848,36 @@ describe('app test results', () => {
       assert.equal(got.confirmed, false, why);
       assert.ok(got.detail.includes(`${name} repeated`), `${why}: ${got.detail}`);
     }
+  });
+
+  test('13. Android A-03 stays unconfirmed when the file marks it passed on a test NATIVE_TESTS does not list', () => {
+    const unlisted = 'com.kimjisub.launchpad.audio.AudioFormatDecodeDeviceTest#decodesOggVorbis';
+    const standIn = 'com.kimjisub.launchpad.audio.SoundOutputDeviceTest#anOggVorbisSoundPlays';
+    /**
+     * A-03 checked with `registered` as its NATIVE_TESTS entry (none for undefined): the file leaves the
+     * registered tests out and reports only the unlisted one, run once and passed, with A-03 passed.
+     */
+    const check = (registered) => {
+      const saved = NATIVE_TESTS.android['A-03'];
+      if (registered) NATIVE_TESTS.android['A-03'] = registered;
+      else delete NATIVE_TESTS.android['A-03'];
+      try {
+        assert.equal(registered?.includes(unlisted) ?? false, false);
+        const file = nativeFile('android', { items: { ...NATIVE_TESTS.android, 'A-03': [unlisted] } });
+        assert.equal(file.items['A-03'].status, 'passed');
+        const cell = items({ android: read('android', file) }).get('A-03').android;
+        assert.equal(cell.confirmed, false, `registered: ${registered}`);
+        if (!registered) assert.equal(cell.detail, 'no case checks this item, and no android app test is listed for it');
+        else for (const name of registered) assert.ok(cell.detail.includes(`${name} missing`), cell.detail);
+      } finally {
+        if (saved) NATIVE_TESTS.android['A-03'] = saved;
+        else delete NATIVE_TESTS.android['A-03'];
+      }
+    };
+    // As NATIVE_TESTS stands, and with a registration in place of none or none in place of one, so the
+    // check keeps its meaning once Android A-03 lists the tests that measure what is played.
+    const actual = NATIVE_TESTS.android['A-03'];
+    check(actual);
+    check(actual ? undefined : [standIn]);
   });
 });

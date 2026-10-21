@@ -67,62 +67,61 @@ async function mount(values = {}) {
 }
 afterEach(cleanup);
 
-for (const keyLedExist of [true, false]) {
-  for (const saved of [null, 'true', 'false']) {
-    test(`restores feedback ${saved ?? 'default'} with pack LEDs ${keyLedExist}`, async () => {
-      await mount(saved === null ? {} : { feedbackLight: saved });
-      await flush(() => engine.open(keyLedExist));
-      assert.equal(engine.state.feedbackLight, saved === null ? !keyLedExist : saved === 'true');
-      assert.equal(storage.get('feedbackLight'), String(engine.state.feedbackLight));
-    });
-  }
-}
+test('temporary feedback display changes are never saved by the page', async () => {
+  await mount({ feedbackLight: 'true' });
+  await flush(() => engine.open(true));
+  await flush(() => engine.update('feedbackLight', false));
+  assert.equal(storage.get('feedbackLight'), 'true');
+  assert.equal(writes.some(([key]) => key === 'feedbackLight'), false);
+});
 
-test('waits for slow reads before saving feedback, watermark and volume', async () => {
+test('waits for slow reads before saving watermark and volume', async () => {
   await mount({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
   let release;
   pendingReads = { promise: new Promise(resolve => { release = resolve; }) };
   await flush(() => engine.open(true));
   assert.deepEqual(writes, [], 'pack defaults must not overwrite pending saved settings');
   await flush(release);
-  assert.equal(engine.state.feedbackLight, true);
   assert.equal(engine.state.watermark, false);
   assert.equal(engine.state.volumeLevel, 2);
   assert.deepEqual(Object.fromEntries(storage), { feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
 });
 
-test('reopening packs restores the latest user choices instead of pack defaults', async () => {
+test('reopening packs restores the latest watermark and volume choices instead of pack defaults', async () => {
   await mount({ feedbackLight: 'false', watermark: 'false', volumeLevel: '2' });
   await flush(() => engine.open(true));
   await flush(() => { engine.update('feedbackLight', true); engine.update('watermark', true); engine.update('volumeLevel', 3); });
   await flush(() => engine.update('loaded', false));
   await flush(() => engine.open(true));
-  assert.equal(engine.state.feedbackLight, true);
   assert.equal(engine.state.watermark, true);
   assert.equal(engine.state.volumeLevel, 3);
-  assert.deepEqual(Object.fromEntries(storage), { feedbackLight: 'true', watermark: 'true', volumeLevel: '3' });
+  assert.deepEqual(Object.fromEntries(storage), { feedbackLight: 'false', watermark: 'true', volumeLevel: '3' });
 });
 
 test('failed reads preserve unread settings and do not stop the player', async () => {
   await mount({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
-  failedReads.add('feedbackLight');
+  failedReads.add('volumeLevel');
   await flush(() => engine.open(true));
   assert.equal(engine.state.loaded, true);
   assert.equal(engine.state.watermark, false);
-  assert.equal(engine.state.volumeLevel, 2);
-  assert.equal(storage.get('feedbackLight'), 'true');
+  assert.equal(engine.state.volumeLevel, 7);
+  assert.equal(storage.get('volumeLevel'), '2');
 });
 
 test('an abandoned pack read cannot overwrite the next pack', async () => {
-  const view = await mount({ feedbackLight: 'false' });
+  const view = await mount({ volumeLevel: '2', watermark: 'false' });
   let release;
   pendingReads = { promise: new Promise(resolve => { release = resolve; }) };
   await flush(() => engine.open(true));
   await flush(() => engine.update('loaded', false));
   pendingReads = null;
-  storage.set('feedbackLight', 'true');
+  storage.set('volumeLevel', '3');
+  storage.set('watermark', 'true');
   await flush(() => engine.open(false));
   await flush(release);
-  assert.equal(engine.state.feedbackLight, true);
+  assert.equal(engine.state.volumeLevel, 3);
+  assert.equal(engine.state.watermark, true);
+  assert.equal(storage.get('volumeLevel'), '3');
+  assert.equal(storage.get('watermark'), 'true');
   view.unmount();
 });

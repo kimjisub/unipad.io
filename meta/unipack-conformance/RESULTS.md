@@ -1,10 +1,36 @@
-# Results (reported 2026-10-20, Korea time)
+# Results
+
+## Changes after the Android autoPlay chain-order fix (2026-10-21)
+
+[unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283) fixes the duplicate chain-change
+notification when an autoPlay chain command is followed by a press. RUN-A-003 now matches its existing
+expected event order, so its Android observation-order pin is removed. Case ids, inputs, fingerprints,
+scenarios, expected results and bases are unchanged; the other pinned differences are retained.
+
+The previous canonical corpus SHA256 was
+`e233029559c3a251ad8c2103905135a08a7d4b0207715ea0e8633f228c7bb358`; the new SHA256 is
+`37096f03b811ae4813ed3a5b68dffbb6da70d741cf67bae4a5c52559e4a8eabf` (204 cases).
+This preserves the earlier removal of the iOS unobserved marks for RUN-S-008, RUN-S-009, RUN-S-010,
+RUN-S-012 and RUN-S-013 in [unipad.io#147](https://github.com/kimjisub/unipad.io/pull/147).
+
+`copies.json` now pins the merged Android commit `1988e6c58d4532cb45a8684b8b8360948bf54156` and iOS
+commit `24254551f5b973e2e0f9452ef96cf8fb1629f2a7`
+([unipad-ios#176](https://github.com/kimjisub/unipad-ios/pull/176)). Both commits contain byte-identical
+`corpus.json` and `corpus.sha256` copies of the new canonical corpus (`sync.mjs --check`).
+
+The aggregate table below has not been regenerated for this corpus from new app result files.
+It retains the earlier report's results and timestamps, including its old Android pinned failure and
+five unverified iOS cases; those counts do not describe the current corpus. Matching copies alone
+do not establish new platform results.
+
+## Retained report (2026-10-20, Korea time)
 
 Corpus `241f719f594cf6156db9c0084cc37e70ddad2c19d8a52858e0727e76ade9890b`, 204 cases,
 grammar G3 (104 items). The report was regenerated from retained, asserting result files, not from
 new app runs: Android `d34406a71f050b849a4e9d667b64795aedc896f0`, iOS
 `a396cb12d0acd8c3eeecadb100660cac9af73c97`, and web `7d05e704629327eac6897e161f03e542a8a7f183`.
-Both app commits are pinned in `copies.json` and contain byte-identical copies of this corpus.
+Both app commits contained byte-identical copies of that historical corpus. The current merge-commit
+pins are listed above.
 
 | Platform | pass | fail (pinned) | unsupported | intended difference | unverified | results written (UTC) |
 |---|---|---|---|---|---|---|
@@ -23,8 +49,10 @@ differ between `-2147483648` and `-2147483649`; all other fields and warnings mu
 Positive wraparound and changed format or range warnings still fail. The expected values, pins,
 corpus bytes and app copies are unchanged.
 
-The remaining Android pin is RUN-A-003's observation order. iOS cannot observe sound stops in
-RUN-S-008 through RUN-S-010 or chain-change counter resets in RUN-S-012 and RUN-S-013.
+At the time of this report, RUN-A-003's Android observation-order pin still counted as a failure,
+and iOS could not observe sound stops in RUN-S-008 through RUN-S-010 or chain-change counter resets
+in RUN-S-012 and RUN-S-013. These limitations have since been resolved as described above; the
+historical table is retained without recalculating its aggregate.
 
 ## Earlier report (2026-10-19)
 
