@@ -73,7 +73,6 @@ export function PlayPage() {
     autoPlayPrev,
     autoPlayNext,
     toggleFeedbackLight,
-    setFeedbackLight,
     toggleLed,
     toggleRecording,
     toggleHideUI,
@@ -298,7 +297,6 @@ export function PlayPage() {
   const [restoredSettings, setRestoredSettings] = useState<{
     packInfo: NonNullable<typeof state.unipack>['info'];
     volume: boolean;
-    feedback: boolean;
     watermark: boolean;
   } | null>(null);
   useEffect(() => {
@@ -307,16 +305,12 @@ export function PlayPage() {
     const packInfo = state.unipack.info;
     void Promise.allSettled([
       getSetting('volumeLevel'),
-      getSetting('feedbackLight'),
       getSetting('watermark'),
-    ]).then(([volume, feedback, watermark]) => {
+    ]).then(([volume, watermark]) => {
       if (cancelled) return;
       if (volume.status === 'fulfilled' && volume.value !== null) {
         const level = Number(volume.value);
         if (Number.isFinite(level)) setVolumeLevel(level);
-      }
-      if (feedback.status === 'fulfilled' && (feedback.value === 'true' || feedback.value === 'false')) {
-        setFeedbackLight(feedback.value === 'true');
       }
       if (watermark.status === 'fulfilled' && (watermark.value === 'true' || watermark.value === 'false')) {
         setWatermark(watermark.value === 'true');
@@ -325,21 +319,16 @@ export function PlayPage() {
       setRestoredSettings({
         packInfo,
         volume: volume.status === 'fulfilled',
-        feedback: feedback.status === 'fulfilled',
         watermark: watermark.status === 'fulfilled',
       });
     });
     return () => { cancelled = true; };
-  }, [state.loaded, state.unipack, setVolumeLevel, setFeedbackLight, setWatermark]);
+  }, [state.loaded, state.unipack, setVolumeLevel, setWatermark]);
 
   useEffect(() => {
     if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.volume) return;
     setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
   }, [state.loaded, state.unipack, state.volumeLevel, restoredSettings]);
-  useEffect(() => {
-    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.feedback) return;
-    setSetting('feedbackLight', String(state.feedbackLight)).catch(() => {});
-  }, [state.loaded, state.unipack, state.feedbackLight, restoredSettings]);
   useEffect(() => {
     if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.watermark) return;
     setSetting('watermark', String(state.watermark)).catch(() => {});
