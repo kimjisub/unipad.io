@@ -584,6 +584,31 @@ async function tapPad(page: Page, position: string, presses: number) {
   await expect.poll(() => starts(page)).toBe(presses);
 }
 
+for (const [label, earlier, later] of [
+  ['decomposed Latin', 'o', 'n\u0303'],
+  ['decomposed Hangul', '\u3131', '\u1100\u1161'],
+  ['UTF-16 names', '\ud83d\ude00', '\ufffd'],
+]) {
+  test(`LED filename order matches composed spellings: ${label}`, async ({ page }, testInfo) => {
+    const file = await roundLightPack(1, {
+      [`1 1 1 0 ${later}`]: 'o 1 2 a 21\nd 60000\n',
+      [`1 1 1 0 ${earlier}`]: 'o 1 2 a 5\nd 60000\n',
+    });
+    await loadPack(page, file);
+    const light = led(page, '0,1');
+    for (const [index, color] of ['rgb(239, 83, 80)', 'rgb(0, 206, 60)'].entries()) {
+      await pad(page, '0,0').hover();
+      await page.mouse.down();
+      // Both files light the same pad; wait for its rendered light before recording it.
+      await expect(light).toHaveCount(1);
+      await testInfo.attach(`queue-position-${index + 1}`, { body: await page.screenshot(), contentType: 'image/png' });
+      await expect(light).toHaveCSS('background-color', color);
+      await page.mouse.up();
+      await expect(light).toHaveCount(0);
+    }
+  });
+}
+
 // Android and iOS send a round button its highest remaining light whenever one of its lights
 // changes: the selected chain's light (velocity 3) outranks pack lights, which reach round buttons
 // only in Pro light mode.
