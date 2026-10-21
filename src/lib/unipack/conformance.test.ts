@@ -14,7 +14,7 @@ import { LedRunner } from './LedRunner';
 import { AutoPlayRunner } from './AutoPlayRunner';
 import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
-  actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, normalizeError, observe, PLATFORM, REAL,
+  actualFor, capturedCase, caseFingerprint, classify, corpusPath, CorpusCase, CorpusFile, Deps, Json, loadCorpus, normalizeError, observe, PLATFORM, REAL,
   resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
 } from './conformanceHarness';
 
@@ -79,7 +79,7 @@ describe('the checks can fail', () => {
   test('a changed input file no longer matches the case fingerprint', () => {
     const c = byId('KS-001');
     const altered: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'keySound' ? { ...f, text: `${f.text}\n1 2 2 c.wav` } : f)) };
-    assert.notEqual(fingerprintOf(altered.files, corpus), c.fingerprint);
+    assert.notEqual(caseFingerprint(altered.files, corpus), c.fingerprint);
     assert.throws(() => verifyFingerprint(altered, corpus), /hash to/);
   });
 

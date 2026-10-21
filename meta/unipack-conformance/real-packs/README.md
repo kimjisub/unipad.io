@@ -94,7 +94,17 @@ What a run trusts from an earlier one:
 
 - `<archive>/heads.json` keeps the size and ETag of the file the server served when a kept copy was last
   reused or downloaded. It changes only then, so a download that fails leaves the old record and the
-  next run tries again instead of taking the old copy for the new file.
+  next run tries again instead of taking the old copy for the new file. The recorded size is the kept
+  copy's: a download whose size differs from the response's `Content-Length` or from what HEAD reported
+  fails (`download-failed`) and leaves the earlier copy in place. `--archive` is created when missing.
+- HEAD and the download ask for the file uncompressed (`Accept-Encoding: identity`). A server that
+  still answers with a content coding (gzip and the like) has its body decoded by `fetch`, so its
+  `Content-Length` counts other bytes than the kept file and is never compared. A HEAD answered that
+  way gives no size (`head.size` null, `head.encoding` set), so that pack is downloaded on every run;
+  a broken download still fails the unzip.
+- A HEAD request that gets no answer (a connection error, `head.status` null) is `head-failed` and
+  counted in `summary.headFailed`, apart from `notServed`: it says nothing about whether the server
+  has the file. Run the pack again (`--only <key>`) before reading it as gone.
 - `<work>/packs/<id>` is removed before each pack is brought in. A pack that is not served, not
   downloaded or not unzipped in this run has no folder, so the runners cannot read an earlier one.
 - `<work>/results/<platform>/<id>.json` of an earlier run is always removed for each prepared list id,
@@ -105,7 +115,10 @@ What a run trusts from an earlier one:
 - A list key or code that is not a plain name (`[A-Za-z0-9_][A-Za-z0-9_.-]*`) is recorded as
   `invalid-key` or `invalid-code` and never used as a path.
 - With `--stages`, `compare.mjs` lists every pack of that run and reports one that was not unzipped as
-  `not-read` with its step, whatever results an earlier run left in `--results`.
+  `not-read` with its step, whatever results an earlier run left in `--results`. An `--only` id that
+  run did not list stops the comparison, as an unknown id does for the other tools.
+- A result file that is not one pack's result (unreadable, written for another pack, an `error` that
+  is not text, or no `actual`) makes that platform `failed` for that pack; the other packs are compared.
 
 ## Limits
 

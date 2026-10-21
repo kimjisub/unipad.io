@@ -1,16 +1,22 @@
 // Tests of the real-pack tooling: a pack folder hashes like a corpus case, the comparison tells same,
 // different and failed apart and names the odd platform, the summary carries no title, a kept copy is
 // reused only when the server serves the same file, and unzipping unwraps like the apps' import.
+// store.mjs and compare.mjs are also run as commands, against a file server on 127.0.0.1.
 //   node --test meta/unipack-conformance/real-packs/tools.test.mjs (part of `pnpm test`)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { gzipSync } from 'node:zlib';
 import JSZip from 'jszip';
-import { fingerprint } from '../lib.mjs';
+import { fingerprint, fingerprintOf } from '../lib.mjs';
 import { comparePacks, partsOf, summarize, verdictOf } from './compare.mjs';
-import { describePack, folderFingerprint, listPacks } from './packs.mjs';
+import { describePack, folderFingerprint, listPacks, packEntries } from './packs.mjs';
 import { bringPack, sameAsServer, unzipPack } from './store.mjs';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'real-packs-selftest-'));
@@ -447,3 +453,189 @@ for (const offline of [false, true]) {
     }
   });
 }
+
+/** A one-file pack zipped, its `info` holding `title`. */
+async function zipOf(title) {
+  const zip = new JSZip();
+  zip.file('info', `title=${title}`);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+/** A file server for `bytes` at /p.zip on 127.0.0.1 whose HEAD reports `headSize`. */
+async function serve(bytes, headSize = bytes.length) {
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'content-length': req.method === 'HEAD' ? headSize : bytes.length });
+    res.end(req.method === 'HEAD' ? undefined : bytes);
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  const url = `http://127.0.0.1:${server.address().port}/p.zip`;
+  const close = () => new Promise((done) => { server.closeAllConnections(); server.close(done); });
+  return { url, close };
+}
+
+const tool = (name) => fileURLToPath(new URL(`./${name}`, import.meta.url));
+const readJson = (path) => (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
+
+/** Runs store.mjs over a list of one pack (key 0001, code p) and reads what it wrote. */
+async function runStore(dir, url, archive) {
+  const list = join(dir, 'list.json');
+  writeFileSync(list, JSON.stringify({ '0001': { code: 'p', URL: url } }));
+  const work = join(dir, 'work');
+  const args = [tool('store.mjs'), '--archive', archive, '--work', work, '--list', list];
+  const exit = await promisify(execFile)(process.execPath, args).then(() => 0, (error) => error.code);
+  return { exit, stages: readJson(join(work, 'stages.json')), heads: readJson(join(archive, 'heads.json')) };
+}
+
+test('store.mjs makes a missing archive folder and still writes heads.json and stages.json', async () => {
+  const dir = scratch();
+  const bytes = await zipOf('x');
+  const server = await serve(bytes);
+  try {
+    const archive = join(dir, 'new', 'archive');
+    const { exit, stages, heads } = await runStore(dir, server.url, archive);
+    assert.equal(exit, 0);
+    assert.equal(stages.summary.downloaded, 1);
+    assert.equal(stages.summary.unzipped, 1);
+    assert.equal(heads.p.size, bytes.length);
+    assert.deepEqual(readFileSync(join(archive, 'p.zip')), bytes);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('store.mjs counts a HEAD that got no answer apart from a pack the server does not serve', async () => {
+  const dir = scratch();
+  try {
+    const server = await serve(Buffer.alloc(0));
+    await server.close();
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    const { exit, stages } = await runStore(dir, server.url, archive);
+    assert.equal(exit, 0);
+    assert.equal(stages.packs[0].head.status, null);
+    assert.equal(stages.packs[0].copy.action, 'head-failed');
+    assert.equal(stages.summary.headFailed, 1);
+    assert.equal(stages.summary.notServed, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('store.mjs discards a download whose size is not what HEAD reported, and keeps the old copy', async () => {
+  const dir = scratch();
+  const served = await zipOf('a longer, newer title');
+  const server = await serve(served, served.length + 1);
+  try {
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    const kept = await zipOf('old');
+    writeFileSync(join(archive, 'p.zip'), kept);
+    const { exit, stages, heads } = await runStore(dir, server.url, archive);
+    assert.equal(exit, 0);
+    assert.equal(stages.packs[0].copy.action, 'download-failed');
+    assert.match(stages.packs[0].copy.error, new RegExp(`received ${served.length} bytes, HEAD reported ${served.length + 1}`));
+    assert.equal(stages.packs[0].unzip, null);
+    assert.deepEqual(heads, {});
+    assert.deepEqual(readFileSync(join(archive, 'p.zip')), kept);
+    assert.deepEqual(readdirSync(archive).sort(), ['heads.json', 'p.zip']);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const coded of [['HEAD', 'GET'], ['GET']]) {
+  test(`store.mjs keeps a valid pack the server sends gzip-coded (${coded.join(' and ')})`, async () => {
+    const dir = scratch();
+    const bytes = await zipOf('x'.repeat(1000));
+    const gzipped = gzipSync(bytes);
+    const asked = [];
+    // A server that codes its answer whatever the request accepts; fetch decodes the body.
+    const server = createServer((req, res) => {
+      asked.push(`${req.method} ${req.headers['accept-encoding']}`);
+      const gzip = coded.includes(req.method);
+      res.writeHead(200, gzip ? { 'content-encoding': 'gzip', 'content-length': gzipped.length } : { 'content-length': bytes.length });
+      res.end(req.method === 'HEAD' ? undefined : gzip ? gzipped : bytes);
+    });
+    await new Promise((done) => server.listen(0, '127.0.0.1', done));
+    try {
+      const archive = join(dir, 'archive');
+      const { exit, stages, heads } = await runStore(dir, `http://127.0.0.1:${server.address().port}/p.zip`, archive);
+      assert.equal(exit, 0);
+      assert.equal(stages.packs[0].copy.action, 'downloaded', stages.packs[0].copy.error);
+      assert.equal(stages.packs[0].head.size, coded.includes('HEAD') ? null : bytes.length);
+      assert.deepEqual(asked, ['HEAD identity', 'GET identity']);
+      assert.equal(stages.packs[0].copy.size, bytes.length);
+      assert.equal(stages.packs[0].unzip.ok, true);
+      assert.equal(heads.p.size, bytes.length);
+      assert.deepEqual(readFileSync(join(archive, 'p.zip')), bytes);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((done) => server.close(done));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('a result file with a null error or without actual fails that pack only', () => {
+  const dir = scratch();
+  try {
+    for (const p of ['android', 'ios', 'web']) {
+      mkdirSync(join(dir, p));
+      writeFileSync(join(dir, p, 'p2.json'), JSON.stringify({ platform: p, id: 'p2', actual: PACK }));
+    }
+    writeFileSync(join(dir, 'android', 'p1.json'), JSON.stringify({ platform: 'android', id: 'p1', error: null }));
+    writeFileSync(join(dir, 'ios', 'p1.json'), JSON.stringify({ platform: 'ios', id: 'p1' }));
+    writeFileSync(join(dir, 'web', 'p1.json'), JSON.stringify({ platform: 'web', id: 'p1', actual: PACK }));
+    const [p1, p2] = comparePacks({ resultsDir: dir, ids: ['p1', 'p2'] });
+    assert.deepEqual(p1.failed, { android: 'the runner failed with error null', ios: 'the result has no actual' });
+    assert.equal(p2.verdict, 'same');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('compare.mjs with --stages refuses an --only id that the run did not list', () => {
+  const dir = scratch();
+  try {
+    const stages = join(dir, 'stages.json');
+    writeFileSync(stages, JSON.stringify({ packs: [{ id: 'store_0001', copy: { action: 'not-served' }, unzip: null }] }));
+    const run = (only) => spawnSync(process.execPath, [tool('compare.mjs'), '--results', dir, '--stages', stages, '--only', only], { encoding: 'utf8' });
+    assert.equal(run('store_0001').status, 0);
+    const unknown = run('store_0001,store_0009');
+    assert.notEqual(unknown.status, 0);
+    assert.match(unknown.stderr, /not in the stages: store_0009/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the corpus, the real-pack tools and the web harness hash with one fingerprint function', async () => {
+  const shared = await import('../../../src/lib/unipack/fingerprint.mts');
+  assert.equal(fingerprintOf, shared.fingerprintOf);
+  const harness = readFileSync(new URL('../../../src/lib/unipack/conformanceHarness.ts', import.meta.url), 'utf8');
+  assert.match(harness, /import \{ fingerprintOf \} from '\.\/fingerprint\.mjs';/);
+  assert.doesNotMatch(harness, /createHash\('sha256'\)\.update\(Buffer/);
+});
+
+test('a pack is described and fingerprinted from one walk of its folder', () => {
+  const dir = scratch();
+  try {
+    mkdirSync(join(dir, 'Sounds'));
+    mkdirSync(join(dir, 'keyLED'));
+    writeFileSync(join(dir, 'KeySound'), '1 1 1 a.wav\n\n1 1 2 b.wav\n');
+    writeFileSync(join(dir, 'Sounds', 'a.wav'), 'RIFF');
+    writeFileSync(join(dir, 'keyLED', '1 1 1'), 'o 1 1 a 5');
+    const entries = packEntries(dir);
+    const before = folderFingerprint(dir);
+    // Files added after the walk are not seen: the counts come from the walk, not from another one.
+    writeFileSync(join(dir, 'Sounds', 'b.wav'), 'RIFF');
+    writeFileSync(join(dir, 'autoPlay'), 'c 1');
+    assert.deepEqual(describePack(dir, entries), { files: 3, bytes: 38, keySoundLines: 2, autoPlayLines: null, keyLedFiles: 1, soundFiles: 1 });
+    assert.equal(folderFingerprint(dir, entries), before);
+    assert.deepEqual(describePack(dir), { files: 5, bytes: 45, keySoundLines: 2, autoPlayLines: 1, keyLedFiles: 1, soundFiles: 2 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

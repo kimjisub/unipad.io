@@ -4,6 +4,10 @@ import { mkdirSync, readFileSync, writeFileSync, openSync, closeSync } from 'nod
 import { arch, platform, release } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { grammarRecord } from '../meta/unipack-conformance/grammar.mjs';
+
+// The edition GRAMMAR.md names and that file's SHA-256: what the conformance report compares a result to.
+export { grammarRecord };
 
 export const parserTests = {
   'F-05': ['F-05 opens a complete pack wrapped in a top folder',
@@ -27,8 +31,8 @@ export function verdict(names, records, exitCode, environmentKnown) {
 }
 
 function main() {
-  const [directory, grammarRevision] = process.argv.slice(2);
-  if (!directory || !grammarRevision) throw new Error('Usage: node scripts/grammar-results.mjs <new-output-directory> <grammar-revision>');
+  const [directory] = process.argv.slice(2);
+  if (!directory) throw new Error('Usage: node scripts/grammar-results.mjs <new-output-directory>');
   // A new directory is required so a later run cannot overwrite previous evidence.
   const output = resolve(directory);
   mkdirSync(output, { recursive: false });
@@ -105,7 +109,7 @@ function main() {
   const rawFiles = ['parser.jsonl', 'parser.stderr', 'browser.jsonl', 'browser.stderr', 'browser.json', 'source.patch', 'source-status.txt']
     .map(path => { try { return { path, sha256: hash(readFileSync(resolve(output, path))) }; }
       catch { return { path, missing: true }; } });
-  const summary = { schemaVersion: 1, grammar: { version: 'G2', revision: grammarRevision },
+  const summary = { schemaVersion: 1, grammar: grammarRecord(),
     source, environment, runs: { parser, browser }, parseErrors, browserErrors, rawFiles, items,
     unexecutedBrowsers: ['webkit', 'firefox'], humanListening: false };
   writeFileSync(resolve(output, 'items.json'), `${JSON.stringify(summary, null, 2)}\n`);

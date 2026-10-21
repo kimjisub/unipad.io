@@ -7,7 +7,10 @@
 //     [--list <store.json file or URL>] [--only <store keys>] [--offline]
 //
 // A copy in --archive is reused when the server reports the same size (and the same ETag, once one has
-// been recorded in <archive>/heads.json); otherwise the file is downloaded into --archive first. Packs
+// been recorded in <archive>/heads.json); otherwise the file is downloaded into --archive first, and
+// kept only when its size is what the server reported (asked for uncompressed; a compressed answer
+// gives no size to compare). A HEAD with no answer is recorded as head-failed, not as a file the
+// server lacks. Packs
 // are unzipped into <work>/packs/<id>, id = "store_" + the list key, and the steps go to
 // <work>/stages.json; a pack not unzipped in this run keeps no folder from an earlier one, and
 // heads.json changes only for a copy that was reused or downloaded. --offline skips HEAD and uses the
@@ -53,13 +56,31 @@ function requestUrl(url) {
   return u.toString();
 }
 
+// Ask for the file as stored, so Content-Length counts the bytes written to the archive.
+const REQUEST_HEADERS = { 'accept-encoding': 'identity' };
+
+/** The response's content coding, or null when the body is the file as stored. */
+function encodingOf(response) {
+  const encoding = response.headers.get('content-encoding')?.trim().toLowerCase();
+  return !encoding || encoding === 'identity' ? null : encoding;
+}
+
+/**
+ * The response's Content-Length as the file's size. fetch decodes a content-coded body, so a coded
+ * response's length counts other bytes than the kept file and gives no size.
+ */
+function fileSizeOf(response) {
+  const length = response.headers.get('content-length');
+  return length === null || encodingOf(response) !== null ? null : Number(length);
+}
+
 async function head(url) {
   try {
-    const response = await fetch(requestUrl(url), { method: 'HEAD', redirect: 'follow' });
-    const size = response.headers.get('content-length');
+    const response = await fetch(requestUrl(url), { method: 'HEAD', redirect: 'follow', headers: REQUEST_HEADERS });
     return {
       status: response.status,
-      size: size === null ? null : Number(size),
+      size: fileSizeOf(response),
+      encoding: encodingOf(response),
       etag: response.headers.get('etag'),
       lastModified: response.headers.get('last-modified'),
     };
@@ -68,13 +89,26 @@ async function head(url) {
   }
 }
 
-async function download(url, target) {
-  const response = await fetch(requestUrl(url));
+/**
+ * Downloads `url` over `target` and returns its size. A body whose size differs from the response's
+ * Content-Length or from `expectedSize` (what HEAD reported) is discarded and the kept copy stays.
+ * Both are compared only when they are the size of the file as stored, not of a content-coded body.
+ */
+export async function download(url, target, expectedSize = null) {
+  const response = await fetch(requestUrl(url), { headers: REQUEST_HEADERS });
   if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+  const declared = fileSizeOf(response);
   const part = `${target}.part`;
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(part));
-  renameSync(part, target);
-  return statSync(target).size;
+  try {
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(part));
+    const size = statSync(part).size;
+    if (declared !== null && size !== declared) throw new Error(`received ${size} bytes, Content-Length ${declared}`);
+    if (expectedSize !== null && size !== expectedSize) throw new Error(`received ${size} bytes, HEAD reported ${expectedSize}`);
+    renameSync(part, target);
+    return size;
+  } finally {
+    rmSync(part, { force: true });
+  }
 }
 
 /** Check every decoded original entry before JSZip normalizes names into its keyed file map. */
@@ -172,19 +206,21 @@ async function bringPackFolder({ key, item, archive, work, heads, offline = fals
     record.copy = copySize === null ? { action: 'missing' } : { action: 'reused-unchecked', size: copySize };
   } else {
     record.head = await net.head(url);
-    if (record.head.status !== 200) {
+    if (record.head.status === null) {
+      record.copy = { action: 'head-failed' };
+    } else if (record.head.status !== 200) {
       record.copy = { action: 'not-served' };
     } else if (copySize !== null && sameAsServer(copySize, heads[code], record.head)) {
       record.copy = { action: 'reused', size: copySize };
     } else {
       try {
-        record.copy = { action: 'downloaded', size: await net.download(url, zipPath), previousSize: copySize };
+        record.copy = { action: 'downloaded', size: await net.download(url, zipPath, record.head.size), previousSize: copySize };
       } catch (error) {
         record.copy = { action: 'download-failed', error: String(error?.message ?? error) };
       }
     }
     if (record.copy.action === 'reused' || record.copy.action === 'downloaded') {
-      heads[code] = { size: record.head.size, etag: record.head.etag, lastModified: record.head.lastModified, checkedAt: new Date().toISOString() };
+      heads[code] = { size: record.copy.size, etag: record.head.etag, lastModified: record.head.lastModified, checkedAt: new Date().toISOString() };
     }
   }
   if (!READABLE.includes(record.copy.action)) return record;
@@ -197,34 +233,35 @@ async function bringPackFolder({ key, item, archive, work, heads, offline = fals
   return record;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (typeof args.archive !== 'string' || typeof args.work !== 'string') {
-    throw new Error('usage: store.mjs --archive <dir> --work <dir> [--list <file|url>] [--only <keys>] [--offline]');
-  }
-  const listSource = typeof args.list === 'string' ? args.list : STORE_LIST_URL;
+/**
+ * Brings every listed pack (or the `only` keys) and writes <archive>/heads.json (unless offline) and
+ * <work>/stages.json. Returns what stages.json holds.
+ */
+export async function bringStore({ listSource, archive, work, only = null, offline = false, net, log = () => {} }) {
   const list = await readList(listSource);
-  const only = onlyIds(args);
   const unknown = (only ?? []).filter((k) => !Object.hasOwn(list, k));
   if (unknown.length > 0) throw new Error(`not in the store list: ${unknown.join(', ')}`);
   const keys = Object.keys(list).filter((k) => !only || only.includes(k));
-  const headsPath = join(args.archive, 'heads.json');
+  const headsPath = join(archive, 'heads.json');
   const heads = existsSync(headsPath) ? JSON.parse(readFileSync(headsPath, 'utf8')) : {};
-  mkdirSync(join(args.work, 'packs'), { recursive: true });
+  mkdirSync(archive, { recursive: true });
+  mkdirSync(join(work, 'packs'), { recursive: true });
 
   const packs = [];
   for (const key of keys) {
-    const record = await bringPack({ key, item: list[key], archive: args.archive, work: args.work, heads, offline: args.offline === true });
+    const record = await bringPack({ key, item: list[key], archive, work, heads, offline, ...(net ? { net } : {}) });
     packs.push(record);
     const unzip = record.unzip === null ? 'not unzipped' : record.unzip.ok ? 'unzipped' : `unzip failed: ${record.unzip.error}`;
-    console.log(`${record.id} ${record.head?.status ?? '-'} ${record.copy.action} ${unzip}`);
+    log(`${record.id} ${record.head?.status ?? '-'} ${record.copy.action} ${unzip}`);
   }
 
-  if (!args.offline) writeFileSync(headsPath, `${JSON.stringify(heads, null, 2)}\n`);
+  if (!offline) writeFileSync(headsPath, `${JSON.stringify(heads, null, 2)}\n`);
   const count = (pred) => packs.filter(pred).length;
   const summary = {
     listed: packs.length,
     served: count((p) => p.head?.status === 200),
+    // Asked but not answered (a connection error): not evidence that the server lacks the file.
+    headFailed: count((p) => p.copy?.action === 'head-failed'),
     notServed: count((p) => ['not-served', 'no-url', 'invalid-code', 'invalid-key'].includes(p.copy?.action)),
     reused: count((p) => p.copy?.action === 'reused' || p.copy?.action === 'reused-unchecked'),
     downloaded: count((p) => p.copy?.action === 'downloaded'),
@@ -233,8 +270,24 @@ async function main() {
     unzipped: count((p) => p.unzip?.ok === true),
     unzipFailed: count((p) => p.unzip?.ok === false),
   };
-  const stages = { generatedAt: new Date().toISOString(), list: listSource, offline: args.offline === true, summary, packs };
-  writeFileSync(join(args.work, 'stages.json'), `${JSON.stringify(stages, null, 2)}\n`);
+  const stages = { generatedAt: new Date().toISOString(), list: listSource, offline, summary, packs };
+  writeFileSync(join(work, 'stages.json'), `${JSON.stringify(stages, null, 2)}\n`);
+  return stages;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (typeof args.archive !== 'string' || typeof args.work !== 'string') {
+    throw new Error('usage: store.mjs --archive <dir> --work <dir> [--list <file|url>] [--only <keys>] [--offline]');
+  }
+  const { summary } = await bringStore({
+    listSource: typeof args.list === 'string' ? args.list : STORE_LIST_URL,
+    archive: args.archive,
+    work: args.work,
+    only: onlyIds(args),
+    offline: args.offline === true,
+    log: console.log,
+  });
   console.log(JSON.stringify(summary));
 }
 
