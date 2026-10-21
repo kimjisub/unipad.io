@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { gzipSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { fingerprint, fingerprintOf } from '../lib.mjs';
 import { comparePacks, partsOf, summarize, verdictOf } from './compare.mjs';
@@ -543,6 +544,39 @@ test('store.mjs discards a download whose size is not what HEAD reported, and ke
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const coded of [['HEAD', 'GET'], ['GET']]) {
+  test(`store.mjs keeps a valid pack the server sends gzip-coded (${coded.join(' and ')})`, async () => {
+    const dir = scratch();
+    const bytes = await zipOf('x'.repeat(1000));
+    const gzipped = gzipSync(bytes);
+    const asked = [];
+    // A server that codes its answer whatever the request accepts; fetch decodes the body.
+    const server = createServer((req, res) => {
+      asked.push(`${req.method} ${req.headers['accept-encoding']}`);
+      const gzip = coded.includes(req.method);
+      res.writeHead(200, gzip ? { 'content-encoding': 'gzip', 'content-length': gzipped.length } : { 'content-length': bytes.length });
+      res.end(req.method === 'HEAD' ? undefined : gzip ? gzipped : bytes);
+    });
+    await new Promise((done) => server.listen(0, '127.0.0.1', done));
+    try {
+      const archive = join(dir, 'archive');
+      const { exit, stages, heads } = await runStore(dir, `http://127.0.0.1:${server.address().port}/p.zip`, archive);
+      assert.equal(exit, 0);
+      assert.equal(stages.packs[0].copy.action, 'downloaded', stages.packs[0].copy.error);
+      assert.equal(stages.packs[0].head.size, coded.includes('HEAD') ? null : bytes.length);
+      assert.deepEqual(asked, ['HEAD identity', 'GET identity']);
+      assert.equal(stages.packs[0].copy.size, bytes.length);
+      assert.equal(stages.packs[0].unzip.ok, true);
+      assert.equal(heads.p.size, bytes.length);
+      assert.deepEqual(readFileSync(join(archive, 'p.zip')), bytes);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((done) => server.close(done));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test('a result file with a null error or without actual fails that pack only', () => {
   const dir = scratch();

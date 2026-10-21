@@ -8,8 +8,9 @@
 //
 // A copy in --archive is reused when the server reports the same size (and the same ETag, once one has
 // been recorded in <archive>/heads.json); otherwise the file is downloaded into --archive first, and
-// kept only when its size is what the server reported. A HEAD with no answer is recorded as
-// head-failed, not as a file the server lacks. Packs
+// kept only when its size is what the server reported (asked for uncompressed; a compressed answer
+// gives no size to compare). A HEAD with no answer is recorded as head-failed, not as a file the
+// server lacks. Packs
 // are unzipped into <work>/packs/<id>, id = "store_" + the list key, and the steps go to
 // <work>/stages.json; a pack not unzipped in this run keeps no folder from an earlier one, and
 // heads.json changes only for a copy that was reused or downloaded. --offline skips HEAD and uses the
@@ -55,13 +56,31 @@ function requestUrl(url) {
   return u.toString();
 }
 
+// Ask for the file as stored, so Content-Length counts the bytes written to the archive.
+const REQUEST_HEADERS = { 'accept-encoding': 'identity' };
+
+/** The response's content coding, or null when the body is the file as stored. */
+function encodingOf(response) {
+  const encoding = response.headers.get('content-encoding')?.trim().toLowerCase();
+  return !encoding || encoding === 'identity' ? null : encoding;
+}
+
+/**
+ * The response's Content-Length as the file's size. fetch decodes a content-coded body, so a coded
+ * response's length counts other bytes than the kept file and gives no size.
+ */
+function fileSizeOf(response) {
+  const length = response.headers.get('content-length');
+  return length === null || encodingOf(response) !== null ? null : Number(length);
+}
+
 async function head(url) {
   try {
-    const response = await fetch(requestUrl(url), { method: 'HEAD', redirect: 'follow' });
-    const size = response.headers.get('content-length');
+    const response = await fetch(requestUrl(url), { method: 'HEAD', redirect: 'follow', headers: REQUEST_HEADERS });
     return {
       status: response.status,
-      size: size === null ? null : Number(size),
+      size: fileSizeOf(response),
+      encoding: encodingOf(response),
       etag: response.headers.get('etag'),
       lastModified: response.headers.get('last-modified'),
     };
@@ -73,16 +92,17 @@ async function head(url) {
 /**
  * Downloads `url` over `target` and returns its size. A body whose size differs from the response's
  * Content-Length or from `expectedSize` (what HEAD reported) is discarded and the kept copy stays.
+ * Both are compared only when they are the size of the file as stored, not of a content-coded body.
  */
 export async function download(url, target, expectedSize = null) {
-  const response = await fetch(requestUrl(url));
+  const response = await fetch(requestUrl(url), { headers: REQUEST_HEADERS });
   if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-  const declared = response.headers.get('content-length');
+  const declared = fileSizeOf(response);
   const part = `${target}.part`;
   try {
     await pipeline(Readable.fromWeb(response.body), createWriteStream(part));
     const size = statSync(part).size;
-    if (declared !== null && size !== Number(declared)) throw new Error(`received ${size} bytes, Content-Length ${declared}`);
+    if (declared !== null && size !== declared) throw new Error(`received ${size} bytes, Content-Length ${declared}`);
     if (expectedSize !== null && size !== expectedSize) throw new Error(`received ${size} bytes, HEAD reported ${expectedSize}`);
     renameSync(part, target);
     return size;

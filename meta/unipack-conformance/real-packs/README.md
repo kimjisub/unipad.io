@@ -97,6 +97,11 @@ What a run trusts from an earlier one:
   next run tries again instead of taking the old copy for the new file. The recorded size is the kept
   copy's: a download whose size differs from the response's `Content-Length` or from what HEAD reported
   fails (`download-failed`) and leaves the earlier copy in place. `--archive` is created when missing.
+- HEAD and the download ask for the file uncompressed (`Accept-Encoding: identity`). A server that
+  still answers with a content coding (gzip and the like) has its body decoded by `fetch`, so its
+  `Content-Length` counts other bytes than the kept file and is never compared. A HEAD answered that
+  way gives no size (`head.size` null, `head.encoding` set), so that pack is downloaded on every run;
+  a broken download still fails the unzip.
 - A HEAD request that gets no answer (a connection error, `head.status` null) is `head-failed` and
   counted in `summary.headFailed`, apart from `notServed`: it says nothing about whether the server
   has the file. Run the pack again (`--only <key>`) before reading it as gone.
