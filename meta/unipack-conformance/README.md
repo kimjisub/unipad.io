@@ -120,7 +120,7 @@ platform:
   only when its cases pass **and** the listed app tests pass; neither covers the other;
 - otherwise: by its cases alone, as before. The app tests are not looked at.
 
-An item no test is listed for (today Android A-01 to A-05 and iOS A-03) stays unconfirmed whatever the
+An item no test is listed for (today Android A-01 to A-05) stays unconfirmed whatever the
 file says. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
 `app tests`, or `common and app tests`) and `native` the SHA-256 of each file and the commit its tests
 ran on; the text marks the cells `ok`, `ok app` and `ok both` and prints that commit under the time the
