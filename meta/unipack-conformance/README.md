@@ -13,7 +13,8 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | File | Role |
 |---|---|
 | `GRAMMAR.md` | The UniPack grammar, edition G3: 104 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
-| `grammar.mjs` | Reads `GRAMMAR.md`, and lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`). |
+| `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
+| `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
 | `lib.mjs` | Sound asset generator, input fingerprint, expected-result builders. |
 | `assets/tone-440.mp3` | The one sound kept as bytes: `tone-440` encoded as MP3 (see [Sounds](#case-format)). |
@@ -101,6 +102,37 @@ of 104, and items any case checks of 104 (`grammar.confirmed`, `grammar.confirme
 `grammar.withCases`). Five items have no case, because these cases cannot reach them: importing an
 archive (F-05, F-06) and decoding OGG, M4A and a sound whose name does not match its content (A-03 to
 A-05) are for each platform's own tests.
+
+**App test results.** Those tests count when their result file is given:
+`--android-native <results.json>`, `--ios-native <ios-native.json>`, `--web-native <items.json>`.
+`NATIVE_TESTS` in `grammar.mjs` lists, per platform and item, the app tests that must each have run
+exactly once and passed; the list is reviewed and fixed there, never taken from what a result file
+names, and an `output` item lists only tests that measure the sound played. A test missing, failed,
+skipped or run more than once (a retry included) does not count, nor does an item the file does not
+mark passed. On the web, `WEB_RUNS` in `grammar.mjs` fixes which run each item comes from (`parser` for
+F-05 and F-06, `browser` for A-01 to A-05) and the browser its records must name (Chromium for the
+sound items, none for the parser): an item the file reports from another run, or from none, does not
+count, and a record of another browser, or naming none, is not counted. Then, for one item on one
+platform:
+
+- no case checks it (F-05, F-06, A-03 to A-05): confirmed only by the listed app tests;
+- the harness cannot observe it (`HARNESS_LIMITS`, F-01 without `caseSensitiveFileSystem`): confirmed
+  only when its cases pass **and** the listed app tests pass; neither covers the other;
+- otherwise: by its cases alone, as before. The app tests are not looked at.
+
+An item no test is listed for (today Android A-01 to A-05 and iOS A-03) stays unconfirmed whatever the
+file says. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
+`app tests`, or `common and app tests`) and `native` the SHA-256 of each file and the commit its tests
+ran on; the text marks the cells `ok`, `ok app` and `ok both` and prints that commit under the time the
+platform's common results were written. Running the common cases and the app tests on the same commit is
+the job of whoever runs them: the common result files do not record a commit. Without app test results
+the output is the same as before.
+
+The command ends with an error, and no table, when a file cannot count: it is another platform's; its
+grammar edition is not the one in `GRAMMAR.md` or its revision not the SHA-256 of that file; its
+checkout had uncommitted changes; its commit is not a full 40-character hash; an iOS run was not for
+`verification`; it names an item the grammar does not list, or one item twice. A file whose items failed
+or are unverified is read as it is.
 
 **Record-only runs.** `UNIPACK_CONFORMANCE_DUMP=1`, exactly that value, writes every result without
 asserting any case, to look at what a platform does before a difference is pinned. `0`, `false`, an
