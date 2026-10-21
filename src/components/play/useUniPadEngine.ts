@@ -1163,13 +1163,15 @@ export function useUniPadEngine() {
     applyControllerStatus,
   ]);
 
-  const toggleFeedbackLight = useCallback(() => {
-    padInit();
-    setState((prev) => {
-      feedbackLightRef.current = !prev.feedbackLight;
-      return { ...prev, feedbackLight: !prev.feedbackLight };
-    });
+  const setFeedbackLight = useCallback((enabled: boolean) => {
+    if (feedbackLightRef.current !== enabled) padInit();
+    feedbackLightRef.current = enabled;
+    setState((prev) => ({ ...prev, feedbackLight: enabled }));
   }, [padInit]);
+
+  const toggleFeedbackLight = useCallback(() => {
+    setFeedbackLight(!feedbackLightRef.current);
+  }, [setFeedbackLight]);
   toggleFeedbackLightRef.current = toggleFeedbackLight;
 
   const setVolumeLevel = useCallback((level: number) => {
@@ -1229,6 +1231,10 @@ export function useUniPadEngine() {
     setState((prev) => ({ ...prev, hideUI: !prev.hideUI }));
   }, []);
   toggleHideUiRef.current = toggleHideUI;
+
+  const setWatermark = useCallback((enabled: boolean) => {
+    setState((prev) => ({ ...prev, watermark: enabled }));
+  }, []);
 
   const toggleWatermark = useCallback(() => {
     setState((prev) => ({ ...prev, watermark: !prev.watermark }));
@@ -1469,10 +1475,12 @@ export function useUniPadEngine() {
     autoPlayPrev,
     autoPlayNext,
     toggleFeedbackLight,
+    setFeedbackLight,
     toggleLed,
     toggleRecording,
     toggleHideUI,
     toggleWatermark,
+    setWatermark,
     toggleTraceLog,
     clearTraceLog,
     toggleProLightMode,

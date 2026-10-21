@@ -73,10 +73,12 @@ export function PlayPage() {
     autoPlayPrev,
     autoPlayNext,
     toggleFeedbackLight,
+    setFeedbackLight,
     toggleLed,
     toggleRecording,
     toggleHideUI,
     toggleWatermark,
+    setWatermark,
     toggleTraceLog,
     clearTraceLog,
     toggleProLightMode,
@@ -292,39 +294,56 @@ export function PlayPage() {
     prevLoadedRef.current = state.loaded;
   }, [state.loaded, state.errors]);
 
-  // 로딩 완료 시 저장된 설정 복원
-  const settingsRestoredRef = useRef(false);
+  // A new pack supplies defaults. Read preferences again before saving any of them.
+  const [restoredSettings, setRestoredSettings] = useState<{
+    packInfo: NonNullable<typeof state.unipack>['info'];
+    volume: boolean;
+    feedback: boolean;
+    watermark: boolean;
+  } | null>(null);
   useEffect(() => {
-    if (!state.loaded || settingsRestoredRef.current) return;
-    settingsRestoredRef.current = true;
-    (async () => {
-      try {
-        const [vol, fb, wm] = await Promise.all([
-          getSetting('volumeLevel'),
-          getSetting('feedbackLight'),
-          getSetting('watermark'),
-        ]);
-        if (vol !== null) setVolumeLevel(Number(vol));
-        if (fb === 'false') toggleFeedbackLight();
-        if (wm === 'false') toggleWatermark();
-      } catch { /* storage unavailable */ }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.loaded]);
+    if (!state.loaded || !state.unipack) return;
+    let cancelled = false;
+    const packInfo = state.unipack.info;
+    void Promise.allSettled([
+      getSetting('volumeLevel'),
+      getSetting('feedbackLight'),
+      getSetting('watermark'),
+    ]).then(([volume, feedback, watermark]) => {
+      if (cancelled) return;
+      if (volume.status === 'fulfilled' && volume.value !== null) {
+        const level = Number(volume.value);
+        if (Number.isFinite(level)) setVolumeLevel(level);
+      }
+      if (feedback.status === 'fulfilled' && (feedback.value === 'true' || feedback.value === 'false')) {
+        setFeedbackLight(feedback.value === 'true');
+      }
+      if (watermark.status === 'fulfilled' && (watermark.value === 'true' || watermark.value === 'false')) {
+        setWatermark(watermark.value === 'true');
+      }
+      // Unread preferences must stay untouched, even when other reads succeed.
+      setRestoredSettings({
+        packInfo,
+        volume: volume.status === 'fulfilled',
+        feedback: feedback.status === 'fulfilled',
+        watermark: watermark.status === 'fulfilled',
+      });
+    });
+    return () => { cancelled = true; };
+  }, [state.loaded, state.unipack, setVolumeLevel, setFeedbackLight, setWatermark]);
 
-  // 설정 변경 시 저장
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.volume) return;
     setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
-  }, [state.loaded, state.volumeLevel]);
+  }, [state.loaded, state.unipack, state.volumeLevel, restoredSettings]);
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.feedback) return;
     setSetting('feedbackLight', String(state.feedbackLight)).catch(() => {});
-  }, [state.loaded, state.feedbackLight]);
+  }, [state.loaded, state.unipack, state.feedbackLight, restoredSettings]);
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.watermark) return;
     setSetting('watermark', String(state.watermark)).catch(() => {});
-  }, [state.loaded, state.watermark]);
+  }, [state.loaded, state.unipack, state.watermark, restoredSettings]);
 
   const handleImportFile = useCallback(
     async (file: File) => {
