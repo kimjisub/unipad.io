@@ -60,7 +60,7 @@ any of them.
 | T-04 | Legacy Korean encodings: only iOS reads them | after UTF-8 and UTF-16, CP949 | Android, web |
 
 Other gaps noted when G1 was introduced, for rules already stated in the docs (not new decisions): I-02 and I-04 (Android), T-02
-(web), A-03 OGG (iOS cannot open it; no real pack seen uses it), P-04 a wormhole under `touch` (all
+(web), A-03 OGG (iOS now decodes it; `SoundEngineDecodingTests/anOggVorbisSoundPlays()` measures the output), P-04 a wormhole under `touch` (all
 three), RS-05 releasing an endless sound (Android looks at the loop of the queue's next sound), RS-06
 releasing after the chain changed (Android, web).
 
@@ -132,7 +132,7 @@ releasing after the chain changed (Android, web).
 |---|---|---|---|---|
 | A-01 | A WAV (PCM) sound plays. | output | doc | sounds.mdx supported formats |
 | A-02 | An MP3 sound plays. | output | doc | sounds.mdx supported formats |
-| A-03 | An OGG Vorbis sound plays. | output | doc | sounds.mdx supported formats ("recommended"). iOS cannot open it (`SoundEngine.swift` 262 comment). No real pack seen uses OGG. |
+| A-03 | An OGG Vorbis sound plays. | output | doc | sounds.mdx supported formats ("recommended"). iOS decodes OGG Vorbis, and `SoundEngineDecodingTests/anOggVorbisSoundPlays()` measures the sound played by the real engine. |
 | A-04 | An M4A (AAC) sound plays. | output | G1 decision | Not in the docs. Real packs use it. Decided: a format real packs use belongs in the grammar and the docs. |
 | A-05 | A sound whose extension does not match its content (named `.wav`, MP3 inside) is decoded by its content and plays. | output | G1 decision | Not in the docs. Packs in the official store do this. Decided: the sound the author meant is clear. |
 | A-06 | A sound that cannot be decoded is silent in its slot only: the pad's queue moves on to the next sound, and that sound's wormhole still applies. The pack closes only when no sound can be decoded. | output | G1 decision | PARITY.md "Sound decoding failures". On all three apps the queue does not move past a sound that failed to decode, so the pad stays silent (Android `SoundRunner.kt` soundOn pushes only inside `sound.id >= 0`, iOS `SoundEngine.swift` 503-506, web `SoundEngine.ts` 142). Decided: keep the queue order (S-09) and the wormhole (S-06) the author wrote. |
