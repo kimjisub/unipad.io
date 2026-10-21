@@ -46,6 +46,32 @@ async function expectPlaybackSettings(page: Page, feedback: boolean) {
   await page.keyboard.up('q');
 }
 
+async function importPlaybackPack(page: Page, keyLedExist: boolean) {
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(`e2e/fixtures/${keyLedExist ? 'basic' : 'multi-touch'}.uni`));
+  // Import decodes audio before saving the pack and updating its URL.
+  // Keep the URL assertion focused on persistence after loading completes.
+  await expectPads(page);
+  await expect(page).toHaveURL(/pack=/);
+  return page.url();
+}
+
+test('settings import waits for native audio decoding before checking the saved URL', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async function (...args: Parameters<typeof decode>) {
+      const buffer = await decode.apply(this, args);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      return buffer;
+    };
+  });
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+  await playbackSettings(page, { feedbackLight: 'false', watermark: 'false', volumeLevel: '2' });
+  await importPlaybackPack(page, true);
+  await expectPlaybackSettings(page, false);
+  await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
+});
+
 for (const keyLedExist of [true, false]) {
   for (const saved of [null, 'true', 'false']) {
     for (const lifecycle of ['direct', 'reload', 'reopen', 'changed'] as const) {
@@ -54,9 +80,7 @@ for (const keyLedExist of [true, false]) {
         const input = page.locator('input[type=file][accept=".zip,.uni"]');
         await input.waitFor({ state: 'attached' });
         await playbackSettings(page, { feedbackLight: saved, watermark: 'false', volumeLevel: '2' });
-        await input.setInputFiles(resolve(`e2e/fixtures/${keyLedExist ? 'basic' : 'multi-touch'}.uni`));
-        await expect(page).toHaveURL(/pack=/);
-        const url = page.url();
+        const url = await importPlaybackPack(page, keyLedExist);
         const initial = saved === null ? !keyLedExist : saved === 'true';
         await expectPlaybackSettings(page, initial);
 
@@ -108,9 +132,7 @@ for (const keyLedExist of [true, false]) {
         const input = current.page.locator('input[type=file][accept=".zip,.uni"]');
         await input.waitFor({ state: 'attached' });
         await playbackSettings(current.page, { feedbackLight: String(enabled), watermark: 'false', volumeLevel: '2' });
-        await input.setInputFiles(resolve(`e2e/fixtures/${keyLedExist ? 'basic' : 'multi-touch'}.uni`));
-        await expect(current.page).toHaveURL(/pack=/);
-        const url = current.page.url();
+        const url = await importPlaybackPack(current.page, keyLedExist);
         await expectPlaybackSettings(current.page, enabled);
         await current.context.close();
         current = await open();
