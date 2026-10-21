@@ -49,6 +49,32 @@ node meta/unipack-conformance/real-packs/compare.mjs --results <work>/results --
 Any folder of pack folders works in place of step 1 (for example a collection of packs), as long as
 each folder is named by an id (`[A-Za-z0-9_][A-Za-z0-9_.-]*`) that does not carry the title.
 
+**Text-only collections.** Prepare a separate working copy before running the parsers:
+
+```sh
+node meta/unipack-conformance/real-packs/prepare.mjs --packs <collection> --work <work> --empty-sounds --anonymous-ids
+# Then run all three parsers with <work>/packs and <work>/results, as above.
+```
+
+`prepare.mjs` copies files and empty directories, leaving the source unchanged. With `--empty-sounds`,
+it creates zero-byte files in `sounds/` for the fourth whitespace-separated token on each keySound
+line (including nested relative names). Existing files are preserved and names are matched without
+regard to case. Absolute paths, backslashes, empty path segments and `.` or `..` segments are skipped
+and counted as unsafe references. Without the flag, it only copies. Source and work folders must not
+overlap. `--anonymous-ids` names working packs `pack_<SHA-256 of source folder name>` so a source
+folder name carrying a title never enters the manifest or parser outputs. `--only` and `--only-file` select source pack ids; the runners select the prepared ids.
+
+`<work>/prepared.json` records source and prepared fingerprints and counts of created, existing and
+unsafe references per id, with no titles or file contents. Preparation replaces each selected working
+pack and removes its prior results under `<work>/results/{android,ios,web}`; rerun all three parsers.
+Unselected packs and results stay untouched. The manifest describes only the selected preparation.
+Do not use `--stages` from an unrelated store run when comparing a collection.
+
+Empty sound files are parser inputs, not playable audio. This comparison checks how the parsers read
+the prepared text and file names; it cannot measure audio decoding, playback or the original pack's
+missing-file behavior. Keep collections and prepared copies outside this repository and share only
+fingerprints and comparison summaries.
+
 **Part of a set.** Every step takes `--only <id,id>` or `--only-file <file>` (Android and iOS:
 `UNIPACK_REAL_PACKS_ONLY=<id,id>`; `store.mjs` takes the store list keys). Use it to run only the packs
 the file server now serves differently, or a pack that was added. When the conformance corpus or a
