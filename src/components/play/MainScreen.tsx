@@ -57,6 +57,7 @@ export function MainScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
   const [sortAsc, setSortAsc] = useState(false);
+  const sortChangedRef = useRef(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const filteredAndSortedPacks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -94,7 +95,9 @@ export function MainScreen({
 
   // Restore sort settings from IndexedDB (persists across sessions like Android SharedPreferences)
   useEffect(() => {
+    let cancelled = false;
     Promise.all([getSetting('sortMethod'), getSetting('sortOrder')]).then(([method, order]) => {
+      if (cancelled || sortChangedRef.current) return;
       if (method === 'title' || method === 'producer' || method === 'date') {
         setSortMethod(method);
       }
@@ -102,13 +105,17 @@ export function MainScreen({
         setSortAsc(order === 'true');
       }
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
-  // Persist sort settings to IndexedDB
-  useEffect(() => {
-    setSetting('sortMethod', sortMethod).catch(() => {});
-    setSetting('sortOrder', String(sortAsc)).catch(() => {});
-  }, [sortMethod, sortAsc]);
+  // Only explicit user choices are saved; pending restoration must not overwrite them.
+  const changeSort = (method: SortMethod, ascending: boolean) => {
+    sortChangedRef.current = true;
+    setSortMethod(method);
+    setSortAsc(ascending);
+    setSetting('sortMethod', method).catch(() => {});
+    setSetting('sortOrder', String(ascending)).catch(() => {});
+  };
 
   const selectPackRow = useCallback((id: string, focus: boolean) => {
     setSelectedId(id);
@@ -277,7 +284,7 @@ export function MainScreen({
                           className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-colors flex items-center justify-between ${
                             sortMethod === m ? 'bg-accent/10 text-accent' : 'text-white/50 hover:bg-white/[0.05]'
                           }`}
-                          onClick={() => { setSortMethod(m); setSortAsc(m !== 'date'); setShowSortMenu(false); }}
+                          onClick={() => { changeSort(m, m !== 'date'); setShowSortMenu(false); }}
                         >
                           {m === 'title' ? 'Title' : m === 'producer' ? 'Producer' : 'Date'}
                           {sortMethod === m && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
@@ -289,7 +296,7 @@ export function MainScreen({
               </div>
               <button
                 className="px-2 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-xs text-white/50 transition-colors"
-                onClick={() => setSortAsc(!sortAsc)}
+                onClick={() => changeSort(sortMethod, !sortAsc)}
                 aria-label={sortAsc ? t('sortAscending') : t('sortDescending')}
               >
                 {sortAsc ? '↑' : '↓'}
