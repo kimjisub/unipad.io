@@ -283,6 +283,18 @@ export function buildCases(palette) {
     basis: [intent('unipad-android UniPackFolder.kt, unipad-ios UniPackFolder.swift, unipad.io parser.ts parseKeySound', 'a keySound line reads six columns and no more')],
   });
   add({
+    id: 'KS-023', items: ['S-07'], area: 'keySound', title: 'a wormhole to a chain the pack does not have keeps the sound, moved to the nearest chain, with a range warning',
+    files: pack({ keySound: lines('1 1 1 a.wav 1 3', '1 1 2 a.wav 1 40', '1 1 3 a.wav 1 -2') }),
+    expected: loaded({
+      sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(0, 0, 1, [q('a.wav', 0, 1)]), cell(0, 0, 2, [q('a.wav', 0, 0)])],
+      errors: Array(3).fill('keySound:range'),
+    }),
+    basis: [
+      intent('unipad-android UniPackFolderWormholeTest, unipad-ios WormholeRangeTests, unipad.io parser.test.ts', 'a wormhole outside 1..chain keeps its sound, moves to the first or the last chain and records "wormhole is incorrect"'),
+      intent('unipad.io src/lib/unipack/conformance.test.ts', '"wormhole is incorrect" is a range warning, like a chain, x or y outside the pack'),
+    ],
+  });
+  add({
     id: 'KS-019', items: ['S-12'], area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
     files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
     expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 0, 1, [q('END.wav')])] }),

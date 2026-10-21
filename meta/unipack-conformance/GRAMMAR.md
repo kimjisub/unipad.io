@@ -107,7 +107,7 @@ releasing after the chain changed (Android, web).
 | S-04 | A number column (chain, x, y, loop, wormhole) that is not an integer (letters, a decimal point, trailing letters) skips the line with a format warning. | parse | apps agree | the basis of the cases.mjs KS-M cases |
 | S-05 | loop: left out or 1 plays once, 0 endlessly, N (2 or more) N times in all. It is stored minus one (-1 endless, 0 once). | parse | doc | key-sound.mdx Loop Values |
 | S-06 | wormhole: the sixth column, the chain a press of that sound moves to. | parse | doc | key-sound.mdx syntax and example |
-| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 (Android `ChainObserver.kt` 16-21, iOS `ChainObserver.swift` 31-39, web `useUniPadEngine.ts` setChain) |
+| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` 278-281 and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain) |
 | S-08 | Columns after the sixth are ignored. | parse | apps agree | The three apps' code (not in the docs) |
 | S-09 | Several sounds on one pad form a queue in the order of the file. | parse | doc | key-sound.mdx Circular Queue |
 | S-10 | A line naming a sound file that is not under `sounds/` is skipped with a missing-sound warning. | parse | doc | key-sound.mdx validation |
