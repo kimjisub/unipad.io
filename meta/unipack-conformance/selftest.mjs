@@ -684,15 +684,14 @@ describe('app test results', () => {
     }
   });
 
-  test('3. iOS A-03 stays unconfirmed: unverified without tests, and passed with any test, as no test is listed for it', () => {
-    assert.equal(NATIVE_TESTS.ios['A-03'], undefined);
-    const unverified = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': [] }, status: { 'A-03': 'unverified' } });
-    const claimed = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': ['SoundEngineDecodingTests/anOggSoundPlays()'] } });
-    for (const file of [unverified, claimed]) {
-      const cell = items({ ios: read('ios', file) }).get('A-03').ios;
-      assert.equal(cell.confirmed, false);
-      assert.match(cell.detail, /no ios app test is listed for it/);
-    }
+  test('3. iOS A-03 is confirmed by the listed test that measures the OGG sound played, and by no other test', () => {
+    const listed = 'SoundEngineDecodingTests/anOggVorbisSoundPlays()';
+    assert.deepEqual(NATIVE_TESTS.ios['A-03'], [listed]);
+    assert.deepEqual(items({ ios: read('ios', nativeFile('ios')) }).get('A-03').ios, { confirmed: true, detail: '', basis: BASES.native });
+    const unverified = nativeFile('ios', { status: { 'A-03': 'unverified' } });
+    const decoderOnly = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': ['OggVorbisDecoderTests/decodesTheWholeToneInTheFilesLayout()'] } });
+    for (const file of [unverified, decoderOnly]) assert.equal(items({ ios: read('ios', file) }).get('A-03').ios.confirmed, false);
+    assert.match(items({ ios: read('ios', decoderOnly) }).get('A-03').ios.detail, /anOggVorbisSoundPlays\(\) missing/);
   });
 
   test('4. a listed test that is missing, failed, skipped or run twice leaves the item unconfirmed and is named', () => {
