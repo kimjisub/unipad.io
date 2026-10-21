@@ -11,12 +11,12 @@ if (typeof args.packs !== 'string' || typeof args.work !== 'string' ||
     ['empty-sounds', 'anonymous-ids'].some((flag) => args[flag] !== undefined && args[flag] !== true)) {
   throw new Error('usage: prepare.mjs --packs <source> --work <work> [--empty-sounds] [--anonymous-ids] [--only <ids> | --only-file <file>]');
 }
-// Resolve existing ancestors as well, so a symlink cannot hide an overlap with the source.
+// Resolve disk spelling and existing ancestors, so case aliases and symlinks cannot hide an overlap.
 function realPath(path) {
-  if (existsSync(path)) return realpathSync(path);
+  if (existsSync(path)) return realpathSync.native(path);
   return join(realPath(dirname(path)), basename(path));
 }
-const source = realpathSync(args.packs);
+const source = realpathSync.native(args.packs);
 const work = realPath(resolve(args.work));
 const within = (a, b) => a === b || a.startsWith(`${b}${sep}`);
 if (within(work, source) || within(source, work)) throw new Error('source and work must not overlap');

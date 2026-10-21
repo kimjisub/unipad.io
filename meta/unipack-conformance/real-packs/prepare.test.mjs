@@ -61,3 +61,26 @@ test('preparing text-only packs adds empty sound references only when requested,
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('preparation rejects overlapping folders with different letter case', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'real-pack-case-'));
+  try {
+    const source = join(dir, 'Src');
+    const alias = join(dir, 'src');
+    mkdirSync(join(source, 'p1'), { recursive: true });
+    writeFileSync(join(source, 'p1', 'info'), 'title=t\n');
+    if (!existsSync(alias)) {
+      t.skip('requires a case-insensitive file system');
+      return;
+    }
+    const before = folderFingerprint(source);
+    for (const [input, work] of [[source, alias], [alias, source], [source, join(alias, 'work')]]) {
+      const result = spawnSync(process.execPath, [script, '--packs', input, '--work', work, '--empty-sounds'], { encoding: 'utf8' });
+      assert.notEqual(result.status, 0, 'case aliases must not bypass the overlap guard');
+      assert.match(result.stderr, /overlap/);
+      assert.equal(folderFingerprint(source), before);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
