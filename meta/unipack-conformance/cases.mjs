@@ -294,6 +294,19 @@ export function buildCases(palette) {
       intent('unipad.io src/lib/unipack/conformance.test.ts', '"wormhole is incorrect" is a range warning, like a chain, x or y outside the pack'),
     ],
   });
+  const WORMHOLE_FIRST = intent('unipad-android UniPackFolder.kt, unipad-ios UniPackFolder.swift, unipad.io parser.ts parseKeySound', 'the wormhole is checked right after the numbers are read, before chain, x, y and the sound file, so a line skipped for another field still reports it');
+  add({
+    id: 'KS-024', items: ['S-07', 'S-02'], area: 'keySound', title: 'a line with both its wormhole and its chain, x or y outside the pack warns for each',
+    files: pack({ keySound: lines('3 1 1 a.wav 1 9', '1 5 1 a.wav 1 9', '1 1 4 a.wav 1 9', '1 1 2 a.wav') }),
+    expected: loaded({ sounds: [cell(0, 0, 1, [q('a.wav')])], errors: Array(6).fill('keySound:range') }),
+    basis: [WORMHOLE_FIRST],
+  });
+  add({
+    id: 'KS-025', items: ['S-07', 'S-10'], area: 'keySound', title: 'a line with its wormhole outside the pack and a missing sound warns for both, wormhole first',
+    files: pack({ keySound: lines('1 1 1 none.wav 1 9', '1 1 2 a.wav') }),
+    expected: loaded({ sounds: [cell(0, 0, 1, [q('a.wav')])], errors: ['keySound:range', 'keySound:missing-file'] }),
+    basis: [WORMHOLE_FIRST],
+  });
   add({
     id: 'KS-019', items: ['S-12'], area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
     files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
