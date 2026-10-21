@@ -38,20 +38,21 @@ export function packEntries(root) {
   return out;
 }
 
-/** Every file under `root` as `{ path, full }`, `path` relative with forward slashes. */
-export function packFiles(root) {
-  return packEntries(root).filter((entry) => !entry.directory);
+/**
+ * The corpus formula over files plus empty directory paths with zero bytes. `entries` is
+ * `packEntries(root)`, passed in when the caller has already walked the folder.
+ */
+export function folderFingerprint(root, entries = packEntries(root)) {
+  return fingerprintOf(entries, (entry) => entry.directory ? Buffer.alloc(0) : readFileSync(entry.full));
 }
 
-/** The corpus formula over files plus empty directory paths with zero bytes. */
-export function folderFingerprint(root) {
-  return fingerprintOf(packEntries(root), (entry) => entry.directory ? Buffer.alloc(0) : readFileSync(entry.full));
-}
-
-/** The file at the pack root whose name matches `name` regardless of case, as the parsers look it up. */
-function rootFile(root, name) {
-  const found = readdirSync(root, { withFileTypes: true }).find((d) => d.name.toLowerCase() === name.toLowerCase());
-  return found ? join(root, found.name) : null;
+/**
+ * The name at the pack root, as listed in `entries`, that matches `name` regardless of case, as the
+ * parsers look it up; null when there is none.
+ */
+function rootName(entries, name) {
+  const wanted = name.toLowerCase();
+  return entries.map((e) => e.path.split('/')[0]).find((top) => top.toLowerCase() === wanted) ?? null;
 }
 
 const countLines = (text) => text.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '').length;
@@ -59,21 +60,26 @@ const countLines = (text) => text.split(/\r\n|\r|\n/).filter((l) => l.trim() !==
 /**
  * What a pack holds before any parser reads it, counted the same way for every platform: non-blank
  * keySound and autoPlay lines, files in the keyLED folder, files in the sounds folder, total bytes.
+ * Everything is counted from `entries` (`packEntries(root)`), so the folder is walked once.
  */
-export function describePack(root) {
-  const files = packFiles(root);
-  const keySound = rootFile(root, 'keySound');
-  const autoPlay = rootFile(root, 'autoPlay');
-  const keyLed = rootFile(root, 'keyLED');
-  const sounds = rootFile(root, 'sounds');
-  const under = (dir) => (dir && statSync(dir).isDirectory() ? packFiles(dir).length : 0);
+export function describePack(root, entries = packEntries(root)) {
+  const files = entries.filter((entry) => !entry.directory);
+  const lines = (name) => {
+    const top = rootName(entries, name);
+    const file = files.find((f) => f.path === top);
+    return file ? countLines(readFileSync(file.full, 'utf8')) : null;
+  };
+  const under = (name) => {
+    const top = rootName(entries, name);
+    return top === null ? 0 : files.filter((f) => f.path.startsWith(`${top}/`)).length;
+  };
   return {
     files: files.length,
     bytes: files.reduce((n, f) => n + statSync(f.full).size, 0),
-    keySoundLines: keySound && statSync(keySound).isFile() ? countLines(readFileSync(keySound, 'utf8')) : null,
-    autoPlayLines: autoPlay && statSync(autoPlay).isFile() ? countLines(readFileSync(autoPlay, 'utf8')) : null,
-    keyLedFiles: under(keyLed),
-    soundFiles: under(sounds),
+    keySoundLines: lines('keySound'),
+    autoPlayLines: lines('autoPlay'),
+    keyLedFiles: under('keyLED'),
+    soundFiles: under('sounds'),
   };
 }
 

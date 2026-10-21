@@ -2,6 +2,7 @@
 // builders that write expected results in the normalized form every platform harness emits.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { fingerprintOf } from '../../src/lib/unipack/fingerprint.mts';
 
 export const SCHEMA = 'unipad-conformance/1';
 
@@ -81,12 +82,13 @@ export function buildAssets() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Fingerprint. sha256 over the input files sorted by the UTF-8 bytes of their path; per file:
-//   UTF8(path) 0x00 decimal(length) 0x00 bytes 0x0A
-// A file is either `text` (UTF-8 encoded as written, so BOM and CRLF are kept), `base64`, or an
-// `asset` reference whose bytes come from the corpus assets. The Kotlin and Swift harnesses
-// recompute this from the copied corpus and refuse a case whose files no longer hash to it.
+// Fingerprint (src/lib/unipack/fingerprint.mts holds the formula). A file is either `text` (UTF-8 encoded
+// as written, so BOM and CRLF are kept), `base64`, or an `asset` reference whose bytes come from the
+// corpus assets. The Kotlin and Swift harnesses recompute this from the copied corpus and refuse a case
+// whose files no longer hash to it.
 // ---------------------------------------------------------------------------------------------
+
+export { fingerprintOf };
 
 export function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -101,22 +103,6 @@ export function fileBytes(file, assets) {
     return Buffer.from(asset.base64, 'base64');
   }
   throw new Error(`file ${file.path} has no content`);
-}
-
-/**
- * The input fingerprint over `{ path }` entries whose bytes `bytesOf` returns, one at a time, so a large
- * pack read from disk is never held in memory whole.
- */
-export function fingerprintOf(entries, bytesOf) {
-  const sorted = [...entries].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
-  const hash = createHash('sha256');
-  for (const entry of sorted) {
-    const bytes = bytesOf(entry);
-    hash.update(Buffer.concat([Buffer.from(entry.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0])]));
-    hash.update(bytes);
-    hash.update(Buffer.from([10]));
-  }
-  return hash.digest('hex');
 }
 
 export function fingerprint(files, assets) {

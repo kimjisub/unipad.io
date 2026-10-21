@@ -16,7 +16,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
 | `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
-| `lib.mjs` | Sound asset generator, input fingerprint, expected-result builders. |
+| `lib.mjs` | Sound asset generator, input fingerprint (formula in `src/lib/unipack/fingerprint.mts`, shared with the web harness), expected-result builders. |
 | `assets/tone-440.mp3` | The one sound kept as bytes: `tone-440` encoded as MP3 (see [Sounds](#case-format)). |
 | `palette.json` | The 128 colours an `auto` velocity resolves to (reference copy, see PAL-001). |
 | `divergences.json` | Differences observed on a platform today, pinned so a change in either direction is noticed. |

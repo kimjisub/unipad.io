@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
+import { fingerprintOf } from './fingerprint.mjs';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
 import { PlayerHolds } from './PlayerHolds';
@@ -87,7 +88,7 @@ export function loadCorpus(): { corpus: Corpus; sha256: string } {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Input files and fingerprint (the same formula as meta/unipack-conformance/lib.mjs)
+// Input files and fingerprint (formula in ./fingerprint.mts)
 // ---------------------------------------------------------------------------------------------
 
 export function fileBytes(file: CorpusFile, corpus: Corpus): Buffer {
@@ -97,19 +98,13 @@ export function fileBytes(file: CorpusFile, corpus: Corpus): Buffer {
   throw new Error(`file ${file.path} has no content`);
 }
 
-export function fingerprintOf(files: Files, corpus: Corpus): string {
-  const sorted = [...files].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
-  const hash = createHash('sha256');
-  for (const file of sorted) {
-    const bytes = fileBytes(file, corpus);
-    hash.update(Buffer.concat([Buffer.from(file.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0]), bytes, Buffer.from([10])]));
-  }
-  return hash.digest('hex');
+export function caseFingerprint(files: Files, corpus: Corpus): string {
+  return fingerprintOf(files, (file) => fileBytes(file, corpus));
 }
 
 /** Refuses a case whose files no longer hash to the fingerprint it declares. */
 export function verifyFingerprint(c: CorpusCase, corpus: Corpus): void {
-  const actual = fingerprintOf(c.files, corpus);
+  const actual = caseFingerprint(c.files, corpus);
   if (actual !== c.fingerprint) throw new Error(`${c.id}: input files hash to ${actual}, the case declares ${c.fingerprint}`);
 }
 
