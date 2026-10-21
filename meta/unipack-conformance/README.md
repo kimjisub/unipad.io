@@ -12,7 +12,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 
 | File | Role |
 |---|---|
-| `GRAMMAR.md` | The UniPack grammar, edition G3: 104 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
+| `GRAMMAR.md` | The UniPack grammar, edition G4: 104 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
 | `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
 | `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |

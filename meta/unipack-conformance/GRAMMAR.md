@@ -1,5 +1,9 @@
-# UniPack grammar, edition G3
+# UniPack grammar, edition G4
 
+G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code units,
+without changing the paths used to open them. Decomposed accents and Hangul must queue as their
+composed spellings do. Names equal under this comparison retain their input listing order;
+archives containing canonically equivalent duplicate paths are outside this rule.
 G3 corrects E-09: a negative delay shortens later waits but never takes back time already waited.
 G2 added T-09: numeric fields are signed decimal 32-bit integers; larger numbers are format errors.
 
@@ -23,10 +27,12 @@ the corpus changes only when a rule does, never to match what an app does today.
 
 ## What this edition decides
 
-The differences and implementation notes in this edition record the state used to establish G1.
+The table below records the state used to establish G1. G4 additionally changes queues whose
+names contain decomposed characters to match their composed spellings, and makes the existing
+Android/web UTF-16 comparison explicit on iOS as well.
 For the current per-platform status, run `report.mjs`; fixes do not change these grammar rules.
 
-No item chooses a new product behaviour. Each of the decisions below either keeps what the three apps
+The original G1 items below choose no new product behaviour. Each of those decisions either keeps what the three apps
 already do and corrects the docs, reads what the author clearly meant, or keeps grammar that is already
 written (line order, wormholes, `touch` = `on` + `off`). No pack that loads and plays today changes in
 any of them.
@@ -135,7 +141,7 @@ releasing after the chain changed (Android, web).
 | L-04 | A file with a negative loop is ignored with a warning. | parse | doc | key-led.mdx validation ("warning") |
 | L-05 | A number column of the name that is not an integer ignores the file with a format warning. | parse | apps agree | the basis of cases.mjs KL-N |
 | L-06 | A fifth or later column of the name (`1 1 1 1 a`) is ignored (other tools name several files for one pad this way). | parse | apps agree | cases.mjs RP-002 (AGREED) |
-| L-07 | Several files for one pad queue in the order of their names (character codes, lower-cased). | parse | doc | key-led.mdx "circular queue, just like keySound" |
+| L-07 | Several files for one pad queue by their file names: normalize to NFC, lower-case, then compare UTF-16 code units lexicographically. Read the files by their original paths. Equal comparison keys retain input listing order. | parse | G4 decision | key-led.mdx circular queue. Android and web preserve decomposed archive names, while Swift compares canonically equivalent spellings; NFC keeps the existing order for composed names and removes the spelling-dependent difference. |
 | L-08 | A file whose name has fewer than 3 columns is ignored silently. | parse | apps agree | cases.mjs KL-006 (AGREED) |
 | L-09 | A pack with a `keyLED` folder has lights, even when the folder is empty. | parse | apps agree | cases.mjs KL-007 (AGREED) |
 

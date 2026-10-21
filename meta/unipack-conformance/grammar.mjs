@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const GRAMMAR_FILE = new URL('./GRAMMAR.md', import.meta.url);
 
-const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G[1-3] decision) \| .* \|$/;
+const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G[1-4] decision) \| .* \|$/;
 
 /** `{ edition, items: [{ id, rule, kind, basis }] }` in the order GRAMMAR.md lists them. */
 export function readGrammar(text = readFileSync(GRAMMAR_FILE, 'utf8')) {
