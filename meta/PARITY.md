@@ -155,6 +155,15 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **RUN-A-003: Android no longer reports a chain change twice when an autoPlay chain command is
+  followed by a press.** [unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283)
+  fixes the command order so the recorded events match the existing expected result. Only this Android
+  observation-order pin was removed; case inputs, fingerprints, scenarios, expected results and bases
+  are unchanged. The previous corpus SHA256 was
+  `e233029559c3a251ad8c2103905135a08a7d4b0207715ea0e8633f228c7bb358`; the regenerated SHA256 is
+  `37096f03b811ae4813ed3a5b68dffbb6da70d741cf67bae4a5c52559e4a8eabf`.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-android-autoplay-chain-order-fix-2026-10-21)
+  for the matching app-copy commits and the limits of the retained aggregate report.
 - **KS-B01..08, KL-BN01..08, KL-BE01..10, AP-B01..08: a number in a pack is a 32-bit integer on all
   three (except the two pinned Android storage differences KS-B08 and KL-BE10 above).** Android always
   read pack numbers as 32-bit integers, so `2147483648` was a format error and
