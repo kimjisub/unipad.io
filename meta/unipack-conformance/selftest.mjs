@@ -12,8 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { buildCorpus, digestLine, serialize } from './build-corpus.mjs';
 import { buildCases } from './cases.mjs';
 import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDecision, sha256, startsWithMpegFrame } from './lib.mjs';
-import { HARNESS_LIMITS, readGrammar } from './grammar.mjs';
-import { buildReport, classify, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
+import { checkNativeTests, grammarRecord, HARNESS_LIMITS, NATIVE_TESTS, readGrammar } from './grammar.mjs';
+import { readNative } from './native.mjs';
+import { BASES, buildReport, classify, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
 import { resolveCommits } from './copies.mjs';
 import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
 
@@ -170,7 +171,7 @@ test('GRAMMAR.md lists 104 items of edition G3, each of kind parse or output, an
   assert.equal(grammar.items.length, 104);
   assert.equal(new Set(grammar.items.map((i) => i.id)).size, 104);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
-  for (const limits of Object.values(HARNESS_LIMITS)) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
+  for (const limits of [...Object.values(HARNESS_LIMITS), ...Object.values(NATIVE_TESTS)]) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
   assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
   const row = '| S-01 | rule | parse | doc | where |';
   assert.throws(() => readGrammar(`# UniPack grammar, edition G1\n${row}\n${row}\n`), /S-01 more than once/);
@@ -613,4 +614,240 @@ test('report rows cover every platform', () => {
     [['ledOn', 0, 0, 'ffff0000', 4]], [['ledOff', 0, 0]], [['ledOn', 1, 0, 'ff00ff00', 4]],
     [['ledOn', 2, 0, 'ff0000ff', 4], ['ledOn', 3, 0, 'ffff0000', 4]], [],
   ]);
+});
+
+describe('app test results', () => {
+  const RECORD = grammarRecord();
+  const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+  const capitalized = (outcome) => outcome[0].toUpperCase() + outcome.slice(1);
+
+  /**
+   * An app's own result file, in that app's format, reporting `items` (item → test names, by default the
+   * ones NATIVE_TESTS lists): every item `passed` unless `status` says otherwise, and every test run once
+   * and passed unless `outcomes` gives its runs (`[]` for none, two for a retry).
+   */
+  function nativeFile(platform, { items = NATIVE_TESTS[platform], status = {}, outcomes = {}, ...top } = {}) {
+    const entries = Object.entries(items).map(([id, names]) => ({ id, status: status[id] ?? 'passed', tests: names.map((name) => [name, outcomes[name] ?? ['passed']]) }));
+    if (platform === 'android') {
+      return {
+        schemaVersion: 1, platform, repositoryCommit: COMMIT, sourceDirty: false, grammar: { ...RECORD },
+        items: Object.fromEntries(entries.map((e) => [e.id, { status: e.status, requiredTests: e.tests.map(([name]) => name),
+          tests: Object.fromEntries(e.tests.map(([name, runs]) => [name, runs.map((o) => ({ status: o }))])) }])),
+        ...top,
+      };
+    }
+    if (platform === 'ios') {
+      return {
+        schemaVersion: 1, platform, commit: COMMIT, sourceStatus: '', purpose: 'verification', grammarVersion: RECORD.version, grammarRevision: RECORD.revision,
+        rules: Object.fromEntries(entries.map((e) => [e.id, { status: e.status,
+          tests: e.tests.map(([name, runs]) => ({ name, runs: runs.map((o) => ({ result: capitalized(o) })) })) }])),
+        ...top,
+      };
+    }
+    return {
+      schemaVersion: 1, grammar: { ...RECORD }, source: { commit: COMMIT, dirty: false },
+      items: entries.map((e) => {
+        const browser = e.id.startsWith('A-');
+        return { item: e.id, status: { passed: 'confirmed', unverified: 'unconfirmed' }[e.status] ?? e.status, tests: e.tests.map(([name]) => name),
+          results: e.tests.flatMap(([name, runs]) => runs.map((o) => ({ name, ...(browser && { project: 'chromium' }), status: o === 'passed' ? 'passed' : 'unconfirmed' }))),
+          run: browser ? 'browser' : 'parser' };
+      }),
+      ...top,
+    };
+  }
+  const read = (platform, file) => readNative(platform, Buffer.from(typeof file === 'string' ? file : JSON.stringify(file)));
+  const passing = () => Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)]));
+  /** The item rows of a report on `results` (every case passing by default) with these app test results. */
+  function items(natives, results = passing()) {
+    return new Map(buildReport(canonical, results, natives).grammar.rows.map((r) => [r.id, r]));
+  }
+  const all = () => Object.fromEntries(PLATFORMS.map((p) => [p, read(p, nativeFile(p))]));
+
+  test('1. in each app\'s format, an item whose listed tests each ran once and passed is confirmed', () => {
+    const without = items({});
+    for (const p of PLATFORMS) {
+      assert.equal(without.get('F-05')[p].confirmed, false, p);
+      const rows = items({ [p]: read(p, nativeFile(p)) });
+      for (const id of ['F-05', 'F-06']) assert.deepEqual(rows.get(id)[p], { confirmed: true, detail: '', basis: BASES.native }, `${p} ${id}`);
+    }
+    assert.equal(without.get('F-01').android.confirmed, false);
+    assert.deepEqual(items({ android: read('android', nativeFile('android')) }).get('F-01').android, { confirmed: true, detail: '', basis: BASES.both });
+    assert.deepEqual(items({ web: read('web', nativeFile('web')) }).get('A-01').web, { confirmed: true, detail: '', basis: BASES.both });
+  });
+
+  test('2. iOS A-04 and A-05, which no case checks and no limit names, are confirmed by the app tests alone', () => {
+    for (const id of ['A-04', 'A-05']) {
+      assert.equal(corpus.cases.some((c) => c.items?.includes(id)), false, id);
+      assert.equal(HARNESS_LIMITS.ios[id], undefined, id);
+      assert.deepEqual(items({}).get(id).ios, { confirmed: false, detail: 'no case checks this item' });
+      assert.deepEqual(items({ ios: read('ios', nativeFile('ios')) }).get(id).ios, { confirmed: true, detail: '', basis: BASES.native });
+    }
+  });
+
+  test('3. iOS A-03 stays unconfirmed: unverified without tests, and passed with any test, as no test is listed for it', () => {
+    assert.equal(NATIVE_TESTS.ios['A-03'], undefined);
+    const unverified = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': [] }, status: { 'A-03': 'unverified' } });
+    const claimed = nativeFile('ios', { items: { ...NATIVE_TESTS.ios, 'A-03': ['SoundEngineDecodingTests/anOggSoundPlays()'] } });
+    for (const file of [unverified, claimed]) {
+      const cell = items({ ios: read('ios', file) }).get('A-03').ios;
+      assert.equal(cell.confirmed, false);
+      assert.match(cell.detail, /no ios app test is listed for it/);
+    }
+  });
+
+  test('4. a listed test that is missing, failed, skipped or run twice leaves the item unconfirmed and is named', () => {
+    const cases = [['android', 'F-05'], ['ios', 'F-05'], ['web', 'F-06'], ['android', 'F-01'], ['web', 'A-03']];
+    const outcomes = { missing: [], failed: ['failed'], skipped: ['skipped'], repeated: ['passed', 'passed'] };
+    for (const [p, id] of cases) {
+      const name = NATIVE_TESTS[p][id].at(-1);
+      for (const [want, runs] of Object.entries(outcomes)) {
+        if (p === 'web' && want === 'skipped') continue; // the web file records a skipped test as unconfirmed, read as failed
+        const cell = items({ [p]: read(p, nativeFile(p, { outcomes: { [name]: runs } })) }).get(id)[p];
+        assert.equal(cell.confirmed, false, `${p} ${id} ${want}`);
+        assert.ok(cell.detail.includes(`${name} ${want}`), `${p} ${id} ${want}: ${cell.detail}`);
+      }
+    }
+  });
+
+  test('5. an item the file does not mark passed is unconfirmed even when every listed test passed', () => {
+    for (const p of PLATFORMS) {
+      const cell = items({ [p]: read(p, nativeFile(p, { status: { 'F-05': 'unverified' } })) }).get('F-05')[p];
+      assert.equal(cell.confirmed, false, p);
+      assert.match(cell.detail, /app test results mark it un(verified|confirmed)/);
+    }
+    // Android's file as it is: A-01 to A-05 unverified while the decode and pad tests passed; none is listed.
+    const android = nativeFile('android', { items: { ...NATIVE_TESTS.android, 'A-01': ['audio.AudioFormatDecodeDeviceTest#decodesPcmWav'] }, status: { 'A-01': 'unverified' } });
+    assert.equal(items({ android: read('android', android) }).get('A-01').android.confirmed, false);
+  });
+
+  test('6. a file that cannot count is refused, with the reason', () => {
+    const refused = (p, file, why) => assert.throws(() => read(p, file), why);
+    refused('android', nativeFile('android', { items: { ...NATIVE_TESTS.android, 'Z-99': ['x'] } }), /the grammar lists no item Z-99/);
+    const twice = JSON.stringify(nativeFile('android')).replace('"F-05":', '"F-06":{"status":"passed","tests":{}},"F-05":');
+    refused('android', twice, /names "F-06" twice in one object/);
+    const web = nativeFile('web');
+    refused('web', { ...web, items: [...web.items, web.items[0]] }, /reports F-05 more than once/);
+    refused('android', nativeFile('ios'), /the file is ios's, not android's/);
+    refused('web', nativeFile('android'), /the file is android's, not web's/);
+    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G3/);
+    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G3/);
+    refused('web', { ...web, grammar: { version: RECORD.version, revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }, /grammar revision 7a38cd71.* is not the SHA-256/);
+    refused('android', nativeFile('android', { sourceDirty: true }), /uncommitted changes/);
+    refused('ios', nativeFile('ios', { sourceStatus: ' M unipad/SoundEngine.swift' }), /uncommitted changes/);
+    refused('web', { ...web, source: { commit: COMMIT, dirty: true } }, /uncommitted changes/);
+    refused('ios', nativeFile('ios', { purpose: 'baseline' }), /a baseline run, not a verification run/);
+    refused('android', nativeFile('android', { repositoryCommit: COMMIT.slice(0, 8) }), /is not a full 40-character commit hash/);
+    // The command ends with an error instead of a table.
+    const dir = mkdtempSync(join(tmpdir(), 'unipack-native-'));
+    try {
+      const old = join(dir, 'items.json');
+      writeFileSync(old, JSON.stringify({ ...web, grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }));
+      const run = spawnSync(process.execPath, [join(here, 'report.mjs'), '--web-native', old], { encoding: 'utf8' });
+      assert.equal(run.status, 3);
+      assert.equal(run.stdout, '');
+      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G3/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('7. passing app tests never cover a failing case: F-01, A-01 and A-02', () => {
+    const failing = (p, id) => ({ ...passing(), [p]: fullResults(p, { [id]: { status: 'fail', actual: SOME_RESULT } }) });
+    for (const [p, item, id] of [['android', 'F-01', 'FS-001'], ['ios', 'F-01', 'FS-002'], ['web', 'A-01', 'RUN-S-001'], ['web', 'A-02', 'RUN-RP-002']]) {
+      const cell = items(all(), failing(p, id)).get(item)[p];
+      assert.equal(cell.confirmed, false, `${p} ${item}`);
+      assert.match(cell.detail, new RegExp(`not every case passes: ${id} fail`));
+    }
+    // Nor do passing cases cover a failing app test.
+    const name = NATIVE_TESTS.android['F-01'][0];
+    const cell = items({ android: read('android', nativeFile('android', { outcomes: { [name]: ['failed'] } })) }).get('F-01').android;
+    assert.equal(cell.confirmed, false);
+    assert.ok(cell.detail.includes(`${name} failed`), cell.detail);
+  });
+
+  test('8. without app test results the report is what it was: no basis, no native block, the same text', () => {
+    const results = passing();
+    const before = buildReport(canonical, results);
+    assert.deepEqual(buildReport(canonical, results, {}), before);
+    assert.equal('native' in before, false);
+    for (const row of before.grammar.rows) for (const p of PLATFORMS) assert.deepEqual(Object.keys(row[p]), ['confirmed', 'detail'], `${row.id} ${p}`);
+    assert.equal(renderText(buildReport(canonical, results, {})), renderText(before));
+    assert.doesNotMatch(renderText(before), /app test/);
+    const withNative = buildReport(canonical, results, all());
+    assert.deepEqual(withNative.native.web, { sha256: all().web.sha256, commit: COMMIT });
+    assert.match(renderText(withNative), new RegExp(`app test results ${all().ios.sha256.slice(0, 12)}, run on commit ${COMMIT}`));
+  });
+
+  test('9. an item confirmed on all three counts once, of the same 104', () => {
+    const before = buildReport(canonical, passing()).grammar;
+    const after = buildReport(canonical, passing(), all()).grammar;
+    assert.equal(after.items, 104);
+    assert.equal(after.rows.length, 104);
+    const onAll = (g) => g.rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).map((r) => r.id);
+    assert.equal(after.confirmedOnAllThree, onAll(after).length);
+    assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06']);
+    assert.equal(after.confirmedOnAllThree, before.confirmedOnAllThree + 3);
+  });
+
+  test('10. NATIVE_TESTS refuses an item that lists no test', () => {
+    assert.throws(() => checkNativeTests({ web: { 'F-05': [] } }), /NATIVE_TESTS.web\["F-05"\] lists no test/);
+    assert.throws(() => checkNativeTests({ ios: { 'A-04': ['a', 'a'] } }), /lists a more than once/);
+    assert.throws(() => checkNativeTests({ web: { 'F-05': ['a'] } }, {}), /NATIVE_TESTS.web\["F-05"\] has no run in WEB_RUNS/);
+    assert.equal(checkNativeTests(NATIVE_TESTS), NATIVE_TESTS);
+  });
+
+  test('11. a web item counts only from its registered run and browser, whatever the file says of itself', () => {
+    const name = NATIVE_TESTS.web['A-03'][0];
+    /** The web file with A-03 changed by `change`, its other items as they pass. */
+    const withA03 = (change) => {
+      const file = nativeFile('web');
+      return { ...file, items: file.items.map((item) => (item.item === 'A-03' ? change(item) : item)) };
+    };
+    // A field set to undefined is left out of the file, as `read` writes it as JSON.
+    const browser = (project) => (item) => ({ ...item, results: item.results.map((r) => ({ ...r, project })) });
+    const cell = (file, id = 'A-03') => items({ web: read('web', file) }).get(id).web;
+    assert.deepEqual(cell(withA03((item) => item)), { confirmed: true, detail: '', basis: BASES.native });
+    const runs = [
+      ['no run', (item) => ({ ...item, run: undefined }), /report it from the unnamed run, not the browser run/],
+      ['the parser run', (item) => ({ ...item, run: 'parser' }), /report it from the parser run, not the browser run/],
+      ['no browser', browser(undefined), new RegExp(`${name} missing`)],
+      ['WebKit', browser('webkit'), new RegExp(`${name} missing`)],
+      ['WebKit, run named parser', (item) => browser('webkit')({ ...item, run: 'parser' }), /not the browser run.*missing/],
+    ];
+    for (const [why, change, detail] of runs) {
+      const got = cell(withA03(change));
+      assert.equal(got.confirmed, false, why);
+      assert.match(got.detail, detail, why);
+    }
+    // The parser items still count from the parser run, whose records name no browser, and only from it.
+    for (const id of ['F-05', 'F-06']) assert.deepEqual(cell(nativeFile('web'), id), { confirmed: true, detail: '', basis: BASES.native }, id);
+    const parser = (change) => ({ ...nativeFile('web'), items: nativeFile('web').items.map((item) => (item.item === 'F-05' ? change(item) : item)) });
+    assert.match(cell(parser((item) => ({ ...item, run: 'browser' })), 'F-05').detail, /not the parser run/);
+    assert.match(cell(parser(browser('chromium')), 'F-05').detail, /missing/);
+  });
+
+  test('12. an iOS test record counts each repetition nested in it as a run, so a repeated or retried test is not confirmed', () => {
+    const name = NATIVE_TESTS.ios['A-04'][0];
+    const repetition = (result, i) => ({ nodeType: 'Repetition', name: String(i + 1), result });
+    /** The iOS file with A-04's one test record holding `children`, as xcresult nests repetitions and retries. */
+    const withRecord = (children) => {
+      const file = nativeFile('ios');
+      const record = { nodeType: 'Test Case', nodeIdentifier: name, result: 'Passed', children };
+      return { ...file, rules: { ...file.rules, 'A-04': { ...file.rules['A-04'], tests: [{ name, runs: [record] }] } } };
+    };
+    const cell = (children) => items({ ios: read('ios', withRecord(children)) }).get('A-04').ios;
+    const confirmed = { confirmed: true, detail: '', basis: BASES.native };
+    assert.deepEqual(cell([]), confirmed);
+    assert.deepEqual(cell([repetition('Passed', 0)]), confirmed);
+    const repeated = {
+      'two passed repetitions': ['Passed', 'Passed'].map(repetition),
+      'a retry that passed after a failure': ['Failed', 'Passed'].map(repetition),
+      'two passed repetitions under a device': [{ nodeType: 'Device', name: 'iPhone', result: 'Passed', children: ['Passed', 'Passed'].map(repetition) }],
+    };
+    for (const [why, children] of Object.entries(repeated)) {
+      const got = cell(children);
+      assert.equal(got.confirmed, false, why);
+      assert.ok(got.detail.includes(`${name} repeated`), `${why}: ${got.detail}`);
+    }
+  });
 });

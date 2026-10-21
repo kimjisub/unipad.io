@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
+import { fingerprintOf } from './fingerprint.mjs';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
 import { PlayerHolds } from './PlayerHolds';
@@ -87,7 +88,7 @@ export function loadCorpus(): { corpus: Corpus; sha256: string } {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Input files and fingerprint (the same formula as meta/unipack-conformance/lib.mjs)
+// Input files and fingerprint (formula in ./fingerprint.mts)
 // ---------------------------------------------------------------------------------------------
 
 export function fileBytes(file: CorpusFile, corpus: Corpus): Buffer {
@@ -97,19 +98,13 @@ export function fileBytes(file: CorpusFile, corpus: Corpus): Buffer {
   throw new Error(`file ${file.path} has no content`);
 }
 
-export function fingerprintOf(files: Files, corpus: Corpus): string {
-  const sorted = [...files].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
-  const hash = createHash('sha256');
-  for (const file of sorted) {
-    const bytes = fileBytes(file, corpus);
-    hash.update(Buffer.concat([Buffer.from(file.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0]), bytes, Buffer.from([10])]));
-  }
-  return hash.digest('hex');
+export function caseFingerprint(files: Files, corpus: Corpus): string {
+  return fingerprintOf(files, (file) => fileBytes(file, corpus));
 }
 
 /** Refuses a case whose files no longer hash to the fingerprint it declares. */
 export function verifyFingerprint(c: CorpusCase, corpus: Corpus): void {
-  const actual = fingerprintOf(c.files, corpus);
+  const actual = caseFingerprint(c.files, corpus);
   if (actual !== c.fingerprint) throw new Error(`${c.id}: input files hash to ${actual}, the case declares ${c.fingerprint}`);
 }
 
@@ -209,9 +204,10 @@ export interface Deps {
 
 export const REAL: Deps = { parse: parseUniPack, LedRunner, AutoPlayRunner, SoundEngine, changeChain };
 
-async function parseOrRefuse(c: CorpusCase, corpus: Corpus, deps: Deps): Promise<{ pack: UniPackData } | { refused: string }> {
+/** The parsed pack, or why the parser refused it. Also used for real packs (meta/unipack-conformance/real-packs). */
+export async function parseOrRefuse(zip: ArrayBuffer, deps: Deps = REAL): Promise<{ pack: UniPackData } | { refused: string }> {
   try {
-    return { pack: await deps.parse(await zipOf(c, corpus)) };
+    return { pack: await deps.parse(zip) };
   } catch (error) {
     // The web parser throws for a pack it refuses; anything else is a bug the case must surface.
     if (error instanceof Error && error.message.startsWith('Invalid UniPack')) return { refused: error.message };
@@ -235,7 +231,7 @@ export interface Observation { actual: Json; capture: WarningCapture | null }
 
 export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
   if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
-  const parsed = await parseOrRefuse(c, corpus, deps);
+  const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
   if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
   const { pack } = parsed;
   const capture: WarningCapture = {
