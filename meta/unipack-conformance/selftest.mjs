@@ -86,6 +86,21 @@ test('iOS sound-stop and chain-reset cases require observed results', () => {
   }
 });
 
+test('G6 cases cannot count a missing result, a claimed pass or an injected wrong output', () => {
+  const added = corpus.cases.filter((c) => /-G6/.test(c.id));
+  assert.equal(added.length, 49);
+  for (const c of added) for (const platform of PLATFORMS) {
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    const result = (cases) => ({ platform, corpusSha256: canonical.sha256, cases });
+    const record = { id: c.id, fingerprint: c.fingerprint };
+    assert.equal(judge(only, platform, result([])).get(c.id).status, 'unverified', `${c.id} missing`);
+    assert.equal(judge(only, platform, result([{ ...record, status: 'pass' }])).get(c.id).status, 'unverified', `${c.id} claim`);
+    const wrong = c.expected.loaded === false ? { loaded: true } : c.layer === 'run' ? { checkpoints: [] } : { loaded: false };
+    assert.equal(judge(only, platform, result([{ ...record, status: 'fail', actual: wrong }])).get(c.id).status, 'fail', `${c.id} mutation`);
+    assert.equal(judge(only, platform, result([{ ...record, status: 'pass', actual: wrong }])).get(c.id).status, 'unverified', `${c.id} dishonest mutation`);
+  }
+});
+
 test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
   const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
   assert.ok(startsWithMpegFrame(mp3));
@@ -133,15 +148,14 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.ok(decidedIds.includes('KL-024'));
   assert.equal(decided.filter((c) => c.basis.some((b) => b.type === 'agreed')).length, 0);
 
-  // Pinned differences are unverified, except the two storage forms explicitly allowed by T-09.
+  // Pinned differences are never confirmed.
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
   assert.equal(report.decided.cases, decidedIds.length);
-  const allowedStorage = (c, p) => p === 'android' && ['KS-B08', 'KL-BE10'].includes(c.id);
-  const clean = (p) => decided.filter((c) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p]);
+  const clean = (p) => decided.filter((c) => !c.known?.[p] && !c.unobserved?.[p]);
   const pass = Object.fromEntries(PLATFORMS.map((p) => [p, clean(p).length]));
   assert.deepEqual(report.decided.pass, pass);
-  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p])).length;
+  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => !c.known?.[p] && !c.unobserved?.[p])).length;
   assert.equal(report.decided.passOnAllThree, onAllThree);
   const text = renderText(report);
   assert.match(text, new RegExp(`, ${onAllThree} on a decision basis$`, 'm'));
@@ -164,12 +178,12 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
 });
 
-test('GRAMMAR.md lists 104 items of edition G5, each of kind parse or output, and the corpus names its edition', () => {
+test('GRAMMAR.md lists 105 items of edition G6, each of kind parse or output, and the corpus names its edition', () => {
   const grammar = readGrammar();
-  assert.equal(grammar.edition, 'G5');
-  assert.equal(corpus.grammar, 'G5');
-  assert.equal(grammar.items.length, 104);
-  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 104);
+  assert.equal(grammar.edition, 'G6');
+  assert.equal(corpus.grammar, 'G6');
+  assert.equal(grammar.items.length, 105);
+  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 105);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
   for (const limits of [...Object.values(HARNESS_LIMITS), ...Object.values(NATIVE_TESTS)]) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
   assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
@@ -186,7 +200,7 @@ test('every case names the grammar items it checks, and the build refuses one wi
   const editing = (edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === 'KS-001' ? edit(structuredClone(c)) : c)));
   assert.throws(editing((c) => { delete c.items; return c; }), /KS-001: names no grammar item/);
   assert.throws(editing((c) => ({ ...c, items: [] })), /KS-001: names no grammar item/);
-  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G5/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G6/);
   assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-01'] })), /KS-001: names an item twice/);
 });
 
@@ -247,13 +261,13 @@ describe('an item is confirmed on a platform', () => {
     const results = allPass();
     const { grammar } = buildReport(canonical, results);
     const rows = grammar.rows;
-    assert.equal(grammar.items, 104);
+    assert.equal(grammar.items, 105);
     for (const p of PLATFORMS) assert.equal(grammar.confirmed[p], rows.filter((r) => r[p].confirmed).length, p);
     assert.equal(grammar.confirmedOnAllThree, rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length);
     assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
     assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
     const text = renderText(buildReport(canonical, results));
-    assert.match(text, new RegExp(`^grammar G5: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 104 items; on all three platforms ${grammar.confirmedOnAllThree} of 104; ${grammar.withCases} of 104 have a case$`, 'm'));
+    assert.match(text, new RegExp(`^grammar G6: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 105 items; on all three platforms ${grammar.confirmedOnAllThree} of 105; ${grammar.withCases} of 105 have a case$`, 'm'));
     assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
   });
 });
@@ -368,93 +382,27 @@ test('a status the platform reports is checked against its own actual result', (
   assert.equal(judge(canonical, 'web', honest).get(determined.id).status, 'pass');
 });
 
-describe('T-09 allows only the specified Android storage representations', () => {
+describe('T-09 requires exact storage after subtracting one', () => {
   const pathsByCase = {
     'KS-B08': [['sounds', 0, 'queue', 0, 'loop']],
-    'KL-BE10': [
-      ['leds', 0, 'queue', 0, 'events', 0, 1],
-      ['leds', 0, 'queue', 0, 'events', 1, 2],
-      ['leds', 0, 'queue', 0, 'events', 2, 1],
-    ],
+    'KL-BE10': [['leds', 0, 'queue', 0, 'events', 0, 1], ['leds', 0, 'queue', 0, 'events', 1, 2], ['leds', 0, 'queue', 0, 'events', 2, 1]],
   };
-  const set = (object, path, value) => { path.slice(0, -1).reduce((o, key) => o[key], object)[path.at(-1)] = value; };
-  const seen = (c, actual, platform = 'android', overrides = {}) => judge(canonical, platform, fullResults(platform, {
-    [c.id]: { actual, status: classify(c, actual, platform), detail: 'original harness note', ...overrides },
-  })).get(c.id);
-
-  test('both values and every combination pass without changing the actual result or its original status', () => {
-    for (const [id, paths] of Object.entries(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
-      for (let mask = 0; mask < 2 ** paths.length; mask++) {
-        const actual = structuredClone(c.expected);
-        paths.forEach((path, index) => {
-          assert.equal(path.reduce((o, key) => o[key], actual), -2147483649);
-          if (mask & (1 << index)) set(actual, path, -2147483648);
-        });
-        const before = structuredClone(actual);
-        const result = seen(c, actual);
-        assert.equal(result.status, 'pass', `${id} combination ${mask}`);
-        assert.equal(result.reportedStatus, classify(c, before, 'android'));
-        assert.equal(result.reportedDetail, 'original harness note');
-        assert.match(result.detail, /T-09.*representation/);
-        assert.deepEqual(result.actual, before);
-        assert.deepEqual(actual, before);
-      }
-    }
-  });
-
-  test('positive wraparound, other integers, malformed values and missing fields still fail', () => {
-    for (const [id, paths] of Object.entries(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
+  for (const [id, paths] of Object.entries(pathsByCase)) test(`${id} rejects saturation on every platform`, () => {
+    const c = corpus.cases.find((c) => c.id === id);
+    assert.equal(c.known?.android, undefined, 'no fixed difference exempts Android');
+    for (const p of PLATFORMS) {
+      assert.equal(classify(c, c.expected, p), 'pass');
       for (const path of paths) {
-        for (const wrong of [2147483647, -2147483647, -2147483650, '-2147483648', null, undefined]) {
-          const actual = structuredClone(c.known.android.actual);
-          set(actual, path, wrong);
-          assert.equal(seen(c, actual).status, 'fail', `${id} ${path.join('.')} ${wrong}`);
-        }
+        const actual = structuredClone(c.expected);
+        assert.equal(path.reduce((o, k) => o[k], actual), -2147483649);
+        path.slice(0, -1).reduce((o, k) => o[k], actual)[path.at(-1)] = -2147483648;
+        const r = fullResults(p, { [id]: { actual, status: 'fail' } });
+        assert.equal(judge(canonical, p, r).get(id).status, 'fail');
+        assert.equal(buildReport(canonical, { [p]: r }).grammar.rows.find((r) => r.id === 'T-09')[p].confirmed, false);
+        r.cases.find((r) => r.id === id).status = 'pass';
+        assert.equal(judge(canonical, p, r).get(id).status, 'unverified');
       }
     }
-  });
-
-  test('format and range warnings and every other field are still compared exactly', () => {
-    for (const id of Object.keys(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
-      for (const edit of [
-        (a) => { a.errors.push('keyLED:format'); },
-        (a) => { a.errors.push('keySound:range'); },
-        (a) => { a.errors.pop(); if (!c.expected.errors.length) a.errors.push('keyLED:range'); },
-        (a) => { a.sounds[0].queue[0].file = 'wrong.wav'; },
-        (a) => { a.loaded = false; },
-      ]) {
-        const actual = structuredClone(c.known.android.actual);
-        edit(actual);
-        assert.equal(seen(c, actual).status, 'fail', id);
-      }
-    }
-  });
-
-  test('does not accept other platforms, other pins, dishonest statuses or mismatched inputs', () => {
-    const c = corpus.cases.find((c) => c.id === 'KS-B08');
-    for (const platform of ['web', 'ios']) assert.equal(seen(c, c.known.android.actual, platform).status, 'fail');
-    assert.equal(seen(c, c.known.android.actual, 'android', { status: 'pass' }).status, 'unverified');
-    assert.equal(seen(c, c.known.android.actual, 'android', { fingerprint: '0'.repeat(64) }).status, 'unverified');
-    const pinned = structuredClone(canonical);
-    const other = pinned.corpus.cases.find((c) => c.id === 'RUN-A-003');
-    const actual = structuredClone(other.expected);
-    actual.checkpoints[5].unshift(['autoChain', 1]);
-    other.known = { android: { status: 'fail', actual, note: 'Synthetic non-storage divergence' } };
-    const result = fullResults('android', { [other.id]: { status: 'fail', actual } });
-    assert.equal(judge(pinned, 'android', result).get(other.id).status, 'fail');
-  });
-
-  test('confirms T-09 from the allowed representations and keeps their reasons visible in text', () => {
-    const android = fullResults('android', Object.fromEntries(Object.keys(pathsByCase).map((id) => {
-      const c = corpus.cases.find((c) => c.id === id);
-      return [id, { status: 'fail', actual: c.known.android.actual }];
-    })));
-    const report = buildReport(canonical, { android });
-    assert.equal(report.grammar.rows.find((r) => r.id === 'T-09').android.confirmed, true);
-    for (const id of Object.keys(pathsByCase)) assert.match(renderText(report), new RegExp(`${id} android: .*T-09`));
   });
 });
 
@@ -728,8 +676,8 @@ describe('app test results', () => {
     refused('web', { ...web, items: [...web.items, web.items[0]] }, /reports F-05 more than once/);
     refused('android', nativeFile('ios'), /the file is ios's, not android's/);
     refused('web', nativeFile('android'), /the file is android's, not web's/);
-    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G5/);
-    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G5/);
+    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G6/);
+    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G6/);
     refused('web', { ...web, grammar: { version: RECORD.version, revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }, /grammar revision 7a38cd71.* is not the SHA-256/);
     refused('android', nativeFile('android', { sourceDirty: true }), /uncommitted changes/);
     refused('ios', nativeFile('ios', { sourceStatus: ' M unipad/SoundEngine.swift' }), /uncommitted changes/);
@@ -744,7 +692,7 @@ describe('app test results', () => {
       const run = spawnSync(process.execPath, [join(here, 'report.mjs'), '--web-native', old], { encoding: 'utf8' });
       assert.equal(run.status, 3);
       assert.equal(run.stdout, '');
-      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G5/);
+      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G6/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -777,11 +725,11 @@ describe('app test results', () => {
     assert.match(renderText(withNative), new RegExp(`app test results ${all().ios.sha256.slice(0, 12)}, run on commit ${COMMIT}`));
   });
 
-  test('9. an item confirmed on all three counts once, of the same 104', () => {
+  test('9. an item confirmed on all three counts once, of the same 105', () => {
     const before = buildReport(canonical, passing()).grammar;
     const after = buildReport(canonical, passing(), all()).grammar;
-    assert.equal(after.items, 104);
-    assert.equal(after.rows.length, 104);
+    assert.equal(after.items, 105);
+    assert.equal(after.rows.length, 105);
     const onAll = (g) => g.rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).map((r) => r.id);
     assert.equal(after.confirmedOnAllThree, onAll(after).length);
     assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06']);
@@ -847,6 +795,16 @@ describe('app test results', () => {
       const got = cell(children);
       assert.equal(got.confirmed, false, why);
       assert.ok(got.detail.includes(`${name} repeated`), `${why}: ${got.detail}`);
+    }
+  });
+
+  test('G6 Opus cannot be confirmed by an unregistered app test on any platform', () => {
+    for (const p of PLATFORMS) {
+      assert.equal(NATIVE_TESTS[p]['A-07'], undefined, p);
+      const file = nativeFile(p, { items: { ...NATIVE_TESTS[p], 'A-07': ['unregisteredOpusOutputTest'] } });
+      const cell = items({ [p]: read(p, file) }).get('A-07')[p];
+      assert.equal(cell.confirmed, false, p);
+      assert.match(cell.detail, /no .* app test is listed/);
     }
   });
 

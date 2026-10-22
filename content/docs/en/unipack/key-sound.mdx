@@ -25,6 +25,7 @@ The `loop` value is internally stored with 1 subtracted.
 | Omitted or `1` | Play once (default) |
 | `0` | Loop indefinitely |
 | `N` (2 or more) | Play N times in total |
+| Below `0` | Play once; releasing does not stop it |
 
 ## Example
 
@@ -53,8 +54,17 @@ Each press of button (1,1): sound\_a → sound\_b → sound\_c → sound\_a → 
 ## Playback
 
 - Releasing the button stops only an endless (`loop` 0) sound it started. A sound that plays once or N times plays to its end.
-- Pressing the same button again stops its previous sound and starts the next one, so sounds of one button never overlap. Sounds of different buttons do.
+- Pressing the same button in the same chain again replaces its previous sound. Sounds from different chains can overlap, even at the same coordinates.
+- An omitted `wormhole` or written `0` means no chain change and no warning. A negative destination still warns and moves to chain 1.
 - A `wormhole` that names a chain the pack does not have switches to the nearest chain (chain 1 or the last chain).
+
+The shared playback rules also require:
+
+- A manual wormhole still happens 100 ms after the press if another chain was selected during that wait.
+- Several player inputs holding the same pad keep its endless sound and lights until the last input releases. A release follows the original press even after a chain change.
+- Manual and auto-play presses own their sound and lights separately. Releasing one must not stop what the other currently owns.
+
+App updates are aligning these overlapping-input and timing rules. Single-input playback uses the same format.
 
 ## Text Encoding
 
@@ -72,3 +82,5 @@ Save new files as UTF-8.
 - A warning is logged if the referenced sound file is not found in the `sounds/` folder.
 - A sound file name whose upper and lower case differ from the file in `sounds/` is still found (a file whose case matches exactly is used first). Write names with the same case as the files anyway.
 </Callout>
+
+All numeric fields use ASCII digits `0`–`9` with an optional ASCII `+` or `-`. Mapping, LED and auto-play numbers must fit a signed 32-bit integer. Internally subtracting one must preserve the exact result, including `-2147483649`. Non-ASCII digits are format errors in the shared format; Android support is being aligned.

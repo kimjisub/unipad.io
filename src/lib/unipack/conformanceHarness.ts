@@ -38,9 +38,10 @@ export interface CorpusCase {
   expectation: 'determined' | 'undetermined';
   expected?: Json;
   question?: string;
-  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean }[];
+  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean; input?: string }[];
   /** The grammar items (meta/unipack-conformance/GRAMMAR.md) the case checks. */
   items?: string[];
+  screenInputs?: boolean;
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -230,6 +231,7 @@ export interface WarningCapture {
 export interface Observation { actual: Json; capture: WarningCapture | null }
 
 export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
+  if (c.screenInputs) throw new Error(`${c.id}: requires the play-screen adapter; the lower-level runner cannot observe screen inputs`);
   if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
   const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
   if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
@@ -519,6 +521,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
 
 /** What this platform reports for a case: its result and status, or why the case is not observed here. */
 export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation & { outcome: Outcome }> {
+  if (c.screenInputs) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: 'requires the play-screen adapter; the lower-level runner cannot observe screen inputs' } };
   const unobserved = c.unobserved?.[PLATFORM];
   if (unobserved) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
   const { actual, capture } = await observe(c, corpus, deps);

@@ -7,7 +7,10 @@ The `sounds` folder stores sound files referenced by the `keySound` file.
 | WAV | `.wav` | Recommended (PCM 16bit) |
 | MP3 | `.mp3` | Supported |
 | M4A (AAC) | `.m4a` | Supported |
-| OGG Vorbis | `.ogg` | The iOS app does **not** play it at present. Use WAV, MP3 or M4A for packs played on iOS. |
+| OGG Vorbis | `.ogg` | Supported on Android, iOS and the web. |
+
+The format also allows OGG Opus (`.ogg`). Android and the web play it; iOS support is pending.
+For packs that must play on all current apps, use WAV, MP3, M4A or OGG Vorbis.
 
 A sound is decoded by its content, not its extension: an MP3 saved as `.wav` still plays.
 
@@ -25,7 +28,9 @@ sounds/
 
 <Callout title="Notes">
 - Files are referenced by name in `keySound`, so write paths and names exactly as the files are named, including upper and lower case.
-- If no file has exactly that path, the player uses a file whose path differs only in upper and lower case (e.g., `End.wav` plays `sounds/END.wav`, `FX/Sweep.wav` plays `sounds/fx/sweep.wav`). A folder is never a sound.
+- The shared format resolves an exact path first, then an NFC-equivalent name (composed and decomposed letters), then NFC with letter case ignored. At a fallback, the first full stored path in UTF-16 code-unit order wins. A folder is never a sound.
+- Paths are relative to `sounds/`: backslashes become `/`, leading `/` and `./` are removed, repeated `/` is collapsed, and `.` components are ignored. A path must never escape `sounds/` using `..`.
+- These matching and path rules describe the shared format; app updates are still aligning the less common spellings. Use exact names and ordinary relative paths for compatibility with current versions.
 - Subdirectories are supported (e.g., `fx/sweep.wav`).
 - For compatibility, use only **alphanumeric characters, hyphens, and underscores** in file names.
 - At least **30 sounds** can play at the same time.

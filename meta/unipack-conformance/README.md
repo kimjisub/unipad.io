@@ -12,7 +12,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 
 | File | Role |
 |---|---|
-| `GRAMMAR.md` | The UniPack grammar, edition G4: 104 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
+| `GRAMMAR.md` | The UniPack grammar, edition G6: 105 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
 | `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
 | `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
@@ -84,7 +84,7 @@ so an old file or a record-only one is visible.
 
 **Grammar items.** Every case names the items of [GRAMMAR.md](GRAMMAR.md) it checks (`items`);
 `build-corpus.mjs` refuses a case without them or with a number the grammar does not list. `report.mjs`
-then reports each of the 104 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
+then reports each of the 105 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
 on a platform when
 
 - at least one case checks it;
@@ -97,8 +97,8 @@ on a platform when
   that opens only the exact name passes F-01 too, so Android and iOS confirm F-01 only when their result
   file says `"caseSensitiveFileSystem": true`.
 
-The four numbers it prints: confirmed items per platform of 104, items confirmed on all three platforms
-of 104, and items any case checks of 104 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
+The four numbers it prints: confirmed items per platform of 105, items confirmed on all three platforms
+of 105, and items any case checks of 105 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
 `grammar.withCases`). Five items have no case, because these cases cannot reach them: importing an
 archive (F-05, F-06) and decoding OGG, M4A and a sound whose name does not match its content (A-03 to
 A-05) are for each platform's own tests.
@@ -149,24 +149,15 @@ Each case is reported per platform as exactly one of:
 
 | Status | Meaning |
 |---|---|
-| `pass` | The platform's result equals the expected result, including the two equivalent Android storage representations allowed by T-09 (below). |
+| `pass` | The platform's result equals the expected result. |
 | `fail` | It does not, and nothing in the corpus calls that intended. Pinned in `divergences.json` when it is a known difference, so the suite stays green while the report shows it. |
 | `unsupported` | The platform does not support this format. Pinned like `fail`, with the observed result. |
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
 | `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`) and recorded no result for it, or the case is `undetermined` (below). Never counted as a pass. |
 
-**T-09 storage representations.** In Android KS-B08, the first sound's loop may be `-2147483648`
-or `-2147483649`. In Android KL-BE10, the first LED command's x coordinate, the second command's y
-coordinate and the third command's chain may each use either value. The report compares every other
-field and warning exactly and counts only these equivalent results as `pass`, so they can confirm
-T-09. Positive wraparound, other values and changed format or range warnings still fail. Other
-platforms and pinned differences get no exception.
-
-The app harnesses still record their exact comparisons against the unchanged corpus and pins.
-The report first verifies that original classification, then checks the allowed representations.
-Its JSON keeps the original `actual`, `reportedStatus` and `reportedDetail`, with the T-09 reason
-in `detail`; the text report includes that reason too. This does not change the corpus, expected
-values, pins or app copies, and existing result files for the same corpus can be reported again.
+**T-09 storage.** Every platform stores minus one exactly, including -2147483649 for the
+smallest input integer. Saturating that result at -2147483648 fails KS-B08 / KL-BE10;
+there is no pinned difference or report-only exception.
 
 A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
@@ -208,6 +199,27 @@ iOS, and the queue reset on a chain change (RUN-S-012, RUN-S-013) on iOS (see "W
 harness measures"). RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the autoPlay runner read the wall
 clock) and RUN-L-006, RUN-L-007 (leaving the play screen) were marked on iOS until its harness came to
 record results for them (see `stop` and autoPlay below).
+
+## G6 cases and current app corrections
+
+`g6-cases.mjs` adds 49 cases. Each declares `expectedFailing`: the apps expected to need a
+correction, based on the code comparison. This field never changes classification or expected output.
+Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
+KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
+
+`screenInputs: true` routes a web case through `web-screen.mjs`, which loads the real play hook
+in a DOM process and supplies distinct pointer/MIDI input identities, manual chain selection and
+mode changes. The sound engine and runners stay real; only audio, MIDI transport, storage and the
+clock are replaced. The adapter records calls, not audible output or a real controller.
+A case cannot silently fall back to the lower-level runner when its screen result is missing.
+
+KS-G617..619 require distinct case-sensitive stored paths. The web ZIP can hold these; a host disk
+that cannot must leave them unverified. App adapters must measure filesystem support before overriding
+that limitation. A result recorded on a merged case-insensitive directory is not evidence for them.
+
+The baseline web run on production code 184c1e4b observes 27 G6 failures and 22 G6 passes. All 27
+observations remain failures in reports even while their pins keep the ordinary suite usable.
+Android and iOS observations are recorded separately when their updated adapters run this corpus.
 
 ## Case format
 
@@ -357,7 +369,7 @@ result; an undetermined case never counts as a pass; a case marked `unobserved` 
 unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
 without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
 iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
-`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 104 items,
+`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 105 items,
 `build-corpus.mjs` refuses a case without items or with an unknown or repeated one, and an item is
 confirmed only as described in [What `report.mjs` counts](#running-it).
 

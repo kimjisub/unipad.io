@@ -49,11 +49,31 @@ describe('corpus integrity', () => {
   });
 });
 
+// Screen cases exercise the hook in an isolated DOM process, so chain selection and input ownership
+// are measured where the app actually handles them, rather than recreated by this runner adapter.
+const screenActuals = new Map<string, Json>();
+if (corpus.cases.some((c) => c.screenInputs)) {
+  const run = spawnSync(process.execPath, ['--import', 'tsx', 'meta/unipack-conformance/web-screen.mjs'], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(run.status, 0, `screen adapter failed: ${run.stdout}\n${run.stderr}`);
+  const line = run.stdout.split('\n').find((l) => l.startsWith('UNIPACK-SCREEN-RESULT '));
+  assert.ok(line, 'screen adapter must report its actual results');
+  const result = JSON.parse(line.slice('UNIPACK-SCREEN-RESULT '.length));
+  assert.equal(result.corpusSha256, sha256, 'screen adapter must run the same corpus');
+  for (const entry of result.cases) {
+    assert.equal(screenActuals.has(entry.id), false, `duplicate screen case ${entry.id}`);
+    screenActuals.set(entry.id, entry.actual);
+  }
+}
+
 describe('cases', () => {
   for (const c of corpus.cases) {
     test(`${c.id} ${c.title}`, async () => {
       verifyFingerprint(c, corpus);
-      const { actual, capture, outcome } = await resultFor(c, corpus);
+      const observed = c.screenInputs ? screenActuals.get(c.id) : undefined;
+      if (c.screenInputs) assert.notEqual(observed, undefined, `${c.id}: screen adapter did not execute this case`);
+      const { actual, capture, outcome } = c.screenInputs
+        ? { actual: observed!, capture: null, outcome: classify(c, observed!) }
+        : await resultFor(c, corpus);
       results.push({ id: c.id, fingerprint: c.fingerprint, status: outcome.status, detail: outcome.detail, actual });
       if (capture) captured.push(capturedCase(c, corpus, capture));
       if (RECORD_ONLY) return;
@@ -64,6 +84,16 @@ describe('cases', () => {
 
 // A check that cannot fail proves nothing: each of these breaks one thing the cases above rely on and
 // requires the comparison to notice.
+test('screen input cases cannot pass through the lower-level runner adapter', async () => {
+  for (const c of corpus.cases.filter((c) => c.screenInputs)) {
+    const result = await resultFor(c, corpus);
+    assert.equal(result.actual, null, c.id);
+    assert.equal(result.outcome.status, 'unverified', c.id);
+    assert.match(result.outcome.detail, /play-screen adapter/, c.id);
+    await assert.rejects(observe(c, corpus), /play-screen adapter/, c.id);
+  }
+});
+
 describe('the checks can fail', () => {
   test('a copy of corpus.json that does not hash to its corpus.sha256, or has none, is refused', () => {
     const bytes = readFileSync(corpusPath());
@@ -272,7 +302,11 @@ describe('raw warnings and their number cause', () => {
       assert.deepEqual(causes.map((w) => w.id), ids);
       for (const id of ids) {
         const c = byId(id);
-        const { actual, capture, outcome } = await resultFor(c, corpus);
+        const observed = c.screenInputs ? screenActuals.get(c.id) : undefined;
+      if (c.screenInputs) assert.notEqual(observed, undefined, `${c.id}: screen adapter did not execute this case`);
+      const { actual, capture, outcome } = c.screenInputs
+        ? { actual: observed!, capture: null, outcome: classify(c, observed!) }
+        : await resultFor(c, corpus);
         assert.equal(capture?.warnings?.length, 1, id);
         assert.equal(capture!.warnings![0], `${SECTION_OF[id.slice(0, 2)]}: [${inputOf(c)}] format is incorrect`, id);
         assert.equal(causes.find((w) => w.id === id)?.raw, capture!.warnings![0], `${id}: the tool got the warning as written`);

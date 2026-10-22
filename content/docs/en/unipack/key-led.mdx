@@ -121,3 +121,10 @@ off * 1
 - An `on` or `off` line whose coordinates are outside the pad grid (0, negative, or greater than `buttonX` / `buttonY`) is kept without a warning and skipped when the animation plays; the other lines of the file still play.
 - A warning is logged if `loop` is negative.
 </Callout>
+
+## Colour and release details
+
+Colours use one to six ASCII hex digits. A bare `a`, with no following velocity, means hex `00000A` (almost black), including `on l a` and `on * 1 a`. It does not mean an incomplete auto-colour command. In `on l a FF0000`, `a` does select auto colour and `FF0000` is an invalid velocity; for a logo HEX colour use `on l FF0000` or `on l 0 FF0000`.
+A HEX-only colour sends velocity **4** to the Launchpad; the device colour can differ from the app's RGB colour.
+A wrong column count produces a format warning before round-light index range is checked (including `o mc 99`). Android and web are being aligned on that warning order.
+Releasing an endless animation follows its original press after a chain change. Several player inputs keep it until the last release; manual and auto-play input own their animations separately. App updates are aligning release ownership.
