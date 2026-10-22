@@ -1,5 +1,26 @@
 # Results
 
+## Changes after normalized LED filename ordering and wormhole warning cases (2026-10-22)
+
+The canonical corpus advances from SHA256
+`37096f03b811ae4813ed3a5b68dffbb6da70d741cf67bae4a5c52559e4a8eabf` (204 cases) to
+`f9cd132254aace54890f683ecbc3dca46bfdd6bc0795fd97a63033b5ad0e459e` (210 cases), with grammar G4.
+KL-026 through KL-030 cover composed and decomposed Latin accents and Hangul, and UTF-16 filename
+ordering. KS-023 checks that a wormhole outside the pack's chain range keeps its sound, clamps its
+destination to the nearest chain and records a range warning. The earlier removal of RUN-A-003's
+resolved Android observation-order pin is preserved.
+
+`copies.json` pins the merged Android commit `a1476effb41ecbd6478cbb6bba4d28d14ae32e2c`
+([unipad-android#290](https://github.com/kimjisub/unipad-android/pull/290)) and iOS commit
+`4d450460c7e723646422bcc7df815bfaa167ae32`
+([unipad-ios#188](https://github.com/kimjisub/unipad-ios/pull/188)). Their `corpus.json` and
+`corpus.sha256` copies are byte-identical to the current canonical files (`sync.mjs --check`).
+
+The aggregate tables below have not been regenerated from new platform result files for these
+210 cases or grammar G4. Their counts and timestamps remain historical; matching corpus copies
+alone does not establish new platform results. The following sections retain the earlier corpus
+changes, copy pins and reports.
+
 ## Changes after the Android autoPlay chain-order fix (2026-10-21)
 
 [unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283) fixes the duplicate chain-change

@@ -283,6 +283,18 @@ export function buildCases(palette) {
     basis: [intent('unipad-android UniPackFolder.kt, unipad-ios UniPackFolder.swift, unipad.io parser.ts parseKeySound', 'a keySound line reads six columns and no more')],
   });
   add({
+    id: 'KS-023', items: ['S-07'], area: 'keySound', title: 'a wormhole to a chain the pack does not have keeps the sound, moved to the nearest chain, with a range warning',
+    files: pack({ keySound: lines('1 1 1 a.wav 1 3', '1 1 2 a.wav 1 40', '1 1 3 a.wav 1 -2') }),
+    expected: loaded({
+      sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(0, 0, 1, [q('a.wav', 0, 1)]), cell(0, 0, 2, [q('a.wav', 0, 0)])],
+      errors: Array(3).fill('keySound:range'),
+    }),
+    basis: [
+      intent('unipad-android UniPackFolderWormholeTest, unipad-ios WormholeRangeTests, unipad.io parser.test.ts', 'a wormhole outside 1..chain keeps its sound, moves to the first or the last chain and records "wormhole is incorrect"'),
+      intent('unipad.io src/lib/unipack/conformance.test.ts', '"wormhole is incorrect" is a range warning, like a chain, x or y outside the pack'),
+    ],
+  });
+  add({
     id: 'KS-019', items: ['S-12'], area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
     files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
     expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav')]), cell(0, 0, 1, [q('END.wav')])] }),
@@ -332,6 +344,22 @@ export function buildCases(palette) {
     expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(0, 0, 'ffff0000')]), anim(0, [ev.on(0, 0, 'ff00ff00')])])] }),
     basis: [doc('key-led.mdx', 'Mapping multiple files to the same coordinate creates a circular queue'), intent('unipad.io parser.ts (sort comment), unipad-android UniPackFolder.kt', 'the queue follows file name order, lower-cased')],
   });
+  for (const [id, title, first, second] of [
+    ['KL-026', 'decomposed Latin accent', 'o', 'n\u0303'],
+    ['KL-027', 'composed Latin accent', 'o', '\u00f1'],
+    ['KL-028', 'decomposed Hangul', '\u3131', '\u1100\u1161'],
+    ['KL-029', 'composed Hangul', '\u3131', '\uac00'],
+    ['KL-030', 'UTF-16 code units rather than Unicode scalar order', '\ud83d\ude00', '\ufffd'],
+  ]) {
+    add({
+      id, items: ['L-06', 'L-07'], area: 'keyLed', title: `file name queue: ${title}`,
+      ...led({ [`1 1 1 1 ${second}`]: 'd 20', [`1 1 1 1 ${first}`]: 'd 10' }),
+      expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true,
+        leds: [ledCell(0, 0, 0, [anim(1, [ev.delay(10)]), anim(1, [ev.delay(20)])])] }),
+      basis: [decision('meta/unipack-conformance/GRAMMAR.md L-07, edition G4',
+        'NFC then lower-case UTF-16 comparison gives the same queue for composed and decomposed names; the original paths still identify the files')],
+    });
+  }
   add({
     id: 'KL-005', items: ['L-04'], area: 'keyLed', title: 'a negative loop count in the file name',
     ...led({ '1 1 1 -1': 'f 1 1' }),

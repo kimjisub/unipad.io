@@ -164,10 +164,10 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
 });
 
-test('GRAMMAR.md lists 104 items of edition G3, each of kind parse or output, and the corpus names its edition', () => {
+test('GRAMMAR.md lists 104 items of edition G4, each of kind parse or output, and the corpus names its edition', () => {
   const grammar = readGrammar();
-  assert.equal(grammar.edition, 'G3');
-  assert.equal(corpus.grammar, 'G3');
+  assert.equal(grammar.edition, 'G4');
+  assert.equal(corpus.grammar, 'G4');
   assert.equal(grammar.items.length, 104);
   assert.equal(new Set(grammar.items.map((i) => i.id)).size, 104);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
@@ -186,7 +186,7 @@ test('every case names the grammar items it checks, and the build refuses one wi
   const editing = (edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === 'KS-001' ? edit(structuredClone(c)) : c)));
   assert.throws(editing((c) => { delete c.items; return c; }), /KS-001: names no grammar item/);
   assert.throws(editing((c) => ({ ...c, items: [] })), /KS-001: names no grammar item/);
-  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G3/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G4/);
   assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-01'] })), /KS-001: names an item twice/);
 });
 
@@ -253,7 +253,7 @@ describe('an item is confirmed on a platform', () => {
     assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
     assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
     const text = renderText(buildReport(canonical, results));
-    assert.match(text, new RegExp(`^grammar G3: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 104 items; on all three platforms ${grammar.confirmedOnAllThree} of 104; ${grammar.withCases} of 104 have a case$`, 'm'));
+    assert.match(text, new RegExp(`^grammar G4: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 104 items; on all three platforms ${grammar.confirmedOnAllThree} of 104; ${grammar.withCases} of 104 have a case$`, 'm'));
     assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
   });
 });
@@ -728,8 +728,8 @@ describe('app test results', () => {
     refused('web', { ...web, items: [...web.items, web.items[0]] }, /reports F-05 more than once/);
     refused('android', nativeFile('ios'), /the file is ios's, not android's/);
     refused('web', nativeFile('android'), /the file is android's, not web's/);
-    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G3/);
-    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G3/);
+    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G4/);
+    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G4/);
     refused('web', { ...web, grammar: { version: RECORD.version, revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }, /grammar revision 7a38cd71.* is not the SHA-256/);
     refused('android', nativeFile('android', { sourceDirty: true }), /uncommitted changes/);
     refused('ios', nativeFile('ios', { sourceStatus: ' M unipad/SoundEngine.swift' }), /uncommitted changes/);
@@ -744,7 +744,7 @@ describe('app test results', () => {
       const run = spawnSync(process.execPath, [join(here, 'report.mjs'), '--web-native', old], { encoding: 'utf8' });
       assert.equal(run.status, 3);
       assert.equal(run.stdout, '');
-      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G3/);
+      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G4/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
