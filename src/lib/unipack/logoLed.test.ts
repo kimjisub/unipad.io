@@ -217,14 +217,14 @@ test('invalid pad coordinates neither light nor clear pads, round LEDs or the lo
   t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
   const { runner, sent, tick } = await playOnLaunchpad([
     'o 1b 1 FF0000',
-    'on 0 1 a 7',
+    'on -1 1 a 7',
     'o 9 1 a 7',
     'o 1 1 a 3',
     'o mc 1 a 9',
     'o l a 5',
     'f 1b 1',
-    'off 0 1',
-    'f 0 33',
+    'off -1 1',
+    'f 0 37',
     'd 100',
     'f 1 1',
     'f mc 1',
@@ -313,4 +313,14 @@ test('leaving on a Launchpad without a logo clears its pads without error', asyn
 
     assert.deepEqual(sent, sentFor(profile, (m) => m.clearAllLeds()), profile);
   }
+});
+
+
+test('numeric zero columns send the same round and logo MIDI lights as the apps', async (t) => {
+  t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
+  const { runner, sent, tick } = await playOnLaunchpad('on 0 1 a 7\no 0 33 a 5\nd 100\noff 0 1\nf 0 33');
+  assert.deepEqual(sent, ['b0 5b 07', 'b0 63 05']);
+  tick(100);
+  assert.deepEqual(sent, ['b0 5b 07', 'b0 63 05', 'b0 5b 00', 'b0 63 00']);
+  runner.stop();
 });

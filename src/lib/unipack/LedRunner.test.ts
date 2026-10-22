@@ -83,6 +83,18 @@ describe('LedRunner', () => {
     assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
   });
 
+  test('zero columns light round buttons and invalid zero coordinates stay dark', async () => {
+    const { outputs, press } = await startRunner({
+      '1 1 1': 'on 0 1 a 5\no 0 32 a 5\no 8 0 a 5\no 0 0 a 5\no 0 37 a 5\nd 40\noff 0 1\nf 0 32\nf 8 0\nf 0 0\nf 0 37',
+    });
+    press(0, 0);
+    assert.deepEqual(outputs, [['chainOn', 0, RED, 5], ['chainOn', 31, RED, 5]]);
+    clock.tick(40);
+    assert.deepEqual(outputs, [
+      ['chainOn', 0, RED, 5], ['chainOn', 31, RED, 5], ['chainOff', 0], ['chainOff', 31],
+    ]);
+  });
+
   test('turns a looping animation off on release and stays dark', async () => {
     const { runner, outputs, press } = await startRunner({ '1 1 1 0': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
 
