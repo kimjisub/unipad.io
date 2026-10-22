@@ -115,6 +115,7 @@ export class AutoPlayRunner {
     this.startTime = performance.now();
     if (this.suspendedAt !== null) this.suspendedAt = this.startTime;
     let prevPracticeGuide = this.practiceGuide;
+    let clockStarted = false;
 
     const loop = (): void => {
       if (!this.active) return;
@@ -125,6 +126,13 @@ export class AutoPlayRunner {
       }
 
       const currTime = performance.now();
+
+      // Starting autoplay re-renders the play screen before this first tick runs. The song starts
+      // here, at the position launch or a seek left it, so that wait never shortens the first gap.
+      if (!clockStarted) {
+        clockStarted = true;
+        this.startTime = currTime - this.delayAccum;
+      }
 
       // Detect practice mode toggle
       if (this.practiceGuide !== prevPracticeGuide) {

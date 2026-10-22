@@ -84,8 +84,58 @@ describe('AutoPlayRunner', () => {
       onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
     }, () => 0, () => {}, () => {}, () => {});
     runner.launch();
+    clock.tick(0);
     clock.tick(25);
     assert.deepEqual(events, [['on', 1000], ['off', 1000], ['on', 1010], ['off', 1020]]);
+    runner.stop();
+  });
+
+  // Starting autoplay re-renders the play screen before the first timer runs, so the first note can
+  // play hundreds of milliseconds after the start was requested.
+  const twoNotes = async () => parseUniPack(await packZip({
+    info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 100',
+  }));
+  const noteTimes = (pack: UniPackData) => {
+    const presses: { playedAt: number; pressedAt: number }[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (_x, _y, pressedAt) => { presses.push({ playedAt: clock.now, pressedAt }); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    return { runner, presses };
+  };
+
+  test('the song clock starts when the first note plays, not when a late first tick was requested', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    clock.tick(300);
+    while (presses.length < 2 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [{ playedAt: 1300, pressedAt: 1300 }, { playedAt: 2800, pressedAt: 2800 }]);
+    runner.stop();
+  });
+
+  test('a seek before the first tick keeps its song position when the clock starts', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    runner.progressOffset(3);
+    clock.tick(300);
+
+    assert.deepEqual(presses, [{ playedAt: 1300, pressedAt: 1300 }]);
+    runner.stop();
+  });
+
+  test('a launch while hidden starts the song clock on the first visible tick', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.setSuspended(true);
+    runner.launch();
+    clock.tick(2000);
+    runner.setSuspended(false);
+    clock.tick(300);
+    while (presses.length < 2 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [{ playedAt: 3300, pressedAt: 3300 }, { playedAt: 4800, pressedAt: 4800 }]);
     runner.stop();
   });
 
