@@ -22,9 +22,9 @@ test('an item requires all mapped tests, a successful process and a known enviro
 
 test('the grammar edition and revision come from GRAMMAR.md, the revision being its SHA-256', () => {
   const bytes = readFileSync(new URL('../meta/unipack-conformance/GRAMMAR.md', import.meta.url));
-  assert.deepEqual(grammarRecord(), { version: 'G4', revision: sha256(bytes) });
-  const next = bytes.toString('utf8').replace(/^# UniPack grammar, edition G4\n/, '# UniPack grammar, edition G5\n');
+  assert.deepEqual(grammarRecord(), { version: 'G5', revision: sha256(bytes) });
+  const next = bytes.toString('utf8').replace(/^# UniPack grammar, edition G5\n/, '# UniPack grammar, edition G6\n');
   assert.notEqual(next, bytes.toString('utf8'));
-  assert.deepEqual(grammarRecord(Buffer.from(next)), { version: 'G5', revision: sha256(Buffer.from(next)) });
+  assert.deepEqual(grammarRecord(Buffer.from(next)), { version: 'G6', revision: sha256(Buffer.from(next)) });
   assert.notEqual(grammarRecord(Buffer.from(next)).revision, grammarRecord().revision);
 });

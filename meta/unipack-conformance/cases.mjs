@@ -294,6 +294,19 @@ export function buildCases(palette) {
       intent('unipad.io src/lib/unipack/conformance.test.ts', '"wormhole is incorrect" is a range warning, like a chain, x or y outside the pack'),
     ],
   });
+  const WORMHOLE_FIRST = intent('unipad-android UniPackFolder.kt, unipad-ios UniPackFolder.swift, unipad.io parser.ts parseKeySound', 'the wormhole is checked right after the numbers are read, before chain, x, y and the sound file, so a line skipped for another field still reports it');
+  add({
+    id: 'KS-024', items: ['S-07', 'S-02'], area: 'keySound', title: 'a line with both its wormhole and its chain, x or y outside the pack warns for each',
+    files: pack({ keySound: lines('3 1 1 a.wav 1 9', '1 5 1 a.wav 1 9', '1 1 4 a.wav 1 9', '1 1 2 a.wav') }),
+    expected: loaded({ sounds: [cell(0, 0, 1, [q('a.wav')])], errors: Array(6).fill('keySound:range') }),
+    basis: [WORMHOLE_FIRST],
+  });
+  add({
+    id: 'KS-025', items: ['S-07', 'S-10'], area: 'keySound', title: 'a line with its wormhole outside the pack and a missing sound warns for both, wormhole first',
+    files: pack({ keySound: lines('1 1 1 none.wav 1 9', '1 1 2 a.wav') }),
+    expected: loaded({ sounds: [cell(0, 0, 1, [q('a.wav')])], errors: ['keySound:range', 'keySound:missing-file'] }),
+    basis: [WORMHOLE_FIRST],
+  });
   add({
     id: 'KS-019', items: ['S-12'], area: 'keySound', title: 'a sound name that differs from its file only in case plays the stored file',
     files: pack({ keySound: lines('1 1 1 A.wav', '1 1 2 End.wav'), sounds: ['a.wav', 'END.wav'] }),
@@ -501,6 +514,12 @@ export function buildCases(palette) {
     ...led({ '1 1 1': 'o 9 9 FF0000' }),
     expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(8, 8, 'ffff0000')])])] }),
     basis: [decision('maintainers, 2026-10-12', 'The docs do not say whether coordinates inside a keyLED file are range-checked when parsing. Packs do light positions outside their grid, and a warning per line gives the user nothing to act on: the line is kept as written, without a warning, and skipped when it is lit.')],
+  });
+  add({
+    id: 'KL-031', items: ['E-05', 'E-14'], area: 'keyLed', title: 'numeric zero columns address circular lights but zero rows remain pad events',
+    ...led({ '1 1 1': lines('on 0 1 ffa726 61', 'o 0 32 FF0000', 'off 0 1', 'f 0 32', 'on 8 0 ffa726 61', 'off 8 0', 'o 0 0 FF0000', 'f 0 0', 'o 0 37 FF0000', 'f 0 37') }),
+    expected: loaded({ sounds: [cell(0, 3, 2, [q('c.wav')])], keyLedExist: true, leds: [ledCell(0, 0, 0, [anim(1, [ev.on(-1, 0, 'ffffa726', 61), ev.on(-1, 31, 'ffff0000'), ev.off(-1, 0), ev.off(-1, 31), ev.on(7, -1, 'ffffa726', 61), ev.off(7, -1), ev.on(-1, -1, 'ffff0000'), ev.off(-1, -1), ev.on(-1, 36, 'ffff0000'), ev.off(-1, 36)])])] }),
+    basis: [intent('Android UniPackFolder.zeroBased and LedRunner; iOS UniPackFolder and LedRunner', 'Both parsers subtract one from each numeric coordinate; only first coordinate -1 selects circular lights. Invalid coordinates are retained without warnings and skipped when lit.'), VEL4],
   });
   add({
     id: 'KL-025', items: ['T-08', 'E-12'], area: 'keyLed', title: 'a comment-like line inside a keyLED file',
@@ -945,6 +964,12 @@ export function buildCases(palette) {
     [press(0, 0), advance(20), observe, advance(40), observe],
     [[['ledOn', 0, 0, GREEN, 4]], [['ledOff', 0, 0]]],
     [G1('RL-12', 'A light event outside the pad grid is kept when the file is read (E-14) and skipped when it is lit; the other events of the file come out as written.'), VEL4]);
+
+  run('RUN-L-015', ['E-05', 'RL-12'], 'led', 'zero columns light the first and last round buttons while invalid zero coordinates stay dark',
+    ledPack('1 1 1', lines('on 0 1 FF0000', 'o 0 32 00FF00', 'o 8 0 FF0000', 'o 0 0 FF0000', 'o 0 37 FF0000', 'd 40', 'off 0 1', 'f 0 32', 'f 8 0', 'f 0 0', 'f 0 37')),
+    [press(0, 0), advance(20), observe, advance(40), observe],
+    [[['ledOn', -1, 0, RED, 4], ['ledOn', -1, 31, GREEN, 4]], [['ledOff', -1, 0], ['ledOff', -1, 31]]],
+    [intent('Android LedRunner and iOS LedRunner', 'A numeric zero column uses the circular light table; a zero row alone stays outside the pad table. Both reject indices outside their 36 circular slots.'), VEL4]);
 
   const autoFiles = pack({ keySound: lines('1 1 1 a.wav', '2 1 1 b.wav'), autoPlay: lines('on 1 1', 'delay 100', 'off 1 1', 'delay 100', 'touch 2 1') });
   run('RUN-A-001', ['RA-01'], 'autoPlay', 'autoPlay presses and releases on its delays',

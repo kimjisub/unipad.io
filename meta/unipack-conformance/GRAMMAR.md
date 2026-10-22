@@ -1,4 +1,8 @@
-# UniPack grammar, edition G4
+# UniPack grammar, edition G5
+
+G5 also clarifies S-07: validate a wormhole before other pad fields and missing sound files (KS-024 and KS-025).
+
+G5 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular lights; a zero second coordinate alone remains an out-of-grid pad event. Numeric coordinates are kept without warnings, including invalid circular indices, which are skipped when lit.
 
 G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code units,
 without changing the paths used to open them. Decomposed accents and Hangul must queue as their
@@ -115,7 +119,7 @@ releasing after the chain changed (Android, web).
 | S-04 | A number column (chain, x, y, loop, wormhole) that is not an integer (letters, a decimal point, trailing letters) skips the line with a format warning. | parse | apps agree | the basis of the cases.mjs KS-M cases |
 | S-05 | loop: left out or 1 plays once, 0 endlessly, N (2 or more) N times in all. It is stored minus one (-1 endless, 0 once). | parse | doc | key-sound.mdx Loop Values |
 | S-06 | wormhole: the sixth column, the chain a press of that sound moves to. | parse | doc | key-sound.mdx syntax and example |
-| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` 278-281 and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain) |
+| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. The wormhole is checked before chain, x, y and the sound file, so a line skipped for one of those (S-02, S-10) still records this warning, before the other one. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` parseKeySound and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain). All three check the wormhole first after the iOS parser correction. Which sounds are placed does not depend on the order. |
 | S-08 | Columns after the sixth are ignored. | parse | apps agree | The three apps' code (not in the docs) |
 | S-09 | Several sounds on one pad form a queue in the order of the file. | parse | doc | key-sound.mdx Circular Queue |
 | S-10 | A line naming a sound file that is not under `sounds/` is skipped with a missing-sound warning. | parse | doc | key-sound.mdx validation |
@@ -155,7 +159,7 @@ releasing after the chain changed (Android, web).
 | E-02 | A colour is up to 6 hex digits without `#`. 7 digits or more, a `#`, or a character that is not hex drops the line with a format warning. | parse | doc | key-led.mdx Color Specification |
 | E-03 | A hex colour alone carries velocity 4. A velocity after a hex colour (0..127) is what goes to the Launchpad; a value above 127 is kept as written. | parse | apps agree | cases.mjs VEL4, KL-020 (the docs give no default) |
 | E-04 | `auto`/`a` followed by a velocity 0..127 is that colour of the palette (C-01). A missing or out-of-range velocity drops the line with a format warning. | parse | doc | key-led.mdx Color Specification |
-| E-05 | `*` or `mc` followed by 1..32 is a round (chain) button light. 0, 33 and other numbers out of range are dropped without a warning; a value that is not a number is a format warning. | parse | doc | key-led.mdx Special Coordinates |
+| E-05 | `*` or `mc` followed by 1..32 is a round (chain) button light. Numeric `on 0 n` / `off 0 n` (also `o` / `f`) keep the same internal address `(-1, n-1)`; n=1..32 addresses the same round buttons. Numeric coordinates follow E-14 rather than the token-specific range check. For `*` and `mc`, 0, 33 and other numbers out of range are dropped without a warning; a value that is not a number is a format warning. | parse | apps agree | key-led.mdx Special Coordinates; Android/iOS UniPackFolder numeric coordinates |
 | E-06 | `l` is the logo light (the 33rd round button position). `o l colour`, `o l auto v`, `o l _ colour` and `f l` are read; a malformed logo line is a format warning. | parse | G1 decision | key-led.mdx says "not supported, ignored"; all three apps light it (cases.mjs LOGO). Decided: keep the apps, correct the docs. |
 | E-07 | `off x y` with too few coordinates, or letters, is a format warning. | parse | apps agree | cases.mjs KL-M08 to M10 |
 | E-08 | `delay ms` that is not an integer, or has no value, is a format warning. | parse | apps agree | cases.mjs KL-M20 to M22 |
@@ -164,7 +168,7 @@ releasing after the chain changed (Android, web).
 | E-11 | The columns of an `on` line: `on x y colour`, `on x y colour v` or `on x y auto v` only. Too few, too many, or a velocity in letters is a format warning. | parse | doc | key-led.mdx validation ("4 tokens / 5 tokens") |
 | E-12 | A line with an unknown command is skipped with a format warning. | parse | doc | key-led.mdx validation ("skipped") |
 | E-13 | Letters mixed into a coordinate (`1b`) are a format warning. | parse | apps agree | cases.mjs KL-M04 to M06 |
-| E-14 | An `on` or `off` outside the pad grid (0, negative, beyond buttonX or buttonY) is kept as written without a warning and skipped when lit (RL-12). | parse | G1 decision | cases.mjs KL-024 (a maintainers' decision). Packs in the official store do this; the web drops such lines with a warning today. |
+| E-14 | Numeric `on` or `off` coordinates are kept after subtracting one from each, without a warning. First coordinate 0 becomes the circular address -1 (E-05); the runner accepts circular indices 0..35, including logo index 32. Other coordinates outside the pad grid (a zero second coordinate, negatives, or beyond buttonX/buttonY) and circular indices outside 0..35 are skipped when lit (RL-12). | parse | G1 decision | cases.mjs KL-024 (a maintainers' decision). G5: Android UniPackFolder.zeroBased/LedRunner and iOS UniPackFolder/LedRunner agree. `on 8 0` stays a pad event at (7,-1); it is not a round-light alias. |
 | E-15 | An empty LED file still counts as one animation of its pad. | parse | apps agree | cases.mjs KL-021 |
 
 ### P. autoPlay commands (8)
@@ -210,7 +214,7 @@ releasing after the chain changed (Android, web).
 | RL-09 | Pressing a pad again during its animation turns that animation's lights off and starts the next animation from its beginning. | output | apps agree | cases.mjs RUN-L-008 (AGREED) |
 | RL-10 | Several animations on one pad play in turn, one per press. | output | doc | key-led.mdx "circular queue" |
 | RL-11 | When two animations light the same light, the later one owns it, and the other animation's `off` does not turn it off. | output | apps agree | Not in the docs. The three apps agree (Android `LedRunner.kt` 134-157, iOS 169 and 185, web 140, 151 and 177) |
-| RL-12 | A light event outside the pad grid is skipped when lit, and the other events of the same file come out as written. | output | G1 decision | E-14 |
+| RL-12 | A light event outside the pad grid is skipped when lit, except a numeric first coordinate of 0, which selects the circular table (E-05/E-14). Circular indices outside 0..35 are skipped too. The other events of the same file come out as written. | output | G1 decision | E-14 |
 
 ### RA. Running: autoPlay (4)
 
