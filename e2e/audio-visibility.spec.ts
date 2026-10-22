@@ -7,6 +7,7 @@ interface AudioTimeline {
   starts: { soundTime: number; wallTime: number }[];
   lightTimes: number[];
   observer?: MutationObserver;
+  hidden?: Promise<{ soundTime: number; wallTime: number; output: number; starts: number }>;
 }
 declare global { interface Window { audioTimeline: AudioTimeline } }
 
@@ -54,16 +55,25 @@ test('a long sample, the next note and finite lights share the paused audio time
       }
     });
     window.audioTimeline.observer.observe(document.body, { subtree: true, attributes: true, childList: true });
+    // Hide at the first audible frame in the page, before slow automation round trips can
+    // let the next note run. Keep audio and timers real throughout the measurement.
+    window.audioTimeline.hidden = new Promise(resolve => {
+      const hideWhenAudible = () => {
+        const light = document.querySelector('[data-pad="0,1"] div.z-10');
+        const output = window.browserProbe.audio.outputRms() ?? 0;
+        if (window.audioTimeline.starts.length === 1 && output > 0.01 && light && getComputedStyle(light).backgroundColor === 'rgb(239, 83, 80)') {
+          Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+          resolve({ soundTime: window.audioTimeline.context!.currentTime, wallTime: performance.now(), output, starts: window.audioTimeline.starts.length });
+        } else requestAnimationFrame(hideWhenAudible);
+      };
+      requestAnimationFrame(hideWhenAudible);
+    });
   });
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.audioTimeline.starts.length), { timeout: stateTimeout }).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputRms() ?? 0)).toBeGreaterThan(0.01);
-  await expect(page.locator('[data-pad="0,1"] div.z-10')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
-  const hidden = await page.evaluate(() => {
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    return { soundTime: window.audioTimeline.context!.currentTime, wallTime: performance.now() };
-  });
+  const hidden = await page.evaluate(() => window.audioTimeline.hidden!);
+  expect(hidden.starts).toBe(1);
+  expect(hidden.output).toBeGreaterThan(0.01);
   // Real audio time and the real audio device keep running unless the application suspends them.
   await page.waitForTimeout(2000);
   const frozen = await page.evaluate(() => ({

@@ -92,15 +92,18 @@ test('a chain button choice cancels an earlier sound wormhole', async ({ page },
 
 test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
+  const first = page.getByRole('button', { name: 'Chain 9', exact: true });
+  await first.dispatchEvent('pointerdown'); await page.clock.runFor(16);
+  await expect(first.locator('div.z-10')).toHaveCount(1);
   await page.keyboard.press('1');
   await page.clock.runFor(50);
   await visibility(page, true); await page.clock.fastForward(5000);
-  const first = page.getByRole('button', { name: 'Chain 9', exact: true });
   await info.attach('hidden-wormhole', { body: await page.screenshot(), contentType: 'image/png' });
   await expect(first.locator('div.z-10')).toHaveCount(1);
   await visibility(page, false); await page.clock.runFor(49);
+  await info.attach('before-wormhole-deadline', { body: await page.screenshot(), contentType: 'image/png' });
   await expect(first.locator('div.z-10')).toHaveCount(1);
-  await page.clock.runFor(1);
+  await page.clock.runFor(17);
   await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
   await info.attach('resumed-wormhole', { body: await page.screenshot(), contentType: 'image/png' });
 });
