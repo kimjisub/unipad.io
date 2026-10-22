@@ -26,10 +26,11 @@ stub('../../lib/unipack/index.ts', { ...real,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-let now, nextId, timers, starts, hidden, midiListener;
+let now, nextId, timers, starts, hidden, midiListener, audio, audioContexts;
 const flush = async action => act(async () => { await action?.(); });
 const tick = async ms => flush(() => {
   now += ms;
+  if (audio?.state === 'running') audio.currentTime += ms / 1000;
   // A late browser tick dispatches each already-due callback once, without replaying newly queued timers.
   for (const [id, timer] of [...timers]) if (timer.at <= now && timers.delete(id)) timer.run();
 });
@@ -38,7 +39,7 @@ const visibility = async value => flush(() => {
   document.dispatchEvent(new window.Event('visibilitychange'));
 });
 beforeEach(() => {
-  now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false;
+  now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false; audioContexts = []; audio = null;
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   mock.method(performance, 'now', () => now);
   const later = (run, ms = 0) => { const id = ++nextId; timers.set(id, { at: now + ms, run }); return id; };
@@ -49,7 +50,15 @@ beforeEach(() => {
   window.requestAnimationFrame = globalThis.requestAnimationFrame = run => later(run, 0);
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame = id => timers.delete(id);
   globalThis.AudioContext = class {
-    state = 'running'; destination = {};
+    state = 'running'; destination = {}; currentTime = 0;
+    suspends = 0; resumes = 0; pendingResume = null;
+    constructor() { audioContexts.push(this); }
+    async suspend() { this.suspends++; this.state = 'suspended'; }
+    async resume() {
+      this.resumes++;
+      if (this.pendingResume) await this.pendingResume;
+      if (this.state !== 'closed') this.state = 'running';
+    }
     createGain() { return { gain: { value: 1 }, connect() {} }; }
     async decodeAudioData() { return { duration: 0.1 }; }
     createBufferSource() { return { connect() {}, start() { starts.push(now); }, stop() {} }; }
@@ -69,6 +78,7 @@ async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1
   const view = renderHook(useUniPadEngine);
   await flush(() => view.result.current.loadUniPack(data));
   assert.equal(view.result.current.state.loaded, true);
+  audio = audioContexts.at(-1);
   return view;
 }
 const draw = () => tick(0);
@@ -246,4 +256,101 @@ test('a controller chain choice cancels the pending wormhole', async () => {
   await flush(() => midiListener.onChainTouch(2));
   await tick(100);
   assert.equal(result.current.state.chain, 2);
+});
+
+
+test('visibility freezes an active long sound with the remaining autoplay and light delay', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(100); await draw();
+  const soundTime = audio.currentTime;
+  await visibility(true);
+  assert.equal(audio.suspends, 1);
+  await tick(5000);
+  assert.equal(audio.currentTime, soundTime, 'the sample must not advance while its sequencer is frozen');
+  await visibility(false); await tick(899); await draw();
+  assert.equal(starts.length, 1);
+  await tick(1); await draw();
+  assert.equal(starts.length, 2);
+  assert.equal(audio.currentTime - soundTime, 0.9);
+});
+
+test('the sequencer waits for asynchronous audio resume before counting its remaining delay', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
+  await visibility(true); await tick(5000);
+  let finishResume;
+  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false); await tick(2000);
+  assert.equal(starts.length, 1, 'a slow resume must not advance the sequencer');
+  await flush(finishResume); await tick(899);
+  assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+test('a gesture while hidden does not resume suspended audio', async () => {
+  await mount();
+  await visibility(true);
+  const resumes = audio.resumes;
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  assert.equal(audio.resumes, resumes);
+  assert.equal(audio.state, 'suspended');
+});
+
+test('hiding again during a pending audio resume keeps the sequencer frozen', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
+  await visibility(true);
+  let finishResume;
+  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false);
+  await visibility(true);
+  await flush(finishResume); await tick(5000);
+  assert.equal(starts.length, 1);
+});
+
+test('a rejected audio resume keeps playback frozen until the next visible gesture', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
+  await visibility(true);
+  const resume = audio.resume.bind(audio);
+  audio.resume = async () => { throw new Error('activation refused'); };
+  await visibility(false); await tick(2000);
+  assert.equal(starts.length, 1);
+  assert.equal(audio.state, 'suspended');
+  audio.resume = resume;
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  assert.equal(audio.state, 'running');
+  await tick(899); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+
+test('an obsolete resume cannot restart a new pack after unloading', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
+  await visibility(true);
+  let finishResume;
+  const oldAudio = audio;
+  oldAudio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false);
+  await flush(() => result.current.unload());
+  await flush(finishResume); await tick(5000);
+  assert.equal(oldAudio.state, 'closed');
+  assert.equal(result.current.state.loaded, false);
+  assert.equal(starts.length, 1);
+});
+
+test('an audio resume that resolves without running does not restart the sequencer', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
+  await visibility(true);
+  const resume = audio.resume.bind(audio);
+  audio.resume = async () => {};
+  await visibility(false); await tick(2000);
+  assert.equal(audio.state, 'suspended');
+  assert.equal(starts.length, 1);
+  audio.resume = resume;
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  await tick(900); assert.equal(starts.length, 2);
 });

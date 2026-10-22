@@ -39,6 +39,7 @@ export class SoundEngine {
   private loaded = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
   private pendingChainChanges = new Set<ReturnType<typeof setTimeout>>();
+  private visibilitySuspended = false;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -63,16 +64,18 @@ export class SoundEngine {
     // The context is created after several awaits (file read, zip parse), i.e. outside the
     // user-gesture window, so Safari and autoplay-policy Chrome start it suspended and the
     // first pack played silently. Resume on the next gesture until it is running.
-    void this.resume();
+    void (typeof document !== 'undefined' && document.hidden
+      ? this.setSuspended(true) : this.resume()).catch(() => {});
     if (typeof document !== 'undefined') {
       const resumeOnGesture = () => {
+        if (this.visibilitySuspended) return;
         if (this.audioContext.state === 'running' || this.audioContext.state === 'closed') {
           this.removeGestureResume();
           return;
         }
-        void this.audioContext.resume().then(() => {
+        void this.resume().then(() => {
           if (this.audioContext.state === 'running') this.removeGestureResume();
-        });
+        }).catch(() => {});
       };
       this.gestureResume = resumeOnGesture;
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
@@ -143,9 +146,18 @@ export class SoundEngine {
   }
 
   async resume(): Promise<void> {
-    if (this.audioContext.state === 'suspended') {
+    if (!this.visibilitySuspended && this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
+  }
+
+  /** Freeze existing sources and scheduled sample ends on the audio device's own clock. */
+  async setSuspended(suspended: boolean): Promise<void> {
+    this.visibilitySuspended = suspended;
+    if (this.audioContext.state === 'closed') return;
+    if (suspended) await this.audioContext.suspend();
+    // Always enqueue resume, even if an earlier suspend has not changed state yet.
+    else await this.audioContext.resume();
   }
 
   private stopKey(chain: number, x: number, y: number): string {

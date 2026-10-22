@@ -3,8 +3,14 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 
+declare global { interface Window { transitionAudio: AudioContext } }
+
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 async function open(page: Page, autoPlay: string, wormhole = false) {
+  await page.addInitScript(() => {
+    const gain = AudioContext.prototype.createGain;
+    AudioContext.prototype.createGain = function () { window.transitionAudio = this; return gain.call(this); };
+  });
   const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
   zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=3'));
   zip.file('keySound', `1 1 1 tone.wav 1${wormhole ? ' 2' : ''}\n1 1 2 tone.wav\n2 1 1 tone.wav\n3 1 1 tone.wav`);
@@ -23,6 +29,7 @@ async function visibility(page: Page, hidden: boolean) {
     Object.defineProperty(document, 'hidden', { configurable: true, value });
     document.dispatchEvent(new Event('visibilitychange'));
   }, hidden);
+  await expect.poll(() => page.evaluate(() => window.transitionAudio.state)).toBe(hidden ? 'suspended' : 'running');
 }
 async function capture(page: Page, info: TestInfo) {
   const path = info.outputPath('returned.png');

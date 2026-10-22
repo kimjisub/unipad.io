@@ -1449,27 +1449,57 @@ export function useUniPadEngine() {
 
   // Android onPause/onResume: 탭 전환 시 wake lock 관리 및 MIDI LED 클리어
   useEffect(() => {
+    let visibilityRevision = 0;
+    let pausedForVisibility = document.hidden;
+    const resumeVisiblePlayback = () => {
+      if (document.hidden || !pausedForVisibility) return;
+      const sound = soundEngineRef.current;
+      const revision = ++visibilityRevision;
+      void (async () => {
+        if (sound) {
+          await sound.setSuspended(false);
+          if (sound.context.state !== 'running') return;
+        }
+        // A late resume must not restart a hidden tab, another pack, or an unmounted player.
+        if (revision !== visibilityRevision || document.hidden || sound !== soundEngineRef.current) return;
+        autoPlayRunnerRef.current?.setSuspended(false);
+        ledRunnerRef.current?.setSuspended(false);
+        pausedForVisibility = false;
+        syncMidiStateToDevice();
+      })().catch(() => {
+        // Keep the runners frozen; a visible user gesture retries audio activation.
+      });
+    };
     const handleVisibilityChange = () => {
-      autoPlayRunnerRef.current?.setSuspended(document.hidden);
-      ledRunnerRef.current?.setSuspended(document.hidden);
       if (document.hidden) {
-        // onPause: wake lock 해제, MIDI LED 클리어
+        pausedForVisibility = true;
+        visibilityRevision++;
+        autoPlayRunnerRef.current?.setSuspended(true);
+        ledRunnerRef.current?.setSuspended(true);
+        void soundEngineRef.current?.setSuspended(true).catch(() => {});
         wakeLockRef.current?.release().catch(() => {});
         wakeLockRef.current = null;
         midiRef.current?.clearAllLeds?.();
       } else {
-        // onResume: wake lock 재취득, MIDI LED 상태 복원
+        resumeVisiblePlayback();
         if (soundEngineRef.current) {
           navigator.wakeLock?.request('screen').then((lock) => {
             wakeLockRef.current = lock;
           }).catch(() => {});
-          soundEngineRef.current.resume();
-          syncMidiStateToDevice();
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+      document.addEventListener(type, resumeVisiblePlayback, { capture: true, passive: true });
+    }
+    return () => {
+      visibilityRevision++;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+        document.removeEventListener(type, resumeVisiblePlayback, { capture: true });
+      }
+    };
   }, [syncMidiStateToDevice]);
 
   useEffect(() => {
