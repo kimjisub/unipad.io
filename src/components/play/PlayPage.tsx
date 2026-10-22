@@ -976,6 +976,45 @@ export function PlayPage() {
     />
   );
 
+  // The same error dialog is needed when an import fails before the player is mounted.
+  const errorDialog = errorDialogShown && state.errors.length > 0 && (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
+        if (!state.criticalError) setErrorDialogShown(false);
+      }} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
+        <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
+              {state.criticalError ? t('error') : t('warning')}
+            </h2>
+            <span className="text-[10px] text-white/40">
+              {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+            {state.errors.map((err, i) => (
+              <ErrorMessageItem key={i} message={err} />
+            ))}
+          </div>
+          <button
+            className={`w-full py-2 rounded-lg text-sm font-medium ${
+              state.criticalError
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+            onClick={() => {
+              setErrorDialogShown(false);
+              if (state.criticalError) handleQuit();
+            }}
+          >
+            {state.criticalError ? t('quit') : t('ok')}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
   // Loading spinner
   if (restoringFromStorage) {
     return (
@@ -999,7 +1038,7 @@ export function PlayPage() {
           savedThemes={savedThemes}
           activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
-          keyboardDisabled={storeOpen}
+          keyboardDisabled={storeOpen || dialogOpen}
           onPlay={handlePlay}
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
@@ -1040,6 +1079,7 @@ export function PlayPage() {
         />
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
+        {errorDialog}
 
         <AnimatePresence>
           {toast && (
@@ -1624,44 +1664,7 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Error/Warning Dialog */}
-      {errorDialogShown && state.errors.length > 0 && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
-            if (!state.criticalError) setErrorDialogShown(false);
-          }} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
-            <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {state.criticalError ? t('error') : t('warning')}
-                </h2>
-                <span className="text-[10px] text-white/40">
-                  {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {state.errors.map((err, i) => (
-                  <ErrorMessageItem key={i} message={err} />
-                ))}
-              </div>
-              <button
-                className={`w-full py-2 rounded-lg text-sm font-medium ${
-                  state.criticalError
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-                onClick={() => {
-                  setErrorDialogShown(false);
-                  if (state.criticalError) handleQuit();
-                }}
-              >
-                {state.criticalError ? t('quit') : t('ok')}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      {errorDialog}
 
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
