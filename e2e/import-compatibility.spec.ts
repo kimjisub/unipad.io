@@ -9,12 +9,14 @@ async function fixture(edit: (zip: JSZip) => Promise<void> | void) {
   return { name: 'compatibility.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
 }
 
-async function importPack(page: Page, info: TestInfo, file: Awaited<ReturnType<typeof fixture>>) {
+async function importPack(page: Page, file: Awaited<ReturnType<typeof fixture>>) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
-  await expect.poll(async () => (await page.locator('[data-pad]').count()) + (await page.getByRole('alertdialog').count())).toBeGreaterThan(0);
-  await info.attach('import-screen', { body: await page.screenshot(), contentType: 'image/png' });
-  await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
+}
+
+async function capture(page: Page, info: TestInfo, name: string) {
+  await info.attach(`${name}-screen`, { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach(`${name}-audio-requests`, { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
 }
 
 test('canonically equivalent sound names import without warnings and play', async ({ page }, info) => {
@@ -26,11 +28,12 @@ test('canonically equivalent sound names import without warnings and play', asyn
     zip.file(`sounds/${'소리.wav'.normalize('NFD')}`, data);
     zip.file('keySound', mapping.replaceAll(sound.name.slice('sounds/'.length), '소리.wav'));
   });
-  await importPack(page, info, file);
+  await importPack(page, file);
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-pad="0,0"]').click();
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await capture(page, info, 'played');
 });
 
 test('Windows archive separators preserve sounds and lights', async ({ page }, info) => {
@@ -39,14 +42,14 @@ test('Windows archive separators preserve sounds and lights', async ({ page }, i
     for (const name of Object.keys(zip.files)) zip.remove(name);
     for (const [name, data] of entries) zip.file(`Pack\\${name.replaceAll('/', '\\')}`, data);
   });
-  await importPack(page, info, file);
+  await importPack(page, file);
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-pad="0,0"]').hover();
   await page.mouse.down();
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
   await expect(page.locator('[data-pad="0,1"] div[style*="background-color"]')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
-  await info.attach('playing-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  await capture(page, info, 'playing');
   await page.mouse.up();
 });
 
@@ -58,9 +61,10 @@ test('a root pack opens instead of an earlier backup', async ({ page }, info) =>
     zip.file('backup/keySound', '');
     zip.file('info', original);
   });
-  await importPack(page, info, file);
+  await importPack(page, file);
   await expectPads(page);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+  await capture(page, info, 'root-pack');
 });
 
 for (const [name, edit, reason] of [
@@ -73,21 +77,29 @@ for (const [name, edit, reason] of [
   ['invalid chain count', async (zip: JSZip) => zip.file('info', (await zip.file('info')!.async('string')).replace(/chain=\d+/, 'chain=25')), /chain out of range/],
 ] as const) {
   test(`explains why it refuses ${name}`, async ({ page }, info) => {
-    await importPack(page, info, await fixture(async zip => { await edit(zip); }));
+    await importPack(page, await fixture(async zip => { await edit(zip); }));
     await expect(page.getByRole('alertdialog', { name: 'Error', exact: true })).toContainText(reason);
     await expect(page.locator('[data-pad]')).toHaveCount(0);
+    await capture(page, info, 'refused');
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(page.getByText('No UniPacks installed', { exact: true })).toBeVisible();
+    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await fixture(() => {}));
+    await expectPads(page);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await capture(page, info, 'recovered');
   });
 }
 
 for (const website of ['unipad.io', 'javascript:alert(1)']) {
   test(`uses a safe absolute website link for ${website}`, async ({ page }, info) => {
-    await importPack(page, info, await fixture(async zip => { zip.file('info', `${await zip.file('info')!.async('string')}\nwebsite=${website}`); }));
+    await importPack(page, await fixture(async zip => { zip.file('info', `${await zip.file('info')!.async('string')}\nwebsite=${website}`); }));
     await expectPads(page);
     await page.getByRole('button', { name: 'Open menu', exact: true }).click();
     await page.getByRole('button', { name: 'Toggle pack info', exact: true }).click();
-    await info.attach('website-screen', { body: await page.screenshot(), contentType: 'image/png' });
     const link = page.getByRole('link', { name: 'Website', exact: true });
     if (website === 'unipad.io') await expect(link).toHaveAttribute('href', 'https://unipad.io');
     else await expect(link).toHaveCount(0);
+    await capture(page, info, 'website');
   });
 }

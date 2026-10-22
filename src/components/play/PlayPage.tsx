@@ -285,13 +285,13 @@ export function PlayPage() {
     };
   }, [downloadingStoreCode]);
 
-  // 로딩 완료 후 에러가 있으면 다이얼로그 표시
+  // A refused pack never becomes loaded, but its critical error still needs a visible reason.
   useEffect(() => {
-    if (state.loaded && !prevLoadedRef.current && state.errors.length > 0) {
+    if ((state.criticalError || (state.loaded && !prevLoadedRef.current)) && state.errors.length > 0) {
       setErrorDialogShown(true);
     }
     prevLoadedRef.current = state.loaded;
-  }, [state.loaded, state.errors]);
+  }, [state.loaded, state.criticalError, state.errors]);
 
   // A new pack supplies defaults. Read preferences again before saving any of them.
   const [restoredSettings, setRestoredSettings] = useState<{

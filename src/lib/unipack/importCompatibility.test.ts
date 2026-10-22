@@ -60,6 +60,15 @@ describe('archive and sound import compatibility', () => {
     assert.equal(pack.soundCount, 1);
   });
 
+  test('ignores hidden info sidecars when finding the unique pack', async () => {
+    const pack = await parseUniPack(await packZip({
+      '.backup/info': info, '__MACOSX/info': info,
+      'Pack/info': info, 'Pack/keySound': '1 1 1 a.wav', 'Pack/sounds/a.wav': SILENT_WAV,
+    }));
+    assert.deepEqual(pack.errors, []);
+    assert.equal(pack.soundCount, 1);
+  });
+
   for (const names of [['A/', 'B/'], ['outer/A/', 'outer/B/']]) {
     test(`refuses multiple packs with a specific reason (${names.join(', ')})`, async () => {
       const files = Object.fromEntries(names.flatMap(prefix => [[`${prefix}info`, info], [`${prefix}keySound`, '']]));

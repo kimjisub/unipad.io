@@ -119,7 +119,8 @@ export async function parseUniPack(
 
 function findRootPrefix(zip: JSZip): string {
   const infos = Object.entries(zip.files).filter(([path, file]) => !file.dir
-    && path.split('/').at(-1)?.toLowerCase() === 'info' && !path.split('/').includes('__MACOSX'));
+    && path.split('/').at(-1)?.toLowerCase() === 'info'
+    && !path.split('/').some(part => part.startsWith('.') || part === '__MACOSX'));
   let prefix = '';
   for (;;) {
     // Prefer the pack at the current root to any backup nested inside it.
