@@ -4,6 +4,8 @@ G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code
 without changing the paths used to open them. Decomposed accents and Hangul must queue as their
 composed spellings do. Names equal under this comparison retain their input listing order;
 archives containing canonically equivalent duplicate paths are outside this rule.
+G4 also clarifies S-07's existing behavior in all three apps: retain a sound with an out-of-range
+wormhole destination, clamp it to the nearest chain and record a range warning (KS-023).
 G3 corrects E-09: a negative delay shortens later waits but never takes back time already waited.
 G2 added T-09: numeric fields are signed decimal 32-bit integers; larger numbers are format errors.
 
