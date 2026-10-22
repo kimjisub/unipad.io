@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
@@ -21,8 +22,8 @@ async function open(page: Page, autoPlay: string, wormhole = false) {
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 100));
+  // pauseAt also installs the clock, so no host-time deadline can expire in transit.
+  await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
 }
 async function visibility(page: Page, hidden: boolean) {
   await page.evaluate(value => {
@@ -106,4 +107,27 @@ test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ 
   await page.clock.runFor(17);
   await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
   await info.attach('resumed-wormhole', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+
+test('clock initialization stays deterministic when its pause command is delayed 200 ms', async ({ page }, info) => {
+  const pauseAt = page.clock.pauseAt.bind(page.clock);
+  let delayedCommands = 0;
+  page.clock.pauseAt = async time => {
+    delayedCommands++;
+    await delay(200);
+    await pauseAt(time);
+  };
+  await open(page, 'd 10000\no 1 1\nf 1 1');
+  const stopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
+  await delay(200);
+  const stillStopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
+  await page.clock.runFor(50);
+  const advanced = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
+  await info.attach('delayed-clock-initialization', { body: JSON.stringify({ delayedCommands, stopped, stillStopped, advanced }, null, 2), contentType: 'application/json' });
+  expect(delayedCommands).toBe(1);
+  expect(stopped.date).toBe(Date.parse('2024-01-01T00:00:00.000Z'));
+  expect(stillStopped).toEqual(stopped);
+  expect(advanced.date - stopped.date).toBe(50);
+  expect(advanced.ticks - stopped.ticks).toBe(50);
 });
