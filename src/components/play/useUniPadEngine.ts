@@ -17,6 +17,8 @@ import {
   loadThemeFromZip,
   getDefaultTheme,
   releaseThemeUrls,
+  getSetting,
+  setSetting,
 } from '@/lib/unipack';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
@@ -181,6 +183,9 @@ export function useUniPadEngine() {
   const padStatesRef = useRef<PadState[][]>([]);
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
+  // A mode's temporary light is separate from the browser's explicit user preference.
+  const feedbackPreferenceRef = useRef<boolean | null>(null);
+  const feedbackChoiceRevisionRef = useRef(0);
   const traceLogRef = useRef(false);
   const traceLogSequenceRef = useRef<{ x: number; y: number }[][]>([]);
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
@@ -681,17 +686,14 @@ export function useUniPadEngine() {
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      if (unipack?.keyLedExist) {
-        feedbackLightRef.current = false;
-      } else {
-        feedbackLightRef.current = true;
-      }
+      const feedback = feedbackPreferenceRef.current ?? !unipack?.keyLedExist;
+      feedbackLightRef.current = feedback;
       setState((s) => ({
         ...s,
         autoPlayEnabled: false, autoPlayPlaying: false, autoPlayControlsVisible: false,
         autoPlayProgress: 0, practiceMode: false,
         ledEnabled: unipack?.keyLedExist ? true : s.ledEnabled,
-        feedbackLight: !unipack?.keyLedExist,
+        feedbackLight: feedback,
       }));
       return;
     }
@@ -978,34 +980,19 @@ export function useUniPadEngine() {
             padInit();
             ledInit();
             autoPlayRemoveGuide();
+            const feedback = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
+            feedbackLightRef.current = feedback;
             setState((prev) => ({
-              ...(unipack.keyLedExist
-                ? {
-                    ...prev,
-                    autoPlayEnabled: false,
-                    autoPlayPlaying: false,
-                    autoPlayControlsVisible: false,
-                    autoPlayProgress: 0,
-                    practiceMode: false,
-                    ledEnabled: true,
-                    feedbackLight: false,
-                  }
-                : {
-                    ...prev,
-                    autoPlayEnabled: false,
-                    autoPlayPlaying: false,
-                    autoPlayControlsVisible: false,
-                    autoPlayProgress: 0,
-                    practiceMode: false,
-                    feedbackLight: true,
-                  }),
+              ...prev,
+              autoPlayEnabled: false,
+              autoPlayPlaying: false,
+              autoPlayControlsVisible: false,
+              autoPlayProgress: 0,
+              practiceMode: false,
+              ledEnabled: unipack.keyLedExist ? true : prev.ledEnabled,
+              feedbackLight: feedback,
             }));
-            if (unipack.keyLedExist) {
-              feedbackLightRef.current = false;
-              ledRunnerRef.current?.launch();
-            } else {
-              feedbackLightRef.current = true;
-            }
+            if (unipack.keyLedExist) ledRunnerRef.current?.launch();
           },
         };
 
@@ -1031,7 +1018,7 @@ export function useUniPadEngine() {
       }
 
       // Android initSetting(): keyLedExist에 따라 초기 상태 설정
-      const initFeedbackLight = !unipack.keyLedExist;
+      const initFeedbackLight = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
       const initLedEnabled = unipack.keyLedExist;
       feedbackLightRef.current = initFeedbackLight;
 
@@ -1163,11 +1150,36 @@ export function useUniPadEngine() {
     applyControllerStatus,
   ]);
 
-  const setFeedbackLight = useCallback((enabled: boolean) => {
+  const applyFeedbackLight = useCallback((enabled: boolean) => {
     if (feedbackLightRef.current !== enabled) padInit();
     feedbackLightRef.current = enabled;
     setState((prev) => ({ ...prev, feedbackLight: enabled }));
   }, [padInit]);
+
+  const setFeedbackLight = useCallback((enabled: boolean) => {
+    feedbackChoiceRevisionRef.current++;
+    feedbackPreferenceRef.current = enabled;
+    applyFeedbackLight(enabled);
+    // Only a direct screen, keyboard or controller choice reaches this write.
+    setSetting('feedbackLight', String(enabled)).catch(() => {});
+  }, [applyFeedbackLight]);
+
+  useEffect(() => {
+    if (!state.loaded || !state.unipack) return;
+    // A choice in this session is newer than any read, including one racing its pending write.
+    if (feedbackChoiceRevisionRef.current > 0) return;
+    let cancelled = false;
+    const revision = feedbackChoiceRevisionRef.current;
+    const pack = state.unipack;
+    void getSetting('feedbackLight').then(value => {
+      if (cancelled || revision !== feedbackChoiceRevisionRef.current) return;
+      const preference = value === 'true' ? true : value === 'false' ? false : null;
+      feedbackPreferenceRef.current = preference;
+      // A read may complete during a mode. Keep its temporary light until exit.
+      if (!autoPlayRunnerRef.current?.active) applyFeedbackLight(preference ?? !pack.keyLedExist);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [state.loaded, state.unipack, applyFeedbackLight]);
 
   const toggleFeedbackLight = useCallback(() => {
     setFeedbackLight(!feedbackLightRef.current);

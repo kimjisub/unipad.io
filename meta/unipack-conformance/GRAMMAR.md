@@ -1,6 +1,13 @@
-# UniPack grammar, edition G4
+# UniPack grammar, edition G5
 
-G4 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular lights; a zero second coordinate alone remains an out-of-grid pad event. Numeric coordinates are kept without warnings, including invalid circular indices, which are skipped when lit.
+G5 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular lights; a zero second coordinate alone remains an out-of-grid pad event. Numeric coordinates are kept without warnings, including invalid circular indices, which are skipped when lit.
+
+G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code units,
+without changing the paths used to open them. Decomposed accents and Hangul must queue as their
+composed spellings do. Names equal under this comparison retain their input listing order;
+archives containing canonically equivalent duplicate paths are outside this rule.
+G4 also clarifies S-07's existing behavior in all three apps: retain a sound with an out-of-range
+wormhole destination, clamp it to the nearest chain and record a range warning (KS-023).
 G3 corrects E-09: a negative delay shortens later waits but never takes back time already waited.
 G2 added T-09: numeric fields are signed decimal 32-bit integers; larger numbers are format errors.
 
@@ -24,10 +31,12 @@ the corpus changes only when a rule does, never to match what an app does today.
 
 ## What this edition decides
 
-The differences and implementation notes in this edition record the state used to establish G1.
+The table below records the state used to establish G1. G4 additionally changes queues whose
+names contain decomposed characters to match their composed spellings, and makes the existing
+Android/web UTF-16 comparison explicit on iOS as well.
 For the current per-platform status, run `report.mjs`; fixes do not change these grammar rules.
 
-No item chooses a new product behaviour. Each of the decisions below either keeps what the three apps
+The original G1 items below choose no new product behaviour. Each of those decisions either keeps what the three apps
 already do and corrects the docs, reads what the author clearly meant, or keeps grammar that is already
 written (line order, wormholes, `touch` = `on` + `off`). No pack that loads and plays today changes in
 any of them.
@@ -108,7 +117,7 @@ releasing after the chain changed (Android, web).
 | S-04 | A number column (chain, x, y, loop, wormhole) that is not an integer (letters, a decimal point, trailing letters) skips the line with a format warning. | parse | apps agree | the basis of the cases.mjs KS-M cases |
 | S-05 | loop: left out or 1 plays once, 0 endlessly, N (2 or more) N times in all. It is stored minus one (-1 endless, 0 once). | parse | doc | key-sound.mdx Loop Values |
 | S-06 | wormhole: the sixth column, the chain a press of that sound moves to. | parse | doc | key-sound.mdx syntax and example |
-| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 (Android `ChainObserver.kt` 16-21, iOS `ChainObserver.swift` 31-39, web `useUniPadEngine.ts` setChain) |
+| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` 278-281 and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain) |
 | S-08 | Columns after the sixth are ignored. | parse | apps agree | The three apps' code (not in the docs) |
 | S-09 | Several sounds on one pad form a queue in the order of the file. | parse | doc | key-sound.mdx Circular Queue |
 | S-10 | A line naming a sound file that is not under `sounds/` is skipped with a missing-sound warning. | parse | doc | key-sound.mdx validation |
@@ -136,7 +145,7 @@ releasing after the chain changed (Android, web).
 | L-04 | A file with a negative loop is ignored with a warning. | parse | doc | key-led.mdx validation ("warning") |
 | L-05 | A number column of the name that is not an integer ignores the file with a format warning. | parse | apps agree | the basis of cases.mjs KL-N |
 | L-06 | A fifth or later column of the name (`1 1 1 1 a`) is ignored (other tools name several files for one pad this way). | parse | apps agree | cases.mjs RP-002 (AGREED) |
-| L-07 | Several files for one pad queue in the order of their names (character codes, lower-cased). | parse | doc | key-led.mdx "circular queue, just like keySound" |
+| L-07 | Several files for one pad queue by their file names: normalize to NFC, lower-case, then compare UTF-16 code units lexicographically. Read the files by their original paths. Equal comparison keys retain input listing order. | parse | G4 decision | key-led.mdx circular queue. Android and web preserve decomposed archive names, while Swift compares canonically equivalent spellings; NFC keeps the existing order for composed names and removes the spelling-dependent difference. |
 | L-08 | A file whose name has fewer than 3 columns is ignored silently. | parse | apps agree | cases.mjs KL-006 (AGREED) |
 | L-09 | A pack with a `keyLED` folder has lights, even when the folder is empty. | parse | apps agree | cases.mjs KL-007 (AGREED) |
 
@@ -157,7 +166,7 @@ releasing after the chain changed (Android, web).
 | E-11 | The columns of an `on` line: `on x y colour`, `on x y colour v` or `on x y auto v` only. Too few, too many, or a velocity in letters is a format warning. | parse | doc | key-led.mdx validation ("4 tokens / 5 tokens") |
 | E-12 | A line with an unknown command is skipped with a format warning. | parse | doc | key-led.mdx validation ("skipped") |
 | E-13 | Letters mixed into a coordinate (`1b`) are a format warning. | parse | apps agree | cases.mjs KL-M04 to M06 |
-| E-14 | Numeric `on` or `off` coordinates are kept after subtracting one from each, without a warning. First coordinate 0 becomes the circular address -1 (E-05); the runner accepts circular indices 0..35, including logo index 32. Other coordinates outside the pad grid (a zero second coordinate, negatives, or beyond buttonX/buttonY) and circular indices outside 0..35 are skipped when lit (RL-12). | parse | G1 decision | cases.mjs KL-024 (a maintainers' decision). G4: Android UniPackFolder.zeroBased/LedRunner and iOS UniPackFolder/LedRunner agree. `on 8 0` stays a pad event at (7,-1); it is not a round-light alias. |
+| E-14 | Numeric `on` or `off` coordinates are kept after subtracting one from each, without a warning. First coordinate 0 becomes the circular address -1 (E-05); the runner accepts circular indices 0..35, including logo index 32. Other coordinates outside the pad grid (a zero second coordinate, negatives, or beyond buttonX/buttonY) and circular indices outside 0..35 are skipped when lit (RL-12). | parse | G1 decision | cases.mjs KL-024 (a maintainers' decision). G5: Android UniPackFolder.zeroBased/LedRunner and iOS UniPackFolder/LedRunner agree. `on 8 0` stays a pad event at (7,-1); it is not a round-light alias. |
 | E-15 | An empty LED file still counts as one animation of its pad. | parse | apps agree | cases.mjs KL-021 |
 
 ### P. autoPlay commands (8)

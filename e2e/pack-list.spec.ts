@@ -36,6 +36,78 @@ async function openList(page: Page, files: readonly PackFile[]) {
 
 const openListWithThreePacks = (page: Page) => openList(page, packs.map(([file]) => file));
 
+const sortCases = [
+  ['Title', true, ['Favorite', 'Alpha', 'Bravo', 'Charlie']],
+  ['Title', false, ['Favorite', 'Charlie', 'Bravo', 'Alpha']],
+  ['Producer', true, ['Favorite', 'Bravo', 'Charlie', 'Alpha']],
+  ['Producer', false, ['Favorite', 'Alpha', 'Charlie', 'Bravo']],
+  ['Date', true, ['Favorite', 'Charlie', 'Alpha', 'Bravo']],
+  ['Date', false, ['Favorite', 'Bravo', 'Alpha', 'Charlie']],
+] as const;
+
+for (const [method, ascending, titles] of sortCases) {
+  test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
+    await openListWithThreePacks(page);
+    // Keep the real imported ZIP data; give the saved rows distinct, hand-checked sort keys.
+    await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('unipad');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('unipacks', 'readwrite');
+        const store = tx.objectStore('unipacks');
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const records = request.result;
+          const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
+          records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
+          store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
+        };
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(tx.error);
+      });
+      db.close();
+    });
+    await page.reload();
+    await expect(list(page).getByRole('option')).toHaveCount(4);
+    await page.getByRole('button', { name: /^(Title|Producer|Date)$/ }).click();
+    await page.getByRole('button', { name: method, exact: true }).last().click();
+    if (ascending === (method === 'Date')) {
+      await page.getByRole('button', { name: /^Sort (ascending|descending)$/ }).click();
+    }
+    const expectedRows = titles.map(title => `${title} by ${{ Favorite: 'Zulu', Alpha: 'Charlie', Bravo: 'Alpha', Charlie: 'Bravo' }[title]}`);
+    const readSettings = () => page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('unipad');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const values = await new Promise<Record<string, string>>((resolve, reject) => {
+        const request = db.transaction('settings').objectStore('settings').getAll();
+        request.onsuccess = () => resolve(Object.fromEntries(request.result.map(({ key, value }) => [key, value])));
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
+    });
+    const expectedSettings = { sortMethod: method.toLowerCase(), sortOrder: String(ascending) };
+    await expect.poll(readSettings).toEqual(expectedSettings);
+    for (const step of ['reload', 'reentry']) {
+      if (step === 'reload') await page.reload();
+      else { await page.goto('about:blank'); await page.goto('/play'); }
+      await expect(list(page).getByRole('option')).toHaveCount(4);
+      await testInfo.attach(`${step}-list`, { body: await page.screenshot(), contentType: 'image/png' });
+      await testInfo.attach(`${step}-settings`, { body: JSON.stringify(await readSettings()), contentType: 'application/json' });
+      await expect(page.getByRole('button', { name: method, exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: ascending ? 'Sort ascending' : 'Sort descending', exact: true })).toBeVisible();
+      await expect.poll(() => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')))).toEqual(expectedRows);
+      await expect.poll(readSettings).toEqual(expectedSettings);
+    }
+  });
+}
+
 // The basic test pack under another title.
 async function packTitled(title: string): Promise<PackFile> {
   const zip = await JSZip.loadAsync(readFileSync(resolve(packs[0][0])));

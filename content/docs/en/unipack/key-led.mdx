@@ -28,6 +28,8 @@ keyLED/
 
 Mapping multiple files to the same coordinate creates a circular queue, just like `keySound`.
 
+Files queue by name after NFC normalization and lower-casing, compared by UTF-16 code units. Composed and decomposed spellings therefore give the same order. The original file names are used to open the files.
+
 ## Event Syntax
 
 Write LED events one per line inside the file. Fields are separated by spaces.

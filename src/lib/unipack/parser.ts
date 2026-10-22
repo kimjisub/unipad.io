@@ -430,16 +430,15 @@ async function parseKeyLed(
   );
 
   const ledFiles = Object.entries(zip.files)
-    // Direct children only (Android/iOS list the directory), and sorted by file name in code-unit
-    // order: locale collation on the full path put multi-mapped files in a different order, so the
-    // pad's first animation differed from Android's.
+    // Direct children only. Compare NFC names in lower-case UTF-16 order so composed and
+    // decomposed spellings give the same queue; keep the original paths for reading the files.
     .filter(([path, file]) => {
       if (file.dir || !path.startsWith(keyLedDir) || path === keyLedDir) return false;
       return !path.slice(keyLedDir.length).includes('/');
     })
     .sort(([a], [b]) => {
-      const na = a.substring(a.lastIndexOf('/') + 1).toLowerCase();
-      const nb = b.substring(b.lastIndexOf('/') + 1).toLowerCase();
+      const na = a.substring(a.lastIndexOf('/') + 1).normalize('NFC').toLowerCase();
+      const nb = b.substring(b.lastIndexOf('/') + 1).normalize('NFC').toLowerCase();
       return na < nb ? -1 : na > nb ? 1 : 0;
     });
 
