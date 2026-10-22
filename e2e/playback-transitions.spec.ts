@@ -64,6 +64,8 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await mode(page, 'Guide').dispatchEvent('click');
   await page.clock.runFor(1);
   await page.getByTitle('Skip Next').dispatchEvent('click');
+  // A late tick after the seek restarts the song there; the next note's guide follows its 800 ms lead.
+  await page.clock.fastForward(200);
   await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await capture(page, info);
@@ -71,9 +73,11 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await page.getByTitle('Skip Next').dispatchEvent('click');
   await page.getByTitle('Skip Next').dispatchEvent('click');
   await page.clock.fastForward(200);
+  await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(1);
   await page.getByTitle('Skip Previous').dispatchEvent('click');
+  await page.clock.fastForward(200);
   await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);

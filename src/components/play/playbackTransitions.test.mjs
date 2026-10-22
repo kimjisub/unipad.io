@@ -145,7 +145,9 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
     await tick(1);
   }
   await flush(() => result.current[direction === 'next' ? 'autoPlayNext' : 'autoPlayPrev']());
-  await tick(201); await draw();
+  // A late tick after the seek restarts the song there; the next note's guide follows its 800 ms lead.
+  await tick(201);
+  await tick(200); await draw();
   assert.equal(result.current.state.padStates[0][1].guide, true);
   const guides = result.current.state.padStates[0].filter(p => p.guide);
   assert.ok(guides.length > 0, 'the new position needs a guide');

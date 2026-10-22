@@ -139,6 +139,36 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  test('resuming from a pause starts the song clock when the next note plays', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    runner.pause();
+    clock.tick(1);
+    clock.tick(10);
+    runner.play();
+    clock.tick(300);
+    while (presses.length < 2 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [{ playedAt: 1311, pressedAt: 1311 }, { playedAt: 2811, pressedAt: 2811 }]);
+    runner.stop();
+  });
+
+  test('a seek while playing starts the song clock when the note it seeks to plays', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    clock.tick(1);
+    runner.progressOffset(-3);
+    clock.tick(300);
+    while (presses.length < 3 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [
+      { playedAt: 1001, pressedAt: 1001 },
+      { playedAt: 1301, pressedAt: 1301 },
+      { playedAt: 2801, pressedAt: 2801 },
+    ]);
+    runner.stop();
+  });
+
   // The second chain is reached only through the wormhole of pad (1, 1) on the first.
   const wormholePack = async (wormhole: string) => parseUniPack(await packZip({
     info: INFO_2X2_2CHAIN,

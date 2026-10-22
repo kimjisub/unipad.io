@@ -52,6 +52,10 @@ export class AutoPlayRunner {
   private delayAccum = 0;
   private startTime = 0;
   private suspendedAt: number | null = null;
+  // Starting, resuming, seeking and switching modes re-render the play screen before the next tick
+  // runs. The song clock restarts on that tick, at the position left, so the wait never shortens the
+  // gap after the first note that plays.
+  private clockPending = false;
 
   // Step mode state
   private stepPendingPads = new Set<number>();
@@ -114,8 +118,8 @@ export class AutoPlayRunner {
     this.delayAccum = 0;
     this.startTime = performance.now();
     if (this.suspendedAt !== null) this.suspendedAt = this.startTime;
+    this.clockPending = true;
     let prevPracticeGuide = this.practiceGuide;
-    let clockStarted = false;
 
     const loop = (): void => {
       if (!this.active) return;
@@ -127,10 +131,8 @@ export class AutoPlayRunner {
 
       const currTime = performance.now();
 
-      // Starting autoplay re-renders the play screen before this first tick runs. The song starts
-      // here, at the position launch or a seek left it, so that wait never shortens the first gap.
-      if (!clockStarted) {
-        clockStarted = true;
+      if (this.clockPending) {
+        this.clockPending = false;
         this.startTime = currTime - this.delayAccum;
       }
 
@@ -345,6 +347,7 @@ export class AutoPlayRunner {
   }
 
   play(): void {
+    if (!this.playmode) this.clockPending = true;
     this.playmode = true;
   }
 
@@ -368,6 +371,7 @@ export class AutoPlayRunner {
 
     this.startTime = (this.suspendedAt ?? performance.now()) - songTimeMs;
     this.delayAccum = songTimeMs;
+    this.clockPending = true;
 
     if (this.practiceGuide) {
       this.guideTimeline = this.buildGuideTimeline(autoPlay);
