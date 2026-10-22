@@ -4,6 +4,12 @@ import { Sound, NO_WORMHOLE, UniPackData } from './types';
 export const AUTO_PLAY_INPUT = 'autoplay';
 
 interface Press { key: string; node: AudioBufferSourceNode; infinite: boolean }
+interface PendingChainChange {
+  chain: number;
+  remaining: number;
+  dueAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
 /** WebKit's Audio Session API, not yet in TypeScript's DOM types. */
 interface AudioSessionNavigator {
@@ -38,7 +44,9 @@ export class SoundEngine {
   private unipack: UniPackData;
   private loaded = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
-  private pendingChainChanges = new Set<ReturnType<typeof setTimeout>>();
+  private pendingChainChanges = new Set<PendingChainChange>();
+  private chainChangesSuspended = false;
+  private suspensionRevision = 0;
   private visibilitySuspended = false;
   private gestureResume: (() => void) | null = null;
 
@@ -154,10 +162,28 @@ export class SoundEngine {
   /** Freeze existing sources and scheduled sample ends on the audio device's own clock. */
   async setSuspended(suspended: boolean): Promise<void> {
     this.visibilitySuspended = suspended;
+    const revision = ++this.suspensionRevision;
     if (this.audioContext.state === 'closed') return;
-    if (suspended) await this.audioContext.suspend();
-    // Always enqueue resume, even if an earlier suspend has not changed state yet.
-    else await this.audioContext.resume();
+    if (suspended) {
+      if (!this.chainChangesSuspended) {
+        this.chainChangesSuspended = true;
+        const now = performance.now();
+        for (const change of this.pendingChainChanges) {
+          if (change.timer !== null) clearTimeout(change.timer);
+          change.timer = null;
+          change.remaining = Math.max(0, change.dueAt - now);
+        }
+      }
+      await this.audioContext.suspend();
+    } else {
+      // Always enqueue resume, even if an earlier suspend has not changed state yet.
+      await this.audioContext.resume();
+      if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
+      if (this.chainChangesSuspended) {
+        this.chainChangesSuspended = false;
+        for (const change of this.pendingChainChanges) this.scheduleChainChange(change);
+      }
+    }
   }
 
   private stopKey(chain: number, x: number, y: number): string {
@@ -197,11 +223,9 @@ export class SoundEngine {
     // follows its wormhole, so the rest of the pad's sequence plays as written.
     this.soundPush(chain, x, y);
     if (sound.wormhole !== NO_WORMHOLE) {
-      const timer = setTimeout(() => {
-        this.pendingChainChanges.delete(timer);
-        this.setChain(sound.wormhole);
-      }, 100);
-      this.pendingChainChanges.add(timer);
+      const change: PendingChainChange = { chain: sound.wormhole, remaining: 100, dueAt: 0, timer: null };
+      this.pendingChainChanges.add(change);
+      if (!this.chainChangesSuspended) this.scheduleChainChange(change);
     }
     if (!sound.audioBuffer) return;
 
@@ -272,12 +296,23 @@ export class SoundEngine {
     }
   }
 
+  private scheduleChainChange(change: PendingChainChange): void {
+    change.dueAt = performance.now() + change.remaining;
+    change.timer = setTimeout(() => {
+      if (!this.pendingChainChanges.delete(change)) return;
+      this.setChain(change.chain);
+    }, change.remaining);
+  }
+
   cancelPendingChainChanges(): void {
-    for (const timer of this.pendingChainChanges) clearTimeout(timer);
+    for (const change of this.pendingChainChanges) {
+      if (change.timer !== null) clearTimeout(change.timer);
+    }
     this.pendingChainChanges.clear();
   }
 
   destroy(): void {
+    this.suspensionRevision++;
     this.cancelPendingChainChanges();
     this.removeGestureResume();
     this.activeNodes.forEach((node) => {

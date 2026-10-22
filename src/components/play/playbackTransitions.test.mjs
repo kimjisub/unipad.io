@@ -354,3 +354,85 @@ test('an audio resume that resolves without running does not restart the sequenc
   await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
   await tick(900); assert.equal(starts.length, 2);
 });
+
+
+test('a hidden wormhole keeps its remaining 50 ms instead of changing chain early', async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(50);
+  await visibility(true); await tick(5000);
+  assert.equal(result.current.state.chain, 0);
+  assert.equal(audio.currentTime, 0.05);
+  await visibility(false); await tick(49);
+  assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+test('a hidden wormhole waits for slow audio activation before counting its remaining delay', async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
+  let finishResume;
+  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false); await tick(5000);
+  assert.equal(result.current.state.chain, 0);
+  await flush(finishResume); await tick(49);
+  assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+for (const refused of ['rejected', 'not running']) test(`a hidden wormhole waits after ${refused} audio activation until a visible retry`, async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
+  const resume = audio.resume.bind(audio);
+  audio.resume = async () => { if (refused === 'rejected') throw new Error('activation refused'); };
+  await visibility(false); await tick(5000);
+  assert.equal(result.current.state.chain, 0);
+  audio.resume = resume;
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  await tick(49); assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+test('hiding again during wormhole audio activation preserves the remaining delay', async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
+  let finishResume;
+  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false); await tick(1000); await visibility(true);
+  await flush(finishResume); await tick(5000);
+  assert.equal(result.current.state.chain, 0);
+  await visibility(false); await tick(49); assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+for (const action of ['selection', 'unload']) test(`${action} during wormhole suspension prevents a late chain change`, async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
+  let finishResume;
+  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
+  await visibility(false);
+  await flush(() => action === 'selection' ? result.current.setChain(2) : result.current.unload());
+  await flush(finishResume); await tick(5000);
+  assert.equal(result.current.state.chain, action === 'selection' ? 2 : 0);
+});
+
+test('overlapping hidden wormholes resume in order without resetting on repeated hide events', async () => {
+  const { result } = await mount({ wormhole: true });
+  result.current.state.unipack.soundTable[0][0][1][0].wormhole = 2;
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(25);
+  await flush(() => result.current.padTouchOn(0, 1)); await tick(25);
+  await visibility(true); await tick(1000); await visibility(true); await tick(4000);
+  assert.equal(result.current.state.chain, 0);
+  await visibility(false); await tick(49); assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+  await tick(24); assert.equal(result.current.state.chain, 1);
+  await tick(1); assert.equal(result.current.state.chain, 2);
+});
+
+test('a wormhole requested while hidden waits its full delay after audio resumes', async () => {
+  const { result } = await mount({ wormhole: true });
+  await visibility(true); await tick(1000);
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(4000);
+  assert.equal(result.current.state.chain, 0);
+  await visibility(false); await tick(99); assert.equal(result.current.state.chain, 0);
+  await tick(1); assert.equal(result.current.state.chain, 1);
+});
