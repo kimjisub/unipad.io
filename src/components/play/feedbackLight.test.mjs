@@ -5,7 +5,7 @@ import { afterEach, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import JSZip from 'jszip';
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
+const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play', pretendToBeVisual: true });
 for (const name of ['window', 'document', 'HTMLElement']) globalThis[name] = dom.window[name];
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;

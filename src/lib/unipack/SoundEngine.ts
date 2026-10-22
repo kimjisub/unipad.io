@@ -38,6 +38,7 @@ export class SoundEngine {
   private unipack: UniPackData;
   private loaded = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
+  private pendingChainChanges = new Set<ReturnType<typeof setTimeout>>();
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -184,7 +185,11 @@ export class SoundEngine {
     // follows its wormhole, so the rest of the pad's sequence plays as written.
     this.soundPush(chain, x, y);
     if (sound.wormhole !== NO_WORMHOLE) {
-      setTimeout(() => this.setChain(sound.wormhole), 100);
+      const timer = setTimeout(() => {
+        this.pendingChainChanges.delete(timer);
+        this.setChain(sound.wormhole);
+      }, 100);
+      this.pendingChainChanges.add(timer);
     }
     if (!sound.audioBuffer) return;
 
@@ -255,7 +260,13 @@ export class SoundEngine {
     }
   }
 
+  cancelPendingChainChanges(): void {
+    for (const timer of this.pendingChainChanges) clearTimeout(timer);
+    this.pendingChainChanges.clear();
+  }
+
   destroy(): void {
+    this.cancelPendingChainChanges();
     this.removeGestureResume();
     this.activeNodes.forEach((node) => {
       try { node.stop(); } catch { /* already stopped */ }

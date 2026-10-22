@@ -51,6 +51,7 @@ export class AutoPlayRunner {
 
   private delayAccum = 0;
   private startTime = 0;
+  private suspendedAt: number | null = null;
 
   // Step mode state
   private stepPendingPads = new Set<number>();
@@ -112,10 +113,16 @@ export class AutoPlayRunner {
 
     this.delayAccum = 0;
     this.startTime = performance.now();
+    if (this.suspendedAt !== null) this.suspendedAt = this.startTime;
     let prevPracticeGuide = this.practiceGuide;
 
     const loop = (): void => {
       if (!this.active) return;
+
+      if (this.suspendedAt !== null) {
+        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+        return;
+      }
 
       const currTime = performance.now();
 
@@ -295,9 +302,7 @@ export class AutoPlayRunner {
       }
     };
 
-    // A timer, not requestAnimationFrame: rAF quantised every note to a ~17 ms frame and stopped
-    // in a hidden tab, so returning to the tab fired the whole backlog in one frame. Android ticks
-    // at 1 ms on a background thread.
+    // Timers preserve sub-frame note timing; visibility suspension freezes the song clock.
     this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
   }
 
@@ -309,6 +314,26 @@ export class AutoPlayRunner {
     }
     this.activeGuides.clear();
     this.resetStepState();
+  }
+
+  /** Visibility is independent of playmode, so returning never undoes a user's pause. */
+  setSuspended(suspended: boolean): void {
+    if (suspended) {
+      this.suspendedAt ??= performance.now();
+    } else if (this.suspendedAt !== null) {
+      const hiddenMs = performance.now() - this.suspendedAt;
+      this.suspendedAt = null;
+      this.startTime += hiddenMs;
+      this.waitStartTime += hiddenMs;
+      this.lastGuideUpdateMs += hiddenMs;
+      this.activeGuides.forEach((targetMs, key) => {
+        const target = targetMs + hiddenMs;
+        this.activeGuides.set(key, target);
+        if (this.playmode && this.practiceGuide) {
+          this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
+        }
+      });
+    }
   }
 
   play(): void {
@@ -333,7 +358,7 @@ export class AutoPlayRunner {
       if (el.type === 'delay') songTimeMs += el.delay;
     }
 
-    this.startTime = performance.now() - songTimeMs;
+    this.startTime = (this.suspendedAt ?? performance.now()) - songTimeMs;
     this.delayAccum = songTimeMs;
 
     if (this.practiceGuide) {
@@ -353,6 +378,7 @@ export class AutoPlayRunner {
     const max = autoPlay ? autoPlay.elements.length : 0;
     const target = this.progress + offset;
     this.setProgress(Math.max(0, Math.min(max, target)));
+    this.resyncToProgress();
     if (this.stepMode) {
       this.resetStepState();
       this.listener.onRemoveGuide();

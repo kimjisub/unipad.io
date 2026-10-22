@@ -94,6 +94,7 @@ export class LedRunner {
 
   private rafId: number | null = null;
   private requests = 0;
+  private suspendedAt: number | null = null;
 
   active = false;
 
@@ -116,6 +117,11 @@ export class LedRunner {
 
   private loop = (): void => {
     if (!this.active) return;
+
+    if (this.suspendedAt !== null) {
+      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+      return;
+    }
 
     const currTime = performance.now();
 
@@ -254,9 +260,25 @@ export class LedRunner {
   launch(): void {
     if (!this.active) {
       this.active = true;
-      // 4 ms timer, matching Android's LED tick. rAF ran at ~17 ms and froze in a hidden tab,
-      // where the returning frame's time jump killed every running animation.
+      // A 4 ms timer preserves the pack's sub-frame light timing.
       this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+    }
+  }
+
+  /** Shift every scheduled boundary together, preserving order and remaining delays. */
+  setSuspended(suspended: boolean): void {
+    if (suspended) {
+      this.suspendedAt ??= performance.now();
+    } else if (this.suspendedAt !== null) {
+      const hiddenMs = performance.now() - this.suspendedAt;
+      this.suspendedAt = null;
+      for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
+        state.delay += hiddenMs;
+        state.startedAt += hiddenMs;
+        state.passStart += hiddenMs;
+        if (state.shutdownAt !== null) state.shutdownAt += hiddenMs;
+        if (state.finishedAt !== null) state.finishedAt += hiddenMs;
+      }
     }
   }
 
@@ -292,6 +314,7 @@ export class LedRunner {
 
   eventOn(x: number, y: number, pressedAt = performance.now()): void {
     if (!this.active) return;
+    pressedAt = this.suspendedAt ?? pressedAt;
 
     const chain = this.chainValue();
     const order = ++this.requests;
@@ -329,6 +352,7 @@ export class LedRunner {
 
   eventOff(x: number, y: number, releasedAt = performance.now()): void {
     if (!this.active) return;
+    releasedAt = this.suspendedAt ?? releasedAt;
     const order = ++this.requests;
     for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
       if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === this.chainValue() && state.ledAnimation?.loop === 0) {
