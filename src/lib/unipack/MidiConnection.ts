@@ -178,6 +178,7 @@ export class MidiConnection {
   private onStatusChange: ((status: MidiConnectionStatus) => void) | null = null;
   /** The mode switch (and the status report after it) still waiting to be sent. */
   private pendingInitTimers: number[] = [];
+  private connectionRevision = 0;
 
   async connect(
     listener: MidiControllerListener,
@@ -186,6 +187,7 @@ export class MidiConnection {
       onStatusChange?: (status: MidiConnectionStatus) => void;
     },
   ): Promise<boolean> {
+    const revision = ++this.connectionRevision;
     this.listener = listener;
     this.requestedProfile = options?.profile ?? 'auto';
     this.onStatusChange = options?.onStatusChange ?? null;
@@ -195,7 +197,9 @@ export class MidiConnection {
     }
 
     try {
-      this.midiAccess = await navigator.requestMIDIAccess({ sysex: true });
+      const access = await navigator.requestMIDIAccess({ sysex: true });
+      if (revision !== this.connectionRevision) return false;
+      this.midiAccess = access;
       this.setupDevices();
       this.sendInitSysExToAllOutputs();
       this.notifyStatus();
@@ -206,6 +210,7 @@ export class MidiConnection {
       };
       return this.connected;
     } catch (err) {
+      if (revision !== this.connectionRevision) return false;
       console.warn('MIDI access denied:', err);
       this.notifyStatus();
       return false;
@@ -728,6 +733,7 @@ export class MidiConnection {
   }
 
   disconnect(): void {
+    this.connectionRevision++;
     for (const input of this.inputs) {
       input.onmidimessage = null;
     }

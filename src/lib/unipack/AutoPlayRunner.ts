@@ -33,7 +33,23 @@ export class AutoPlayRunner {
   private soundPushToNum: (c: number, x: number, y: number, num: number) => void;
   private ledPushToNum: (c: number, x: number, y: number, num: number) => void;
 
-  playmode = true;
+  private playing = true;
+  private pausedAt: number | null = null;
+
+  get playmode(): boolean { return this.playing; }
+  set playmode(playing: boolean) {
+    if (this.playing === playing) return;
+    const now = this.suspendedAt ?? performance.now();
+    if (!playing) this.pausedAt = now;
+    else if (this.pausedAt !== null) {
+      const pausedMs = now - this.pausedAt;
+      this.startTime += pausedMs;
+      this.waitStartTime += pausedMs;
+      this.activeGuides.forEach((target, key) => this.activeGuides.set(key, target + pausedMs));
+      this.pausedAt = null;
+    }
+    this.playing = playing;
+  }
   beforeStartPlaying = true;
   practiceGuide = false;
   stepMode = false;
@@ -113,6 +129,7 @@ export class AutoPlayRunner {
 
     this.delayAccum = 0;
     this.startTime = performance.now();
+    this.pausedAt = this.playmode ? null : this.startTime;
     if (this.suspendedAt !== null) this.suspendedAt = this.startTime;
     let prevPracticeGuide = this.practiceGuide;
 
@@ -288,12 +305,11 @@ export class AutoPlayRunner {
           }
         }
 
-        if (this.delayAccum <= currTime - this.startTime) {
-          this.delayAccum = currTime - this.startTime;
-        }
       }
 
-      if (this.progress < autoPlay.elements.length) {
+      const awaitsLastStep = this.stepMode && this.practiceGuide && !this.playmode &&
+        (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
+      if (this.progress < autoPlay.elements.length || awaitsLastStep) {
         this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
       } else {
         this.active = false;
@@ -324,6 +340,7 @@ export class AutoPlayRunner {
       const hiddenMs = performance.now() - this.suspendedAt;
       this.suspendedAt = null;
       this.startTime += hiddenMs;
+      if (this.pausedAt !== null) this.pausedAt += hiddenMs;
       this.waitStartTime += hiddenMs;
       this.lastGuideUpdateMs += hiddenMs;
       this.activeGuides.forEach((targetMs, key) => {
@@ -358,7 +375,9 @@ export class AutoPlayRunner {
       if (el.type === 'delay') songTimeMs += el.delay;
     }
 
-    this.startTime = (this.suspendedAt ?? performance.now()) - songTimeMs;
+    const now = this.suspendedAt ?? performance.now();
+    this.startTime = now - songTimeMs;
+    if (this.pausedAt !== null) this.pausedAt = now;
     this.delayAccum = songTimeMs;
 
     if (this.practiceGuide) {

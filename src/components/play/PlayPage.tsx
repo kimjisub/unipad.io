@@ -944,6 +944,8 @@ export function PlayPage() {
 
   // Engine now uses circle indices directly (chainStates is CIRCLE_ARRAY_SIZE=32)
   const actualChainCount = state.unipack?.info.chain ?? 0;
+  const visibleCircleCount = state.proLightMode ? CIRCLE_ARRAY_SIZE
+    : Math.min(CIRCLE_ARRAY_SIZE, CHAIN_INDEX_OFFSET + actualChainCount);
   const currentCircleChain = state.chain + CHAIN_INDEX_OFFSET;
   const handleChainSelect = useCallback((circleIdx: number) => {
     if (circleIdx >= CHAIN_INDEX_OFFSET && circleIdx < CHAIN_INDEX_OFFSET + actualChainCount) {
@@ -1213,7 +1215,7 @@ export function PlayPage() {
                 <div style={{ flex: hiddenSideFlex }} />
                 <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1233,7 +1235,7 @@ export function PlayPage() {
               {hiddenSideCols > 0 && (
                 <div className="h-full" style={{ flex: hiddenSideFlex }}>
                   {showLeftChainBar && <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1262,7 +1264,7 @@ export function PlayPage() {
               {hiddenSideCols > 0 && (
                 <div className="h-full" style={{ flex: hiddenSideFlex }}>
                   {showRightChainBar && <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1281,7 +1283,7 @@ export function PlayPage() {
                 <div style={{ flex: hiddenSideFlex }} />
                 <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1435,7 +1437,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1463,7 +1465,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1505,7 +1507,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1530,7 +1532,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}

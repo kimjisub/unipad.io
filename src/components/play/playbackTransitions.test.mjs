@@ -19,14 +19,15 @@ const real = require('../../lib/unipack/index.ts');
 stub('../../lib/unipack/index.ts', { ...real,
   getSetting: async () => null, setSetting: async () => {},
   MidiConnection: class {
-    async connect(listener) { midiListener = listener; return false; }
-    getStatus() { return { connected: false, requestedProfile: 'auto', resolvedProfile: 'none', inputName: null, outputName: null }; }
-    release() {} sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
+    constructor() { midiConnections.push(this); this.released = false; this.connected = nextMidiConnected; }
+    async connect(listener) { midiListener = listener; const gate = midiConnectGate; midiConnectGate = null; if (gate) await gate; return this.connected; }
+    getStatus() { return { connected: this.connected, requestedProfile: 'auto', resolvedProfile: this.connected ? 'launchpad_x' : 'none', inputName: this.connected ? 'Launchpad X' : null, outputName: this.connected ? 'Launchpad X' : null }; }
+    release() { this.released = true; } sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
   },
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-let now, nextId, timers, starts, hidden, midiListener, audio, audioContexts;
+let now, nextId, timers, starts, hidden, midiListener, audio, audioContexts, sources, midiConnections, nextMidiConnected, midiConnectGate;
 const flush = async action => act(async () => { await action?.(); });
 const tick = async ms => flush(() => {
   now += ms;
@@ -39,7 +40,7 @@ const visibility = async value => flush(() => {
   document.dispatchEvent(new window.Event('visibilitychange'));
 });
 beforeEach(() => {
-  now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false; audioContexts = []; audio = null;
+  now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false; audioContexts = []; audio = null; sources = []; midiConnections = []; nextMidiConnected = false; midiConnectGate = null;
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   mock.method(performance, 'now', () => now);
   const later = (run, ms = 0) => { const id = ++nextId; timers.set(id, { at: now + ms, run }); return id; };
@@ -61,25 +62,29 @@ beforeEach(() => {
     }
     createGain() { return { gain: { value: 1 }, connect() {} }; }
     async decodeAudioData() { return { duration: 0.1 }; }
-    createBufferSource() { return { connect() {}, start() { starts.push(now); }, stop() {} }; }
+    createBufferSource() {
+      const source = { stopped: false, connect() {}, start() { starts.push(now); }, stop(at) { if (at === undefined) this.stopped = true; } };
+      sources.push(source);
+      return source;
+    }
     close() { this.state = 'closed'; }
   };
 });
 afterEach(() => { cleanup(); mock.restoreAll(); delete globalThis.AudioContext; });
 
-async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1000\nf 1 1\nd 1000\no 1 2 a 9', wormhole = false } = {}) {
+async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1000\nf 1 1\nd 1000\no 1 2 a 9', wormhole = false, ledName = '1 1 1', keySound } = {}) {
   const zip = new JSZip();
   zip.file('info', 'title=Transitions\nproducerName=Test\nbuttonX=2\nbuttonY=2\nchain=3\nsquareButton=true');
-  zip.file('keySound', `1 1 1 a.wav${wormhole ? ' 1 2' : ''}\n1 1 2 a.wav\n2 1 1 a.wav\n3 1 1 a.wav`);
+  zip.file('keySound', keySound ?? `1 1 1 a.wav${wormhole ? ' 1 2' : ''}\n1 1 2 a.wav\n2 1 1 a.wav\n3 1 1 a.wav`);
   zip.file('sounds/a.wav', new Uint8Array([0x52, 0x49, 0x46, 0x46]));
-  zip.file('keyLED/1 1 1', led);
+  zip.file(`keyLED/${ledName}`, led);
   zip.file('autoPlay', autoPlay);
   const data = await zip.generateAsync({ type: 'arraybuffer' });
   const view = renderHook(useUniPadEngine);
   await flush(() => view.result.current.loadUniPack(data));
   assert.equal(view.result.current.state.loaded, true);
   audio = audioContexts.at(-1);
-  return view;
+  return { ...view, data };
 }
 const draw = () => tick(0);
 
@@ -150,13 +155,13 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
   assert.ok(guides.every(p => p.guideTargetWallTimeMs >= now - 800 && p.guideTargetWallTimeMs <= now + 800), 'the upcoming guide must keep its lead time at the new position');
 });
 
-for (const selected of [0, 2]) test(`a chain choice of ${selected} cancels the pending wormhole`, async () => {
+for (const selected of [0, 2]) test(`a chain choice of ${selected} preserves the pending wormhole`, async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await tick(50);
   await flush(() => result.current.setChain(selected));
   await tick(50);
-  assert.equal(result.current.state.chain, selected);
+  assert.equal(result.current.state.chain, 1);
 });
 
 test('leaving the player cancels its pending wormhole', async () => {
@@ -200,12 +205,12 @@ test('repeated visibility events preserve a guide target and its remaining lead 
   assert.equal(result.current.state.padStates[0][0].guide, false);
 });
 
-test('a keyboard chain choice also cancels the pending wormhole', async () => {
+test('a keyboard chain choice preserves the pending wormhole', async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F3' })));
   await tick(100);
-  assert.equal(result.current.state.chain, 2);
+  assert.equal(result.current.state.chain, 1);
 });
 
 test('overlapping wormholes without a user choice keep their original order', async () => {
@@ -250,12 +255,12 @@ test('returning to paused guide practice does not restore its obsolete timed gui
 });
 
 
-test('a controller chain choice cancels the pending wormhole', async () => {
+test('a controller chain choice preserves the pending wormhole', async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await flush(() => midiListener.onChainTouch(2));
   await tick(100);
-  assert.equal(result.current.state.chain, 2);
+  assert.equal(result.current.state.chain, 1);
 });
 
 
@@ -404,7 +409,7 @@ test('hiding again during wormhole audio activation preserves the remaining dela
   await tick(1); assert.equal(result.current.state.chain, 1);
 });
 
-for (const action of ['selection', 'unload']) test(`${action} during wormhole suspension prevents a late chain change`, async () => {
+for (const action of ['selection', 'unload']) test(`${action} during wormhole suspension follows its chain-change rule`, async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
   let finishResume;
@@ -412,7 +417,7 @@ for (const action of ['selection', 'unload']) test(`${action} during wormhole su
   await visibility(false);
   await flush(() => action === 'selection' ? result.current.setChain(2) : result.current.unload());
   await flush(finishResume); await tick(5000);
-  assert.equal(result.current.state.chain, action === 'selection' ? 2 : 0);
+  assert.equal(result.current.state.chain, action === 'selection' ? 1 : 0);
 });
 
 test('overlapping hidden wormholes resume in order without resetting on repeated hide events', async () => {
@@ -435,4 +440,166 @@ test('a wormhole requested while hidden waits its full delay after audio resumes
   assert.equal(result.current.state.chain, 0);
   await visibility(false); await tick(99); assert.equal(result.current.state.chain, 0);
   await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+
+test('autoplay wormholes do not repeat a parsed chain move 100 ms later', async () => {
+  const { result } = await mount({ wormhole: true, autoPlay: 'o 1 1\nd 50\nc 3\nd 1000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); assert.equal(result.current.state.chain, 1);
+  await tick(49); assert.equal(result.current.state.chain, 2);
+  await tick(51); assert.equal(result.current.state.chain, 2);
+});
+
+test('pause preserves the unplayed part of a delay', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 1000\no 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(500); assert.equal(starts.length, 1);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(3000);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(499); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+for (const action of ['autoPlayPlayPause', 'autoPlayNext', 'autoPlayPrev', 'stop']) {
+  test(`${action} ends endless light animations from every chain`, async () => {
+    const { result } = await mount({ autoPlay: 'o 1 1\n' + 'f 1 2\n'.repeat(45) + 'c 2\nd 10000\no 1 2', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 10\nf 2 2\nd 10' });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await tick(4); await draw();
+    assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+    await flush(() => action === 'stop' ? result.current.switchPlayMode('autoPlay') : result.current[action]());
+    for (let i = 0; i < 10; i++) { await tick(4); await draw(); assert.equal(result.current.state.padStates[1][1].color, 'transparent'); }
+  });
+}
+
+test('natural autoplay end preserves a finite animation and its final lights', async () => {
+  const { result } = await mount({ autoPlay: 't 1 1\nd 100\nf 1 2', led: 'o 2 2 a 5\nd 2000\no 2 1 a 9' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(4); await tick(4); await draw();
+  const lit = result.current.state.padStates[1][1].color;
+  assert.notEqual(lit, 'transparent');
+  await tick(100); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false);
+  assert.equal(result.current.state.padStates[1][1].color, lit);
+  await tick(1900); await draw();
+  assert.notEqual(result.current.state.padStates[1][0].color, 'transparent');
+});
+
+test('step practice waits for the last group and clears its guide after the press', async () => {
+  const { result } = await mount({ autoPlay: 't 1 1' });
+  await flush(() => result.current.switchPlayMode('stepPractice'));
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false);
+  assert.equal(result.current.state.padStates[0][0].guide, false);
+});
+
+for (const direct of [false, true]) test(`opening another pack resets session options with direct replacement ${direct}`, async () => {
+  const { result, data } = await mount();
+  await flush(() => {
+    result.current.switchPlayMode('stepPractice');
+    result.current.toggleRecording();
+    result.current.toggleProLightMode();
+    result.current.toggleTraceLog();
+    result.current.toggleHideUI();
+    result.current.setWatermark(false);
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1' }));
+  });
+  const oldMidi = midiConnections.at(-1);
+  const oldAudio = audio;
+  await flush(() => { if (!direct) result.current.unload(); });
+  await flush(() => result.current.loadUniPack(data));
+  for (const key of ['autoPlayEnabled', 'autoPlayPlaying', 'autoPlayControlsVisible', 'practiceMode', 'recording', 'proLightMode', 'traceLog', 'hideUI']) assert.equal(result.current.state[key], false, key);
+  assert.equal(result.current.state.watermark, true);
+  assert.equal(oldMidi.released, true);
+  assert.equal(oldAudio.state, 'closed');
+  const count = starts.length;
+  await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1' })));
+  assert.equal(starts.length, count + 1, 'the old held keyboard key must not suppress the new press');
+});
+
+for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sound and lights until the final release (${releaseFirst})`, async () => {
+  const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000' });
+  await flush(() => result.current.padTouchOn(0, 0, 'first'));
+  await tick(4);
+  await flush(() => result.current.padTouchOn(0, 0, 'second'));
+  await tick(4); await draw();
+  await flush(() => result.current.padTouchOff(0, 0, releaseFirst));
+  await tick(4); await draw();
+  assert.equal(sources.at(-1).stopped, false);
+  assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+  await flush(() => result.current.padTouchOff(0, 0, releaseFirst === 'first' ? 'second' : 'first'));
+  await tick(4); await draw();
+  assert.equal(sources.at(-1).stopped, true);
+  assert.equal(result.current.state.padStates[1][1].color, 'transparent');
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+});
+
+for (const playerAt of [0, 500]) test(`player and autoplay own independent sound and lights (player at ${playerAt})`, async () => {
+  const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000', autoPlay: 'd 300\no 1 1\nd 700\nf 1 1\nd 1000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  if (playerAt === 0) await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(300); await tick(4);
+  if (playerAt === 500) {
+    await tick(196); await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(4); await tick(496);
+  } else {
+    await tick(196); await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    await tick(4); await draw();
+    assert.equal(sources[1].stopped, false, 'player release must preserve autoplay sound');
+    assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+    await tick(496);
+  }
+  await tick(4); await draw();
+  const player = sources[playerAt === 0 ? 0 : 1];
+  const auto = sources[playerAt === 0 ? 1 : 0];
+  assert.equal(auto.stopped, true);
+  if (playerAt === 500) {
+    assert.equal(player.stopped, false);
+    assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+    await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    await tick(4); await draw();
+    assert.equal(player.stopped, true);
+  }
+});
+
+test('repeated autoplay presses across chains leave no unreachable endless sound', async () => {
+  const { result } = await mount({ keySound: '1 1 1 a.wav 0\n2 1 1 a.wav', autoPlay: 'o 1 1\nc 2\no 1 1\nd 500\nf 1 1\nd 1000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  assert.equal(sources[0].stopped, false);
+  await tick(499);
+  assert.equal(sources[0].stopped, true, 'off must release the earlier chain\'s endless sound');
+});
+
+
+test('late MIDI connection status from the previous pack cannot replace the new connection', async () => {
+  let finishOld;
+  midiConnectGate = new Promise(resolve => { finishOld = resolve; });
+  const { result, data } = await mount();
+  nextMidiConnected = true;
+  await flush(() => result.current.loadUniPack(data));
+  assert.equal(result.current.state.midiConnected, true);
+  await flush(finishOld);
+  assert.equal(result.current.state.midiConnected, true);
+  assert.equal(result.current.state.midiInputName, 'Launchpad X');
+});
+
+test('seeking while paused starts the remaining clock at the new position', async () => {
+  const song = 'o 1 1\nf 1 1\nd 1000\n'.repeat(20);
+  const { result } = await mount({ autoPlay: song });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(100);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1000);
+  await flush(() => result.current.autoPlayNext());
+  await tick(2000);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(999); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
 });
