@@ -1,5 +1,7 @@
 # UniPack grammar, edition G5
 
+G5 also clarifies S-07: validate a wormhole before other pad fields and missing sound files (KS-024 and KS-025).
+
 G5 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular lights; a zero second coordinate alone remains an out-of-grid pad event. Numeric coordinates are kept without warnings, including invalid circular indices, which are skipped when lit.
 
 G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code units,
@@ -117,7 +119,7 @@ releasing after the chain changed (Android, web).
 | S-04 | A number column (chain, x, y, loop, wormhole) that is not an integer (letters, a decimal point, trailing letters) skips the line with a format warning. | parse | apps agree | the basis of the cases.mjs KS-M cases |
 | S-05 | loop: left out or 1 plays once, 0 endlessly, N (2 or more) N times in all. It is stored minus one (-1 endless, 0 once). | parse | doc | key-sound.mdx Loop Values |
 | S-06 | wormhole: the sixth column, the chain a press of that sound moves to. | parse | doc | key-sound.mdx syntax and example |
-| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` 278-281 and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain) |
+| S-07 | A wormhole to a chain the pack does not have moves to the nearest chain it has (the first or the last). The line is kept, with a range warning. The wormhole is checked before chain, x, y and the sound file, so a line skipped for one of those (S-02, S-10) still records this warning, before the other one. | output | apps agree | Not in the docs. All three clamp the chain to 0..chain-1 when reading keySound and when switching (Android `UniPackFolder.kt` parseKeySound and `ChainObserver.kt` 16-21, iOS `UniPackFolder.swift` parseKeySound and `ChainObserver.swift` 31-39, web `parser.ts` parseKeySound and `useUniPadEngine.ts` setChain). All three check the wormhole first after the iOS parser correction. Which sounds are placed does not depend on the order. |
 | S-08 | Columns after the sixth are ignored. | parse | apps agree | The three apps' code (not in the docs) |
 | S-09 | Several sounds on one pad form a queue in the order of the file. | parse | doc | key-sound.mdx Circular Queue |
 | S-10 | A line naming a sound file that is not under `sounds/` is skipped with a missing-sound warning. | parse | doc | key-sound.mdx validation |
