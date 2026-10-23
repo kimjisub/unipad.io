@@ -6,6 +6,8 @@ import { test, expect, expectPads, stateTimeout } from './browser';
 interface AudioSnapshot { soundTime: number; wallTime: number; state: AudioContextState; gain: number }
 interface AudioTimeline {
   gain: GainNode | null;
+  gainValue: number;
+  activation?: Promise<void>;
   signals: { silent: boolean; epochMs: number; soundTime: number }[];
   suspended?: Promise<AudioSnapshot>;
   holdSuspension: boolean;
@@ -54,26 +56,28 @@ function longTone(seconds = 8) {
 
 async function prepare(page: Page, holdSuspension = false) {
   await page.addInitScript(holdSuspension => {
-    window.audioTimeline = { context: null, gain: null, signals: [], starts: [], lightTimes: [], events: [], frames: [], holdSuspension };
-    const mark = (type: string, context: AudioContext) => window.audioTimeline.events.push({ type, wallTime: performance.now(), soundTime: context.currentTime, state: context.state, gain: window.audioTimeline.gain?.gain.value ?? 1 });
+    window.audioTimeline = { context: null, gain: null, gainValue: 1, signals: [], starts: [], lightTimes: [], events: [], frames: [], holdSuspension };
+    // Keep control-call observations free of extra native clock reads inside the hide task.
+    const mark = (type: string) => window.audioTimeline.events.push({ type, wallTime: performance.now(), gain: window.audioTimeline.gainValue });
     const value = Object.getOwnPropertyDescriptor(AudioParam.prototype, 'value')!;
     Object.defineProperty(AudioParam.prototype, 'value', {
       ...value,
       set(this: AudioParam, next: number) {
         const wallTime = performance.now();
         value.set!.call(this, next);
-        if (this === window.audioTimeline.gain?.gain && next === 0) {
-          window.audioTimeline.events.push({ type: 'output-muted', wallTime, gain: value.get!.call(this) });
+        if (this === window.audioTimeline.gain?.gain) {
+          window.audioTimeline.gainValue = next;
+          if (next === 0) window.audioTimeline.events.push({ type: 'output-muted', wallTime, gain: next });
         }
       },
     });
     const suspend = AudioContext.prototype.suspend;
     AudioContext.prototype.suspend = function () {
-      mark('suspend-call', this);
+      mark('suspend-call');
       const completed = (async () => {
         if (window.audioTimeline.holdSuspension) await new Promise<void>(resolve => { window.audioTimeline.releaseSuspension = resolve; });
         await suspend.call(this);
-        mark('suspend-resolved', this);
+        mark('suspend-resolved');
         return { soundTime: this.currentTime, wallTime: performance.now(), state: this.state, gain: window.audioTimeline.gain!.gain.value };
       })();
       window.audioTimeline.suspended = completed;
@@ -81,8 +85,8 @@ async function prepare(page: Page, holdSuspension = false) {
     };
     const resume = AudioContext.prototype.resume;
     AudioContext.prototype.resume = function () {
-      mark('resume-call', this);
-      return resume.call(this).then(() => { mark('resume-resolved', this); });
+      mark('resume-call');
+      return resume.call(this).then(() => { mark('resume-resolved'); });
     };
     const raf = window.requestAnimationFrame;
     window.requestAnimationFrame = callback => {
@@ -120,6 +124,19 @@ async function prepare(page: Page, holdSuspension = false) {
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'long-sample.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  // A trusted click in the empty margin activates audio without playing a pad. Otherwise a
+  // stalled initial audio clock can let two song notes start before the first audible frame.
+  await page.evaluate(() => {
+    const context = window.audioTimeline.gain!.context as AudioContext;
+    window.audioTimeline.context = context;
+    document.body.addEventListener('pointerdown', () => {
+      window.audioTimeline.activation = context.resume();
+    }, { once: true });
+  });
+  await page.mouse.click(1200, 760);
+  await page.evaluate(() => window.audioTimeline.activation!);
+  const initialAudioTime = await page.evaluate(() => window.audioTimeline.context!.currentTime);
+  await expect.poll(() => page.evaluate(() => window.audioTimeline.context!.currentTime), { timeout: stateTimeout }).toBeGreaterThan(initialAudioTime);
   if (holdSuspension) await page.evaluate(async () => {
     const gain = window.audioTimeline.gain!;
     const context = gain.context as AudioContext;
@@ -155,15 +172,28 @@ async function prepare(page: Page, holdSuspension = false) {
     // Hide at the first audible frame in the page, before slow automation round trips can
     // let the next note run. Keep audio and timers real throughout the measurement.
     window.audioTimeline.hidden = new Promise(resolve => {
+      const hide = new MessageChannel();
+      hide.port1.onmessage = ({ data: output }: MessageEvent<number>) => {
+        const soundTime = window.audioTimeline.context!.currentTime;
+        const eventWallTime = performance.now();
+        const epochMs = Date.now();
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        const wallTime = performance.now();
+        const gain = window.audioTimeline.gainValue;
+        window.audioTimeline.events.push({ type: 'hide-task-return', wallTime, gain });
+        resolve({ soundTime, wallTime, output, starts: window.audioTimeline.starts.length, eventWallTime, epochMs, gain });
+        hide.port1.close();
+        hide.port2.close();
+      };
       const hideWhenAudible = () => {
         const light = document.querySelector('[data-pad="0,1"] div.z-10');
         const output = window.browserProbe.audio.outputRms() ?? 0;
         if (window.audioTimeline.starts.length === 1 && output > 0.01 && light && getComputedStyle(light).backgroundColor === 'rgb(239, 83, 80)') {
-          const eventWallTime = performance.now();
-          const epochMs = Date.now();
-          Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-          document.dispatchEvent(new Event('visibilitychange'));
-          resolve({ soundTime: window.audioTimeline.context!.currentTime, wallTime: performance.now(), output, starts: window.audioTimeline.starts.length, eventWallTime, epochMs, gain: window.audioTimeline.gain!.gain.value });
+          // Real visibility events have their own task. Firefox forwards audio control changes
+          // only at the end of that task; dispatching inside rAF incorrectly includes the rest
+          // of a long rendering task in the measured mute delay.
+          hide.port2.postMessage(output);
         } else requestAnimationFrame(hideWhenAudible);
       };
       requestAnimationFrame(hideWhenAudible);
