@@ -11,7 +11,7 @@ interface AudioTimeline {
   holdSuspension: boolean;
   releaseSuspension?: () => void;
   context: AudioContext | null;
-  events: { type: string; wallTime: number; soundTime: number; state?: string; gain: number }[];
+  events: { type: string; wallTime: number; soundTime?: number; state?: string; gain: number }[];
   frames: { requested: number; fired: number; soundTime?: number }[];
   starts: { soundTime: number; wallTime: number }[];
   lightTimes: number[];
@@ -19,6 +19,26 @@ interface AudioTimeline {
   hidden?: Promise<{ soundTime: number; wallTime: number; output: number; starts: number; eventWallTime: number; epochMs: number; gain: number }>;
 }
 declare global { interface Window { audioTimeline: AudioTimeline } }
+
+// Trace DOM snapshots synchronously scan the page and exceeded 200 ms at 4x CPU, stalling the
+// real timers under measurement. Retain screenshots, sources and native timeline attachments.
+test.use({ trace: { mode: 'retain-on-failure', snapshots: false, screenshots: true, sources: true } });
+
+test.beforeEach(async ({ page, browserName }) => {
+  if (process.env.E2E_CPU_RATE && browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.E2E_CPU_RATE) });
+  }
+});
+
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const observed = await page.evaluate(() => {
+    const timeline = window.audioTimeline;
+    return timeline && { starts: timeline.starts, lights: timeline.lightTimes, events: timeline.events, signals: timeline.signals, frames: timeline.frames, state: timeline.context?.state };
+  }).catch(() => null);
+  await info.attach('failure-timeline', { body: JSON.stringify(observed ?? null, null, 2), contentType: 'application/json' });
+});
 
 function longTone(seconds = 8) {
   const samples = 44100 * seconds;
@@ -36,6 +56,17 @@ async function prepare(page: Page, holdSuspension = false) {
   await page.addInitScript(holdSuspension => {
     window.audioTimeline = { context: null, gain: null, signals: [], starts: [], lightTimes: [], events: [], frames: [], holdSuspension };
     const mark = (type: string, context: AudioContext) => window.audioTimeline.events.push({ type, wallTime: performance.now(), soundTime: context.currentTime, state: context.state, gain: window.audioTimeline.gain?.gain.value ?? 1 });
+    const value = Object.getOwnPropertyDescriptor(AudioParam.prototype, 'value')!;
+    Object.defineProperty(AudioParam.prototype, 'value', {
+      ...value,
+      set(this: AudioParam, next: number) {
+        const wallTime = performance.now();
+        value.set!.call(this, next);
+        if (this === window.audioTimeline.gain?.gain && next === 0) {
+          window.audioTimeline.events.push({ type: 'output-muted', wallTime, gain: value.get!.call(this) });
+        }
+      },
+    });
     const suspend = AudioContext.prototype.suspend;
     AudioContext.prototype.suspend = function () {
       mark('suspend-call', this);
@@ -141,10 +172,6 @@ async function prepare(page: Page, holdSuspension = false) {
 }
 
 test('a long sample, the next note and finite lights share the paused audio timeline', async ({ page }, info) => {
-  if (process.env.E2E_CPU_RATE && info.project.name === 'chromium') {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.E2E_CPU_RATE) });
-  }
   await prepare(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   const hidden = await page.evaluate(() => window.audioTimeline.hidden!);
@@ -183,9 +210,10 @@ test('a long sample, the next note and finite lights share the paused audio time
   expect(Math.abs(resumed.lights[0] - resumed.starts[0].soundTime - 1.5)).toBeLessThan(0.15);
   expect(resumed.starts[1].wallTime - resumed.starts[0].wallTime).toBeGreaterThan(3400);
   expect(hidden.gain).toBe(0);
-  const request = frozen.events.find(event => event.type === 'suspend-call')!;
-  expect(request.gain).toBe(0);
-  expect((request.wallTime - hidden.eventWallTime) / 1000).toBeLessThan(0.05);
+  const request = frozen.events.find(event => event.type === 'output-muted');
+  expect(request).toBeDefined();
+  expect(request!.gain).toBe(0);
+  expect((request!.wallTime - hidden.eventWallTime) / 1000).toBeLessThan(0.05);
 });
 
 test('hidden output is silent before native suspension completes', async ({ page }, info) => {
