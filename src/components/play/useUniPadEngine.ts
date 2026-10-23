@@ -415,6 +415,11 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshChain, scheduleFlush]);
 
+  const selectChain = useCallback((c: number) => {
+    soundEngineRef.current?.cancelPendingChainChanges();
+    setChain(c);
+  }, [setChain]);
+
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
   const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     const se = soundEngineRef.current;
@@ -540,7 +545,7 @@ export function useUniPadEngine() {
       const chainIdx = getChainKey(e.key);
       if (chainIdx !== null && chainIdx < (unipackRef.current?.info.chain ?? 0)) {
         e.preventDefault();
-        setChain(chainIdx);
+        selectChain(chainIdx);
         return;
       }
 
@@ -583,7 +588,7 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, setChain]);
+  }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, selectChain]);
 
   /** Releases every pad the player is not holding, which includes each pad autoplay still holds. */
   const padInit = useCallback(() => {
@@ -890,6 +895,7 @@ export function useUniPadEngine() {
         () => chainRef.current,
         setChain,
       );
+      ledRunner.setSuspended(document.hidden);
       ledRunnerRef.current = ledRunner;
 
       if (unipack.keyLedExist) {
@@ -1009,6 +1015,7 @@ export function useUniPadEngine() {
           soundPushToNum,
           (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
         );
+        autoPlayRunner.setSuspended(document.hidden);
         autoPlayRunnerRef.current = autoPlayRunner;
 
         setState((prev) => ({
@@ -1073,7 +1080,7 @@ export function useUniPadEngine() {
         },
         onChainTouch: (c: number) => {
           if (midiOptionPanelOpenRef.current) return;
-          setChain(c);
+          selectChain(c);
         },
         onFunctionKey: (key: number) => {
           if (!midiOptionPanelOpenRef.current) {
@@ -1136,6 +1143,7 @@ export function useUniPadEngine() {
     }
   }, [
     setChain,
+    selectChain,
     usageTracker,
     padTouchOn,
     userPadTouchOn,
@@ -1425,6 +1433,7 @@ export function useUniPadEngine() {
               soundPushToNum,
               (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
             );
+            newRunner.setSuspended(document.hidden);
             autoPlayRunnerRef.current = newRunner;
           }
         }
@@ -1440,25 +1449,57 @@ export function useUniPadEngine() {
 
   // Android onPause/onResume: 탭 전환 시 wake lock 관리 및 MIDI LED 클리어
   useEffect(() => {
+    let visibilityRevision = 0;
+    let pausedForVisibility = document.hidden;
+    const resumeVisiblePlayback = () => {
+      if (document.hidden || !pausedForVisibility) return;
+      const sound = soundEngineRef.current;
+      const revision = ++visibilityRevision;
+      void (async () => {
+        if (sound) {
+          await sound.setSuspended(false);
+          if (sound.context.state !== 'running') return;
+        }
+        // A late resume must not restart a hidden tab, another pack, or an unmounted player.
+        if (revision !== visibilityRevision || document.hidden || sound !== soundEngineRef.current) return;
+        autoPlayRunnerRef.current?.setSuspended(false);
+        ledRunnerRef.current?.setSuspended(false);
+        pausedForVisibility = false;
+        syncMidiStateToDevice();
+      })().catch(() => {
+        // Keep the runners frozen; a visible user gesture retries audio activation.
+      });
+    };
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // onPause: wake lock 해제, MIDI LED 클리어
+        pausedForVisibility = true;
+        visibilityRevision++;
+        autoPlayRunnerRef.current?.setSuspended(true);
+        ledRunnerRef.current?.setSuspended(true);
+        void soundEngineRef.current?.setSuspended(true).catch(() => {});
         wakeLockRef.current?.release().catch(() => {});
         wakeLockRef.current = null;
         midiRef.current?.clearAllLeds?.();
       } else {
-        // onResume: wake lock 재취득, MIDI LED 상태 복원
+        resumeVisiblePlayback();
         if (soundEngineRef.current) {
           navigator.wakeLock?.request('screen').then((lock) => {
             wakeLockRef.current = lock;
           }).catch(() => {});
-          soundEngineRef.current.resume();
-          syncMidiStateToDevice();
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+      document.addEventListener(type, resumeVisiblePlayback, { capture: true, passive: true });
+    }
+    return () => {
+      visibilityRevision++;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+        document.removeEventListener(type, resumeVisiblePlayback, { capture: true });
+      }
+    };
   }, [syncMidiStateToDevice]);
 
   useEffect(() => {
@@ -1480,7 +1521,7 @@ export function useUniPadEngine() {
     unload,
     padTouchOn: screenPadTouchOn,
     padTouchOff: userPadTouchOff,
-    setChain,
+    setChain: selectChain,
     playMode,
     switchPlayMode,
     autoPlayPlayPause,

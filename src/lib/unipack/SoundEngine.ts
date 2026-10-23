@@ -4,6 +4,12 @@ import { Sound, NO_WORMHOLE, UniPackData } from './types';
 export const AUTO_PLAY_INPUT = 'autoplay';
 
 interface Press { key: string; node: AudioBufferSourceNode; infinite: boolean }
+interface PendingChainChange {
+  chain: number;
+  remaining: number;
+  dueAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
 /** WebKit's Audio Session API, not yet in TypeScript's DOM types. */
 interface AudioSessionNavigator {
@@ -38,6 +44,10 @@ export class SoundEngine {
   private unipack: UniPackData;
   private loaded = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
+  private pendingChainChanges = new Set<PendingChainChange>();
+  private chainChangesSuspended = false;
+  private suspensionRevision = 0;
+  private visibilitySuspended = false;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -62,16 +72,18 @@ export class SoundEngine {
     // The context is created after several awaits (file read, zip parse), i.e. outside the
     // user-gesture window, so Safari and autoplay-policy Chrome start it suspended and the
     // first pack played silently. Resume on the next gesture until it is running.
-    void this.resume();
+    void (typeof document !== 'undefined' && document.hidden
+      ? this.setSuspended(true) : this.resume()).catch(() => {});
     if (typeof document !== 'undefined') {
       const resumeOnGesture = () => {
+        if (this.visibilitySuspended) return;
         if (this.audioContext.state === 'running' || this.audioContext.state === 'closed') {
           this.removeGestureResume();
           return;
         }
-        void this.audioContext.resume().then(() => {
+        void this.resume().then(() => {
           if (this.audioContext.state === 'running') this.removeGestureResume();
-        });
+        }).catch(() => {});
       };
       this.gestureResume = resumeOnGesture;
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
@@ -142,8 +154,35 @@ export class SoundEngine {
   }
 
   async resume(): Promise<void> {
-    if (this.audioContext.state === 'suspended') {
+    if (!this.visibilitySuspended && this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
+    }
+  }
+
+  /** Freeze existing sources and scheduled sample ends on the audio device's own clock. */
+  async setSuspended(suspended: boolean): Promise<void> {
+    this.visibilitySuspended = suspended;
+    const revision = ++this.suspensionRevision;
+    if (this.audioContext.state === 'closed') return;
+    if (suspended) {
+      if (!this.chainChangesSuspended) {
+        this.chainChangesSuspended = true;
+        const now = performance.now();
+        for (const change of this.pendingChainChanges) {
+          if (change.timer !== null) clearTimeout(change.timer);
+          change.timer = null;
+          change.remaining = Math.max(0, change.dueAt - now);
+        }
+      }
+      await this.audioContext.suspend();
+    } else {
+      // Always enqueue resume, even if an earlier suspend has not changed state yet.
+      await this.audioContext.resume();
+      if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
+      if (this.chainChangesSuspended) {
+        this.chainChangesSuspended = false;
+        for (const change of this.pendingChainChanges) this.scheduleChainChange(change);
+      }
     }
   }
 
@@ -184,7 +223,9 @@ export class SoundEngine {
     // follows its wormhole, so the rest of the pad's sequence plays as written.
     this.soundPush(chain, x, y);
     if (sound.wormhole !== NO_WORMHOLE) {
-      setTimeout(() => this.setChain(sound.wormhole), 100);
+      const change: PendingChainChange = { chain: sound.wormhole, remaining: 100, dueAt: 0, timer: null };
+      this.pendingChainChanges.add(change);
+      if (!this.chainChangesSuspended) this.scheduleChainChange(change);
     }
     if (!sound.audioBuffer) return;
 
@@ -255,7 +296,24 @@ export class SoundEngine {
     }
   }
 
+  private scheduleChainChange(change: PendingChainChange): void {
+    change.dueAt = performance.now() + change.remaining;
+    change.timer = setTimeout(() => {
+      if (!this.pendingChainChanges.delete(change)) return;
+      this.setChain(change.chain);
+    }, change.remaining);
+  }
+
+  cancelPendingChainChanges(): void {
+    for (const change of this.pendingChainChanges) {
+      if (change.timer !== null) clearTimeout(change.timer);
+    }
+    this.pendingChainChanges.clear();
+  }
+
   destroy(): void {
+    this.suspensionRevision++;
+    this.cancelPendingChainChanges();
     this.removeGestureResume();
     this.activeNodes.forEach((node) => {
       try { node.stop(); } catch { /* already stopped */ }
