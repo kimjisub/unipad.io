@@ -151,7 +151,7 @@ These screen and hardware conventions need app or device tests; a parser result 
 |---|---|---|---|---|
 | A-01 | A WAV (PCM) sound plays. | output | doc | sounds.mdx supported formats |
 | A-02 | An MP3 sound plays. | output | doc | sounds.mdx supported formats |
-| A-03 | An OGG Vorbis sound plays. | output | doc | sounds.mdx; iOS OggVorbisDecoder and SoundEngineDecodingTests/anOggVorbisSoundPlays now cover it. |
+| A-03 | An OGG Vorbis sound plays. | output | doc | sounds.mdx supported formats ("recommended"). iOS decodes OGG Vorbis, and `SoundEngineDecodingTests/anOggVorbisSoundPlays()` measures the sound played by the real engine. |
 | A-04 | An M4A (AAC) sound plays. | output | G1 decision | Not in the docs. Real packs use it. Decided: a format real packs use belongs in the grammar and the docs. |
 | A-05 | A sound whose extension does not match its content (named `.wav`, MP3 inside) is decoded by its content and plays. | output | G1 decision | Not in the docs. Packs in the official store do this. Decided: the sound the author meant is clear. |
 | A-06 | A sound that cannot be decoded is silent in its slot only: its queue advances and its wormhole still applies. Refuse the pack only when no sound can be decoded. | output | G1 decision | All three now advance the queue independently of decoding; RUN-S-007 and app decoding tests. |

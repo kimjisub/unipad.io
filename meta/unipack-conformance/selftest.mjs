@@ -664,7 +664,7 @@ describe('app test results', () => {
       assert.equal(cell.confirmed, false, p);
       assert.match(cell.detail, /app test results mark it un(verified|confirmed)/);
     }
-    // Android's file as it is: A-01 to A-05 unverified while the decode and pad tests passed; none is listed.
+    // Decoder and pad tests alone do not verify Android's rendered output.
     const android = nativeFile('android', { items: { ...NATIVE_TESTS.android, 'A-01': ['audio.AudioFormatDecodeDeviceTest#decodesPcmWav'] }, status: { 'A-01': 'unverified' } });
     assert.equal(items({ android: read('android', android) }).get('A-01').android.confirmed, false);
   });
@@ -734,8 +734,32 @@ describe('app test results', () => {
     assert.equal(after.rows.length, 105);
     const onAll = (g) => g.rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).map((r) => r.id);
     assert.equal(after.confirmedOnAllThree, onAll(after).length);
-    assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06']);
-    assert.equal(after.confirmedOnAllThree, before.confirmedOnAllThree + 3);
+    assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06', 'A-01', 'A-02', 'A-03', 'A-04', 'A-05']);
+    assert.equal(after.confirmedOnAllThree, before.confirmedOnAllThree + 8);
+  });
+
+  test('Android sound formats require their external output tests, including both MP3 filename variants', () => {
+    const output = 'com.kimjisub.launchpad.audio.EmulatorOutput#';
+    const required = {
+      'A-01': [output + 'wavIsHeardAtTheEmulatorOutput'],
+      'A-02': [output + 'mp3IsHeardAtTheEmulatorOutput'],
+      'A-03': [output + 'oggIsHeardAtTheEmulatorOutput'],
+      'A-04': [output + 'm4aIsHeardAtTheEmulatorOutput'],
+      'A-05': [output + 'bareMp3NamedWavIsHeardAtTheEmulatorOutput', output + 'taggedMp3NamedWavIsHeardAtTheEmulatorOutput'],
+    };
+    for (const [id, names] of Object.entries(required)) {
+      const file = nativeFile('android', { items: required });
+      const cell = (value) => items({ android: read('android', value) }).get(id).android;
+      assert.equal(cell(file).confirmed, true, id);
+      for (const name of names) {
+        for (const outcomes of [[], ['failed'], ['unverified'], ['passed', 'passed']]) {
+          const incomplete = nativeFile('android', { items: required, outcomes: { [name]: outcomes } });
+          assert.equal(cell(incomplete).confirmed, false, `${id}: ${name}: ${outcomes}`);
+        }
+      }
+      const decodeOnly = nativeFile('android', { items: { [id]: ['com.kimjisub.launchpad.audio.AudioFormatDecodeDeviceTest#decodesPcmWav'] } });
+      assert.equal(cell(decodeOnly).confirmed, false, `${id}: decoding alone is not output`);
+    }
   });
 
   test('10. NATIVE_TESTS refuses an item that lists no test', () => {

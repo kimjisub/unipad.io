@@ -68,11 +68,16 @@ const inAndroidApp = (...names) => names.map((name) => `com.kimjisub.launchpad.$
  * Per platform and item, the app's own tests that must each have run once and passed, in that app's
  * result file, for the item to count where no case checks it or the harness cannot observe it (see
  * report.mjs). The list is reviewed and fixed here; it is never taken from what a result file names or
- * passed. An output item lists only tests that measure what is played. An item the app's tests cannot yet
- * confirm (Android A-01 to A-05) is not listed.
+ * passed. An output item lists only tests that measure what is played.
  */
 export const NATIVE_TESTS = {
   android: {
+    'A-01': inAndroidApp('audio.EmulatorOutput#wavIsHeardAtTheEmulatorOutput'),
+    'A-02': inAndroidApp('audio.EmulatorOutput#mp3IsHeardAtTheEmulatorOutput'),
+    'A-03': inAndroidApp('audio.EmulatorOutput#oggIsHeardAtTheEmulatorOutput'),
+    'A-04': inAndroidApp('audio.EmulatorOutput#m4aIsHeardAtTheEmulatorOutput'),
+    'A-05': inAndroidApp('audio.EmulatorOutput#bareMp3NamedWavIsHeardAtTheEmulatorOutput',
+      'audio.EmulatorOutput#taggedMp3NamedWavIsHeardAtTheEmulatorOutput'),
     'F-01': inAndroidApp('unipack.PackRootNamesDeviceTest#uppercaseRootNamesLoadOnCaseSensitiveStorage',
       'unipack.PackRootNamesDeviceTest#infoWithAnExtensionIsNotInfo',
       'unipack.PackRootNamesDeviceTest#pluralKeySoundsIsNotKeySound'),
