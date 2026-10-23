@@ -23249,18 +23249,18 @@
       "items": [
         "RS-09"
       ],
-      "title": "manual chain selection does not cancel a pending manual wormhole",
+      "title": "a later manual chain selection cancels a pending manual wormhole",
       "area": "G6",
       "layer": "run",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 RS-09",
-          "note": "manual chain selection does not cancel a pending manual wormhole"
+          "note": "a later manual chain selection cancels a pending manual wormhole"
         }
       ],
       "expectedFailing": [
-        "web"
+        "android"
       ],
       "scenario": [
         {
@@ -23328,35 +23328,8 @@
             ]
           ],
           [],
-          [
-            [
-              "chain",
-              1
-            ]
-          ]
+          []
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  0
-                ]
-              ],
-              [],
-              []
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: manual chain selection does not cancel a pending manual wormhole. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {

@@ -94,10 +94,10 @@ export function g6Cases() {
     pack({ info: STD_INFO.replace('chain=2', 'chain=3'), keySound: '1 1 1 a.wav 1 2', autoPlay: 'on 1 1\nd 50\nc 3\nd 200' }),
     [{ do: 'autoplay', toPads: true }, advance(20), observe, advance(40), observe, advance(100), observe],
     [[['autoOn', 0, 0], snd(0), ['autoChain', 1]], [['autoChain', 2]], []], ['android', 'ios', 'web']);
-  run('RUN-G606', ['RS-09'], 'manual chain selection does not cancel a pending manual wormhole',
+  run('RUN-G606', ['RS-09'], 'a later manual chain selection cancels a pending manual wormhole',
     pack({ info: STD_INFO.replace('chain=2', 'chain=3'), keySound: '1 1 1 a.wav 1 2' }),
     [press(), observe, advance(50), chain(2), observe, advance(60), observe],
-    [[snd(0)], [], [['chain', 1]]], ['web'], { screenInputs: true });
+    [[snd(0)], [], []], ['android'], { screenInputs: true });
   for (const [id, first, second] of [['RUN-G607', 'pointer:1', 'pointer:2'], ['RUN-G608', 'pointer:1', 'midi:1']])
     run(id, ['RS-05', 'RL-03'], 'the last player input release owns the current endless sound and light',
       pack({ keySound: '1 1 1 a.wav 0', keyLed: { '1 1 1 0': endless } }),

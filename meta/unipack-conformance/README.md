@@ -219,8 +219,12 @@ KS-G617..619 require distinct case-sensitive stored paths. The web ZIP can hold 
 that cannot must leave them unverified. App adapters must measure filesystem support before overriding
 that limitation. A result recorded on a merged case-insensitive directory is not evidence for them.
 
-The baseline web run on production code 184c1e4b observes 27 G6 failures and 22 G6 passes. All 27
-observations remain failures in reports even while their pins keep the ordinary suite usable.
+The initial baseline web run on production code 184c1e4b observed 27 G6 failures and 22 G6 passes.
+The 2026-10-23 RS-09 revision makes a later explicit player chain selection take precedence over
+a pending manual wormhole. RUN-G606 now expects cancellation and names Android as needing correction.
+Its former web failure pin is removed because the rule changed, not because an app result was waived.
+With that revision the web has 26 G6 failures and 23 G6 passes; earlier observations keep their original
+corpus hash. The remaining failures stay failures in reports while pins keep the ordinary suite usable.
 Android and iOS observations are recorded separately when their updated adapters run this corpus.
 
 ## Case format

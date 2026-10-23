@@ -528,28 +528,6 @@
       "note": "Observed with the parser and play hook at 184c1e4b: autoPlay applies a wormhole immediately without a delayed second switch. The G6 expectation stays unchanged; remove this observation when the app implements it."
     }
   },
-  "RUN-G606": {
-    "web": {
-      "status": "fail",
-      "actual": {
-        "checkpoints": [
-          [
-            [
-              "sound",
-              0,
-              0,
-              0,
-              "a.wav",
-              0
-            ]
-          ],
-          [],
-          []
-        ]
-      },
-      "note": "Observed with the parser and play hook at 184c1e4b: manual chain selection does not cancel a pending manual wormhole. The G6 expectation stays unchanged; remove this observation when the app implements it."
-    }
-  },
   "RUN-G607": {
     "web": {
       "status": "fail",

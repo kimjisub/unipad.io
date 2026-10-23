@@ -9,6 +9,12 @@ Info-ZIP Unicode paths, refusal of multiple packs in one archive, and Ogg Opus p
 The current availability of each rule is measured by tests, not implied by this specification.
 The public docs distinguish the target grammar from support still pending in an app.
 
+G6 revision, 2026-10-23: a later manual chain selection cancels a press's pending wormhole
+(RS-09, RUN-G606). The later explicit player choice takes precedence over the earlier press;
+this replaces the initial G6 rule rather than inferring a rule from how many apps implement it.
+Closing the play screen also cancels pending manual wormholes. AutoPlay and LED chain commands
+retain their own rules. Earlier observations must retain their original corpus hash.
+
 G5 also clarifies S-07: validate a wormhole before other pad fields and missing sound files (KS-024 and KS-025).
 
 G5 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular lights; a zero second coordinate alone remains an out-of-grid pad event. Numeric coordinates are kept without warnings, including invalid circular indices, which are skipped when lit.
@@ -216,7 +222,7 @@ These screen and hardware conventions need app or device tests; a parser result 
 | RS-06 | When the chain changes while a pad is held, its release still stops the endless sound its press started. | output | apps agree | Not in the docs. |
 | RS-07 | Pressing the same pad in the same chain again replaces its previous sound with the next one. Sounds from different pads or different chains may overlap. | output | G6 decision | key-sound.mdx; the voice key is (chain,x,y), preserving chain transition sounds. |
 | RS-08 | Pressing a sound with a wormhole switches to that chain, and the next press plays a sound of the new chain. | output | doc | key-sound.mdx syntax and example |
-| RS-09 | A manually pressed sound's wormhole switches the chain 100 ms after its press, even if the player selects another chain during that wait. AutoPlay applies its parsed wormhole immediately instead, without a second delayed switch (RA-04). | output | G6 decision | key-sound.mdx and auto-play.mdx; picking a chain does not cancel an already scheduled manual wormhole. |
+| RS-09 | A manually pressed sound's wormhole switches the chain 100 ms after its press unless the player directly selects a chain on screen, by keyboard or on a Launchpad during that wait. That later choice cancels the pending switch and stays selected. Closing the play screen also cancels pending manual wormholes. AutoPlay applies its parsed wormhole immediately instead, without a second delayed switch (RA-04); LED chain commands keep their own rules. | output | G6 decision | Revised 2026-10-23; key-sound.mdx and auto-play.mdx; a later explicit player selection takes precedence over an earlier press. |
 | RS-10 | Every change of chain (by the user, a wormhole, a light or autoPlay, even to the same chain) sets the sound and light queues of every pad of that chain back to their first entry. | output | G1 decision | auto-play.mdx speaks of the autoPlay `chain` only. The three play screens do it on every change (Android `PlayActivityViewModel.kt` 454-462, iOS `PlayViewModel.swift` 476-487, web `useUniPadEngine.ts` 358-381). Decided: the three apps' behaviour becomes the grammar. |
 
 ### RL. Running: lights (12)

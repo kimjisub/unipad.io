@@ -101,6 +101,21 @@ test('G6 cases cannot count a missing result, a claimed pass or an injected wron
   }
 });
 
+test('a later manual chain choice cancels the pending wormhole and must be observed', () => {
+  const c = corpus.cases.find((entry) => entry.id === 'RUN-G606');
+  const cancelled = { checkpoints: [[['sound', 0, 0, 0, 'a.wav', 0]], [], []] };
+  const pending = { checkpoints: [[['sound', 0, 0, 0, 'a.wav', 0]], [], [['chain', 1]]] };
+  const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+  for (const platform of PLATFORMS) {
+    const record = { id: c.id, fingerprint: c.fingerprint };
+    const result = (entry) => ({ platform, corpusSha256: canonical.sha256, cases: [entry] });
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass', actual: cancelled })).get(c.id).status, 'pass', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'fail', actual: pending })).get(c.id).status, 'fail', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass', actual: pending })).get(c.id).status, 'unverified', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass' })).get(c.id).status, 'unverified', platform);
+  }
+});
+
 test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
   const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
   assert.ok(startsWithMpegFrame(mp3));

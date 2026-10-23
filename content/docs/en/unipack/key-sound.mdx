@@ -60,7 +60,7 @@ Each press of button (1,1): sound\_a → sound\_b → sound\_c → sound\_a → 
 
 The shared playback rules also require:
 
-- A manual wormhole still happens 100 ms after the press if another chain was selected during that wait.
+- A manual wormhole happens 100 ms after the press. If the player directly selects a chain on screen, by keyboard or on a Launchpad during that wait, the pending switch is cancelled and the selected chain stays. Closing the play screen also cancels pending manual switches. Auto-play and LED `chain` commands keep their own behavior.
 - Several player inputs holding the same pad keep its endless sound and lights until the last input releases. A release follows the original press even after a chain change.
 - Manual and auto-play presses own their sound and lights separately. Releasing one must not stop what the other currently owns.
 
