@@ -1,6 +1,6 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import { test as restartTest, type BrowserType, type Page } from '@playwright/test';
+import { test as restartTest, type BrowserType, type Page, type TestInfo } from '@playwright/test';
 import { test, expect, expectPads, installBrowserProbe } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
@@ -160,6 +160,25 @@ test('settings import waits for native audio decoding before checking the saved 
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
 
+async function closeRestartProfile(page: Page, info: TestInfo) {
+  const context = page.context();
+  const browser = context.browser();
+  try {
+    // Capture before page.close(): the runner's context-close screenshot would be too late.
+    await restartTest.step('Capture the page before browser exit', async () => {
+      await info.attach('before-browser-exit-screen', { body: await page.screenshot({ timeout: 5000 }), contentType: 'image/png' });
+    });
+  } finally {
+    try {
+      // End the live player renderer before asking the persistent browser to flush and exit.
+      await restartTest.step('Close the profile page', () => page.close());
+    } finally {
+      await restartTest.step('Exit the persistent browser process', () => context.close());
+    }
+  }
+  expect(browser?.isConnected(), 'the old browser must exit before its profile is reopened').toBe(false);
+}
+
 for (const keyLedExist of [true, false]) {
   for (const saved of [null, 'true', 'false']) {
     for (const lifecycle of ['direct', 'reload', 'reopen', 'changed'] as const) {
@@ -202,7 +221,7 @@ for (const keyLedExist of [true, false]) {
       let profile: string | undefined;
       let url: string;
       const open = async (browserType: BrowserType, baseURL: string) => {
-        const context = await browserType.launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+        const context = await restartTest.step('Launch the persistent browser', () => browserType.launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' }));
         await context.route('**/*', route => {
           const url = new URL(route.request().url());
           if (url.hostname === 'firebaseinstallations.googleapis.com') return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
@@ -236,17 +255,16 @@ for (const keyLedExist of [true, false]) {
           await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
           await info.attach('before-restart-storage', { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
           expect(current.errors).toEqual([]);
-        } finally { await current.context.close(); }
+        } finally { await closeRestartProfile(current.page, info); }
       });
       restartTest('restores the profile after the browser process exits', async ({ playwright, browserName, baseURL }, info) => {
         const current = await open(playwright[browserName], baseURL!);
         try {
           await current.page.goto(url, { waitUntil: 'domcontentloaded' });
           await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
-          await info.attach(`restart-${enabled}-screen`, { body: await current.page.screenshot(), contentType: 'image/png' });
           await info.attach(`restart-${enabled}-storage`, { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
           expect(current.errors).toEqual([]);
-        } finally { await current.context.close(); }
+        } finally { await closeRestartProfile(current.page, info); }
       });
     });
   }
