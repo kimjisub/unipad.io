@@ -20,6 +20,9 @@ async function load(page: Page, baseURL: string | undefined, locale: string, pac
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
+  // Connection status is immediate; wait for the initial light redraw before measuring quiet keys.
+  await expect.poll(() => page.evaluate(() => new Set(window.browserProbe.midi.messages
+    .filter(message => (message[0] & 0xe0) === 0x80).map(message => message[1])).size)).toBeGreaterThanOrEqual(64);
 }
 
 /** Presses every kind of player key; none may play, light, switch chain or start auto-play. */

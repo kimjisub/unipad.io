@@ -401,7 +401,7 @@ for (const delayedInspection of [false, true]) {
     test.setTimeout(90_000); // Keep connection checks bounded even on projects with a longer setup budget.
     await loadPack(page);
     await page.getByRole('button', { name: 'Feedback', exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+    await connectLaunchpadAndClear(page);
     await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
     await expect(dialog).toContainText('Input: Launchpad X Test Input');
@@ -412,6 +412,7 @@ for (const delayedInspection of [false, true]) {
     await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
     await dialog.locator('select').selectOption('launchpad_mini_mk3');
     await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
+    await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
     const modelChange = await midiMessages(page);
     const firstSysEx = modelChange.findIndex(m => m[0] === 0xf0);
@@ -424,6 +425,7 @@ for (const delayedInspection of [false, true]) {
     await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
     await dialog.locator('select').selectOption('auto');
     await expect(dialog).toContainText('Resolved Type: launchpad_x');
+    await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);
     expect(await page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
@@ -560,6 +562,10 @@ test('autoplay pressing pads is not recorded as a player pad press', async ({ pa
 });
 
 const midiMessages = (page: Page) => page.evaluate(() => window.browserProbe.midi.messages);
+const padLightsAfterMode = (messages: number[][]) => {
+  const lastMode = messages.map(message => message[0]).lastIndexOf(0xf0);
+  return lastMode < 0 ? 0 : new Set(messages.slice(lastMode + 1).filter(message => (message[0] & 0xe0) === 0x80).map(message => message[1])).size;
+};
 const padNoteMessages = async (page: Page, note: number) => (await midiMessages(page)).filter(m => (m[0] & 0xe0) === 0x80 && m[1] === note);
 
 async function connectLaunchpadAndClear(page: Page) {
