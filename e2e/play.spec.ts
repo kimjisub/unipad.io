@@ -13,6 +13,37 @@ const led = (page: Page, position: string) => pad(page, position).locator('div[s
 const pressed = (page: Page, position: string) => pad(page, position).locator('img[src="/theme/btn_.png"]');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 
+for (const reconnect of [true, false]) {
+  test(`pads pressed before controller lights settle stay held after ${reconnect ? 'reconnect' : 'a model change'}`, async ({ page }, info) => {
+    await skipWithoutWebMidi(page);
+    await loadPack(page);
+    await connectLaunchpadAndClear(page);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+    if (reconnect) await dialog.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
+    if (reconnect) await dialog.getByRole('button', { name: 'Connect', exact: true }).dispatchEvent('click');
+    else await dialog.locator('select').selectOption('launchpad_mini_mk3');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
+    await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+    await page.clock.runFor(16);
+    await expect(pressed(page, '0,0')).toBeVisible();
+    const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
+    await info.attach('pressed-before-settling', { body: await page.screenshot(), contentType: 'image/png' });
+    await expect.soft(page.getByText('MIDI ON', { exact: true })).toBeVisible();
+    await page.clock.runFor(600);
+    await info.attach('pressed-after-settling', { body: await page.screenshot(), contentType: 'image/png' });
+    await info.attach('settling-input-output', { body: JSON.stringify(await page.evaluate(() => ({ ...window.browserProbe.audio, lights: window.browserProbe.midi.messages, physicalHardware: false }))), contentType: 'application/json' });
+    await expect.soft(pressed(page, '0,0')).toBeVisible();
+    expect.soft(await page.evaluate(() => window.browserProbe.audio.stops)).not.toContain(source.id);
+    await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+    await page.clock.runFor(16);
+    await expect(pressed(page, '0,0')).toHaveCount(0);
+    expect(await page.evaluate(() => window.browserProbe.audio.stops)).toContain(source.id);
+  });
+}
+
 test('controller buttons outside a small pack do not select chains or record pads', async ({ page }, info) => {
   await skipWithoutWebMidi(page);
   await loadInputPack(page, 4, 4);

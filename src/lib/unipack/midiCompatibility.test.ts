@@ -31,17 +31,22 @@ async function connection(t: { after(fn: () => void): void }, names = ['Launchpa
   const redraws: number[] = [];
   const statuses: number[] = [];
   const releases: Array<boolean | undefined> = [];
+  const held = new Set<string>();
   const midi = new MidiConnection();
   await midi.connect({
-    onPadTouch: (x, y, pressed) => pads.push([x, y, pressed]),
+    onPadTouch: (x, y, pressed) => {
+      pads.push([x, y, pressed]);
+      if (pressed) held.add(`${x},${y}`); else held.delete(`${x},${y}`);
+    },
     onChainTouch: () => {}, onFunctionKey: key => functions.push(key),
     ...{ onResync: () => redraws.push(now) },
   }, { profile, onStatusChange: status => {
     statuses.push(now);
     releases.push((status as typeof status & { releaseHeldPads?: boolean }).releaseHeldPads);
+    if (status.releaseHeldPads !== false) held.clear();
   } });
   const emit = (data: number[], i = 0) => inputs[i].onmidimessage?.({ data: new Uint8Array(data) });
-  return { midi, sent, pads, functions, redraws, statuses, releases, advance, emit, access };
+  return { midi, sent, pads, functions, redraws, statuses, releases, advance, emit, access, held };
 }
 
 for (const profile of ['launchpad_s', 'launchpad_mk2', 'launchpad_pro', 'launchpad_x', 'launchpad_mini_mk3', 'launchpad_pro_mk3', 'launchpad_corefw', 'launchpad_corefw_rg', 'matrix', 'midifighter'] as const) {
@@ -102,17 +107,45 @@ for (const profile of ['launchpad_s', 'launchpad_corefw_rg'] as const) {
   });
 }
 
-test('initial status waits until all mode messages and settling time have completed', async t => {
-  const { sent, statuses, advance, midi } = await connection(t);
-  assert.deepEqual(statuses, []);
+test('connection status is immediate while lights wait for mode setup and settling', async t => {
+  const { sent, statuses, redraws, releases, advance, midi } = await connection(t);
+  assert.deepEqual(statuses, [0]);
+  assert.deepEqual(releases, [true]);
   midi.sendPadLed(0, 0, 5);
   assert.deepEqual(sent[0], [], 'drawing before mode setup cannot reach the controller');
   advance(0); assert.equal(sent[0].length, 1);
   advance(50); assert.equal(sent[0].length, 2);
-  advance(549); assert.deepEqual(statuses, []);
-  advance(550); assert.deepEqual(statuses, [550]);
+  advance(549); assert.deepEqual(redraws, []);
+  advance(550); assert.deepEqual(redraws, [550]);
+  assert.deepEqual(statuses, [0], 'settling redraws without another hold-clearing status');
   midi.sendPadLed(0, 0, 5);
   assert.deepEqual(sent[0].at(-1), [0x90, 81, 5]);
+});
+
+for (const changeModel of [false, true]) {
+  test(`a pad pressed during ${changeModel ? 'a model change' : 'connection'} stays held after mode settling`, async t => {
+    const { midi, held, emit, advance } = await connection(t);
+    if (changeModel) {
+      advance(1000);
+      emit([0x90, 81, 100]);
+      midi.setProfile('launchpad_mini_mk3');
+      assert.equal(held.size, 0, 'the previous mapping is released before accepting new presses');
+    }
+    emit([0x90, 81, 100]);
+    assert.ok(held.has('0,0'), 'the input is received before the lights are ready');
+    advance(changeModel ? 1550 : 550);
+    assert.ok(held.has('0,0'), 'settling must redraw lights without releasing the new press');
+    emit([0x80, 81, 0]);
+    assert.equal(held.size, 0, 'the actual note-off still releases the pad');
+  });
+}
+
+test('removing an input during mode settling releases its held pads immediately', async t => {
+  const { held, emit, advance, access } = await connection(t);
+  emit([0x90, 81, 100]);
+  advance(200);
+  access.inputs.delete('0'); access.onstatechange?.();
+  assert.equal(held.size, 0);
 });
 
 for (const profile of ['auto', 'launchpad_x'] as const) {
@@ -145,6 +178,7 @@ test('light-off is note-on velocity zero, preserving the device channel', async 
 test('Pro Live-mode notification requests a redraw without selecting a chain', async t => {
   const { advance, emit, redraws } = await connection(t, ['Launchpad Pro']);
   advance(1000);
+  redraws.length = 0;
   emit([0xf0, 0, 0x20, 0x29, 2, 0x10, 0x2e, 0, 0xf7]);
   assert.deepEqual(redraws, [1000]);
   emit([0xf0, 0, 0x20, 0x29, 2, 0x10, 0x2f, 3, 0xf7]);

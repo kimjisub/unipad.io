@@ -194,7 +194,7 @@ export class MidiConnection {
   private requestedProfile: LaunchpadProfile = 'auto';
   private resolvedProfile: ResolvedProfile = 'none';
   private onStatusChange: ((status: MidiConnectionStatus) => void) | null = null;
-  /** The mode switch (and the status report after it) still waiting to be sent. */
+  /** Mode switches and light redraws still waiting for the controller to settle. */
   private pendingInitTimers: number[] = [];
 
   async connect(
@@ -221,7 +221,7 @@ export class MidiConnection {
         const inputsChanged = this.setupDevices();
         const removed = previousInputs.some(input => !this.inputs.includes(input));
         const outputsChanged = this.sendInitSysExToAllOutputs(false, removed);
-        if (inputsChanged && !outputsChanged && this.lightOutputs.every(light => light.ready)) this.notifyStatus(removed);
+        if (inputsChanged && !outputsChanged) this.notifyStatus(removed);
       };
       return this.connected;
     } catch (err) {
@@ -263,8 +263,8 @@ export class MidiConnection {
   /**
    * Applies a model at once, in the order of Android's MidiConnection.driver setter and iOS's
    * MidiManager.driver: the lights go off in the old model's layout, the new model's mode switch is
-   * sent, and only after its last message is the status reported, so the listener redraws the board
-   * on a device already in its new mode and shows the model that is now in use. With no port at
+   * scheduled, and the new status immediately releases holds from the old mapping. Only lights wait
+   * for the new mode to settle; their redraw must preserve presses received meanwhile. With no port at
    * all (disconnected, or no Web MIDI) the choice is only kept for the next connect, so no model is
    * shown as in use.
    */
@@ -331,10 +331,10 @@ export class MidiConnection {
       });
       this.pendingInitTimers.push(window.setTimeout(() => {
         light.ready = true;
-        if (this.lightOutputs.every(item => item.ready)) this.notifyStatus(releaseHeldPads);
+        if (this.lightOutputs.every(item => item.ready)) this.listener?.onResync?.();
       }, (messages.length - 1) * 50 + 500));
     }
-    if (this.lightOutputs.every(light => light.ready)) this.notifyStatus(releaseHeldPads);
+    this.notifyStatus(releaseHeldPads);
     return true;
   }
 
