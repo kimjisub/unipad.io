@@ -60,7 +60,7 @@ for (const screen of touchScreens) {
       expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
     });
 
-    test('a second finger on the same pad after a chain change leaves the first loop to its own release', async ({ page, context }) => {
+    for (const releaseFirst of ['original', 'later']) test(`same-pad contacts across chains wait for the last release (${releaseFirst} first)`, async ({ page, context }, info) => {
       await load(page);
       const session = await context.newCDPSession(page);
       const a = await point(page, '0,0', 1);
@@ -69,10 +69,15 @@ for (const screen of touchScreens) {
       await tapChain(page, session, [a]);
       await touch(session, 'touchStart', [a, b]);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
-      await touch(session, 'touchEnd', [a]);
-      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      await touch(session, 'touchEnd', [releaseFirst === 'original' ? a : b]);
+      // A pad remains held until its last player contact ends, including contacts on an earlier chain.
+      expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+      await expect(pressed(page, '0,0')).toBeVisible();
+      await evidence(page, info, 'one-contact-still-held');
       await touch(session, 'touchEnd', []);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+      await expect(pressed(page, '0,0')).toHaveCount(0);
+      await evidence(page, info, 'final-contact-released');
     });
 
     test('CR-003 simultaneous contacts preserve the unreleased loop and feedback', async ({ page, context }) => {
