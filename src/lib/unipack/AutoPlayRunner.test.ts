@@ -153,6 +153,47 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  test('a short pause during a wait keeps the next note at its written time', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    clock.tick(1);
+    clock.tick(499);
+    runner.pause();
+    clock.tick(100);
+    runner.play();
+    clock.tick(300);
+    while (presses.length < 2 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 2501, pressedAt: 2501 }]);
+    runner.stop();
+  });
+
+  test('a guide shown before a pause keeps its remaining lead when a late tick resumes the song', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 2 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 300\no 2 1\nf 2 1\nd 100',
+    }));
+    const guideOff: [number, number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {},
+      onGuidePadOn() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
+      onGuidePadOff: (x, y) => { guideOff.push([x, y, clock.now]); },
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    for (let i = 0; i < 901; i++) clock.tick(1);
+    runner.pause();
+    clock.tick(200);
+    runner.play();
+    clock.tick(300);
+    while (guideOff.length < 3 && clock.scheduled) clock.tick(1);
+
+    // Paused at song time 900 and resumed at 1100, past the second note's 1000: that note is due at
+    // once, and the third note's guide still has the 200 ms it had left when play was pressed.
+    assert.deepEqual(guideOff, [[0, 0, 1001], [0, 1, 2401], [1, 0, 2601]]);
+    runner.stop();
+  });
+
   test('a seek while playing starts the song clock when the note it seeks to plays', async () => {
     const { runner, presses } = noteTimes(await twoNotes());
     runner.launch();

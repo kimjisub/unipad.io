@@ -53,8 +53,8 @@ export class AutoPlayRunner {
   private startTime = 0;
   private suspendedAt: number | null = null;
   // Starting, resuming, seeking and switching modes re-render the play screen before the next tick
-  // runs. The song clock restarts on that tick, at the position left, so the wait never shortens the
-  // gap after the first note that plays.
+  // runs. If the song clock passed its next due note meanwhile, that tick holds it back to the note,
+  // so the note plays then and the render time never shortens the gap after it.
   private clockPending = false;
 
   // Step mode state
@@ -133,7 +133,8 @@ export class AutoPlayRunner {
 
       if (this.clockPending) {
         this.clockPending = false;
-        this.startTime = currTime - this.delayAccum;
+        const pastDueMs = currTime - this.startTime - this.delayAccum;
+        if (pastDueMs > 0) this.shiftClock(pastDueMs);
       }
 
       // Detect practice mode toggle
@@ -333,17 +334,22 @@ export class AutoPlayRunner {
     } else if (this.suspendedAt !== null) {
       const hiddenMs = performance.now() - this.suspendedAt;
       this.suspendedAt = null;
-      this.startTime += hiddenMs;
-      this.waitStartTime += hiddenMs;
-      this.lastGuideUpdateMs += hiddenMs;
-      this.activeGuides.forEach((targetMs, key) => {
-        const target = targetMs + hiddenMs;
-        this.activeGuides.set(key, target);
-        if (this.playmode && this.practiceGuide) {
-          this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
-        }
-      });
+      this.shiftClock(hiddenMs);
     }
+  }
+
+  /** Moves the song and every wall-clock time derived from it later, shown guides included. */
+  private shiftClock(ms: number): void {
+    this.startTime += ms;
+    this.waitStartTime += ms;
+    this.lastGuideUpdateMs += ms;
+    this.activeGuides.forEach((targetMs, key) => {
+      const target = targetMs + ms;
+      this.activeGuides.set(key, target);
+      if (this.playmode && this.practiceGuide) {
+        this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
+      }
+    });
   }
 
   play(): void {
