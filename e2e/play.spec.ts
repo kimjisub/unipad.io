@@ -5,12 +5,153 @@ import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { expectLandscapePads } from './pad-layout';
+import { loadInputPack } from './input-fixture';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
 const led = (page: Page, position: string) => pad(page, position).locator('div[style*="background-color"]');
 const pressed = (page: Page, position: string) => pad(page, position).locator('img[src="/theme/btn_.png"]');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
+
+test('controller buttons outside a small pack do not select chains or record pads', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadInputPack(page, 4, 4);
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+r');
+  await page.evaluate(() => {
+    window.browserProbe.midi.emit([0x90, 22, 100]); // Pad 6,1, outside this pack.
+    window.browserProbe.midi.emit([0x80, 22, 0]);
+    window.browserProbe.midi.emit([0xb0, 19, 100]); // Chain 8, outside this pack.
+  });
+  const exported = page.waitForEvent('download');
+  await page.keyboard.press('Alt+r');
+  const recorded = await readFile(await (await exported).path(), 'utf8');
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect.poll(() => starts(page)).toBe(1);
+  const played = await page.evaluate(() => window.browserProbe.audio.starts);
+  await info.attach('controller-boundary-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('controller-boundary-output', { body: JSON.stringify({ recorded, played, lights: await midiMessages(page), physicalHardware: false }), contentType: 'application/json' });
+  expect(recorded).toBe('chain 1');
+  expect(played[0].duration).toBe(0.1);
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+});
+
+test('controller option volume includes the selected level and hidden UI clears option lights', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page);
+  await connectLaunchpadAndClear(page);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.locator('input[type=range][max="7"]').fill('3');
+  const lastRing = async () => {
+    const messages = await midiMessages(page);
+    return [89, 79, 69, 59, 49, 39, 29, 19].map(note => messages.filter(m => m[0] === 0xb0 && m[1] === note).at(-1));
+  };
+  const volumeLights = await lastRing();
+  await info.attach('option-volume-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('option-volume-lights', { body: JSON.stringify(volumeLights), contentType: 'application/json' });
+  expect.soft(volumeLights.filter(m => m && m[2] > 0)).toHaveLength(4);
+  await page.evaluate(() => window.browserProbe.midi.emit([0xb0, 95, 100])); // Hide UI.
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 0]);
+  await info.attach('hidden-option-screen', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('an absent controller chain preserves the current animation queue', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page, await roundLightPack(2, {
+    '2 1 1 0 a': 'o 1 2 a 5\nd 60000\n',
+    '2 1 1 0 b': 'o 1 2 a 21\nd 60000\n',
+  }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('F2');
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect(led(page, '0,1')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
+  await page.evaluate(() => {
+    window.browserProbe.midi.emit([0x80, 81, 0]);
+    window.browserProbe.midi.emit([0xb0, 19, 100]);
+    window.browserProbe.midi.emit([0x90, 81, 100]);
+  });
+  await expect(led(page, '0,1')).toHaveCSS('background-color', 'rgb(0, 206, 60)');
+  await info.attach('queue-after-absent-chain', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+});
+
+test('hiding the open option panel preserves pack lights underneath it', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page, await roundLightPack(1, { '1 1 1 1': 'o mc 8 a 21\nd 60000\n' }));
+  await connectLaunchpadAndClear(page);
+  await page.keyboard.press('Alt+w');
+  await page.keyboard.press('Alt+p');
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 21]);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 5]);
+  await page.evaluate(() => window.browserProbe.midi.emit([0xb0, 95, 100]));
+  try {
+    await expect.poll(async () => (await roundLightMessages(page, 98)).at(-1)).toEqual([0xb0, 98, 21]);
+  } finally {
+    await info.attach('hidden-panel-pack-light', { body: JSON.stringify(await midiMessages(page)), contentType: 'application/json' });
+    await info.attach('hidden-panel-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+});
+
+for (const profile of ['launchpad_pro_cfw', 'launchpad_corefw', 'launchpad_corefw_rg']) {
+  test(`the ${profile} model is selectable and survives reload`, async ({ page }, info) => {
+    await skipWithoutWebMidi(page);
+    await loadPack(page);
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+    await dialog.locator('select').selectOption(profile);
+    await expect(dialog).toContainText(`Resolved Type: ${profile}`);
+    await info.attach('selected-model', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.reload();
+    await expectPads(page);
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    await expect(dialog.locator('select')).toHaveValue(profile);
+    await expect(dialog).toContainText(`Resolved Type: ${profile}`);
+  });
+}
+
+test('connecting another controller preserves the pad already held', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await connectLaunchpadAndClear(page);
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.evaluate(() => window.browserProbe.midi.plugAnother());
+  await page.waitForTimeout(700); // Cross the new controller's mode and settling timers.
+  await expect(pressed(page, '0,0')).toBeVisible();
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+  await info.attach('held-through-connect', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+});
+
+test('Pro Live-mode resync redraws lights while preserving held playback', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await dialog.locator('select').selectOption('launchpad_pro');
+  await expect(dialog).toContainText('Resolved Type: launchpad_pro');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect.poll(() => starts(page)).toBe(1);
+  await page.evaluate(() => {
+    window.browserProbe.midi.messages.length = 0;
+    window.browserProbe.midi.emit([0xf0, 0, 0x20, 0x29, 2, 0x10, 0x2e, 0, 0xf7]);
+  });
+  await expect.poll(() => midiMessages(page)).toContainEqual([0xb0, 89, 3]);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await info.attach('live-mode-redraw', { body: JSON.stringify(await midiMessages(page)), contentType: 'application/json' });
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+});
 
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
@@ -289,7 +430,7 @@ for (const delayedInspection of [false, true]) {
       await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
       await expect(pressed(page, '0,0')).toHaveCount(0);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
-      await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x80, 82, 0]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x90, 82, 0]);
     } finally {
       await light.evaluate(observation => observation.stop());
       await testInfo.attach('rendered-led-transitions', {
@@ -347,8 +488,8 @@ test('a Launchpad running CoreFW is played and lit in its own layout', async ({ 
   await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 65, 5]);
   await page.evaluate(() => window.browserProbe.midi.emit([0x80, 64, 0]));
   await expect(pressed(page, '0,0')).toHaveCount(0);
-  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3], [0x80, 64, 0]]);
-  await expect.poll(() => midiMessages(page)).toContainEqual([0x80, 65, 0]);
+  await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3], [0x90, 64, 0]]);
+  await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 65, 0]);
 });
 
 // Analytics calls are queued in gtag's dataLayer; the next event read after an input proves
@@ -393,6 +534,7 @@ const padNoteMessages = async (page: Page, note: number) => (await midiMessages(
 async function connectLaunchpadAndClear(page: Page) {
   test.skip(!await hasWebMidi(page), noWebMidi);
   await expect.poll(() => midiMessages(page)).toContainEqual([0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]);
+  await expect.poll(async () => (await midiMessages(page)).some(message => (message[0] & 0xe0) === 0x80)).toBe(true);
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
 }
 
@@ -408,7 +550,7 @@ test('the press light reaches the launchpad when it is on', async ({ page }) => 
   await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
   await page.mouse.up();
   await expect(pressed(page, '0,0')).toHaveCount(0);
-  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x90, 81, 0]]);
 });
 
 test('a pressed pad sends nothing to the launchpad while the press light is off', async ({ page }) => {
@@ -448,13 +590,13 @@ test('pack and press lights reach the launchpad and nothing reaches the synthesi
   await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
   await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
   await page.mouse.up();
-  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+  await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x90, 81, 0]]);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
   expect(await synthMessages(page)).toEqual([]);
 });
 
 // Picking the model by hand is how a launchpad with a name the player does not know gets its lights.
-test('a model picked by hand still lights every output', async ({ page }) => {
+test('a model picked by hand keeps lights off the synthesizer', async ({ page }) => {
   await skipWithoutWebMidi(page);
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
@@ -466,11 +608,12 @@ test('a model picked by hand still lights every output', async ({ page }) => {
   await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.browserProbe.midi.synthMessages.length = 0; });
   await pad(page, '0,0').hover();
   await page.mouse.down();
-  for (const messages of [midiMessages, synthMessages]) {
+  for (const messages of [midiMessages]) {
     await expect.poll(() => messages(page)).toContainEqual([0x90, 81, 3]);
     await expect.poll(() => messages(page)).toContainEqual([0x90, 82, 5]);
   }
   await page.mouse.up();
+  expect(await synthMessages(page)).toEqual([]);
 });
 
 // Android's MultiplexDriver lights every pad with its own driver. A master keyboard gets no lights; a
@@ -506,7 +649,7 @@ for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', 
       await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
       await expect.poll(() => midiMessages(page)).toContainEqual([0x90, 82, 5]);
       await page.mouse.up();
-      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x80, 81, 0]]);
+      await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3], [0x90, 81, 0]]);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
       for (const light of otherLights) expect(await otherMessages()).toContainEqual(light);
       if (otherLights.length === 0) expect(await otherMessages()).toEqual([]);

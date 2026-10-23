@@ -79,8 +79,8 @@ test('a model change turns the old lights off, switches the mode, then reports t
   assert.ok(log.length > 0, 'the old lights are turned off at once');
   assert.ok(!log.some(isSysEx), 'the mode switch waits its turn');
   assert.ok(!log.some((entry) => entry.startsWith('status:')), 'nothing is redrawn before the mode switch');
-  // Note off for the X's top-left pad and CC 0 for its first round button and logo.
-  assert.ok(log.includes('80 51 00'));
+  // Note-on velocity zero for the X's top-left pad and CC 0 for its first round button and logo.
+  assert.ok(log.includes('90 51 00'));
   assert.ok(log.includes('b0 5b 00'));
   assert.ok(log.includes('b0 63 00'));
 
