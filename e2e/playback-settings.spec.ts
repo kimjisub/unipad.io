@@ -235,8 +235,8 @@ for (const keyLedExist of [true, false]) {
         restartContext: async ({ playwright, browserName }, provide, info) => {
           restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
           profile ??= info.outputPath('browser-profile');
-          const context = await restartTest.step('Launch the persistent browser', () => playwright[browserName].launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' }));
           profileClosed = false;
+          const context = await restartTest.step('Launch the persistent browser', () => playwright[browserName].launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' }));
           const page = context.pages()[0];
           await provide(context);
           // Fixture teardown gets Playwright's normal teardown deadline, even when the body fails.
