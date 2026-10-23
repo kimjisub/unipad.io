@@ -441,3 +441,60 @@ test('a wormhole requested while hidden waits its full delay after audio resumes
   await visibility(false); await tick(99); assert.equal(result.current.state.chain, 0);
   await tick(1); assert.equal(result.current.state.chain, 1);
 });
+
+test('pad lights commit even while the browser delays animation frames', async () => {
+  const frames = new Map();
+  window.requestAnimationFrame = run => { const id = ++nextId; frames.set(id, run); return id; };
+  window.cancelAnimationFrame = id => frames.delete(id);
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(4);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'a due light must not wait for a later animation-frame callback');
+});
+
+test('resumed notes and lights account for audio rendered while suspension was pending', async () => {
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  await tick(100);
+  assert.equal(starts.length, 1);
+  let finishSuspending;
+  audio.suspend = async () => {
+    audio.suspends++;
+    await new Promise(resolve => { finishSuspending = resolve; });
+    audio.state = 'suspended';
+  };
+  await visibility(true);
+  await tick(80);
+  await flush(() => finishSuspending());
+  await tick(5000);
+  await visibility(false);
+  await tick(819);
+  assert.equal(starts.length, 1);
+  await tick(1);
+  assert.equal(starts.length, 2, 'the sample already advanced 80 ms before native suspension completed');
+  await tick(3); // The LED runner's next 4 ms tick observes the same boundary.
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});
+
+test('a light first requested after suspension keeps its full delay on return', async () => {
+  const { result } = await mount({ led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9' });
+  let finishSuspending;
+  audio.suspend = async () => {
+    await new Promise(resolve => { finishSuspending = resolve; });
+    audio.state = 'suspended';
+  };
+  await visibility(true);
+  await tick(80);
+  await flush(() => finishSuspending());
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(5000);
+  await visibility(false);
+  await tick(999);
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'a new hidden light has not consumed the older sample’s 80 ms');
+  await tick(4);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});

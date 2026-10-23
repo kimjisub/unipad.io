@@ -330,12 +330,13 @@ export class AutoPlayRunner {
     this.resetStepState();
   }
 
-  /** Visibility is independent of playmode, so returning never undoes a user's pause. */
-  setSuspended(suspended: boolean): void {
+  /** Visibility is independent of playmode. Include samples rendered during native suspension
+   *  without undoing a user's pause. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0): void {
     if (suspended) {
       this.suspendedAt ??= performance.now();
     } else if (this.suspendedAt !== null) {
-      const hiddenMs = performance.now() - this.suspendedAt;
+      const hiddenMs = performance.now() - this.suspendedAt - elapsedAudioMs;
       this.suspendedAt = null;
       this.shiftClock(hiddenMs);
     }

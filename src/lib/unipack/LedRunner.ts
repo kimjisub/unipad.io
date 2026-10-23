@@ -95,6 +95,7 @@ export class LedRunner {
   private rafId: number | null = null;
   private requests = 0;
   private suspendedAt: number | null = null;
+  private suspendedStates = new Set<LedAnimationState>();
 
   active = false;
 
@@ -266,20 +267,26 @@ export class LedRunner {
     }
   }
 
-  /** Shift every scheduled boundary together, preserving order and remaining delays. */
-  setSuspended(suspended: boolean): void {
+  /** Shift every boundary together, including samples rendered before native suspension finished. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0): void {
     if (suspended) {
-      this.suspendedAt ??= performance.now();
+      if (this.suspendedAt === null) {
+        this.suspendedAt = performance.now();
+        this.suspendedStates = new Set([...this.ledAnimationStates, ...this.ledAnimationStatesAdd]);
+      }
     } else if (this.suspendedAt !== null) {
       const hiddenMs = performance.now() - this.suspendedAt;
       this.suspendedAt = null;
       for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
-        state.delay += hiddenMs;
-        state.startedAt += hiddenMs;
-        state.passStart += hiddenMs;
-        if (state.shutdownAt !== null) state.shutdownAt += hiddenMs;
-        if (state.finishedAt !== null) state.finishedAt += hiddenMs;
+        // A light first requested while hidden has not consumed an older sample's transition time.
+        const shift = hiddenMs - (this.suspendedStates.has(state) ? elapsedAudioMs : 0);
+        state.delay += shift;
+        state.startedAt += shift;
+        state.passStart += shift;
+        if (state.shutdownAt !== null) state.shutdownAt += shift;
+        if (state.finishedAt !== null) state.finishedAt += shift;
       }
+      this.suspendedStates.clear();
     }
   }
 
@@ -294,6 +301,7 @@ export class LedRunner {
     }
     this.ledAnimationStates.length = 0;
     this.ledAnimationStatesAdd.length = 0;
+    this.suspendedStates.clear();
   }
 
   private ledGet(c: number, x: number, y: number): LedAnimation | null {
