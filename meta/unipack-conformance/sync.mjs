@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Copies corpus.json and corpus.sha256 into the app checkouts, or checks that the copies are byte-identical.
-//   node meta/unipack-conformance/sync.mjs --android <unipad-android checkout> --ios <unipad-ios checkout> [--check]
+//   node meta/unipack-conformance/sync.mjs --android <unipad-android checkout> --ios <unipad-ios checkout> [--check [--require-current]]
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { resolvePins } from './copies.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +31,48 @@ export function differences(checkouts, sourceDir = here) {
   return out;
 }
 
+const hashOf = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const hashLine = (hash) => `${hash}  corpus.json\n`;
+
+/** Verify canonical integrity and every selected app against its immutable declared corpus. */
+export function checkCopies(checkouts, { sourceDir = here, pins = {}, commits = {}, requireCurrent = false } = {}) {
+  const errors = [], warnings = [];
+  let bytes, currentHash, edition;
+  try {
+    bytes = readFileSync(join(sourceDir, 'corpus.json'));
+    currentHash = hashOf(bytes);
+    if (readFileSync(join(sourceDir, 'corpus.sha256'), 'utf8') !== hashLine(currentHash)) throw new Error('corpus.sha256 does not match corpus.json bytes');
+    edition = JSON.parse(bytes).grammar;
+  } catch (error) { return { errors: [`canonical: ${error.message}`], warnings }; }
+  let entries;
+  try { entries = resolvePins(JSON.stringify(pins)); }
+  catch (error) { return { errors: [error.message], warnings }; }
+  for (const [platform, root] of Object.entries(checkouts)) {
+    const pin = entries[platform];
+    if (!pin) { errors.push(`unknown platform: ${platform}`); continue; }
+    const selected = commits[platform] ?? pin.commit;
+    if (!/^[0-9a-f]{40}$/.test(selected)) { errors.push(`${platform}: invalid selected commit`); continue; }
+    // A manual or scheduled checkout of another commit must match the current corpus.
+    const expectedHash = selected === pin.commit && pin.corpusSha256 ? pin.corpusSha256 : currentHash;
+    const dir = join(resolve(root), COPY_DIRS[platform]);
+    try {
+      const actual = readFileSync(join(dir, 'corpus.json'));
+      const actualHash = hashOf(actual);
+      if (actualHash !== expectedHash) throw new Error(`corpus.json SHA-256 ${actualHash} differs from declared ${expectedHash}`);
+      if (readFileSync(join(dir, 'corpus.sha256'), 'utf8') !== hashLine(actualHash)) throw new Error('corpus.sha256 does not match corpus.json bytes');
+      if (expectedHash === currentHash) {
+        if (!actual.equals(bytes)) throw new Error('corpus.json bytes differ from canonical');
+      } else {
+        const oldEdition = JSON.parse(actual).grammar;
+        const message = `${platform}: behind canonical (${oldEdition} ${actualHash}; canonical ${edition} ${currentHash}); app results remain unverified`;
+        warnings.push(message);
+        if (requireCurrent) errors.push(message);
+      }
+    } catch (error) { errors.push(`${platform}: ${error.message}`); }
+  }
+  return { errors, warnings };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const arg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -40,10 +84,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(2);
   }
   if (args.includes('--check')) {
-    const diffs = differences(checkouts);
-    for (const d of diffs) console.error(d);
-    if (diffs.length) process.exit(1);
-    console.log(`copies are identical to the canonical ${COPIED_FILES.join(' and ')}`);
+    try {
+      const pins = JSON.parse(readFileSync(arg('--pins') ?? join(here, 'copies.json'), 'utf8'));
+      const result = checkCopies(checkouts, { pins, requireCurrent: args.includes('--require-current'), commits: { android: arg('--android-commit'), ios: arg('--ios-commit') } });
+      for (const warning of result.warnings) console.log(`::warning::${warning}`);
+      for (const error of result.errors) console.error(error);
+      if (result.errors.length) process.exit(1);
+      console.log(result.warnings.length ? 'declared app copy bytes verified; copies behind canonical are not current compatibility evidence' : `copies are identical to the canonical ${COPIED_FILES.join(' and ')}`);
+    } catch (error) { console.error(error.message); process.exit(1); }
   } else {
     for (const [platform, root] of Object.entries(checkouts)) {
       const dir = join(resolve(root), COPY_DIRS[platform]);

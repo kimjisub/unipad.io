@@ -1,4 +1,10 @@
 {
-  "android": "ea259f65bd28ea9c5efb631b151ce651c9ff214e",
-  "ios": "9aac4c159a67ce1774a588745f6ffbb4afad2f4a"
+  "android": {
+    "commit": "ea259f65bd28ea9c5efb631b151ce651c9ff214e",
+    "corpusSha256": "47b3a60d056ab0e6e4695eb2d5d123689ce2161a90d4aa7d8ad9d7ac20de6ba5"
+  },
+  "ios": {
+    "commit": "9aac4c159a67ce1774a588745f6ffbb4afad2f4a",
+    "corpusSha256": "47b3a60d056ab0e6e4695eb2d5d123689ce2161a90d4aa7d8ad9d7ac20de6ba5"
+  }
 }

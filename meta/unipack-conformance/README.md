@@ -405,7 +405,7 @@ repository at an exact commit and runs `selftest.mjs`, `build-corpus.mjs --check
 - the weekly scheduled run: the latest commit of each app's default branch, so a copy changed only in an
   app is noticed.
 
-`copies.json` holds exactly `android` and `ios`, each a full 40-character commit hash; `copies.mjs` refuses a
+`copies.json` holds exactly `android` and `ios`. A plain full 40-character commit hash requires that copy to match the canonical bytes. An explicit `{ "commit": "<40 lowercase hex characters>", "corpusSha256": "<64 lowercase hex characters>" }` pins an older corpus by its exact bytes; `copies.mjs` refuses a
 branch, a tag or a short hash, so the comparison never runs against a moving target. When a change to the
 corpus is reviewed together with its app copies, `copies.json` names the commits of the app pull requests;
 once those are merged, `copies.json` is moved to the merge commits on the app default branches. To run the
@@ -446,3 +446,24 @@ Per item, `report.mjs` lists the cases that check it. In short:
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
 - Whether an `agreed` result is the right behaviour: it is only what the three platforms did.
+
+
+### Explicit historical app copies
+
+A canonical corpus can advance before each app adopts it. A historical pin records the public app commit
+and that commit's corpus hash together. The check verifies the exact corpus bytes and the sidecar hash,
+then prints an `::warning::` annotation naming both editions and hashes if the app is behind. A changed byte,
+missing file, mismatched sidecar, malformed pin, or invalid canonical hash fails the check. This verifies
+what copy the app contains; it does not claim the app conforms to the current corpus. Reports from a
+different corpus remain unverified, even if those reports claim every case passes.
+
+`copies.mjs` continues to print immutable commit hashes for checkout. `sync.mjs --check` reads `copies.json`
+by default (`--pins <file>` selects another manifest). CI supplies `--android-commit` and `--ios-commit` with
+its actual selected checkout commits; a manual or scheduled override to another commit must match the
+current corpus and cannot inherit a historical pin from an unrelated commit.
+
+Use `sync.mjs --check --require-current --android <checkout> --ios <checkout>` for final compatibility
+and release verification. It rejects every copy behind canonical. After an app adopts the corpus and
+its reviewed commit is public, replace its historical object with that commit hash alone; verify both
+apps with the strict check before claiming synchronization. Copying with `sync.mjs` still writes the
+current corpus and hash; historical pins never change what gets copied.

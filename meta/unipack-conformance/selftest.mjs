@@ -15,8 +15,8 @@ import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDe
 import { checkNativeTests, grammarRecord, HARNESS_LIMITS, NATIVE_TESTS, readGrammar } from './grammar.mjs';
 import { readNative } from './native.mjs';
 import { BASES, buildReport, classify, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
-import { resolveCommits } from './copies.mjs';
-import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
+import { resolveCommits, resolvePins } from './copies.mjs';
+import { COPIED_FILES, COPY_DIRS, differences, checkCopies } from './sync.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const canonical = loadCanonical();
@@ -482,7 +482,9 @@ const copyIsSelfConsistent = (dir) => readFileSync(join(dir, 'corpus.sha256'), '
 test('the sync check fails on a drifted, missing or outdated copy and passes once it is restored', () => {
   const root = mkdtempSync(join(tmpdir(), 'unipack-sync-'));
   const dir = join(root, COPY_DIRS.android);
-  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, ...args], { encoding: 'utf8' });
+  const pinsPath = join(root, 'pins.json');
+  writeFileSync(pinsPath, JSON.stringify({ android: 'a'.repeat(40), ios: 'b'.repeat(40) }));
+  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, '--pins', pinsPath, ...args], { encoding: 'utf8' });
   const restore = () => { for (const name of COPIED_FILES) writeFileSync(join(dir, name), readFileSync(join(here, name))); };
   try {
     assert.equal(differences({ android: root }).length, COPIED_FILES.length);
@@ -526,7 +528,7 @@ test('copies.json pins the app copies CI compares to full commit hashes only', (
   const a = 'a'.repeat(40);
   const b = 'b'.repeat(40);
   const pins = JSON.stringify({ android: a, ios: b });
-  assert.deepEqual(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8')), JSON.parse(readFileSync(join(here, 'copies.json'), 'utf8')));
+  assert.ok(Object.values(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8'))).every((value) => /^[a-f0-9]{40}$/.test(value)));
   assert.deepEqual(resolveCommits(pins), { android: a, ios: b });
   assert.deepEqual(resolveCommits(pins, { android: '', ios: 'c'.repeat(40) }), { android: a, ios: 'c'.repeat(40) });
   for (const commit of ['main', a.slice(0, 7), `${a}0`, a.toUpperCase(), `refs/heads/${a}`]) {
@@ -838,4 +840,57 @@ describe('app test results', () => {
     check(actual);
     check(actual ? undefined : [standIn]);
   });
+});
+
+
+test('explicit historical copy pins verify bytes, warn, and fail strict checks without verifying old results', () => {
+  const root = mkdtempSync(join(tmpdir(), 'unipack-pinned-copy-'));
+  const dir = join(root, COPY_DIRS.android);
+  const commit = 'a'.repeat(40);
+  const oldCorpus = { ...corpus, grammar: 'G5', cases: corpus.cases.slice(0, -1) };
+  const older = Buffer.from(serialize(oldCorpus));
+  const olderHash = sha256(older);
+  const pins = { android: { commit, corpusSha256: olderHash }, ios: 'b'.repeat(40) };
+  const inspect = (extra = {}) => checkCopies({ android: root }, { pins, ...extra });
+  try {
+    const copied = spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root], { encoding: 'utf8' });
+    assert.equal(copied.status, 0, copied.stderr);
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(older));
+    const seen = inspect();
+    assert.deepEqual(seen.errors, []);
+    assert.equal(seen.warnings.length, 1);
+    assert.match(seen.warnings[0], /android: behind canonical/);
+    assert.ok(seen.warnings[0].includes(olderHash));
+    assert.ok(seen.warnings[0].includes(canonical.sha256));
+    assert.ok(inspect({ requireCurrent: true }).errors.some((e) => /behind canonical/.test(e)));
+    assert.ok(inspect({ commits: { android: 'c'.repeat(40) } }).errors.length > 0, 'an override cannot inherit an unrelated pin');
+    const reported = { ...fullResults('android'), corpusSha256: olderHash };
+    assert.deepEqual(statusesOf(judge(canonical, 'android', reported)), ['unverified']);
+    assert.equal(buildReport(canonical, { android: reported }).summary.android.pass, 0);
+    const cliPins = join(root, 'pins.json');
+    writeFileSync(cliPins, JSON.stringify(pins));
+    const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--check', '--android', root, '--pins', cliPins, ...args], { encoding: 'utf8' });
+    assert.equal(cli().status, 0, cli().stderr);
+    assert.match(cli().stdout, /::warning::android: behind canonical/);
+    assert.equal(cli('--require-current').status, 1);
+    writeFileSync(join(dir, 'corpus.json'), Buffer.concat([older, Buffer.from(' ')]));
+    assert.ok(inspect().errors.length > 0, 'one changed byte fails even if JSON still parses');
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(readFileSync(join(here, 'corpus.json'))));
+    assert.ok(inspect().errors.length > 0, 'a forged sidecar hash fails');
+    rmSync(join(dir, 'corpus.sha256'));
+    assert.ok(inspect().errors.length > 0, 'a missing hash fails');
+    assert.ok(checkCopies({ android: root }, { sourceDir: root, pins }).errors.length > 0, 'missing canonical data fails closed');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('historical pins require exact keys, lowercase hashes and immutable commits', () => {
+  const a = 'a'.repeat(40), b = 'b'.repeat(40), hash = 'c'.repeat(64);
+  const text = JSON.stringify({ android: { commit: a, corpusSha256: hash }, ios: b });
+  assert.deepEqual(resolvePins(text).android, { commit: a, corpusSha256: hash });
+  assert.deepEqual(resolveCommits(text), { android: a, ios: b });
+  for (const pin of [{ commit: a }, { corpusSha256: hash }, { commit: 'main', corpusSha256: hash }, { commit: a, corpusSha256: 'short' }, { commit: a, corpusSha256: hash.toUpperCase() }, { commit: a, corpusSha256: hash, extra: true }, null, []]) {
+    assert.throws(() => resolvePins(JSON.stringify({ android: pin, ios: b })));
+  }
 });
