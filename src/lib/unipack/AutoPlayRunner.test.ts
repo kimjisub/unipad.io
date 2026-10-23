@@ -168,6 +168,42 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  // The line after a note is often a release or the first of several waits, due well before the next
+  // note; resuming before that line must not hold the song back as if the next note were due.
+  const pausedPlay = async (autoPlay: string, pauses: { atNote: number; afterMs: number; forMs: number }[]) => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 2 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay,
+    }));
+    const { runner, presses } = noteTimes(pack);
+    runner.launch();
+    clock.tick(1);
+    for (const { atNote, afterMs, forMs } of pauses) {
+      while (presses.length < atNote && clock.scheduled) clock.tick(1);
+      clock.tick(afterMs);
+      runner.pause();
+      clock.tick(forMs);
+      runner.play();
+      clock.tick(300);
+    }
+    while (presses.length < 3 && clock.scheduled) clock.tick(1);
+    runner.stop();
+    return presses.map((p) => p.playedAt);
+  };
+  const releasedNotes = 'o 1 1\nd 100\nf 1 1\nd 1400\no 1 2\nd 100\nf 1 2\nd 1400\no 2 1\nd 100';
+
+  test('a short pause before a release keeps the next note at its written time', async () => {
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 1, afterMs: 49, forMs: 30 }]), [1001, 2501, 4001]);
+  });
+
+  test('a pause right after a later note keeps the note after it at its written time', async () => {
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 2, afterMs: 0, forMs: 100 }]), [1001, 2501, 4001]);
+  });
+
+  test('a short pause in the first of two waits keeps the next note at its written time', async () => {
+    const splitWait = 'o 1 1\nd 500\nd 1000\no 1 2\nd 1500\no 2 1\nd 100';
+    assert.deepEqual(await pausedPlay(splitWait, [{ atNote: 1, afterMs: 399, forMs: 30 }]), [1001, 2501, 4001]);
+  });
+
   test('a guide shown before a pause keeps its remaining lead when a late tick resumes the song', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 2 1 a.wav', 'sounds/a.wav': SILENT_WAV,
