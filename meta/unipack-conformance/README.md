@@ -204,7 +204,7 @@ record results for them (see `stop` and autoPlay below).
 
 ## G6 cases and current app corrections
 
-`g6-cases.mjs` adds 49 cases. Each declares `expectedFailing`: the apps expected to need a
+`g6-cases.mjs` adds 55 cases (49 initial cases and six archive-identity collision cases). Each declares `expectedFailing`: the apps expected to need a
 correction, based on the code comparison. This field never changes classification or expected output.
 Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
 KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
@@ -226,6 +226,32 @@ Its former web failure pin is removed because the rule changed, not because an a
 With that revision the web has 26 G6 failures and 23 G6 passes; earlier observations keep their original
 corpus hash. The remaining failures stay failures in reports while pins keep the ordinary suite usable.
 Android and iOS observations are recorded separately when their updated adapters run this corpus.
+
+## Archive sound identity
+
+For `soundIdentity: true` parse cases (KS-G601..604 and KS-G620..625), each sound queue entry is
+`{ "archiveEntry": "sounds/<original name>", "sha256": "<64 lowercase hex>", "loop": 0, "wormhole": -1 }`.
+`archiveEntry` is the original full ZIP entry name, including `sounds/`, compared by exact code points.
+`sha256` hashes the bytes actually selected for decoding, not the expected asset or merely the name's
+original archive bytes. A later import overwrite must therefore change the observed hash and fail.
+The harness must track provenance from import to the selected file. It must not infer the entry from
+the expected result, normalize the reported archive spelling, or choose a candidate by matching a hash
+alone. If provenance cannot be observed, leave the case unverified.
+
+Native disk paths may use another canonical spelling. Record those paths and original-to-stored
+mappings as diagnostics outside `actual`; they do not decide the result. On web, the parser's selected
+ZIP path and its `soundFiles` bytes supply the identity directly. These parser cases prove which file
+reaches the sound queue; decoded/audible output remains a separate native playback check.
+
+KS-G620/621 and KS-G623/624 require each exact NFC/NFD entry to win even with a different-content
+canonical equivalent present. KS-G622/625 have no exact spelling and require the first original entry
+in UTF-16 order. Archive orders vary, so neither last-write-wins nor first-entry-wins implements all
+six expectations. An importer on a filesystem that merges canonical spellings must detect the collision
+and retain the intended identity and bytes. It must not silently overwrite one entry with another.
+
+The first web run of the identity revision observes 27 G6 passes and 28 failures; KS-G622 and KS-G625
+are the two additional failures and remain failures in reports. Native observations of these six new
+cases are pending; earlier four-case unverified records retain their original corpus hash.
 
 ## Case format
 

@@ -88,7 +88,7 @@ test('iOS sound-stop and chain-reset cases require observed results', () => {
 
 test('G6 cases cannot count a missing result, a claimed pass or an injected wrong output', () => {
   const added = corpus.cases.filter((c) => /-G6/.test(c.id));
-  assert.equal(added.length, 49);
+  assert.equal(added.length, 55);
   for (const c of added) for (const platform of PLATFORMS) {
     const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
     const result = (cases) => ({ platform, corpusSha256: canonical.sha256, cases });
@@ -113,6 +113,35 @@ test('a later manual chain choice cancels the pending wormhole and must be obser
     assert.equal(judge(only, platform, result({ ...record, status: 'fail', actual: pending })).get(c.id).status, 'fail', platform);
     assert.equal(judge(only, platform, result({ ...record, status: 'pass', actual: pending })).get(c.id).status, 'unverified', platform);
     assert.equal(judge(only, platform, result({ ...record, status: 'pass' })).get(c.id).status, 'unverified', platform);
+  }
+});
+
+test('archive identity cases distinguish canonically equivalent entries and overwritten contents', () => {
+  const ids = ['KS-G601', 'KS-G602', 'KS-G603', 'KS-G604', 'KS-G620', 'KS-G621', 'KS-G622', 'KS-G623', 'KS-G624', 'KS-G625'];
+  for (const id of ids) {
+    const c = corpus.cases.find(entry => entry.id === id);
+    assert.ok(c?.soundIdentity, id);
+    const q = c.expected.sounds[0].queue[0];
+    assert.match(q.archiveEntry, /^sounds\//);
+    assert.match(q.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(q.file, undefined);
+    if (Number(id.slice(-3)) >= 620) {
+      const files = c.files.filter(f => f.path.startsWith('sounds/') && f.asset);
+      assert.equal(files.length, 2, id);
+      assert.notEqual(files[0].path, files[1].path);
+      assert.equal(files[0].path.normalize('NFC'), files[1].path.normalize('NFC'));
+      assert.notEqual(corpus.assets[files[0].asset].sha256, corpus.assets[files[1].asset].sha256);
+    }
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    for (const field of ['archiveEntry', 'sha256']) {
+      const wrong = structuredClone(c.expected);
+      wrong.sounds[0].queue[0][field] = field === 'sha256' ? '0'.repeat(64) : q.archiveEntry.normalize('NFD') === q.archiveEntry ? q.archiveEntry.normalize('NFC') : q.archiveEntry.normalize('NFD');
+      for (const platform of PLATFORMS) {
+        const result = status => ({ platform, corpusSha256: canonical.sha256, cases: [{ id, fingerprint: c.fingerprint, status, actual: wrong }] });
+        assert.equal(judge(only, platform, result('fail')).get(id).status, 'fail');
+        assert.equal(judge(only, platform, result('pass')).get(id).status, 'unverified');
+      }
+    }
   }
 });
 

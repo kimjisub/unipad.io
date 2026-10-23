@@ -28,7 +28,7 @@ sounds/
 
 <Callout title="Notes">
 - Files are referenced by name in `keySound`, so write paths and names exactly as the files are named, including upper and lower case.
-- The shared format resolves an exact path first, then an NFC-equivalent name (composed and decomposed letters), then NFC with letter case ignored. At a fallback, the first full stored path in UTF-16 code-unit order wins. A folder is never a sound.
+- The shared format resolves an exact path first, then an NFC-equivalent name (composed and decomposed letters), then NFC with letter case ignored. At a fallback, the first full original archive path in UTF-16 code-unit order wins. An exact original spelling wins even if another archive entry has an equivalent composed/decomposed name and different contents. Import must preserve the chosen file rather than silently overwrite it. Native storage may change how letters are composed; the chosen archive entry and its contents determine playback. A folder is never a sound.
 - Paths are relative to `sounds/`: backslashes become `/`, leading `/` and `./` are removed, repeated `/` is collapsed, and `.` components are ignored. A path must never escape `sounds/` using `..`.
 - These matching and path rules describe the shared format; app updates are still aligning the less common spellings. Use exact names and ordinary relative paths for compatibility with current versions.
 - Subdirectories are supported (e.g., `fx/sweep.wav`).

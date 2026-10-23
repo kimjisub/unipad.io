@@ -7,6 +7,14 @@ Subtracting one from -2147483648 must store -2147483649 on every platform: there
 representation exception. G6 also specifies archive-name decoding even with a wrong UTF-8 flag,
 Info-ZIP Unicode paths, refusal of multiple packs in one archive, and Ogg Opus playback (A-07).
 The current availability of each rule is measured by tests, not implied by this specification.
+
+G6 archive identity revision, 2026-10-23: S-12 is judged by the original archive entry name and
+SHA-256 of the selected file contents, rather than by the spelling of a native storage path. NFC/NFD
+storage conversion is not a playback difference. Canonically equivalent entries with different contents
+remain distinct candidates: an exact original spelling wins, otherwise the first original archive name
+in UTF-16 order wins. Import must not silently overwrite the selected contents. KS-G601..604 adopt
+this identity observation and KS-G620..625 cover collisions. Earlier unverified observations stay
+archived under their original corpus hash. T-09 still requires exact decremented stored numbers.
 The public docs distinguish the target grammar from support still pending in an app.
 
 G6 revision, 2026-10-23: a later manual chain selection cancels a press's pending wormhole
@@ -22,7 +30,7 @@ G5 clarifies E-05/E-14: a numeric first coordinate of 0 addresses circular light
 G4 clarifies L-07: compare NFC-normalized, lower-cased file names by UTF-16 code units,
 without changing the paths used to open them. Decomposed accents and Hangul must queue as their
 composed spellings do. Names equal under this comparison retain their input listing order;
-archives containing canonically equivalent duplicate paths are outside this rule.
+G6 defines the selection when canonically equivalent archive names coexist, as described below.
 G4 also clarifies S-07's existing behavior in all three apps: retain a sound with an out-of-range
 wormhole destination, clamp it to the nearest chain and record a range warning (KS-023).
 G3 corrects E-09: a negative delay shortens later waits but never takes back time already waited.
@@ -149,7 +157,7 @@ These screen and hardware conventions need app or device tests; a parser result 
 | S-09 | Several sounds on one pad form a queue in the order of the file. | parse | doc | key-sound.mdx Circular Queue |
 | S-10 | A line naming a sound file that is not under `sounds/` is skipped with a missing-sound warning. | parse | doc | key-sound.mdx validation |
 | S-11 | A sound name is relative to `sounds/`. Replace backslashes with slashes, remove leading slashes and `.` components, and collapse repeated slashes before looking it up. Never escape `sounds/` through `..`. Subfolders are supported. | parse | G6 decision | sounds.mdx; path normalization precedes the matching order in S-12. |
-| S-12 | Find a sound by exact normalized path first, then NFC-equivalent path, then NFC and lower-case path. At each fallback, choose the first full stored relative path in UTF-16 code-unit order. Compare whole paths, not one folder at a time. A folder is not a sound; report the stored file name. Canonically equivalent duplicate paths are outside this rule. | parse | G6 decision | sounds.mdx; composed and decomposed names refer to the same intended sound; deterministic full-path matching preserves Android ordering. |
+| S-12 | Find a sound by exact normalized path first, then NFC-equivalent path, then NFC and lower-case path. At each fallback, choose the first full original archive entry path in UTF-16 code-unit order. An exact original spelling wins even when a canonically equivalent entry with different contents also exists. Compare whole paths, not one folder at a time. A folder is not a sound. Report the original archive entry name and SHA-256 of the selected contents; native stored paths are diagnostic only. Import must preserve the selected contents when native file names collide. | parse | G6 decision | sounds.mdx; composed and decomposed names refer to the same intended sound; deterministic full-path matching preserves Android ordering. |
 
 ### A. Sound file formats (7)
 

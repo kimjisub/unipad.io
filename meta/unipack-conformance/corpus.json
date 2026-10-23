@@ -20172,20 +20172,21 @@
       "items": [
         "S-12"
       ],
-      "title": "composed and decomposed sound names resolve to the stored path",
+      "title": "composed and decomposed names select the original archive entry and contents",
       "area": "G6",
       "layer": "parse",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
-          "note": "composed and decomposed sound names resolve to the stored path"
+          "note": "composed and decomposed names select the original archive entry and contents"
         }
       ],
       "expectedFailing": [
         "android",
         "web"
       ],
+      "soundIdentity": true,
       "expectation": "determined",
       "files": [
         {
@@ -20219,7 +20220,8 @@
             "y": 0,
             "queue": [
               {
-                "file": "소리.wav",
+                "archiveEntry": "sounds/소리.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
                 "loop": 0,
                 "wormhole": -1
               }
@@ -20261,20 +20263,21 @@
       "items": [
         "S-12"
       ],
-      "title": "composed and decomposed sound names resolve to the stored path",
+      "title": "composed and decomposed names select the original archive entry and contents",
       "area": "G6",
       "layer": "parse",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
-          "note": "composed and decomposed sound names resolve to the stored path"
+          "note": "composed and decomposed names select the original archive entry and contents"
         }
       ],
       "expectedFailing": [
         "android",
         "web"
       ],
+      "soundIdentity": true,
       "expectation": "determined",
       "files": [
         {
@@ -20308,7 +20311,8 @@
             "y": 0,
             "queue": [
               {
-                "file": "소리.wav",
+                "archiveEntry": "sounds/소리.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
                 "loop": 0,
                 "wormhole": -1
               }
@@ -20350,20 +20354,21 @@
       "items": [
         "S-12"
       ],
-      "title": "composed and decomposed sound names resolve to the stored path",
+      "title": "composed and decomposed names select the original archive entry and contents",
       "area": "G6",
       "layer": "parse",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
-          "note": "composed and decomposed sound names resolve to the stored path"
+          "note": "composed and decomposed names select the original archive entry and contents"
         }
       ],
       "expectedFailing": [
         "android",
         "web"
       ],
+      "soundIdentity": true,
       "expectation": "determined",
       "files": [
         {
@@ -20397,7 +20402,8 @@
             "y": 0,
             "queue": [
               {
-                "file": "café.wav",
+                "archiveEntry": "sounds/café.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
                 "loop": 0,
                 "wormhole": -1
               }
@@ -20439,20 +20445,21 @@
       "items": [
         "S-12"
       ],
-      "title": "composed and decomposed sound names resolve to the stored path",
+      "title": "composed and decomposed names select the original archive entry and contents",
       "area": "G6",
       "layer": "parse",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
-          "note": "composed and decomposed sound names resolve to the stored path"
+          "note": "composed and decomposed names select the original archive entry and contents"
         }
       ],
       "expectedFailing": [
         "android",
         "web"
       ],
+      "soundIdentity": true,
       "expectation": "determined",
       "files": [
         {
@@ -20486,7 +20493,8 @@
             "y": 0,
             "queue": [
               {
-                "file": "café.wav",
+                "archiveEntry": "sounds/café.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
                 "loop": 0,
                 "wormhole": -1
               }
@@ -20520,6 +20528,490 @@
             ]
           },
           "note": "Observed with the parser and play hook at 184c1e4b: composed and decomposed sound names resolve to the stored path. The G6 expectation stays unchanged; remove this observation when the app implements it."
+        }
+      }
+    },
+    {
+      "id": "KS-G620",
+      "items": [
+        "S-12"
+      ],
+      "title": "an exact archive spelling wins over a canonically equivalent entry with different contents",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "an exact archive spelling wins over a canonically equivalent entry with different contents"
+        }
+      ],
+      "expectedFailing": [],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 소리.wav"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-660"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-440"
+        }
+      ],
+      "fingerprint": "920dfb7d7003d87469b60b84e6b5fd0b2cbf42edec1192b89b7fa020132b9c1b",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/소리.wav",
+                "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      }
+    },
+    {
+      "id": "KS-G621",
+      "items": [
+        "S-12"
+      ],
+      "title": "an exact archive spelling wins over a canonically equivalent entry with different contents",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "an exact archive spelling wins over a canonically equivalent entry with different contents"
+        }
+      ],
+      "expectedFailing": [],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 소리.wav"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-440"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-660"
+        }
+      ],
+      "fingerprint": "1cfefb3eac253b4fe42ebbf9ae0097d526a4c2f5f002ab28fe0f65d32b48e4f1",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/소리.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      }
+    },
+    {
+      "id": "KS-G622",
+      "items": [
+        "S-12"
+      ],
+      "title": "canonical fallback selects the first original archive name in UTF-16 order",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "canonical fallback selects the first original archive name in UTF-16 order"
+        }
+      ],
+      "expectedFailing": [
+        "web"
+      ],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 소리.WAV"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-440"
+        },
+        {
+          "path": "sounds/소리.wav",
+          "asset": "tone-660"
+        }
+      ],
+      "fingerprint": "607f3ff916d6c0ecc4ef1820e8d48820cef7325d5a82c6f6e4e92d967c187933",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/소리.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      },
+      "known": {
+        "web": {
+          "status": "fail",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "archiveEntry": "sounds/소리.wav",
+                    "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": null,
+            "errors": []
+          },
+          "note": "Observed with the parser at a6b99791: canonical fallback chooses the composed archive entry and its different contents instead of the first original archive path in UTF-16 order. Original entry and selected content hash are both observed; this remains a failure."
+        }
+      }
+    },
+    {
+      "id": "KS-G623",
+      "items": [
+        "S-12"
+      ],
+      "title": "an exact archive spelling wins over a canonically equivalent entry with different contents",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "an exact archive spelling wins over a canonically equivalent entry with different contents"
+        }
+      ],
+      "expectedFailing": [],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 café.wav"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-660"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-440"
+        }
+      ],
+      "fingerprint": "221c642fcf611d54d51429eec724cca23ac8ca7f5ccefed04f23d77af201033e",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/café.wav",
+                "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      }
+    },
+    {
+      "id": "KS-G624",
+      "items": [
+        "S-12"
+      ],
+      "title": "an exact archive spelling wins over a canonically equivalent entry with different contents",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "an exact archive spelling wins over a canonically equivalent entry with different contents"
+        }
+      ],
+      "expectedFailing": [],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 café.wav"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-440"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-660"
+        }
+      ],
+      "fingerprint": "e21f6dda2bced883217287e04a3fec67f606fb02769559ef13e89f473fc9064e",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/café.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      }
+    },
+    {
+      "id": "KS-G625",
+      "items": [
+        "S-12"
+      ],
+      "title": "canonical fallback selects the first original archive name in UTF-16 order",
+      "area": "G6",
+      "layer": "parse",
+      "basis": [
+        {
+          "type": "decision",
+          "ref": "meta/unipack-conformance/GRAMMAR.md G6 S-12",
+          "note": "canonical fallback selects the first original archive name in UTF-16 order"
+        }
+      ],
+      "expectedFailing": [
+        "web"
+      ],
+      "soundIdentity": true,
+      "expectation": "determined",
+      "files": [
+        {
+          "path": "info",
+          "text": "title=Conformance\nproducerName=UniPad Conformance\nbuttonX=4\nbuttonY=3\nchain=2\nsquareButton=true"
+        },
+        {
+          "path": "keySound",
+          "text": "1 1 1 CAFÉ.wav"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-440"
+        },
+        {
+          "path": "sounds/café.wav",
+          "asset": "tone-660"
+        }
+      ],
+      "fingerprint": "a30a9ca9a7115cafb39fafda100353f803dbc7c729ae629c26a6113c1eca0d07",
+      "expected": {
+        "loaded": true,
+        "info": {
+          "title": "Conformance",
+          "producerName": "UniPad Conformance",
+          "buttonX": 4,
+          "buttonY": 3,
+          "chain": 2,
+          "squareButton": true
+        },
+        "sounds": [
+          {
+            "c": 0,
+            "x": 0,
+            "y": 0,
+            "queue": [
+              {
+                "archiveEntry": "sounds/café.wav",
+                "sha256": "c92bf9a21f15a6d98067e19814d8c12724b8eeae3b5fda492b82391e32b11f0d",
+                "loop": 0,
+                "wormhole": -1
+              }
+            ]
+          }
+        ],
+        "keyLedExist": false,
+        "leds": [],
+        "autoPlay": null,
+        "errors": []
+      },
+      "known": {
+        "web": {
+          "status": "fail",
+          "actual": {
+            "loaded": true,
+            "info": {
+              "title": "Conformance",
+              "producerName": "UniPad Conformance",
+              "buttonX": 4,
+              "buttonY": 3,
+              "chain": 2,
+              "squareButton": true
+            },
+            "sounds": [
+              {
+                "c": 0,
+                "x": 0,
+                "y": 0,
+                "queue": [
+                  {
+                    "archiveEntry": "sounds/café.wav",
+                    "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
+                    "loop": 0,
+                    "wormhole": -1
+                  }
+                ]
+              }
+            ],
+            "keyLedExist": false,
+            "leds": [],
+            "autoPlay": null,
+            "errors": []
+          },
+          "note": "Observed with the parser at a6b99791: canonical fallback chooses the composed archive entry and its different contents instead of the first original archive path in UTF-16 order. Original entry and selected content hash are both observed; this remains a failure."
         }
       }
     },

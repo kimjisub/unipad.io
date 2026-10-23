@@ -1,6 +1,6 @@
 // Expectations for G6. expectedFailing names apps whose current behavior needs a correction;
 // it is documentation, never an exception to the expected result or an assertion.
-import { anim, cell, decision, ev, ledCell, lines, loaded, pack, q, refused, STD_INFO } from './lib.mjs';
+import { ASSET_GENERATORS, sha256, anim, cell, decision, ev, ledCell, lines, loaded, pack, q, refused, STD_INFO } from './lib.mjs';
 
 const basis = (items, note) => [decision(`meta/unipack-conformance/GRAMMAR.md G6 ${items.join(', ')}`, note)];
 export function g6Cases() {
@@ -10,13 +10,32 @@ export function g6Cases() {
     basis: basis(items, title), expectedFailing, ...extra,
   });
   const sound = (name) => loaded({ sounds: [cell(0, 0, 0, [q(name)])] });
+  const identity = (entry, asset) => loaded({ sounds: [cell(0, 0, 0, [{ archiveEntry: `sounds/${entry}`, sha256: sha256(ASSET_GENERATORS[asset].make()), loop: 0, wormhole: -1 }])] });
   for (const [id, written, stored] of [
     ['KS-G601', '소리.wav', '소리.wav'.normalize('NFD')],
     ['KS-G602', '소리.wav'.normalize('NFD'), '소리.wav'],
     ['KS-G603', 'café.wav', 'café.wav'.normalize('NFD')],
     ['KS-G604', 'CAFÉ.wav'.normalize('NFD'), 'café.wav'],
-  ]) add(id, ['S-12'], 'composed and decomposed sound names resolve to the stored path',
-    pack({ keySound: `1 1 1 ${written}`, sounds: [], extra: [{ path: `sounds/${stored}`, asset: 'tone-440' }] }), sound(stored), ['android', 'web']);
+  ]) add(id, ['S-12'], 'composed and decomposed names select the original archive entry and contents',
+    pack({ keySound: `1 1 1 ${written}`, sounds: [], extra: [{ path: `sounds/${stored}`, asset: 'tone-440' }] }), identity(stored, 'tone-440'), ['android', 'web'], { soundIdentity: true });
+
+  // Both archive orders are represented. The chosen entry's content, not a normalized path,
+  // distinguishes a correct lookup from a later import overwriting its bytes.
+  for (const [firstId, composed, fallback] of [[620, '소리.wav', '소리.WAV'], [623, 'café.wav', 'CAFÉ.wav']]) {
+    const decomposed = composed.normalize('NFD');
+    for (const [offset, written, selected, asset, reversed] of [
+      [0, composed, composed, 'tone-660', true],
+      [1, decomposed, decomposed, 'tone-440', false],
+      [2, fallback, [composed, decomposed].sort()[0], 'tone-440', false],
+    ]) {
+      const entries = [{ path: `sounds/${decomposed}`, asset: 'tone-440' }, { path: `sounds/${composed}`, asset: 'tone-660' }];
+      if (reversed) entries.reverse();
+      add(`KS-G${firstId + offset}`, ['S-12'], offset < 2
+        ? 'an exact archive spelling wins over a canonically equivalent entry with different contents'
+        : 'canonical fallback selects the first original archive name in UTF-16 order',
+      pack({ keySound: `1 1 1 ${written}`, sounds: [], extra: entries }), identity(selected, asset), offset === 2 ? ['web'] : [], { soundIdentity: true });
+    }
+  }
 
   for (const [id, key] of [['INF-G601', 'buttonX'], ['INF-G602', 'buttonY'], ['INF-G603', 'chain']]) {
     const value = key === 'buttonX' ? '4' : key === 'buttonY' ? '3' : '2';

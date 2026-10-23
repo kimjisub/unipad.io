@@ -42,6 +42,8 @@ export interface CorpusCase {
   /** The grammar items (meta/unipack-conformance/GRAMMAR.md) the case checks. */
   items?: string[];
   screenInputs?: boolean;
+  /** Observe archive provenance and selected bytes, independently of native storage spelling. */
+  soundIdentity?: boolean;
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -189,6 +191,22 @@ export function parseResult(pack: UniPackData): Json {
   };
 }
 
+/** The web parser retains original ZIP entry names and the bytes it selected for each sound. */
+export function soundIdentityResult(pack: UniPackData): Json {
+  const actual = parseResult(pack) as { [key: string]: Json };
+  const sounds: Json[] = [];
+  for (let c = 0; c < pack.info.chain; c++) for (let x = 0; x < pack.info.buttonX; x++) for (let y = 0; y < pack.info.buttonY; y++) {
+    const queue = pack.soundTable[c][x][y];
+    if (!queue?.length) continue;
+    sounds.push({ c, x, y, queue: queue.map(sound => {
+      const bytes = pack.soundFiles.get(sound.file);
+      if (!bytes) throw new Error(`selected sound has no observed bytes: ${sound.file}`);
+      return { archiveEntry: sound.file, sha256: createHash('sha256').update(Buffer.from(bytes)).digest('hex'), loop: sound.loop, wormhole: sound.wormhole };
+    }) });
+  }
+  return { ...actual, sounds };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Running a case. `deps` lets the self-checks replace the code under test with a stand-in to prove
 // that a case fails when the call is left out.
@@ -239,7 +257,7 @@ export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL):
   const capture: WarningCapture = {
     warnings: [...pack.errors], pack: { buttonX: pack.info.buttonX, buttonY: pack.info.buttonY, chain: pack.info.chain }, refused: null,
   };
-  const actual = c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  const actual = c.layer === 'parse' ? (c.soundIdentity ? soundIdentityResult(pack) : parseResult(pack)) : { checkpoints: await runScenario(c, pack, deps) };
   return { actual, capture };
 }
 
