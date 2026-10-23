@@ -1,6 +1,6 @@
-import { rm, readFile } from 'node:fs/promises';
+import { rm, readFile, readdir } from 'node:fs/promises';
 import JSZip from 'jszip';
-import { test as restartTest, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
+import { test as restartTest, type Browser, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
 import { test, expect, expectPads, installBrowserProbe } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
@@ -160,6 +160,33 @@ test('settings import waits for native audio decoding before checking the saved 
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
 
+async function browserDisabledFeatures(browser: Browser) {
+  // Preserve Playwright's current defaults: Chromium replaces duplicate feature switches.
+  const session = await browser.newBrowserCDPSession();
+  try {
+    const { commandLine } = await session.send('SystemInfo.getInfo');
+    const disabled = commandLine.match(/--disable-features=\S+/g)?.pop();
+    if (!disabled) throw new Error('Chromium did not report its disabled features');
+    return disabled;
+  } finally { await session.detach(); }
+}
+
+async function restartBrowserArgs(browser: Browser) {
+  // Keep background DIPS SQLite writes out of these synthetic, single-origin profiles.
+  // Application IndexedDB and the actual browser-process restart remain enabled.
+  return [`${await browserDisabledFeatures(browser)},DIPS`];
+}
+
+async function launchRestartProfile(browserType: BrowserType, profile: string, args: string[]) {
+  return browserType.launchPersistentContext(profile, {
+    headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block', args,
+  });
+}
+
+function recordProfilePhase(info: TestInfo, phase: string) {
+  info.annotations.push({ type: 'profile-lifecycle', description: JSON.stringify({ phase, atMs: performance.now() }) });
+}
+
 async function closeRestartProfile(page: Page, info: TestInfo, captureFailure = info.status !== info.expectedStatus) {
   if (captureFailure) {
     await restartTest.step('Capture the failed page before browser exit', async () => {
@@ -171,8 +198,10 @@ async function closeRestartProfile(page: Page, info: TestInfo, captureFailure = 
       }
     });
   }
-  // Closing the context closes its pages too; a separate, unbounded page.close() can block this call.
+  // Persistent context.close() waits for its browser process to exit.
+  recordProfilePhase(info, 'close-requested');
   await restartTest.step('Exit the persistent browser process', () => page.context().close());
+  recordProfilePhase(info, 'process-exit-confirmed');
 }
 
 for (const keyLedExist of [true, false]) {
@@ -216,6 +245,7 @@ for (const keyLedExist of [true, false]) {
     restartTest.describe.serial(`browser restart preserves feedback ${enabled} with pack LEDs ${keyLedExist}`, () => {
       let profile: string | undefined;
       let profileClosed = true;
+      let browserArgs: string[];
       let url: string;
       const prepare = async (context: BrowserContext, baseURL: string) => {
         await context.route('**/*', route => {
@@ -236,9 +266,13 @@ for (const keyLedExist of [true, false]) {
           restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
           profile ??= info.outputPath('browser-profile');
           profileClosed = false;
-          const context = await restartTest.step('Launch the persistent browser', () => playwright[browserName].launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' }));
+          recordProfilePhase(info, 'launch-requested');
+          const context = await restartTest.step('Launch the persistent browser', () => launchRestartProfile(playwright[browserName], profile!, browserArgs));
+          recordProfilePhase(info, 'launch-ready');
+          context.browser()!.once('disconnected', () => recordProfilePhase(info, 'browser-disconnected'));
           const page = context.pages()[0];
           await provide(context);
+          recordProfilePhase(info, 'body-finished');
           // Fixture teardown gets Playwright's normal teardown deadline, even when the body fails.
           await closeRestartProfile(page, info);
           profileClosed = true;
@@ -246,6 +280,10 @@ for (const keyLedExist of [true, false]) {
         current: async ({ restartContext, baseURL }, provide) => {
           await provide(await prepare(restartContext, baseURL!));
         },
+      });
+      profileTest.beforeAll(async ({ browser, browserName }) => {
+        restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+        browserArgs = await restartBrowserArgs(browser);
       });
       profileTest.afterAll(async () => {
         // A timed-out close must not delete files still owned by the browser.
@@ -280,5 +318,37 @@ restartTest('cleanup exits the profile when its diagnostic screenshot fails', as
   const page = context.pages()[0];
   await page.close();
   await closeRestartProfile(page, info, true);
+  expect(context.browser()!.isConnected()).toBe(false);
   expect(info.annotations).toContainEqual(expect.objectContaining({ type: 'browser-exit-screenshot' }));
+});
+
+restartTest('restart profiles preserve IndexedDB without a browser tracking database', async ({ browser, playwright, browserName }, info) => {
+  restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+  const profile = info.outputPath('storage-only-profile');
+  const args = await restartBrowserArgs(browser);
+  for (const restore of [false, true]) {
+    const context = await launchRestartProfile(playwright.chromium, profile, args);
+    const persistentBrowser = context.browser()!;
+    try {
+      // The database is created lazily; absence of its file alone can miss an active tracker.
+      expect((await browserDisabledFeatures(persistentBrowser)).slice('--disable-features='.length).split(',')).toContain('DIPS');
+      // A local synthetic page isolates browser bookkeeping from the application and its audio.
+      await context.route('http://profile.test/**', route => route.fulfill({ contentType: 'text/html', body: '<button>Save</button>' }));
+      const page = context.pages()[0];
+      await page.goto('http://profile.test/');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      if (!restore) {
+        await page.evaluate(() => new Promise<void>((resolve, reject) => {
+          const request = indexedDB.open('unipad', 1);
+          request.onupgradeneeded = () => request.result.createObjectStore('settings', { keyPath: 'key' });
+          request.onsuccess = () => { request.result.close(); resolve(); };
+          request.onerror = () => reject(request.error);
+        }));
+        await playbackSettings(page, { feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
+      }
+      expect(await playbackSettings(page)).toEqual({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
+    } finally { await context.close(); }
+    expect(persistentBrowser.isConnected()).toBe(false);
+    expect((await readdir(`${profile}/Default`)).filter(name => /^DIPS(?:-|$)/.test(name))).toEqual([]);
+  }
 });
