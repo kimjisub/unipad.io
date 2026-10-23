@@ -311,7 +311,7 @@ user turns autoPlay off and stays on the play screen: the runner stops, and ever
 that the user does not also hold through `press` is released to the sound engine and the LED runner;
 no `autoOff` event is recorded for it), `looping` (record one `looping` event per endless sound still
 playing), `stop` (leave the play screen), `watchStops` (from here on also report the voices the sound engine stops). Events:
-`["sound", chain, x, y, file, loop]` (loop as stored: -1 endless, 0 once, N repeats),
+`["sound", chain, x, y, file, loop]` (effective playback repeats: -1 endless, 0 once, positive N additional repeats; stored values below -1 play once and are reported as 0),
 `["soundStop", chain, x, y, file]` (only after `watchStops`: the engine stopped a voice that a press
 started, the first time; chain, x, y and file are those of its `sound` event; a stop scheduled when a
 repeated sound starts is not one),
