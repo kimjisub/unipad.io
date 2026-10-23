@@ -1,6 +1,6 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import { test as restartTest, type BrowserType, type Page } from '@playwright/test';
+import { test as restartTest, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { test, expect, expectPads, installBrowserProbe } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
@@ -160,6 +160,21 @@ test('settings import waits for native audio decoding before checking the saved 
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
 
+async function closeRestartProfile(page: Page, info: TestInfo, captureFailure = info.status !== info.expectedStatus) {
+  if (captureFailure) {
+    await restartTest.step('Capture the failed page before browser exit', async () => {
+      try {
+        await info.attach('before-browser-exit-screen', { body: await page.screenshot({ timeout: 5000 }), contentType: 'image/png' });
+      } catch (error) {
+        // A diagnostic must not replace the assertion that failed, or prevent browser cleanup.
+        info.annotations.push({ type: 'browser-exit-screenshot', description: String(error) });
+      }
+    });
+  }
+  // Closing the context closes its pages too; a separate, unbounded page.close() can block this call.
+  await restartTest.step('Exit the persistent browser process', () => page.context().close());
+}
+
 for (const keyLedExist of [true, false]) {
   for (const saved of [null, 'true', 'false']) {
     for (const lifecycle of ['direct', 'reload', 'reopen', 'changed'] as const) {
@@ -200,9 +215,9 @@ for (const keyLedExist of [true, false]) {
     // Each keeps the normal test deadline, without creating an unused page/context.
     restartTest.describe.serial(`browser restart preserves feedback ${enabled} with pack LEDs ${keyLedExist}`, () => {
       let profile: string | undefined;
+      let profileClosed = true;
       let url: string;
-      const open = async (browserType: BrowserType, baseURL: string) => {
-        const context = await browserType.launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+      const prepare = async (context: BrowserContext, baseURL: string) => {
         await context.route('**/*', route => {
           const url = new URL(route.request().url());
           if (url.hostname === 'firebaseinstallations.googleapis.com') return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
@@ -216,38 +231,54 @@ for (const keyLedExist of [true, false]) {
         await installBrowserProbe(page);
         return { context, page, errors };
       };
-      restartTest.beforeEach(({ browserName }) => {
-        restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+      const profileTest = restartTest.extend<{ restartContext: BrowserContext; current: Awaited<ReturnType<typeof prepare>> }>({
+        restartContext: async ({ playwright, browserName }, provide, info) => {
+          restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+          profile ??= info.outputPath('browser-profile');
+          profileClosed = false;
+          const context = await restartTest.step('Launch the persistent browser', () => playwright[browserName].launchPersistentContext(profile!, { headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' }));
+          const page = context.pages()[0];
+          await provide(context);
+          // Fixture teardown gets Playwright's normal teardown deadline, even when the body fails.
+          await closeRestartProfile(page, info);
+          profileClosed = true;
+        },
+        current: async ({ restartContext, baseURL }, provide) => {
+          await provide(await prepare(restartContext, baseURL!));
+        },
       });
-      restartTest.afterAll(async () => {
-        if (profile) await rm(profile, { recursive: true, force: true });
+      profileTest.afterAll(async () => {
+        // A timed-out close must not delete files still owned by the browser.
+        if (profile && profileClosed) await rm(profile, { recursive: true, force: true });
       });
-      restartTest('imports and saves the starting profile', async ({ playwright, browserName, baseURL }, info) => {
-        profile = info.outputPath('browser-profile');
-        const current = await open(playwright[browserName], baseURL!);
-        try {
-          await current.page.goto(`${baseURL}/play`, { waitUntil: 'domcontentloaded' });
-          await current.page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
-          await playbackSettings(current.page, { feedbackLight: enabled, watermark: 'false', volumeLevel: '2' });
-          url = await importPlaybackPack(current.page, keyLedExist);
-          await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
-          await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
-          await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
-          await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
-          await info.attach('before-restart-storage', { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
-          expect(current.errors).toEqual([]);
-        } finally { await current.context.close(); }
+      profileTest('imports and saves the starting profile', async ({ current, baseURL }, info) => {
+        await current.page.goto(`${baseURL}/play`, { waitUntil: 'domcontentloaded' });
+        await current.page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+        await playbackSettings(current.page, { feedbackLight: enabled, watermark: 'false', volumeLevel: '2' });
+        url = await importPlaybackPack(current.page, keyLedExist);
+        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+        await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await info.attach('before-restart-storage', { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
+        expect(current.errors).toEqual([]);
       });
-      restartTest('restores the profile after the browser process exits', async ({ playwright, browserName, baseURL }, info) => {
-        const current = await open(playwright[browserName], baseURL!);
-        try {
-          await current.page.goto(url, { waitUntil: 'domcontentloaded' });
-          await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
-          await info.attach(`restart-${enabled}-screen`, { body: await current.page.screenshot(), contentType: 'image/png' });
-          await info.attach(`restart-${enabled}-storage`, { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
-          expect(current.errors).toEqual([]);
-        } finally { await current.context.close(); }
+      profileTest('restores the profile after the browser process exits', async ({ current }, info) => {
+        await current.page.goto(url, { waitUntil: 'domcontentloaded' });
+        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await info.attach(`restart-${enabled}-screen`, { body: await current.page.screenshot(), contentType: 'image/png' });
+        await info.attach(`restart-${enabled}-storage`, { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
+        expect(current.errors).toEqual([]);
       });
     });
   }
 }
+
+restartTest('cleanup exits the profile when its diagnostic screenshot fails', async ({ playwright, browserName }, info) => {
+  restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+  const context = await playwright.chromium.launchPersistentContext(info.outputPath('closed-page-profile'), { headless: true });
+  const page = context.pages()[0];
+  await page.close();
+  await closeRestartProfile(page, info, true);
+  expect(info.annotations).toContainEqual(expect.objectContaining({ type: 'browser-exit-screenshot' }));
+});

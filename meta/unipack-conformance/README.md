@@ -91,8 +91,9 @@ on a platform when
 - every case that checks it is a `pass` on that platform;
 - for an `output` item, at least one of those cases is a `run` or `palette` case (a parse result does not
   show what is played or lit);
-- the platform's harness can observe the item at all (`HARNESS_LIMITS` in `grammar.mjs`): Android and
-  the web do not decode sounds, so A-01 to A-05 are never confirmed there; no harness imports an archive
+- the platform's harness can observe the item at all (`HARNESS_LIMITS` in `grammar.mjs`): the Android
+  and web common cases do not decode sounds, so those cases alone cannot confirm A-01 to A-05;
+  no common harness imports an archive
   (F-05, F-06); and where the pack is written to a disk that does not tell `INFO` from `info`, a parser
   that opens only the exact name passes F-01 too, so Android and iOS confirm F-01 only when their result
   file says `"caseSensitiveFileSystem": true`.
@@ -120,8 +121,9 @@ platform:
   only when its cases pass **and** the listed app tests pass; neither covers the other;
 - otherwise: by its cases alone, as before. The app tests are not looked at.
 
-An item no test is listed for (today Android A-01 to A-05) stays unconfirmed whatever the
-file says. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
+When app tests are required, an item no test is listed for stays unconfirmed whatever the file says.
+Android A-01 to A-05 now list emulator output tests; A-05 requires both the tagged and untagged MP3
+output tests. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
 `app tests`, or `common and app tests`) and `native` the SHA-256 of each file and the commit its tests
 ran on; the text marks the cells `ok`, `ok app` and `ok both` and prints that commit under the time the
 platform's common results were written. Running the common cases and the app tests on the same commit is
