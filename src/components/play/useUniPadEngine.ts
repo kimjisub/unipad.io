@@ -418,6 +418,7 @@ export function useUniPadEngine() {
   }, [refreshChain, scheduleFlush]);
 
   const selectChain = useCallback((c: number) => {
+    soundEngineRef.current?.cancelPendingChainChanges();
     setChain(c);
   }, [setChain]);
 

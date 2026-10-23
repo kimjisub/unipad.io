@@ -150,6 +150,7 @@ export function PlayPage() {
   }, []);
   const prevLoadedRef = useRef(false);
   const prevRecordingRef = useRef(false);
+  const prevRecordingPackRef = useRef(state.unipack);
   const currentPackIdRef = useRef<string | null>(null);
   const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -582,11 +583,13 @@ export function PlayPage() {
 
   // Android: show "Copied" toast when recording stops
   useEffect(() => {
-    if (prevRecordingRef.current && !state.recording) {
+    const samePack = prevRecordingPackRef.current === state.unipack;
+    if (prevRecordingRef.current && !state.recording && samePack && state.loaded) {
       showToast(tToast('copied'));
     }
     prevRecordingRef.current = state.recording;
-  }, [state.recording, showToast, tToast]);
+    prevRecordingPackRef.current = state.unipack;
+  }, [state.loaded, state.recording, state.unipack, showToast, tToast]);
 
   // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
   const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null;

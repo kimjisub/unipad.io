@@ -155,13 +155,13 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
   assert.ok(guides.every(p => p.guideTargetWallTimeMs >= now - 800 && p.guideTargetWallTimeMs <= now + 800), 'the upcoming guide must keep its lead time at the new position');
 });
 
-for (const selected of [0, 2]) test(`a chain choice of ${selected} preserves the pending wormhole`, async () => {
+for (const selected of [0, 2]) test(`a chain choice of ${selected} cancels the pending wormhole`, async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await tick(50);
   await flush(() => result.current.setChain(selected));
   await tick(50);
-  assert.equal(result.current.state.chain, 1);
+  assert.equal(result.current.state.chain, selected);
 });
 
 test('leaving the player cancels its pending wormhole', async () => {
@@ -205,12 +205,12 @@ test('repeated visibility events preserve a guide target and its remaining lead 
   assert.equal(result.current.state.padStates[0][0].guide, false);
 });
 
-test('a keyboard chain choice preserves the pending wormhole', async () => {
+test('a keyboard chain choice cancels the pending wormhole', async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F3' })));
   await tick(100);
-  assert.equal(result.current.state.chain, 1);
+  assert.equal(result.current.state.chain, 2);
 });
 
 test('overlapping wormholes without a user choice keep their original order', async () => {
@@ -255,12 +255,12 @@ test('returning to paused guide practice does not restore its obsolete timed gui
 });
 
 
-test('a controller chain choice preserves the pending wormhole', async () => {
+test('a controller chain choice cancels the pending wormhole', async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
   await flush(() => midiListener.onChainTouch(2));
   await tick(100);
-  assert.equal(result.current.state.chain, 1);
+  assert.equal(result.current.state.chain, 2);
 });
 
 
@@ -417,7 +417,7 @@ for (const action of ['selection', 'unload']) test(`${action} during wormhole su
   await visibility(false);
   await flush(() => action === 'selection' ? result.current.setChain(2) : result.current.unload());
   await flush(finishResume); await tick(5000);
-  assert.equal(result.current.state.chain, action === 'selection' ? 1 : 0);
+  assert.equal(result.current.state.chain, action === 'selection' ? 2 : 0);
 });
 
 test('overlapping hidden wormholes resume in order without resetting on repeated hide events', async () => {
@@ -524,6 +524,7 @@ for (const direct of [false, true]) test(`opening another pack resets session op
 
 for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sound and lights until the final release (${releaseFirst})`, async () => {
   const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000' });
+  await flush(() => result.current.setFeedbackLight(true));
   await flush(() => result.current.padTouchOn(0, 0, 'first'));
   await tick(4);
   await flush(() => result.current.padTouchOn(0, 0, 'second'));
@@ -531,6 +532,7 @@ for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sou
   await flush(() => result.current.padTouchOff(0, 0, releaseFirst));
   await tick(4); await draw();
   assert.equal(sources.at(-1).stopped, false);
+  assert.equal(result.current.state.padStates[0][0].pressedIsWinning, true);
   assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
   assert.equal(result.current.state.padStates[0][0].pressed, true);
   await flush(() => result.current.padTouchOff(0, 0, releaseFirst === 'first' ? 'second' : 'first'));

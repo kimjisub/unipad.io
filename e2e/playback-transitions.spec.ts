@@ -76,7 +76,7 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
-test('a chain button choice preserves an earlier sound wormhole', async ({ page }, info) => {
+test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
   // Key input starts the sound; a direct pointer event selects the chain on the paused clock.
   await page.keyboard.press('1');
@@ -85,8 +85,8 @@ test('a chain button choice preserves an earlier sound wormhole', async ({ page 
   await page.getByRole('button', { name: 'Chain 11', exact: true }).dispatchEvent('pointerdown');
   await page.clock.runFor(100);
   await capture(page, info);
-  // The earlier sound still moves to playable chain 2 at its original deadline.
-  const selected = page.getByRole('button', { name: 'Chain 10', exact: true });
+  // The later explicit selection remains after the original sound deadline.
+  const selected = page.getByRole('button', { name: 'Chain 11', exact: true });
   await expect(selected.locator('div.z-10')).toHaveCount(1);
 });
 
@@ -135,8 +135,8 @@ test('clock initialization stays deterministic when its pause command is delayed
 
 const packLight = (page: Page) => page.locator('[data-pad="0,1"] .z-10');
 async function snapshot(page: Page, info: TestInfo, name: string) {
-  await info.attach(name, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await info.attach(`${name}-audio`, { body: JSON.stringify(await page.evaluate(() => ({ starts: window.browserProbe.audio.starts, stops: window.browserProbe.audio.stops }))), contentType: 'application/json' });
+  await info.attach(name, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 }
 
 test('compatibility: show only the pack chain buttons outside Pro Light Mode', async ({ page }, info) => {
@@ -158,11 +158,12 @@ test('compatibility: release ends endless lights after changing chain', async ({
 test('compatibility: pause keeps the remaining half-second before the next note', async ({ page }, info) => {
   await open(page, 'o 1 1\nd 1000\no 1 2\nd 10000\no 1 1');
   await mode(page, 'Auto').dispatchEvent('click');
-  await page.clock.runFor(500);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(499);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(3000);
   await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
-  await page.clock.runFor(499);
+  await page.clock.fastForward(499);
   await snapshot(page, info, 'resumed-before-next-note');
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
   await page.clock.runFor(1);
@@ -176,7 +177,7 @@ test('compatibility: natural end preserves the last finite light animation', asy
   await snapshot(page, info, 'finite-light-after-song');
   await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
   await expect(packLight(page)).toHaveCount(1);
-  await page.clock.runFor(2000);
+  await page.clock.fastForward(1980); await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,2"] .z-10')).toHaveCount(1);
 });
 
@@ -194,6 +195,7 @@ test('compatibility: step practice leaves the final group available until played
 
 for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts wait for the last release (later first ${laterFirst})`, async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1', false, { endless: true, led: 'o 1 2 a 5\nd 1000', keySound: '1 1 1 tone.wav 0' });
+  await page.getByRole('button', { name: 'Feedback', exact: true }).dispatchEvent('click');
   const target = page.locator('[data-pad="0,0"]');
   const box = (await target.boundingBox())!;
   const pointer = async (type: string, id: number) => {
@@ -205,16 +207,18 @@ for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts w
   await snapshot(page, info, 'one-contact-still-held');
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
   await expect(packLight(page)).toHaveCount(1);
+  await expect(target.locator('img[src="/theme/btn_.png"]')).toHaveCount(1);
   await pointer('pointerup', laterFirst ? 101 : 102);
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
   await expect(packLight(page)).toHaveCount(0);
+  await expect(target.locator('img[src="/theme/btn_.png"]')).toHaveCount(0);
 });
 
 test('compatibility: stopping autoplay clears endless lights started on another chain', async ({ page }, info) => {
   await open(page, 'o 1 1\nc 2\nd 10000\no 1 2', false, { endless: true, led: 'o 1 2 a 5\nd 1000' });
   await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(20);
   await expect(packLight(page)).toHaveCount(1);
-  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(1020);
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.fastForward(1000); await page.clock.runFor(20);
   await snapshot(page, info, 'stopped-cross-chain-animation');
   await expect(packLight(page)).toHaveCount(0);
 });
@@ -229,7 +233,7 @@ test('compatibility detail: autoplay wormholes move once before the next explici
 
 test('compatibility detail: repeated autoplay presses release earlier-chain endless sound', async ({ page }, info) => {
   await open(page, 'o 1 1\nc 2\no 1 1\nd 500\nf 1 1\nd 1000\no 1 2', false, { keySound: '1 1 1 tone.wav 0\n2 1 1 tone.wav' });
-  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(550);
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(1); await page.clock.fastForward(549);
   await snapshot(page, info, 'released-earlier-chain-sound');
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toContain(1);
 });
@@ -238,9 +242,10 @@ for (const playerFirst of [true, false]) test(`compatibility detail: releases pr
   await open(page, playerFirst ? 'd 300\no 1 1\nd 700\nf 1 1\nd 1000\no 1 2' : 'o 1 1\nd 300\nf 1 1\nd 1000\no 1 2', false, { endless: true, led: 'o 1 2 a 5\nd 1000', keySound: '1 1 1 tone.wav 0' });
   await mode(page, 'Auto').dispatchEvent('click');
   if (playerFirst) await page.keyboard.down('1');
-  await page.clock.runFor(playerFirst ? 500 : 100);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(playerFirst ? 499 : 99);
   if (playerFirst) await page.keyboard.up('1');
-  else { await page.keyboard.down('1'); await page.clock.runFor(250); }
+  else { await page.keyboard.down('1'); await page.clock.fastForward(250); }
   await page.clock.runFor(20);
   await snapshot(page, info, 'current-owner-after-other-release');
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
@@ -265,6 +270,7 @@ test('compatibility detail: dropping a new pack closes the previous session', as
   await expect(page).toHaveTitle(/^Replacement \|/);
   await page.clock.runFor(20);
   await snapshot(page, info, 'replacement-session');
+  await expect(page.getByText('Copied', { exact: true })).toHaveCount(0);
   await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: /^Chain \d+$/ })).toHaveCount(3);
   await page.keyboard.press('1'); await page.clock.runFor(20);
@@ -273,4 +279,19 @@ test('compatibility detail: dropping a new pack closes the previous session', as
   page.on('download', () => downloads++);
   await page.keyboard.press('Alt+r'); await page.clock.runFor(20);
   expect(downloads).toBe(0);
+});
+
+
+test('compatibility detail: stopping a recording exports its text and shows its completion notice', async ({ page }, info) => {
+  await open(page, 'd 10000\no 1 1');
+  await page.keyboard.press('Alt+r');
+  await page.clock.runFor(100);
+  await page.keyboard.press('1');
+  const downloaded = page.waitForEvent('download');
+  await page.keyboard.press('Alt+r');
+  const download = await downloaded;
+  const text = await readFile((await download.path())!, 'utf8');
+  await info.attach('recorded-text', { body: text, contentType: 'text/plain' });
+  expect(text).toBe('c 1\nd 100\nt 1 1');
+  await expect(page.getByText('Copied', { exact: true })).toHaveCount(1);
 });
