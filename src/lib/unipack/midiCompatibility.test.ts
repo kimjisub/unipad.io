@@ -65,14 +65,18 @@ test('unknown keyboards use the drum-rack pad layout without receiving light not
 });
 
 test('the original Launchpad uses its documented XY grid and red-green LEDs', async t => {
-  const { midi, emit, pads, functions, sent, advance } = await connection(t, ['Launchpad']);
-  advance(1000);
-  assert.equal(midi.getStatus().resolvedProfile, 'launchpad_s');
-  emit([0x90, 0, 127]); emit([0x90, 0, 0]); emit([0x90, 119, 127]); emit([0xb0, 104, 127]);
-  assert.deepEqual(pads, [[0, 0, true], [0, 0, false], [7, 7, true]]);
-  assert.deepEqual(functions, [0]);
-  midi.sendPadLed(0, 0, 3); midi.sendPadLed(7, 7, 3); midi.sendFunctionKeyLed(0, 3);
-  assert.deepEqual(sent[0], [[0x90, 0, 63], [0x90, 119, 63], [0xb0, 104, 63]]);
+  for (const name of ['Launchpad', 'Launchpad MIDI 1', 'Novation Launchpad', 'Novation Launchpad MIDI 1']) {
+    await t.test(name, async t => {
+      const { midi, emit, pads, functions, sent, advance } = await connection(t, [name]);
+      advance(1000);
+      assert.equal(midi.getStatus().resolvedProfile, 'launchpad_s');
+      emit([0x90, 0, 127]); emit([0x90, 0, 0]); emit([0x90, 119, 127]); emit([0xb0, 104, 127]);
+      assert.deepEqual(pads, [[0, 0, true], [0, 0, false], [7, 7, true]]);
+      assert.deepEqual(functions, [0]);
+      midi.sendPadLed(0, 0, 3); midi.sendPadLed(7, 7, 3); midi.sendFunctionKeyLed(0, 3);
+      assert.deepEqual(sent[0], [[0x90, 0, 63], [0x90, 119, 63], [0xb0, 104, 63]]);
+    });
+  }
 });
 
 test('Launchpad Open uses performance init and drum-rack lights on channel 16', async t => {
