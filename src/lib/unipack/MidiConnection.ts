@@ -311,7 +311,7 @@ export class MidiConnection {
       const previousMidiPort = !!previous && /midi/i.test(previous[0].output.name ?? '');
       if (!previous || (midiPort && !previousMidiPort)) {
         selected.set(key, [{ output, profile, ready: false }]);
-      } else if (midiPort === previousMidiPort && previous.length < pairedInputs.length) {
+      } else if (name === previous[0].output.name && previous.length < pairedInputs.length) {
         // Port IDs do not identify physical device groups. Identical labels can belong to
         // separate controllers: keep a lighting endpoint for each matching performance input.
         previous.push({ output, profile, ready: false });

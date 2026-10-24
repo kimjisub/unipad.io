@@ -148,6 +148,29 @@ test('removing an input during mode settling releases its held pads immediately'
   assert.equal(held.size, 0);
 });
 
+for (const [name, model, ports] of [
+  ['LPX MIDI', 'launchpad_x', 2],
+  ['LPMiniMK3 MIDI', 'launchpad_mini_mk3', 2],
+  ['LPProMK3 MIDI', 'launchpad_pro_mk3', 3],
+] as const) {
+  for (const profile of ['auto', model] as const) {
+    test(`${profile} keeps Windows aliases of one ${name} on one lighting output`, async t => {
+      const outputs = Array.from({ length: ports }, (_, i) => i === 0 ? name : `MIDIOUT${i + 1} (${name})`);
+      const inputs = Array.from({ length: ports }, (_, i) => i === 0 ? name : `MIDIIN${i + 1} (${name})`);
+      const { midi, sent, advance } = await connection(t, outputs, profile, inputs);
+      advance(1000);
+      const modeSwitches = sent.map(messages => messages.length);
+      assert.equal(midi.getStatus().outputName, name, 'preserve the existing Windows port preference');
+      for (const messages of sent) messages.length = 0;
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual({ modeSwitches, lights: sent }, {
+        modeSwitches: [2, ...Array(ports - 1).fill(0)],
+        lights: [[[0x90, 81, 5]], ...Array.from({ length: ports - 1 }, () => [])],
+      }, 'aliases, including the Pro MK3 DIN output, receive neither mode switches nor lights');
+    });
+  }
+}
+
 for (const profile of ['auto', 'launchpad_x'] as const) {
   test(`${profile} sends lights only to the controller's MIDI port`, async t => {
     const { midi, sent, advance } = await connection(t, ['Launchpad X DAW', 'Launchpad X DIN', 'Launchpad X MIDI', 'Microsoft GS Wavetable Synth'], profile);
