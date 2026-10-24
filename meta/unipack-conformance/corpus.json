@@ -23160,26 +23160,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              []
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: release ends the original endless animation after a chain change. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -23290,38 +23270,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ],
-                [
-                  "chain",
-                  1
-                ]
-              ],
-              []
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: release ends the original endless animation after a chain change. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -23420,30 +23368,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ],
-                [
-                  "chain",
-                  1
-                ]
-              ],
-              []
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: release ends the original endless animation after a chain change. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -23551,41 +23475,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "autoChain",
-                  1
-                ],
-                [
-                  "autoOff",
-                  0,
-                  0
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: autoPlay release ends its endless animation after a scripted chain change. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -23693,47 +23582,6 @@
           ],
           []
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  0
-                ],
-                [
-                  "autoChain",
-                  1
-                ]
-              ],
-              [
-                [
-                  "autoChain",
-                  2
-                ]
-              ],
-              [
-                [
-                  "chain",
-                  1
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: autoPlay applies a wormhole immediately without a delayed second switch. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -23995,78 +23843,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: the last player input release owns the current endless sound and light. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -24240,78 +24016,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: the last player input release owns the current endless sound and light. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -24485,77 +24189,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              []
-            ]
-          },
-          "note": "Observed with the real play hook at 184c1e4b: releasing the later player input stops the current endless sound and light while the first input is still held. The G6 expectation waits for the last release."
-        }
       }
     },
     {
@@ -24729,77 +24362,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              []
-            ]
-          },
-          "note": "Observed with the real play hook at 184c1e4b: releasing the later player input stops the current endless sound and light while the first input is still held. The G6 expectation waits for the last release."
-        }
       }
     },
     {
@@ -24978,88 +24540,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              [
-                [
-                  "autoOff",
-                  0,
-                  0
-                ],
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: a manual release does not end the sound and light now owned by autoPlay. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -25239,88 +24719,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  -1
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOn",
-                  0,
-                  0,
-                  "ffff0000",
-                  4
-                ]
-              ],
-              [
-                [
-                  "autoOff",
-                  0,
-                  0
-                ],
-                [
-                  "ledOff",
-                  0,
-                  0
-                ]
-              ],
-              [
-                [
-                  "soundStop",
-                  0,
-                  0,
-                  0,
-                  "a.wav"
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: an autoPlay release does not end the sound and light now owned by the player. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
@@ -25844,41 +25242,6 @@
           ],
           []
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  0
-                ],
-                [
-                  "autoChain",
-                  1
-                ]
-              ],
-              [
-                [
-                  "chain",
-                  1
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: stopping autoPlay cancels any delayed chain change from its sound. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
       }
     },
     {
