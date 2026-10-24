@@ -44,15 +44,13 @@ export class AutoPlayRunner {
     const now = this.suspendedAt ?? performance.now();
     if (!playing) {
       // Settle the timed chain wait before step practice can clear its state.
-      if (this.practiceGuide && this.waitingForChain >= 0) {
-        this.shiftClock(now - this.waitStartTime);
-      }
+      this.settleChainWait(now);
       this.pausedAt = now;
       this.beforeStartPlaying = true;
     } else if (this.pausedAt !== null) {
       const pausedMs = now - this.pausedAt;
       this.startTime += pausedMs;
-      this.waitStartTime += pausedMs;
+      if (this.waitStartTime !== null) this.waitStartTime += pausedMs;
       this.activeGuides.forEach((target, key) => this.activeGuides.set(key, target + pausedMs));
       this.pausedAt = null;
       this.beforeStartPlaying = true;
@@ -70,7 +68,8 @@ export class AutoPlayRunner {
   private guideTimeline: GuideEvent[] = [];
   private guideIndex = 0;
   private waitingForChain = -1;
-  private waitStartTime = 0;
+  // Step scans have no song clock to freeze; only timed guides start a wait clock.
+  private waitStartTime: number | null = null;
   private activeGuides = new Map<number, number>();
   private lastGuideUpdateMs = 0;
 
@@ -144,7 +143,7 @@ export class AutoPlayRunner {
     if (this.practiceGuide) {
       this.guideTimeline = this.buildGuideTimeline(autoPlay);
       this.guideIndex = 0;
-      this.waitingForChain = -1;
+      this.clearChainWait();
       this.activeGuides.clear();
     }
 
@@ -182,7 +181,7 @@ export class AutoPlayRunner {
           });
           this.activeGuides.clear();
           this.guideTimeline = [];
-          this.waitingForChain = -1;
+          this.clearChainWait(currTime);
           this.listener.onRemoveGuide();
         }
         prevPracticeGuide = this.practiceGuide;
@@ -192,8 +191,7 @@ export class AutoPlayRunner {
         this.doBeforeStartPlaying();
         if (this.practiceGuide && this.waitingForChain >= 0) {
           if (this.chainValue() === this.waitingForChain) {
-            this.startTime += currTime - this.waitStartTime;
-            this.waitingForChain = -1;
+            this.clearChainWait(currTime);
             this.listener.onRemoveGuide();
           }
         } else {
@@ -299,7 +297,7 @@ export class AutoPlayRunner {
               this.stepPendingPads.clear();
               this.stepScanned = false;
             }
-            this.waitingForChain = -1;
+            this.clearChainWait();
           }
           this.stepChainValue = currentChain;
 
@@ -307,7 +305,7 @@ export class AutoPlayRunner {
 
           if (this.waitingForChain >= 0) {
             if (currentChain === this.waitingForChain) {
-              this.waitingForChain = -1;
+              this.clearChainWait();
               needsScan = true;
             }
           } else {
@@ -381,7 +379,7 @@ export class AutoPlayRunner {
   /** Moves the song and every wall-clock time derived from it later, shown guides included. */
   private shiftClock(ms: number): void {
     this.startTime += ms;
-    this.waitStartTime += ms;
+    if (this.waitStartTime !== null) this.waitStartTime += ms;
     this.lastGuideUpdateMs += ms;
     this.activeGuides.forEach((targetMs, key) => {
       const target = targetMs + ms;
@@ -390,6 +388,17 @@ export class AutoPlayRunner {
         this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
       }
     });
+  }
+
+  private settleChainWait(now = this.pausedAt ?? this.suspendedAt ?? performance.now()): void {
+    if (this.waitStartTime !== null) this.shiftClock(now - this.waitStartTime);
+  }
+
+  /** Settle a timed gate before any mode, chain or position change can discard it. */
+  private clearChainWait(now?: number): void {
+    this.settleChainWait(now);
+    this.waitingForChain = -1;
+    this.waitStartTime = null;
   }
 
   /** Both play controls and mode controls use the same step-exit and clock rules. */
@@ -416,6 +425,7 @@ export class AutoPlayRunner {
     const autoPlay = this.unipack.autoPlay;
     if (!autoPlay) return;
 
+    this.clearChainWait();
     let songTimeMs = 0;
     for (let i = 0; i < this.progress; i++) {
       const el = autoPlay.elements[i];
@@ -435,7 +445,7 @@ export class AutoPlayRunner {
     this.guideTimeline = this.buildGuideTimeline(autoPlay);
     const idx = this.guideTimeline.findIndex((e) => e.index >= this.progress);
     this.guideIndex = idx < 0 ? this.guideTimeline.length : idx;
-    this.waitingForChain = -1;
+    this.clearChainWait();
     this.activeGuides.forEach((_val, key) => {
       this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
     });
@@ -503,12 +513,7 @@ export class AutoPlayRunner {
     this.stepStartProgress = 0;
     this.stepScanOrigin = null;
     this.stepChainValue = -1;
-    // Leaving step mode while the guide waited for a chain left waitingForChain >= 0 with
-    // waitStartTime 0; on resume startTime jumped far ahead and autoplay froze (Android fix).
-    if (!preserveTimedChain) {
-      this.waitingForChain = -1;
-      this.waitStartTime = performance.now();
-    }
+    if (!preserveTimedChain) this.clearChainWait();
   }
 
   stepPadPressed(x: number, y: number): void {

@@ -254,7 +254,7 @@ for (const resume of ['button', 'mode']) {
     await info.attach('chain-prompt-after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     const chainGuide = page.getByRole('button', { name: 'Chain 10', exact: true });
     for (let i = 0; i < 5; i++) {
-      await expect(chainGuide).toHaveAttribute('data-guide', 'true');
+      await expect(chainGuide.locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
       await page.clock.fastForward(500);
     }
     await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
@@ -294,7 +294,7 @@ test('switching autoplay to guide never asks for an earlier chain at the same so
   await page.clock.runFor(20);
   await info.attach('guide-after-mode-change', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
 });
 
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
@@ -326,7 +326,7 @@ test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ 
   await info.attach('before-wormhole-deadline', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await expect(first.locator('div.z-10')).toHaveCount(1);
   await page.clock.runFor(17);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
   await info.attach('resumed-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
 
@@ -580,7 +580,7 @@ test('an expired installation token refreshes through the local service fixture'
 
 
 for (const via of ['mode', 'button']) {
-  test(`playing guide switched to autoplay via ${via} keeps the remaining delay`, async ({ page }, info) => {
+  test(`playing guide switched to autoplay via ${via}${via === 'button' ? ' before a step tick' : ''} keeps the remaining delay`, async ({ page }, info) => {
     await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
     await mode(page, 'Guide').dispatchEvent('click');
     await page.clock.runFor(1); await page.clock.fastForward(99);
@@ -623,10 +623,10 @@ for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pa
   else await mode(page, 'Step').dispatchEvent('click');
   await page.clock.runFor(20); await page.clock.fastForward(2000); await page.clock.runFor(20);
   await info.attach('chain-while-paused', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-  await expect(chain).toHaveAttribute('data-guide', 'true');
+  await expect(chain.locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
   await chain.dispatchEvent('pointerdown');
   await page.clock.runFor(20);
-  await expect(chain).toHaveAttribute('data-guide', 'false');
+  await expect(chain.locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
@@ -641,6 +641,35 @@ test('paused chain redraw does not resurrect a consumed timed pad', async ({ pag
   await page.keyboard.press('1');
   await page.clock.runFor(20);
   await info.attach('next-chain-after-completed-step', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true })).toHaveAttribute('data-guide', 'true');
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
   await expect(pad.locator('.z-\\[25\\]')).toHaveCount(0);
+});
+
+
+for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autoplay via ${via} keeps all note gaps`, async ({ page }, info) => {
+  await open(page, 'd 1000\nc 2\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(200);
+  await page.clock.fastForward(5000);
+  if (via === 'button') {
+    await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.fastForward(300);
+  }
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await info.attach('autoplay-before-first-note', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(798);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1);
+  await info.attach('autoplay-at-first-note', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.fastForward(499);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await page.clock.fastForward(499);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(3);
 });

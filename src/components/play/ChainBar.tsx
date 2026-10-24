@@ -103,7 +103,6 @@ export const ChainBar = memo(function ChainBar({
               : { height: `${slotPercent}%`, aspectRatio: '1 / 1' }
             }
             aria-label={`Chain ${chainIdx + 1}`}
-            data-guide={isGuide}
             onPointerDown={(e) => { e.preventDefault(); onChainSelect(chainIdx); }}
           >
             {/* Layer 1: background (btn or state-based image) */}

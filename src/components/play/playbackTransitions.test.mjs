@@ -1031,7 +1031,7 @@ for (const resume of [false, true]) test(`an unrelated task cannot separate a du
 
 
 for (const via of ['mode', 'button']) {
-  test(`playing guide switched to autoplay via ${via} keeps the remaining delay`, async () => {
+  test(`playing guide switched to autoplay via ${via}${via === 'button' ? ' before a step tick' : ''} keeps the remaining delay`, async () => {
     const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
     await flush(() => result.current.switchPlayMode('guidePlay'));
     await tick(1); await tick(99);
@@ -1091,4 +1091,30 @@ test('paused chain redraw does not resurrect a consumed timed pad', async () => 
   await tick(1); await tick(1); await draw();
   assert.equal(result.current.state.chainStates[9].guide, true);
   assert.equal(result.current.state.padStates[0][0].guide, false, 'a completed step must not reappear alongside the next chain');
+});
+
+
+for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autoplay via ${via} keeps all note gaps`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\nc 2\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await tick(5000);
+  if (via === 'button') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(300); // Let paused step practice scan the chain before choosing another mode.
+  }
+  const switchedAt = now;
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await draw();
+  assert.deepEqual(starts, [], 'waiting for a chain must not create overdue notes');
+  await tick(798);
+  assert.deepEqual(starts, []);
+  await tick(1);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800]);
+  await tick(499);
+  assert.equal(starts.length, 1);
+  await tick(1);
+  await tick(500);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800, 1300, 1800]);
 });
