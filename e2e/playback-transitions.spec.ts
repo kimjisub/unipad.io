@@ -166,7 +166,8 @@ test('compatibility: pause keeps the remaining half-second before the next note'
   await open(page, 'o 1 1\nd 1000\no 1 2\nd 10000\no 1 1');
   await mode(page, 'Auto').dispatchEvent('click');
   await page.clock.runFor(1);
-  await page.clock.fastForward(499);
+  // The first note starts the song clock; pause after exactly half a second of song time.
+  await page.clock.fastForward(500);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(3000);
   await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
