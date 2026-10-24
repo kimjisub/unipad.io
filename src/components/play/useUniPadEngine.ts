@@ -45,7 +45,6 @@ const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
 // What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
 // auto play uses AUTO_PLAY_INPUT).
 const MIDI_INPUT = 'midi';
-const PLAYER_INPUT = 'player';
 const keyInput = (code: string) => `key-${code}`;
 
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
@@ -450,11 +449,10 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    // Player contacts share the latest press until their last release; autoplay owns its press separately.
-    const owner = input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
-    se?.soundOn(x, y, owner);
-    lr?.eventOn(x, y, eventAt, owner);
+    // Each contact owns its sound and pack lights; only the pressed overlay shares holds.
+    if (input === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
+    se?.soundOn(x, y, input);
+    lr?.eventOn(x, y, eventAt, input);
     recorderRef.current.recordOn(x, y);
 
     if (traceLogRef.current) {
@@ -499,10 +497,9 @@ export function useUniPadEngine() {
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    const owner = input === undefined ? undefined : input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT || owner === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
-    se?.soundOff(x, y, owner);
-    lr?.eventOff(x, y, eventAt, owner);
+    if (input === AUTO_PLAY_INPUT || input === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
+    se?.soundOff(x, y, input);
+    lr?.eventOff(x, y, eventAt, input);
     recorderRef.current.recordOff(x, y);
 
     if (playerHoldsRef.current.isHeld(x, y) || autoPlayPadsRef.current.has(`${x},${y}`)) return;
@@ -524,7 +521,6 @@ export function useUniPadEngine() {
   /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
   const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
     const releasesAutoPlay = playerHoldsRef.current.release(x, y);
-    if (playerHoldsRef.current.isHeld(x, y)) return;
     padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
 

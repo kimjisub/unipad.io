@@ -24024,14 +24024,14 @@
         "RS-05",
         "RL-03"
       ],
-      "title": "releasing the later player input first still waits for the last held input",
+      "title": "releasing the later player input stops the sound and light it started",
       "area": "G6",
       "layer": "run",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 RS-05, RL-03",
-          "note": "releasing the later player input first still waits for the last held input"
+          "note": "releasing the later player input stops the sound and light it started"
         }
       ],
       "expectedFailing": [
@@ -24173,7 +24173,6 @@
               4
             ]
           ],
-          [],
           [
             [
               "soundStop",
@@ -24187,7 +24186,8 @@
               0,
               0
             ]
-          ]
+          ],
+          []
         ]
       }
     },
@@ -24197,14 +24197,14 @@
         "RS-05",
         "RL-03"
       ],
-      "title": "releasing the later player input first still waits for the last held input",
+      "title": "releasing the later player input stops the sound and light it started",
       "area": "G6",
       "layer": "run",
       "basis": [
         {
           "type": "decision",
           "ref": "meta/unipack-conformance/GRAMMAR.md G6 RS-05, RL-03",
-          "note": "releasing the later player input first still waits for the last held input"
+          "note": "releasing the later player input stops the sound and light it started"
         }
       ],
       "expectedFailing": [
@@ -24346,7 +24346,6 @@
               4
             ]
           ],
-          [],
           [
             [
               "soundStop",
@@ -24360,7 +24359,8 @@
               0,
               0
             ]
-          ]
+          ],
+          []
         ]
       }
     },
