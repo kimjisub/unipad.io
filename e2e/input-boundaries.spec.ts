@@ -34,7 +34,7 @@ const screens = [
 ];
 
 for (const square of [true, false]) {
-  test(`mouse: release after quitting a held ${square ? 'square' : 'rectangular'} pad records the document event`, async ({ page }, info) => {
+  test(`mouse: release after quitting a held ${square ? 'square' : 'rectangular'} pad records the document event`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width: 594, height: 406 });
     await loadInputPack(page, 8, 8, square);
     const position = await point(page, '4,4', 1);
@@ -49,8 +49,10 @@ for (const square of [true, false]) {
     const quit = page.getByRole('button', { name: 'Quit', exact: true });
     await expect(quit).toBeVisible();
     // Traverse the real menu without releasing the mouse or forcing focus.
+    // Safari's default keyboard navigation reaches buttons with Option+Tab.
+    const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
     for (let tabs = 0; tabs < 40 && !await quit.evaluate(button => button === document.activeElement); tabs++) {
-      await page.keyboard.press('Tab');
+      await page.keyboard.press(tab);
     }
     await expect(quit).toBeFocused();
     await page.keyboard.press('Enter');
@@ -62,6 +64,10 @@ for (const square of [true, false]) {
     const record = await audio(page);
     expect(record.starts).toHaveLength(1);
     await stopped(page, record.starts.map(start => start.id));
+    // Unmounting the captured pad also sends a document-targeted capture release.
+    expect(await events(page)).toContainEqual({
+      type: 'lostpointercapture', pointerType: 'mouse', pointerId: down.pointerId, buttons: 1, trusted: true, target: null,
+    });
     expect((await events(page)).filter(event => event.type === 'pointerup')).toEqual([
       { type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null },
     ]);
