@@ -6,6 +6,7 @@ interface MidiPortOptions {
   replace?: boolean;
   first?: boolean;
   rename?: string;
+  manufacturer?: string;
 }
 
 interface MidiPortProbe {
@@ -32,8 +33,8 @@ export async function configureMidiPorts(page: Page, options: MidiPortOptions) {
           }
         }
         const messages: number[][][] = (options.outputs ?? []).map(() => []);
-        const inputs = (options.inputs ?? []).map((name, i) => ({ id: `test-input-${i}`, name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null }));
-        const outputs = (options.outputs ?? []).map((name, i) => ({ id: `test-output-${i}`, name, send: (data: number[]) => messages[i].push(Array.from(data)) }));
+        const inputs = (options.inputs ?? []).map((name, i) => ({ id: `test-input-${i}`, name, manufacturer: options.manufacturer ?? 'Novation', onmidimessage: null as ((event: { data: Uint8Array }) => void) | null }));
+        const outputs = (options.outputs ?? []).map((name, i) => ({ id: `test-output-${i}`, name, manufacturer: options.manufacturer ?? 'Novation', send: (data: number[]) => messages[i].push(Array.from(data)) }));
         for (const [key, ports] of [['inputs', inputs], ['outputs', outputs]] as const) {
           const map = access[key] as unknown as Map<string, unknown>;
           const existing = options.replace ? [] : [...map];

@@ -59,7 +59,7 @@ beforeEach(() => {
       if (this.pendingResume) await this.pendingResume;
       if (this.state !== 'closed') this.state = 'running';
     }
-    createGain() { return { gain: { value: 1 }, connect() {} }; }
+    createGain() { this.outputGain = { value: 1 }; return { gain: this.outputGain, connect() {} }; }
     async decodeAudioData() { return { duration: 0.1 }; }
     createBufferSource() { return { connect() {}, start() { starts.push(now); }, stop() {} }; }
     close() { this.state = 'closed'; }
@@ -440,4 +440,219 @@ test('a wormhole requested while hidden waits its full delay after audio resumes
   assert.equal(result.current.state.chain, 0);
   await visibility(false); await tick(99); assert.equal(result.current.state.chain, 0);
   await tick(1); assert.equal(result.current.state.chain, 1);
+});
+
+test('pad lights commit even while the browser delays animation frames', async () => {
+  const frames = new Map();
+  window.requestAnimationFrame = run => { const id = ++nextId; frames.set(id, run); return id; };
+  window.cancelAnimationFrame = id => frames.delete(id);
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(4);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'a due light must not wait for a later animation-frame callback');
+});
+
+test('a due light commits before React waits for another browser task', async () => {
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  await flush(() => result.current.padTouchOn(0, 0));
+  await act(async () => {
+    now += 4;
+    audio.currentTime += 0.004;
+    for (const [id, timer] of [...timers]) if (timer.at <= now && timers.delete(id)) timer.run();
+    // Keep React's deferred work queued while the engine's light microtask runs. A visible
+    // light must commit there, rather than depend on a later scheduler task getting CPU time.
+    await new Promise(queueMicrotask);
+    assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+  });
+});
+
+test('resumed notes and lights account for audio rendered while suspension was pending', async () => {
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  await tick(100);
+  assert.equal(starts.length, 1);
+  let finishSuspending;
+  audio.suspend = async () => {
+    audio.suspends++;
+    await new Promise(resolve => { finishSuspending = resolve; });
+    audio.state = 'suspended';
+  };
+  await visibility(true);
+  await tick(80);
+  await flush(() => finishSuspending());
+  await tick(5000);
+  await visibility(false);
+  await tick(819);
+  assert.equal(starts.length, 1);
+  await tick(1);
+  assert.equal(starts.length, 2, 'the sample already advanced 80 ms before native suspension completed');
+  await tick(3); // The LED runner's next 4 ms tick observes the same boundary.
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});
+
+test('a light first requested after suspension keeps its full delay on return', async () => {
+  const { result } = await mount({ led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9' });
+  let finishSuspending;
+  audio.suspend = async () => {
+    await new Promise(resolve => { finishSuspending = resolve; });
+    audio.state = 'suspended';
+  };
+  await visibility(true);
+  await tick(80);
+  await flush(() => finishSuspending());
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(5000);
+  await visibility(false);
+  await tick(999);
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'a new hidden light has not consumed the older sample’s 80 ms');
+  await tick(4);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});
+
+test('pad-only light commits keep an unchanged chain snapshot while real chain changes still publish', async () => {
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  const chains = result.current.state.chainStates;
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(4);
+  assert.strictEqual(result.current.state.chainStates, chains, 'unchanged chains must not force chain bars into a pad light commit');
+  await flush(() => result.current.setChain(1));
+  assert.notStrictEqual(result.current.state.chainStates, chains);
+  assert.equal(result.current.state.chain, 1);
+  assert.notEqual(result.current.state.chainStates[9].color, chains[9].color);
+});
+
+for (const delayedTransition of ['hide', 'show']) for (const callbackOrder of ['before', 'after']) {
+  test(`notes and finite lights share one visibility boundary with a delay ${callbackOrder} ${delayedTransition} callbacks`, async () => {
+    const { result } = await mount({
+      autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
+      led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
+    });
+    if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    const firstAudioTime = audio.currentTime;
+    await tick(100);
+    assert.equal(starts.length, 1);
+    const suspend = real.AutoPlayRunner.prototype.setSuspended;
+    mock.method(real.AutoPlayRunner.prototype, 'setSuspended', function (hidden, ...args) {
+      const delayed = hidden === (delayedTransition === 'hide');
+      const delay = () => {
+        // A callback can enter or return later in the same visibility task. The audio device
+        // keeps rendering until native suspension and resumes before the runners are released.
+        now += 80;
+        if (audio.state === 'running') audio.currentTime += 0.08;
+      };
+      if (delayed && callbackOrder === 'before') delay();
+      suspend.call(this, hidden, ...args);
+      if (delayed && callbackOrder === 'after') delay();
+    });
+    await visibility(true);
+    await tick(2000);
+    await visibility(false);
+    const nextNote = now + Math.round((firstAudioTime + 1 - audio.currentTime) * 1000);
+    await tick(nextNote - now - 1);
+    assert.equal(starts.length, 1);
+    assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'the next light must not consume another runner\'s callback delay');
+    await tick(1);
+    assert.equal(starts.length, 2);
+    assert.equal(starts[1], nextNote);
+    await tick(4);
+    assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'the due light must not add another runner\'s callback delay');
+  });
+}
+
+
+test('visibility mutes output before a slow sequencer pause callback', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  assert.equal(starts.length, 1);
+  let value = audio.outputGain.value;
+  assert.ok(value > 0);
+  let mutedAt = null;
+  Object.defineProperty(audio.outputGain, 'value', {
+    get: () => value,
+    set: next => { value = next; if (next === 0) mutedAt = now; },
+  });
+  const suspend = real.AutoPlayRunner.prototype.setSuspended;
+  mock.method(real.AutoPlayRunner.prototype, 'setSuspended', function (hidden, ...args) {
+    if (hidden) {
+      now += 80;
+      if (audio.state === 'running') audio.currentTime += 0.08;
+    }
+    suspend.call(this, hidden, ...args);
+  });
+  const hiddenAt = now;
+  await visibility(true);
+  assert.notEqual(mutedAt, null);
+  assert.ok(mutedAt - hiddenAt < 50, 'a slow runner must not hold up the output mute request');
+  assert.equal(value, 0);
+});
+
+
+for (const adoptLightBeforeHide of [false, true]) test(`resumed note and ${adoptLightBeforeHide ? 'running' : 'queued'} light retain the same deadline after native audio advances`, async () => {
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+  });
+  if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
+  let finish;
+  audio.suspend = async () => { await new Promise(resolve => { finish = resolve; }); audio.state = 'suspended'; };
+  if (!adoptLightBeforeHide) {
+    const eventOn = real.LedRunner.prototype.eventOn;
+    mock.method(real.LedRunner.prototype, 'eventOn', function (...args) {
+      eventOn.apply(this, args);
+      if (args[1] === 0 && !hidden) {
+        hidden = true;
+        document.dispatchEvent(new window.Event('visibilitychange'));
+      }
+    });
+  }
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  const firstAudioTime = audio.currentTime;
+  if (adoptLightBeforeHide) await tick(4);
+  await visibility(true); await tick(80); await flush(() => finish());
+  await tick(5000); await visibility(false);
+  const due = now + Math.round((firstAudioTime + 1.5 - audio.currentTime) * 1000);
+  await tick(due - now - 1);
+  assert.equal(starts.length, 1);
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+  await tick(1); await tick(4);
+  assert.equal(starts[1], due);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});
+
+for (const resume of [false, true]) test(`an unrelated task cannot separate a due note from its light${resume ? ' after resuming' : ''}`, async () => {
+  const writes = [];
+  const processEvent = real.LedRunner.prototype.processEvent;
+  mock.method(real.LedRunner.prototype, 'processEvent', function (event, state) {
+    if (event.type === 'on' && event.y === 1) writes.push(now);
+    return processEvent.call(this, event, state);
+  });
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await tick(4);
+  if (resume) { await visibility(true); await tick(5000); await visibility(false); }
+  const due = starts[0] + 1500 + (resume ? 5000 : 0);
+  // Dispatch due timers in deadline order. A separate ready task takes 200 ms immediately after
+  // the task which plays note two, before any later timer task can begin.
+  await flush(() => {
+    audio.currentTime += (due - now) / 1000; now = due;
+    for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
+      if (timer.at > now || !timers.delete(id)) continue;
+      timer.run();
+      if (starts.length === 2 && writes.length === 0) { now += 200; audio.currentTime += 0.2; }
+    }
+  });
+  assert.equal(starts[1], due, 'the second note is due before the unrelated task');
+  assert.equal(writes.length, 1);
+  assert.ok(writes[0] - starts[1] < 50, `light was separated from its note by ${writes[0] - starts[1]} ms`);
 });

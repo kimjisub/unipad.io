@@ -51,7 +51,6 @@ test('every launchpad profile option has its note and label translations', () =>
 });
 
 
-
 // Exercise the rendered settings rather than a copy of its state logic.
 const { JSDOM } = await import('jsdom');
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/play' });
@@ -80,7 +79,7 @@ const props = {
 };
 const wrapped = (overrides = {}, locale = 'en') => React.createElement(NextIntlClientProvider,
   { locale, messages: locales[locale] }, React.createElement(LaunchpadSettingsModal, { ...props, ...overrides }));
-test('every offered controller model can be restored after reload', () => {
+test('the profile validator accepts offered values and rejects invalid stored data', () => {
   const view = render(wrapped());
   const options = view.getAllByRole('option').map(option => option.value);
   assert.ok(options.length > 0);

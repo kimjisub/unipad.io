@@ -373,3 +373,34 @@ test('an unknown DAW-named controller stays unlit on automatic detection', async
   advance(1000); midi.sendPadLed(0, 0, 5);
   assert.deepEqual(sent, [[]]);
 });
+
+
+for (const [names, preferred] of [
+  [['Foo DAW Out', 'Foo MIDI Out'], 'Foo MIDI Out'],
+  [['Foo', 'MIDIOUT2 (Foo)', 'MIDIOUT3 (Foo)'], 'MIDIOUT2 (Foo)'],
+  [['Foo DIN Out', 'Foo Out'], 'Foo Out'],
+  [['Foo MIDI 3', 'Foo MIDI'], 'Foo MIDI'],
+  [['MIDIOUT3 (Foo)', 'MIDIOUT2 (Foo)', 'Foo'], 'MIDIOUT2 (Foo)'],
+] as const) {
+  for (const reverse of [false, true]) {
+    test(`a manually identified unknown controller prefers ${preferred} with ${names.join(', ')} ${reverse ? 'reversed' : 'in order'}`, async t => {
+      const outputs = reverse ? [...names].reverse() : [...names];
+      const { midi, sent, advance } = await connection(t, outputs, 'launchpad_x', ['Foo DAW In']);
+      advance(1000);
+      assert.equal(midi.getStatus().outputName, preferred);
+      assert.deepEqual(sent.map(messages => messages.length), outputs.map(name => name === preferred ? 2 : 0));
+      sent.forEach(messages => { messages.length = 0; });
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual(sent, outputs.map(name => name === preferred ? [[0x90, 81, 5]] : []));
+    });
+  }
+}
+
+test('identical surviving outputs do not use the current input count as a device count', async t => {
+  const { midi, sent, advance } = await connection(t, ['LPX MIDI', 'LPX MIDI'], 'launchpad_x', ['LPX MIDI']);
+  advance(1000);
+  assert.deepEqual(sent.map(messages => messages.length), [2, 2]);
+  sent.forEach(messages => { messages.length = 0; });
+  midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent, [[[0x90, 81, 5]], [[0x90, 81, 5]]]);
+});

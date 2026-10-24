@@ -1,4 +1,4 @@
-import type { LaunchpadProfile } from './MidiProfiles';
+import { getLightingInterface, type LaunchpadProfile } from './MidiProfiles';
 export type { LaunchpadProfile } from './MidiProfiles';
 
 export interface MidiControllerListener {
@@ -123,19 +123,24 @@ function isDrumRack(profile: ResolvedProfile): boolean {
  * programmer references: X/Mini MK3 and original Pro use 2; Pro MK3 uses 1 (2 is DIN, 3 DAW).
  * Resolve from the detected hardware, never the manually chosen message layout. */
 function lightPortPriority(name: string, profile: ResolvedProfile): number | null {
-  // An unknown name is not evidence of DAW routing. A manual profile plus a paired input is
-  // the user's explicit identification; known DAW/DIN interfaces remain excluded below.
-  if (profile === 'master_keyboard') return 0;
-  if (/\b(?:daw|din)\b/i.test(name)) return null;
-  if (profile === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name)) return null;
   const numbered = /^midi(?:in|out)(\d+)\s*\(/i.exec(name)
     ?? /\b(?:midi|port)\s*(?:(?:in|out)\s*)?([1-3])\b/i.exec(name);
-  if (numbered && ['launchpad_x', 'launchpad_mini_mk3', 'launchpad_pro_mk3', 'launchpad_pro'].includes(profile)) {
-    const lightingInterface = profile === 'launchpad_pro_mk3' ? 1 : 2;
+  const auxiliaryName = /\b(?:daw|din)\b/i.test(name);
+  const thirdInterface = Number(numbered?.[1]) === 3;
+  const namedPriority = /midi|standalone/i.test(name) ? 1 : 0;
+  if (profile === 'master_keyboard') {
+    // An explicit manual model can identify a DAW-only unknown device. Keep that fallback,
+    // but prefer a MIDI or ordinary endpoint whenever one is also available for the device.
+    return auxiliaryName || thirdInterface ? -1 : namedPriority;
+  }
+  if (auxiliaryName) return null;
+  if (profile === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name)) return null;
+  const lightingInterface = getLightingInterface(profile);
+  if (numbered && lightingInterface !== undefined) {
     return Number(numbered[1]) === lightingInterface ? 2 : null;
   }
-  if (/\b(?:midi\s*(?:(?:in|out)\s*)?3|port\s*3)\b/i.test(name)) return null;
-  return /midi|standalone/i.test(name) ? 1 : 0;
+  if (thirdInterface) return null;
+  return namedPriority;
 }
 
 /** MIDI channels are zero-based in status bytes. */
@@ -317,8 +322,9 @@ export class MidiConnection {
       if (!previous || priority > previous.priority) {
         selected.set(key, { priority, lights: [{ output, profile, ready: false }] });
       } else if (priority === previous.priority && name === previous.lights[0].output.name) {
-        // Identically labelled outputs can be separate controllers. Keep every actual endpoint:
-        // input and output removal events arrive independently, and input aliases are not devices.
+        // Web MIDI cannot distinguish two controllers from duplicate output labels on one device.
+        // Keep every surviving endpoint, even with only one input: input and output removals
+        // arrive independently, and input aliases do not identify physical device groups.
         previous.lights.push({ output, profile, ready: false });
       }
     }
