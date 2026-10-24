@@ -112,10 +112,10 @@ function connectedTo(profile: LaunchpadProfile): { midi: MidiConnection; sent: s
   const midi = new MidiConnection();
   midi.setProfile(profile);
   const port = { send: (message: number[]) => { sent.push(message.map((b) => b.toString(16).padStart(2, '0')).join(' ')); } };
-  // A model picked by hand lights every output in that model's layout.
+  // A model picked by hand encodes the selected controller's lighting port.
   const ports = midi as unknown as { outputs: unknown[]; lightOutputs: unknown[] };
   ports.outputs = [port];
-  ports.lightOutputs = [{ output: port, profile }];
+  ports.lightOutputs = [{ output: port, profile, ready: true }];
   return { midi, sent };
 }
 
@@ -233,7 +233,7 @@ test('invalid pad coordinates neither light nor clear pads, round LEDs or the lo
 
   assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05']);
   tick(100);
-  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05', '80 51 00', 'b0 5b 00', 'b0 63 00']);
+  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05', '90 51 00', 'b0 5b 00', 'b0 63 00']);
   runner.stop();
 });
 

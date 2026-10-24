@@ -46,11 +46,11 @@ test('a manual model applies to every input and changing back to Auto restores e
   assert.deepEqual(pads, [[0, 0, true], [0, 0, true]]);
 });
 
-test('unknown input names keep the generic layout while recognised inputs keep their own', async t => {
+test('unknown input names use the master keyboard layout while recognised inputs keep their own', async t => {
   const { pads, emit } = await connect(t, ['Unknown controller', 'Launchpad X']);
-  emit(0, [0x90, 11, 127]);
+  emit(0, [0x90, 36, 127]);
   emit(1, [0x90, 11, 127]);
-  assert.deepEqual(pads, [[0, 0, true], [7, 0, true]]);
+  assert.deepEqual(pads, [[7, 0, true], [7, 0, true]]);
 });
 
 test('a newly connected input gets its own layout and disconnect removes its listener', async t => {
