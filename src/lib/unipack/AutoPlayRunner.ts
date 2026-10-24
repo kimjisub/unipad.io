@@ -80,6 +80,7 @@ export class AutoPlayRunner {
   private stepPendingPads = new Set<number>();
   private pressedKeysQueue: number[] = [];
   private stepScanned = false;
+  private stepConsumedInput = false;
   private stepStartProgress = 0;
   private stepChainValue = -1;
 
@@ -333,7 +334,8 @@ export class AutoPlayRunner {
 
       const awaitsLastStep = this.stepMode && this.practiceGuide && !this.playmode &&
         (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
-      const awaitsFinalDelay = this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
+      const stepping = this.stepMode && this.practiceGuide && !this.playmode;
+      const awaitsFinalDelay = !(stepping && this.stepConsumedInput) && this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
       if (this.suspendedAt !== null || this.progress < autoPlay.elements.length || awaitsLastStep || awaitsFinalDelay) {
         this.rafId = this.schedule(loop);
       } else {
@@ -366,12 +368,12 @@ export class AutoPlayRunner {
   }
 
   restoreGuideOutput(): void {
+    if (this.waitingForChain >= 0) this.listener.onGuideChainOn(this.waitingForChain);
     if (!this.stepMode) return;
     for (const key of this.stepPendingPads) {
       this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, 0);
       this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
     }
-    if (this.waitingForChain >= 0) this.listener.onGuideChainOn(this.waitingForChain);
   }
 
   /** Visibility is independent of playmode. Include samples rendered during native suspension
@@ -477,6 +479,7 @@ export class AutoPlayRunner {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();
     this.stepScanned = false;
+    this.stepConsumedInput = false;
     this.stepStartProgress = 0;
     this.stepChainValue = -1;
     // Leaving step mode while the guide waited for a chain left waitingForChain >= 0 with
@@ -497,6 +500,7 @@ export class AutoPlayRunner {
         removedKeys.push(key);
       }
     }
+    if (removedKeys.length > 0) this.stepConsumedInput = true;
     for (const key of removedKeys) {
       this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
       this.listener.onGuidePadOff(Math.floor(key / 256), key % 256);

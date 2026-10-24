@@ -22,11 +22,12 @@ stub('../../lib/unipack/index.ts', { ...real,
     constructor() { midiConnections.push(this); this.released = false; this.connected = nextMidiConnected; }
     async connect(listener, options) { midiListener = listener; const gate = midiConnectGate; midiConnectGate = null; if (gate) await gate; options?.onStatusChange?.(this.getStatus()); return this.connected; }
     getStatus() { return { connected: this.connected, requestedProfile: 'auto', resolvedProfile: this.connected ? 'launchpad_x' : 'none', inputName: this.connected ? 'Launchpad X' : null, outputName: this.connected ? 'Launchpad X' : null }; }
-    release() { this.released = true; } sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
+    release() { this.released = true; } sendPadLed(x, y, value) { midiLog.push(['pad', x, y, value]); } sendChainLed() {} sendFunctionKeyLed(index, value) { midiLog.push(['round', index, value]); } clearAllLeds() { midiLog.push(['clear']); }
   },
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
+let midiLog, wakeRequests;
 let now, nextId, timers, starts, hidden, midiListener, audio, audioContexts, sources, midiConnections, nextMidiConnected, midiConnectGate;
 const flush = async action => act(async () => { await action?.(); });
 const tick = async ms => flush(() => {
@@ -40,6 +41,8 @@ const visibility = async value => flush(() => {
   document.dispatchEvent(new window.Event('visibilitychange'));
 });
 beforeEach(() => {
+  midiLog = []; wakeRequests = 0;
+  delete navigator.wakeLock;
   now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false; audioContexts = []; audio = null; sources = []; midiConnections = []; nextMidiConnected = false; midiConnectGate = null;
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   mock.method(performance, 'now', () => now);
@@ -580,4 +583,108 @@ for (const selected of ['autoPlay', 'guidePlay']) test(`pausing the final wait p
   await flush(() => result.current.autoPlayPlayPause()); await tick(1499);
   assert.equal(result.current.state.autoPlayEnabled, true);
   await tick(1); assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+
+test('a pack opened while already hidden waits until it is visible', async () => {
+  hidden = true;
+  const { result } = await mount();
+  await visibility(false); await tick(1);
+  window.dispatchEvent(new window.Event('focus'));
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await tick(1);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(10); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'pad light must show after returning');
+});
+
+test('a visible pack starts fresh lights', async () => {
+  const { result } = await mount();
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(10); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+});
+
+test('step practice entered by pausing guide play ends after the last step', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 2 1\nf 2 1' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(100);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(5); await draw();
+  const guided = [];
+  for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) if (result.current.state.padStates[x][y].guide) guided.push([x, y]);
+  for (const [x, y] of guided) { await flush(() => result.current.padTouchOn(x, y, 'finger')); await tick(5); await flush(() => result.current.padTouchOff(x, y, 'finger')); }
+  await tick(5000); await draw();
+  assert.deepEqual(guided.length > 0, true, 'a guided pad expected');
+  assert.equal(result.current.state.autoPlayEnabled, false, 'runner must end after the last step');
+});
+
+test('manual play keeps the screen awake after returning to the tab', async () => {
+  Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => { wakeRequests++; return { release: async () => {} }; } } });
+  const { result } = await mount();
+  await tick(1);
+  const before = wakeRequests;
+  await visibility(true); await tick(1000); await visibility(false); await tick(1);
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await tick(5);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(5);
+  assert.ok(wakeRequests > before, `screen wake lock re-requested after return (requests ${before} -> ${wakeRequests})`);
+});
+
+for (const interruption of ['blur', 'dialog']) test(`the current chain light returns after ${interruption}`, async () => {
+  nextMidiConnected = true;
+  const { result } = await mount(); await tick(10);
+  midiLog.length = 0;
+  await flush(() => {
+    if (interruption === 'blur') window.dispatchEvent(new window.Event('blur'));
+    else result.current.setKeyboardBlocked(true);
+  }); await tick(1);
+  await flush(() => {
+    if (interruption === 'blur') window.dispatchEvent(new window.Event('focus'));
+    else result.current.setKeyboardBlocked(false);
+  }); await tick(5);
+  const lastClear = midiLog.findLastIndex(event => event[0] === 'clear');
+  assert.ok(lastClear >= 0, 'interruption clears the device');
+  assert.ok(midiLog.slice(lastClear + 1).some(event => event[0] === 'round' && event[1] === 8 && event[2] > 0), 'the selected chain is sent back to the device');
+  assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+
+test('one Play resumes autoplay that was paused before interruption', async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000\ntouch 1 2' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await tick(499);
+  await flush(() => result.current.autoPlayPlayPause());
+  await visibility(true); await tick(1000); await visibility(false);
+  await flush(() => result.current.autoPlayPlayPause());
+  assert.equal(result.current.state.autoPlayPlaying, true);
+  await tick(1499); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+for (const selected of ['guidePlay', 'stepPractice']) test(`manual resume restores a waiting chain guide in ${selected}`, async () => {
+  nextMidiConnected = true;
+  const { result } = await mount({ autoPlay: 'c 2\ntouch 1 1\nd 2000' });
+  await flush(() => result.current.switchPlayMode(selected)); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => window.dispatchEvent(new window.Event('blur'))); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  await flush(() => window.dispatchEvent(new window.Event('focus'))); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false, 'focus alone does not restore an old guide');
+  midiLog.length = 0;
+  await flush(() => result.current.autoPlayPlayPause()); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  assert.ok(midiLog.some(event => event[0] === 'round' && event[1] === 9 && event[2] > 0));
+});
+
+
+test('a mode request awaiting audio can start after the previous song ends', async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 100' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1);
+  let finish; audio.pendingResume = new Promise(resolve => { finish = resolve; }); audio.state = 'suspended';
+  let pending; await flush(() => { pending = result.current.switchPlayMode('guidePlay'); });
+  await tick(99); assert.equal(result.current.state.autoPlayEnabled, false);
+  await flush(finish); await flush(() => pending);
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  assert.equal(result.current.playMode, 'guidePlay');
 });

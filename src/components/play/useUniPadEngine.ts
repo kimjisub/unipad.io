@@ -185,6 +185,7 @@ export function useUniPadEngine() {
   const recorderRef = useRef<Recorder>(new Recorder());
   const [usageTracker] = useState(() => new PlayUsageTracker(logAnalyticsEvent));
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const wakeLockRequestRef = useRef<Promise<WakeLockSentinel> | null>(null);
   const chainRef = useRef(0);
   const unipackRef = useRef<UniPackData | null>(null);
   const padStatesRef = useRef<PadState[][]>([]);
@@ -227,6 +228,25 @@ export function useUniPadEngine() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  const requestScreenWakeLock = useCallback(() => {
+    const pack = unipackRef.current;
+    if (!pack || document.hidden || keyboardBlockedRef.current || wakeLockRef.current || wakeLockRequestRef.current) return;
+    const revision = interruptionRevisionRef.current;
+    const pending = navigator.wakeLock?.request('screen');
+    if (!pending) return;
+    wakeLockRequestRef.current = pending;
+    void pending.then(lock => {
+      if (pack !== unipackRef.current || revision !== interruptionRevisionRef.current || document.hidden || keyboardBlockedRef.current) {
+        void lock.release().catch(() => {});
+        return;
+      }
+      wakeLockRef.current = lock;
+      lock.addEventListener?.('release', () => { if (wakeLockRef.current === lock) wakeLockRef.current = null; });
+    }).catch(() => {}).finally(() => {
+      if (wakeLockRequestRef.current === pending) wakeLockRequestRef.current = null;
+    });
+  }, []);
 
   const syncMidiFunctionLeds = useCallback(() => {
     const midi = midiRef.current;
@@ -564,8 +584,12 @@ export function useUniPadEngine() {
   const setKeyboardBlocked = useCallback((blocked: boolean) => {
     keyboardBlockedRef.current = blocked;
     if (blocked) interruptPlaybackRef.current();
-    else if (!document.hidden) void soundEngineRef.current?.setSuspended(false).catch(() => {});
-  }, []);
+    else if (!document.hidden) {
+      void soundEngineRef.current?.setSuspended(false).catch(() => {});
+      requestScreenWakeLock();
+      syncMidiStateToDevice();
+    }
+  }, [requestScreenWakeLock, syncMidiStateToDevice]);
 
   // Keyboard input handler
   useEffect(() => {
@@ -720,14 +744,9 @@ export function useUniPadEngine() {
     try { await sound.setSuspended(false); } catch { return false; }
     const ready = revision === interruptionRevisionRef.current && sound === soundEngineRef.current &&
       !document.hidden && !keyboardBlockedRef.current && sound.context.state === 'running';
-    if (ready && !wakeLockRef.current) {
-      void navigator.wakeLock?.request('screen').then(lock => {
-        if (revision === interruptionRevisionRef.current && !document.hidden) wakeLockRef.current = lock;
-        else void lock.release().catch(() => {});
-      }).catch(() => {});
-    }
+    if (ready) requestScreenWakeLock();
     return ready;
-  }, []);
+  }, [requestScreenWakeLock]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay') {
@@ -790,12 +809,13 @@ export function useUniPadEngine() {
     if (!await activatePlaybackAudio()) return;
     interruptedRef.current = false;
     runner.setSuspended(false);
+    ledRunnerRef.current?.setSuspended(false);
     if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
 
     const isPractice = mode === 'guidePlay' || mode === 'stepPractice';
     const isPlaying = mode !== 'stepPractice';
 
-    if (currentMode === 'none') {
+    if (!runner.active) {
       applyModeFlags(runner, mode);
       runner.launch();
       if (unipack?.keyLedExist) {
@@ -814,7 +834,7 @@ export function useUniPadEngine() {
       }));
     } else {
       // Guide and step practice do not press pads, so autoplay would never release what it holds.
-      if (currentMode === 'autoPlay') padInit();
+      if (!stateRef.current.practiceMode) padInit();
       applyModeFlags(runner, mode);
       runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice, stepPractice: mode === 'stepPractice' }));
@@ -844,7 +864,10 @@ export function useUniPadEngine() {
       if (!await activatePlaybackAudio()) return;
       interruptedRef.current = false;
       runner.setSuspended(false);
+      if (!runner.isPlaying && !runner.stepMode) runner.play();
+      ledRunnerRef.current?.setSuspended(false);
       runner.restoreGuideOutput();
+      syncMidiStateToDevice();
       if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
       setState(prev => ({ ...prev, autoPlayPlaying: runner.isPlaying }));
       return;
@@ -881,7 +904,7 @@ export function useUniPadEngine() {
         feedbackLight: !unipack?.keyLedExist,
       }));
     }
-  }, [padInit, ledInit, autoPlayRemoveGuide, activatePlaybackAudio]);
+  }, [padInit, ledInit, autoPlayRemoveGuide, activatePlaybackAudio, syncMidiStateToDevice]);
 
   const autoPlayPrev = useCallback(() => {
     padInit();
@@ -1220,10 +1243,7 @@ export function useUniPadEngine() {
 
       usageTracker.packLoadSucceeded();
 
-      // 화면 꺼짐 방지 (Android: FLAG_KEEP_SCREEN_ON)
-      navigator.wakeLock?.request('screen').then((lock) => {
-        wakeLockRef.current = lock;
-      }).catch(() => {});
+      requestScreenWakeLock();
 
       // MIDI 연결은 비동기로 처리 (권한 다이얼로그가 로딩을 차단하지 않도록)
       const midi = new MidiConnection();
@@ -1319,6 +1339,7 @@ export function useUniPadEngine() {
     scheduleFlush,
     autoPlayRemoveGuide,
     applyControllerStatus,
+    requestScreenWakeLock,
     syncMidiStateToDevice,
   ]);
 
@@ -1578,6 +1599,8 @@ export function useUniPadEngine() {
     const handleVisibilityChange = () => {
       if (document.hidden) interruptPlayback();
       else {
+        ledRunnerRef.current?.setSuspended(false);
+        requestScreenWakeLock();
         // Restoring an audio connection never releases the sequencer or restores old sources.
         void soundEngineRef.current?.setSuspended(false).catch(() => {});
         syncMidiStateToDevice();
@@ -1589,6 +1612,8 @@ export function useUniPadEngine() {
       if (document.hidden || keyboardBlockedRef.current || !interruptedRef.current) return;
       const sound = soundEngineRef.current;
       const revision = interruptionRevisionRef.current;
+      requestScreenWakeLock();
+      syncMidiStateToDevice();
       if (!sound) return;
       void sound.setSuspended(false).then(() => {
         if (sound !== soundEngineRef.current || revision !== interruptionRevisionRef.current || document.hidden || keyboardBlockedRef.current) return;
@@ -1617,7 +1642,7 @@ export function useUniPadEngine() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('pagehide', handleBlur);
     };
-  }, [interruptPlayback, syncMidiStateToDevice]);
+  }, [interruptPlayback, requestScreenWakeLock, syncMidiStateToDevice]);
 
   useEffect(() => {
     return () => {

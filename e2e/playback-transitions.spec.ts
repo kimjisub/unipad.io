@@ -370,3 +370,66 @@ test('installation token refresh returns the token fields consumed by the SDK', 
   expect(token.token).toBe('FAKE_INSTALLATION_TOKEN');
   expect(token.expiresIn).toBe('604800s');
 });
+
+
+test('a pack imported while hidden can show fresh lights after returning', async ({ page }, info) => {
+  await page.addInitScript(() => Object.defineProperty(document, 'hidden', { configurable: true, value: true }));
+  await open(page, 'd 10000\ntouch 1 1');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  await snapshot(page, info, 'fresh-light-after-hidden-import');
+  await expect(packLight(page)).toHaveCount(1);
+});
+
+test('paused guide finishes after the last manual step', async ({ page }, info) => {
+  await open(page, 'o 1 1\nf 1 1\nd 1000\no 2 1\nf 2 1');
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(100);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(5);
+  await expect(page.locator('[data-pad="1,0"] .z-\\[25\\]')).toHaveCount(1);
+  await page.keyboard.press('q'); await page.clock.runFor(5);
+  await snapshot(page, info, 'completed-last-step');
+  await expect(mode(page, 'Step')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('returning manual play requests screen wake protection again', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'wakeRequests', { value: 0, writable: true });
+    Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
+      (window as unknown as { wakeRequests: number }).wakeRequests++;
+      return { release: async () => {}, addEventListener() {} };
+    } } });
+  });
+  await open(page, 'd 10000\ntouch 1 1');
+  const count = () => page.evaluate(() => (window as unknown as { wakeRequests: number }).wakeRequests);
+  expect(await count()).toBe(1);
+  await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false);
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  await snapshot(page, info, 'manual-wake-protection-after-return');
+  expect(await count()).toBe(2);
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const interruption of ['focus', 'dialog']) test(`current device chain light returns after ${interruption}`, async ({ page }, info) => {
+  await open(page, 'd 10000\ntouch 1 1');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBeGreaterThan(0);
+  await page.clock.runFor(600);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  if (interruption === 'focus') {
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.dispatchEvent(new Event('focus')); });
+  } else {
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(300);
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+    await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
+  }
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'device-chain-after-return');
+  const messages = await page.evaluate(() => window.browserProbe.midi.messages);
+  await info.attach('device-output', { body: JSON.stringify({ messages, physicalHardware: false }), contentType: 'application/json' });
+  expect(messages.some(message => message[0] === 0xb0 && message[1] === 89 && message[2] > 0)).toBe(true);
+});

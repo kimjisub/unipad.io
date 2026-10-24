@@ -23,8 +23,9 @@ those pins do not turn the failures into compatibility passes.
 
 On the same new corpus, the unmodified application at `cf7409543b5e24d936ba73c80e92121d0c80da34`
 fails exactly these two assertions; the other 21 recorded failures remain pinned. Raw before/after
-results retain their original corpus hashes and source provenance. These virtual-clock runner
-observations do not establish real audio, manual-resume UI, device output or native application results.
+results retain their original corpus hashes and source provenance. The raw result files are not included
+in this repository. These virtual-clock runner observations do not establish real audio, manual-resume UI,
+device output or native application results.
 
 Android and iOS were not rerun. Their existing historical objects in `copies.json` remain unchanged
 until reviewed public copy commits exist. The explicit historical check warns for both apps, while

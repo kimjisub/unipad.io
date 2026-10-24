@@ -51,6 +51,8 @@ export class SoundEngine {
   private outputMuted = false;
   private volume = 1;
   onInterrupted: (() => void) | null = null;
+  private pendingSuspensions = 0;
+  private pendingResumptions = 0;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -70,7 +72,7 @@ export class SoundEngine {
       sampleRate: 44100,
     });
     this.audioContext.onstatechange = () => {
-      if (!this.visibilitySuspended && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
+      if (!this.visibilitySuspended && this.pendingSuspensions === 0 && this.pendingResumptions === 0 && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
         this.onInterrupted?.();
       }
     };
@@ -193,10 +195,14 @@ export class SoundEngine {
           change.remaining = Math.max(0, change.dueAt - now);
         }
       }
-      await this.audioContext.suspend();
+      this.pendingSuspensions++;
+      try { await this.audioContext.suspend(); }
+      finally { this.pendingSuspensions--; }
     } else {
       // Always enqueue resume, even if an earlier suspend has not changed state yet.
-      await this.audioContext.resume();
+      this.pendingResumptions++;
+      try { await this.audioContext.resume(); }
+      finally { this.pendingResumptions--; }
       if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
       this.outputMuted = false;
       this.applyOutputVolume();
