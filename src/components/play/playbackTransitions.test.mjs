@@ -452,13 +452,14 @@ test('autoplay wormholes do not repeat a parsed chain move 100 ms later', async 
   const { result } = await mount({ wormhole: true, autoPlay: 'o 1 1\nd 50\nc 3\nd 1000' });
   await flush(() => result.current.switchPlayMode('autoPlay'));
   await tick(1); assert.equal(result.current.state.chain, 1);
-  await tick(49); assert.equal(result.current.state.chain, 2);
+  await tick(50); assert.equal(result.current.state.chain, 2);
   await tick(51); assert.equal(result.current.state.chain, 2);
 });
 
 test('pause preserves the unplayed part of a delay', async () => {
   const { result } = await mount({ autoPlay: 'o 1 1\nd 1000\no 1 2\nd 10000' });
   await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
   await tick(500); assert.equal(starts.length, 1);
   await flush(() => result.current.autoPlayPlayPause());
   await tick(3000);
@@ -550,6 +551,7 @@ for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sou
 for (const playerAt of [0, 500]) test(`player and autoplay own independent sound and lights (player at ${playerAt})`, async () => {
   const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000', autoPlay: 'd 300\no 1 1\nd 700\nf 1 1\nd 1000' });
   await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
   if (playerAt === 0) await flush(() => result.current.padTouchOn(0, 0, 'finger'));
   await tick(300); await tick(4);
   if (playerAt === 500) {
@@ -580,7 +582,7 @@ test('repeated autoplay presses across chains leave no unreachable endless sound
   await flush(() => result.current.switchPlayMode('autoPlay'));
   await tick(1);
   assert.equal(sources[0].stopped, false);
-  await tick(499);
+  await tick(500);
   assert.equal(sources[0].stopped, true, 'off must release the earlier chain\'s endless sound');
 });
 
@@ -607,6 +609,7 @@ test('seeking while paused starts the remaining clock at the new position', asyn
   await flush(() => result.current.autoPlayNext());
   await tick(2000);
   await flush(() => result.current.autoPlayPlayPause());
+  await tick(1);
   await tick(999); assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });

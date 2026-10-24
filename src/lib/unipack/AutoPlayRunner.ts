@@ -150,7 +150,7 @@ export class AutoPlayRunner {
 
       const currTime = performance.now();
 
-      if (this.clockPending !== null) {
+      if (this.playmode && this.clockPending !== null) {
         const restartMs = this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
         this.clockPending = null;
         const pastDueMs = currTime - this.startTime - restartMs;
