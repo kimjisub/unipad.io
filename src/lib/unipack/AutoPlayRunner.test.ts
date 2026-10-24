@@ -138,7 +138,7 @@ describe('AutoPlayRunner', () => {
     assert.equal(runner.hasScannedStepPads, true, 'a completed group still counts while awaiting the next chain');
     const scannedProgress = runner.progress;
     assert.equal(runner.leaveStepPractice(), true);
-    assert.equal(runner.progress, scannedProgress, 'consumed pad groups keep their advanced position');
+    assert.equal(runner.progress, scannedProgress - 2, 'keep consumed pads, but restore the delay and chain-only scan before the next pad');
     assert.equal(runner.hasScannedStepPads, false);
     runner.stop();
   });
