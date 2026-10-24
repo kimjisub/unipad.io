@@ -140,8 +140,8 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redr
   await expect(guide('0,1')).toHaveCount(0);
 });
 
-for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} after scanning only a chain preserves the guide`, async ({ page }, info) => {
-  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+for (const resume of ['button', 'mode']) for (const extraDelay of [0, 1000]) test(`resuming guide via ${resume} after scanning only a chain preserves the guide with ${extraDelay}ms extra wait`, async ({ page }, info) => {
+  await open(page, `d 1000\no 1 1\nf 1 1\nd 1000\nc 2\n${extraDelay ? `d ${extraDelay}\n` : ''}o 1 2\nf 1 2\nd 10000`);
   const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
   await mode(page, 'Guide').dispatchEvent('click');
   await page.clock.runFor(1);
@@ -154,6 +154,10 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} afte
   await page.clock.fastForward(199);
   await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
   await page.clock.runFor(20);
+  if (extraDelay) {
+    await page.clock.fastForward(extraDelay);
+    await page.clock.runFor(16);
+  }
   await info.attach('resumed-after-chain-scan', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
   await expect(guide).toHaveCount(1);

@@ -117,9 +117,14 @@ describe('AutoPlayRunner', () => {
     runner.launch();
     clock.tick(1); clock.tick(1000); clock.tick(100);
     runner.pause();
+    const pausedProgress = runner.progress;
     runner.stepMode = true;
     clock.tick(200);
     assert.equal(runner.hasScannedStepPads, false, 'a chain prompt has not consumed any pad');
+    assert.equal(runner.leaveStepPractice(), false);
+    assert.equal(runner.progress, pausedProgress, 'chain-only lines must be restored for timed playback');
+    runner.stepMode = true;
+    clock.tick(1);
     chain = 1;
     clock.tick(1);
     assert.equal(runner.hasScannedStepPads, true);
@@ -131,7 +136,9 @@ describe('AutoPlayRunner', () => {
     runner.stepPadPressed(0, 1);
     clock.tick(1);
     assert.equal(runner.hasScannedStepPads, true, 'a completed group still counts while awaiting the next chain');
-    runner.resetStepState();
+    const scannedProgress = runner.progress;
+    assert.equal(runner.leaveStepPractice(), true);
+    assert.equal(runner.progress, scannedProgress, 'consumed pad groups keep their advanced position');
     assert.equal(runner.hasScannedStepPads, false);
     runner.stop();
   });

@@ -469,6 +469,16 @@ export class AutoPlayRunner {
     return false;
   }
 
+  /** A chain-only scan may have read delays without consuming their note. Put those
+   *  lines back so timed playback accounts for them without seeking the song clock. */
+  leaveStepPractice(): boolean {
+    const scannedPads = this.hasScannedStepPads;
+    if (!scannedPads && this.stepScanOrigin !== null) this.setProgress(this.stepScanOrigin);
+    this.stepMode = false;
+    this.resetStepState();
+    return scannedPads;
+  }
+
   resetStepState(): void {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();

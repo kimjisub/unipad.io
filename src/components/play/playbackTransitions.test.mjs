@@ -223,6 +223,26 @@ for (const resume of ['button', 'mode']) {
     assert.equal(result.current.state.padStates[0][1].guide, false);
   });
 
+  test(`resuming guide via ${resume} after a chain-only scan keeps additional wait lines`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(1000); await tick(100); await draw();
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    await resumeGuide(result);
+    await tick(1); await tick(199);
+    await flush(() => result.current.setChain(1));
+    await tick(900); await draw();
+    assert.equal(result.current.state.autoPlayEnabled, true, 'the unconsumed wait must not end the song early');
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true);
+    assert.equal(pad.guideTargetWallTimeMs - now, 800);
+    await tick(799); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+
   test(`resuming guide via ${resume} while awaiting a chain preserves the next note lead time`, async () => {
     const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
     await flush(() => result.current.switchPlayMode('guidePlay'));

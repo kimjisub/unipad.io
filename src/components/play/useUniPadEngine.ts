@@ -677,15 +677,13 @@ export function useUniPadEngine() {
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay') {
       runner.practiceGuide = false;
-      runner.stepMode = false;
-      runner.resetStepState();
+      runner.leaveStepPractice();
       autoPlayRemoveGuide();
       runner.playmode = true;
       runner.beforeStartPlaying = true;
     } else if (targetMode === 'guidePlay') {
       runner.practiceGuide = true;
-      runner.stepMode = false;
-      runner.resetStepState();
+      runner.leaveStepPractice();
       autoPlayRemoveGuide();
       runner.playmode = true;
       runner.beforeStartPlaying = true;
@@ -790,13 +788,11 @@ export function useUniPadEngine() {
       }
       setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
-      const scannedStep = runner.hasScannedStepPads;
-      runner.stepMode = false;
-      runner.resetStepState();
+      const scannedStep = runner.leaveStepPractice();
       autoPlayRemoveGuide();
       padInit();
       ledInit();
-      // Only a scanned step moves progress ahead of the paused song clock.
+      // Only consumed step pads require seeking past the paused song position.
       if (scannedStep) runner.resyncToProgress();
       runner.play();
       runner.beforeStartPlaying = true;
