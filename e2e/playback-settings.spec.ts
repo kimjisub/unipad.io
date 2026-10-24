@@ -1,6 +1,6 @@
-import { rm, readFile, readdir } from 'node:fs/promises';
+import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import { test as restartTest, type Browser, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
+import { test as restartTest, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
 import { test, expect, expectPads, installBrowserProbe } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
@@ -160,26 +160,12 @@ test('settings import waits for native audio decoding before checking the saved 
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
 
-async function browserDisabledFeatures(browser: Browser) {
-  // Preserve Playwright's current defaults: Chromium replaces duplicate feature switches.
-  const session = await browser.newBrowserCDPSession();
-  try {
-    const { commandLine } = await session.send('SystemInfo.getInfo');
-    const disabled = commandLine.match(/--disable-features=\S+/g)?.pop();
-    if (!disabled) throw new Error('Chromium did not report its disabled features');
-    return disabled;
-  } finally { await session.detach(); }
-}
-
-async function restartBrowserArgs(browser: Browser) {
-  // Keep background DIPS SQLite writes out of these synthetic, single-origin profiles.
-  // Application IndexedDB and the actual browser-process restart remain enabled.
-  return [`${await browserDisabledFeatures(browser)},DIPS`];
-}
-
-async function launchRestartProfile(browserType: BrowserType, profile: string, args: string[]) {
+async function launchRestartProfile(browserType: BrowserType, profile: string, args: string[] = []) {
   return browserType.launchPersistentContext(profile, {
-    headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block', args,
+    headless: true, viewport: { width: 1280, height: 800 }, serviceWorkers: 'block',
+    // Once started, best-effort file work can block shutdown at background priority.
+    // Defer it so Chromium skips nonessential queued work when shutting down.
+    args: ['--disable-best-effort-tasks', ...args],
   });
 }
 
@@ -202,6 +188,85 @@ async function closeRestartProfile(page: Page, info: TestInfo, captureFailure = 
   recordProfilePhase(info, 'close-requested');
   await restartTest.step('Exit the persistent browser process', () => page.context().close());
   recordProfilePhase(info, 'process-exit-confirmed');
+}
+
+type NativeTask = {
+  name: string;
+  args?: { thread_pool_task?: { task_priority: string }; src_file?: string; src_func?: string };
+};
+
+async function startProfileTaskTrace(context: BrowserContext) {
+  const session = await context.browser()!.newBrowserCDPSession();
+  const chunks: unknown[] = [];
+  session.on('Tracing.dataCollected', ({ value }) => chunks.push(...value));
+  try {
+    await session.send('Tracing.start', { transferMode: 'ReportEvents' });
+  } catch (error) {
+    // Chromium adopts the startup session before reporting that it is already running.
+    // Tracing.end must still deliver that session without data loss.
+    if (!String(error).includes('Tracing has already been started')) throw error;
+  }
+  return async () => {
+    const complete = new Promise<{ dataLossOccurred?: boolean }>(resolve => session.once('Tracing.tracingComplete', resolve));
+    await session.send('Tracing.end');
+    const result = await complete;
+    await session.detach();
+    const traceEvents = chunks.flatMap(value => {
+      const chunk = value as NativeTask | { traceEvents: NativeTask[] };
+      return 'traceEvents' in chunk ? chunk.traceEvents : [chunk];
+    });
+    return { traceEvents, dataLossOccurred: result.dataLossOccurred };
+  };
+}
+
+function restartProfileTest(traceStartup = false) {
+  let profile: string | undefined;
+  let profileClosed = true;
+  const profileTest = restartTest.extend<{ restartContext: BrowserContext }>({
+    restartContext: [async ({ playwright, browserName }, provide, info) => {
+      restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
+      profile ??= info.outputPath('browser-profile');
+      const args = traceStartup ? ['--trace-startup=toplevel,scheduler', '--trace-startup-owner=devtools', '--trace-startup-format=json', '--trace-startup-duration=0'] : [];
+      profileClosed = false;
+      recordProfilePhase(info, 'launch-requested');
+      const context = await restartTest.step('Launch the persistent browser', () => launchRestartProfile(playwright[browserName], profile!, args));
+      recordProfilePhase(info, 'launch-ready');
+      context.browser()!.once('disconnected', () => recordProfilePhase(info, 'browser-disconnected'));
+      const page = context.pages()[0];
+      let stopTrace: Awaited<ReturnType<typeof startProfileTaskTrace>> | undefined;
+      let trace: { traceEvents: NativeTask[]; dataLossOccurred?: boolean } | undefined;
+      try {
+        if (traceStartup) stopTrace = await startProfileTaskTrace(context);
+        await provide(context);
+      } finally {
+        recordProfilePhase(info, 'body-finished');
+        try {
+          if (stopTrace) {
+            trace = await stopTrace();
+            recordProfilePhase(info, 'native-trace-finished');
+            await info.attach('browser-startup-tasks', { body: JSON.stringify(trace), contentType: 'application/json' });
+          }
+        } finally {
+          await closeRestartProfile(page, info);
+          profileClosed = true;
+        }
+      }
+      if (trace) {
+        // Check recorded work, not the command-line switch we supplied. Reject incomplete traces.
+        expect(trace.dataLossOccurred).toBe(false);
+        const tasks = trace.traceEvents.filter(event => event.name === 'ThreadPool_RunTask');
+        expect(tasks.some(event => event.args?.thread_pool_task)).toBe(true);
+        expect(tasks.filter(event => event.args?.thread_pool_task?.task_priority === 'PRIORITY_BEST_EFFORT').map(event => event.args)).toEqual([]);
+      }
+    }, { timeout: 30_000 }],
+  });
+  // Startup, assertions, and shutdown each retain a 30-second deadline.
+  // Starting the real browser must not consume the assertion body's budget.
+  profileTest.afterAll(async () => {
+    // A timed-out close must not delete files still owned by the browser.
+    if (profile && profileClosed) await rm(profile, { recursive: true, force: true });
+  });
+  return profileTest;
 }
 
 for (const keyLedExist of [true, false]) {
@@ -243,9 +308,6 @@ for (const keyLedExist of [true, false]) {
     // Importing a pack and restoring an existing profile are separate operations.
     // Each keeps the normal test deadline, without creating an unused page/context.
     restartTest.describe.serial(`browser restart preserves feedback ${enabled} with pack LEDs ${keyLedExist}`, () => {
-      let profile: string | undefined;
-      let profileClosed = true;
-      let browserArgs: string[];
       let url: string;
       const prepare = async (context: BrowserContext, baseURL: string) => {
         await context.route('**/*', route => {
@@ -261,33 +323,10 @@ for (const keyLedExist of [true, false]) {
         await installBrowserProbe(page);
         return { context, page, errors };
       };
-      const profileTest = restartTest.extend<{ restartContext: BrowserContext; current: Awaited<ReturnType<typeof prepare>> }>({
-        restartContext: async ({ playwright, browserName }, provide, info) => {
-          restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
-          profile ??= info.outputPath('browser-profile');
-          profileClosed = false;
-          recordProfilePhase(info, 'launch-requested');
-          const context = await restartTest.step('Launch the persistent browser', () => launchRestartProfile(playwright[browserName], profile!, browserArgs));
-          recordProfilePhase(info, 'launch-ready');
-          context.browser()!.once('disconnected', () => recordProfilePhase(info, 'browser-disconnected'));
-          const page = context.pages()[0];
-          await provide(context);
-          recordProfilePhase(info, 'body-finished');
-          // Fixture teardown gets Playwright's normal teardown deadline, even when the body fails.
-          await closeRestartProfile(page, info);
-          profileClosed = true;
-        },
+      const profileTest = restartProfileTest().extend<{ current: Awaited<ReturnType<typeof prepare>> }>({
         current: async ({ restartContext, baseURL }, provide) => {
           await provide(await prepare(restartContext, baseURL!));
         },
-      });
-      profileTest.beforeAll(async ({ browser, browserName }) => {
-        restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
-        browserArgs = await restartBrowserArgs(browser);
-      });
-      profileTest.afterAll(async () => {
-        // A timed-out close must not delete files still owned by the browser.
-        if (profile && profileClosed) await rm(profile, { recursive: true, force: true });
       });
       profileTest('imports and saves the starting profile', async ({ current, baseURL }, info) => {
         await current.page.goto(`${baseURL}/play`, { waitUntil: 'domcontentloaded' });
@@ -314,27 +353,23 @@ for (const keyLedExist of [true, false]) {
 
 restartTest('cleanup exits the profile when its diagnostic screenshot fails', async ({ playwright, browserName }, info) => {
   restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
-  const context = await playwright.chromium.launchPersistentContext(info.outputPath('closed-page-profile'), { headless: true });
+  const profile = info.outputPath('closed-page-profile');
+  const context = await launchRestartProfile(playwright.chromium, profile);
   const page = context.pages()[0];
   await page.close();
   await closeRestartProfile(page, info, true);
+  await rm(profile, { recursive: true, force: true });
   expect(context.browser()!.isConnected()).toBe(false);
   expect(info.annotations).toContainEqual(expect.objectContaining({ type: 'browser-exit-screenshot' }));
 });
 
-restartTest('restart profiles preserve IndexedDB without a browser tracking database', async ({ browser, playwright, browserName }, info) => {
-  restartTest.skip(browserName !== 'chromium', 'Persistent-profile restart is checked in Chromium');
-  const profile = info.outputPath('storage-only-profile');
-  const args = await restartBrowserArgs(browser);
+restartTest.describe.serial('restart profiles preserve IndexedDB without background maintenance', () => {
+  const profileTest = restartProfileTest(true);
   for (const restore of [false, true]) {
-    const context = await launchRestartProfile(playwright.chromium, profile, args);
-    const persistentBrowser = context.browser()!;
-    try {
-      // The database is created lazily; absence of its file alone can miss an active tracker.
-      expect((await browserDisabledFeatures(persistentBrowser)).slice('--disable-features='.length).split(',')).toContain('DIPS');
+    profileTest(restore ? 'restores the saved settings after process exit' : 'saves settings and exits the process', async ({ restartContext }, info) => {
       // A local synthetic page isolates browser bookkeeping from the application and its audio.
-      await context.route('http://profile.test/**', route => route.fulfill({ contentType: 'text/html', body: '<button>Save</button>' }));
-      const page = context.pages()[0];
+      await restartContext.route('http://profile.test/**', route => route.fulfill({ contentType: 'text/html', body: '<button>Save</button>' }));
+      const page = restartContext.pages()[0];
       await page.goto('http://profile.test/');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       if (!restore) {
@@ -347,8 +382,7 @@ restartTest('restart profiles preserve IndexedDB without a browser tracking data
         await playbackSettings(page, { feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
       }
       expect(await playbackSettings(page)).toEqual({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
-    } finally { await context.close(); }
-    expect(persistentBrowser.isConnected()).toBe(false);
-    expect((await readdir(`${profile}/Default`)).filter(name => /^DIPS(?:-|$)/.test(name))).toEqual([]);
+      await info.attach('native-profile-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
+    });
   }
 });
