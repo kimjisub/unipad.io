@@ -1038,3 +1038,22 @@ test('later input release stops its replacement sound and light before the remai
     ], id);
   }
 });
+
+test('native release observations distinguish pack output from press feedback failures', () => {
+  const cases = buildCorpus().cases;
+  const fingers = cases.find(c => c.id === 'RUN-G617');
+  const controller = cases.find(c => c.id === 'RUN-G618');
+  assert.deepEqual(fingers.expectedFailing, []);
+  assert.deepEqual(controller.expectedFailing, ['android']);
+  assert.equal(fingers.known?.android, undefined);
+  assert.equal(controller.known.android.status, 'fail');
+  assert.deepEqual(controller.known.android.actual.checkpoints[2], []);
+  assert.deepEqual(controller.known.android.actual.checkpoints[3], [
+    ['soundStop', 0, 0, 0, 'a.wav'], ['ledOff', 0, 0],
+  ]);
+  assert.equal(classify(controller, controller.known.android.actual, 'android'), 'fail');
+  for (const c of [fingers, controller]) {
+    assert.equal(classify(c, c.expected, 'ios'), 'pass');
+    assert.equal(classify(c, c.expected, 'web'), 'pass');
+  }
+});

@@ -698,5 +698,76 @@
       },
       "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
     }
+  },
+  "RUN-G618": {
+    "android": {
+      "status": "fail",
+      "actual": {
+        "checkpoints": [
+          [
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ]
+          ],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ]
+          ]
+        ]
+      },
+      "note": "Observed at application commit 777cc4a37a997afb327756dd239f167adf155c50 using a test-only adapter through PadTouchTracker and controllerPadTouch: releasing the controller first leaves its sound and pack light running until the finger releases. The pressed indicator follows the last-input rule. This JVM observation does not measure USB transport, screen rendering or audible output."
+    }
   }
 }

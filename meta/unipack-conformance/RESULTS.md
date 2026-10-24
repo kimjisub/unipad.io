@@ -1,5 +1,48 @@
 # Results
 
+## Native input-owned release observations (2026-10-25)
+
+Both target cases retain their input files, fingerprints, scenarios and corrected expectations.
+The native observations distinguish sound and pack lights from the separate pressed indicator:
+
+| Case | Web sound and pack lights | iOS sound and pack lights | Android sound and pack lights | Android pressed indicator |
+| --- | --- | --- | --- | --- |
+| RUN-G617, two fingers | Match | Match | Match | Fails: clears at the third checkpoint |
+| RUN-G618, finger and controller | Match | Match | Fails: stops at the fourth checkpoint | Matches |
+
+Android application commit `777cc4a37a997afb327756dd239f167adf155c50`, with a test-only native
+input adapter at `0ebf2df80b71010f2b1afc0be0de433b16118974`, used the original 382-case input
+SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`.
+The adapter sends distinct fingers through `PadTouchTracker` and controller input through
+`controllerPadTouch`. Both combined app assertions failed by value (exit 1, two tests, no errors or
+skips). Only RUN-G618's sound/pack-light result is pinned as an Android corpus failure. RUN-G617's
+pressed-indicator failure stays a separate app-test finding and is not a pack-output divergence.
+
+On iOS application commit `e8ac34d11373b3ed071535e365ddc382c1929496`, both target actuals equal
+the corrected expectations. The source `ios.json` SHA256 is
+`c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2`; its corpus hash is the
+same `7ac226a8…` input above and it declares `assertions: partial`. Nine selected cases ran: seven
+matched, RUN-G613 and RUN-G616 failed by value, and the command exited 65. The two target cases pass;
+this is not an all-cases pass. The two additional failures retain their original evidence and are
+tracked separately; their cases and failure pins are unchanged by this two-case update.
+
+The web observation on `5e8828502b00c01c297d88f1279ea9742ee3b5d9`
+([unipad.io#179](https://github.com/kimjisub/unipad.io/pull/179)) used corpus SHA256
+`cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364` and both targets match.
+Original platform files keep their original hashes. Comparing these unchanged case expectations
+with those actuals does not create a new aggregate report for another corpus hash.
+
+The canonical corpus now has 382 cases, SHA256
+`b424628bd1c815f373bb18ac290079d0fb2c293aa24af422c9619c03a53ba795`. Only the Android RUN-G618 pin and the two target cases'
+`expectedFailing` annotations change from the web integration: RUN-G617 lists no pack-output failure,
+RUN-G618 lists Android, and neither still lists iOS or web. All other 380 cases are byte-for-byte
+unchanged as JSON values. `copies.json` still declares the same historical 214-case app copies;
+their byte check is separate from current compatibility and final adoption still requires
+`sync.mjs --check --require-current`.
+
+The observations cover application input paths and engine/light requests. They do not establish
+physical finger or USB delivery, audible output, or the iOS screen indicator's lifetime.
+
 ## Web input-owned release fix (2026-10-25, awaiting review)
 
 The play hook now forwards each screen pointer, key and MIDI input identity to the sound engine

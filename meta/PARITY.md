@@ -142,11 +142,14 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **Native input-owned release validation remains separate from the web fix.**
-  RUN-G617 and RUN-G618 require each input to release only the sound and pack lights it started;
-  only the pressed indicator waits for the last input. New Android and iOS observations must name
-  their own corpus hash and input path. Historical stored corpus copies do not establish this rule.
-  See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25-awaiting-review).
+- **RUN-G618: Android delays the controller input's sound and pack-light release.**
+  Native input-path observations on application commit `777cc4a3` show an empty third checkpoint
+  and a stop only when the finger releases at the fourth. This pack-output result is pinned as a
+  failure. RUN-G617's sound and pack lights match; its separately observed pressed indicator clears
+  too early and remains an app-test finding. iOS on `e8ac34d` and the web on `5e88285` match both
+  target pack-output expectations. The native runs retain their original `7ac226a8…` corpus hash;
+  stored historical app copies remain separate from these observations. See
+  [RESULTS.md](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
 
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
