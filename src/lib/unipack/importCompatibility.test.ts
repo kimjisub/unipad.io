@@ -33,6 +33,30 @@ describe('archive and sound import compatibility', () => {
     assert.equal(pack.soundTable[0][1][1]![0].file, 'sounds/소리.wav');
   });
 
+  for (const [composed, fallback] of [['소리.wav', '소리.WAV'], ['café.wav', 'CAFÉ.wav']]) {
+    const decomposed = composed.normalize('NFD');
+    for (const [written, selected, bytes] of [
+      [composed, composed, [6, 6, 0]],
+      [decomposed, decomposed, [4, 4, 0]],
+      [fallback, decomposed, [4, 4, 0]],
+    ] as const) {
+      for (const reversed of [false, true]) {
+        test(`selects the original name and bytes for ${JSON.stringify(written)} (reversed=${reversed})`, async () => {
+          const sounds: [string, Uint8Array][] = [
+            [`sounds/${composed}`, new Uint8Array([6, 6, 0])],
+            [`sounds/${decomposed}`, new Uint8Array([4, 4, 0])],
+          ];
+          if (reversed) sounds.reverse();
+          const pack = await parseUniPack(await packZip({ info, keySound: `1 1 1 ${written}`, ...Object.fromEntries(sounds) }));
+          assert.deepEqual(pack.errors, []);
+          const file = pack.soundTable[0][0][0]![0].file;
+          assert.equal(file, `sounds/${selected}`);
+          assert.deepEqual([...new Uint8Array(pack.soundFiles.get(file)!)], bytes);
+        });
+      }
+    }
+  }
+
   test('sound references cannot escape the sounds directory', async () => {
     const pack = await parseUniPack(await packZip({ info, keySound: '1 1 1 ../outside.wav\n1 1 2 ..\\outside.wav', 'outside.wav': SILENT_WAV }));
     assert.equal(pack.soundCount, 0);
