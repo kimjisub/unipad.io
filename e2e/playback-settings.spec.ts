@@ -1,7 +1,7 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test as restartTest, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
-import { test, expect, expectPads, installBrowserProbe } from './browser';
+import { test, expect, expectPads, installBrowserProbe, installationResponse } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
 
@@ -107,8 +107,15 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
   });
   test(`natural mode end restores feedback: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
     await openFeedbackModePack(page, leds, saved, true);
-    await playMode(page, 'Auto').click();
+    // Observe the active song before advancing it: a short song can finish while a host
+    // round trip is delayed, so checking a transient state on wall time misses the start.
+    await page.clock.pauseAt(new Date());
+    await playMode(page, 'Auto').dispatchEvent('click');
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+    await page.clock.runFor(1);
+    await page.clock.fastForward(1048);
+    await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+    await page.clock.runFor(1);
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
     await expectFeedback(page, saved === null ? !leds : saved === 'true', saved);
     await info.attach('natural-end-screen', { body: await page.screenshot(), contentType: 'image/png' });
@@ -312,7 +319,7 @@ for (const keyLedExist of [true, false]) {
       const prepare = async (context: BrowserContext, baseURL: string) => {
         await context.route('**/*', route => {
           const url = new URL(route.request().url());
-          if (url.hostname === 'firebaseinstallations.googleapis.com') return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
+          if (url.hostname === 'firebaseinstallations.googleapis.com') return route.fulfill({ json: installationResponse(url) });
           if (url.hostname === 'firebase.googleapis.com') return route.fulfill({ json: { appId: '1:000000000000:web:fake-ci-placeholder', measurementId: 'G-FAKE-CI' } });
           return url.origin === baseURL ? route.continue() : route.abort('blockedbyclient');
         });

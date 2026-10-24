@@ -359,3 +359,14 @@ test('manual interruption waits for Play and discards old lights', async ({ page
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
   await info.attach('resumed-next-command', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
+
+
+test('installation token refresh returns the token fields consumed by the SDK', async ({ page }) => {
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  const token = await page.evaluate(async () => {
+    const response = await fetch('https://firebaseinstallations.googleapis.com/v1/projects/unipad-ci-placeholder/installations/cAAAAAAAAAAAAAAAAAAAAA/authTokens:generate', { method: 'POST' });
+    return response.json();
+  });
+  expect(token.token).toBe('FAKE_INSTALLATION_TOKEN');
+  expect(token.expiresIn).toBe('604800s');
+});
