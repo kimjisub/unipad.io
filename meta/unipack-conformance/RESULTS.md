@@ -33,6 +33,28 @@ until reviewed public copy commits exist. The explicit historical check warns fo
 the strict check; this is a byte comparison, not a native test run or a public copy-commit handoff.
 The older reports below retain their original counts and timestamps.
 
+## Android minimum-integer storage differences resolved (2026-10-25)
+
+[unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303), merged as
+`777cc4a37a997afb327756dd239f167adf155c50`, stores `-2147483649` for KS-B08 and KL-BE10.
+The G6 merge already removed their obsolete Android divergence records. No further removal or
+corpus regeneration was needed for that storage update. At its merge, the canonical corpus was
+G6, 382 cases, SHA256
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`.
+The trailing-wait update above subsequently advances the canonical hash without changing these inputs.
+
+`copies.json` now selects that Android merge and iOS merge
+`bdcab43b3065b2cded497d84613e77efdbfcdaad`
+([unipad-ios#215](https://github.com/kimjisub/unipad-ios/pull/215)). Their `corpus.json` and
+`corpus.sha256` are byte-identical 214-case snapshots, SHA256
+`18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
+The explicit historical hashes are retained because these app copies predate G6.
+
+`build-corpus.mjs --check`, `selftest.mjs` and `sync.mjs --check` with both exact commit arguments
+verify the unchanged canonical build and declared app bytes. The copy check still warns that both
+apps are behind canonical; `--require-current` still rejects them. No app tests were rerun here,
+no new aggregate is reported, and case inputs, expected values and other observations are unchanged.
+
 ## Web playback observations retired with G6 (2026-10-24)
 
 This retained section records the earlier G6 merge, before the trailing-wait update above.
@@ -56,10 +78,11 @@ The canonical corpus remains grammar G6, 382 cases, SHA256
 `build-corpus.mjs --check` and the tooling self-tests pass. No case input, expected result, basis,
 other platform record or generated corpus byte was changed by this documentation update.
 
-`copies.json` retains the explicit historical snapshots introduced with G6: Android
+At the G6 merge, `copies.json` selected the historical snapshots Android
 `ea259f65bd28ea9c5efb631b151ce651c9ff214e` and iOS
 `9aac4c159a67ce1774a588745f6ffbb4afad2f4a`, both with corpus SHA256
 `47b3a60d056ab0e6e4695eb2d5d123689ce2161a90d4aa7d8ad9d7ac20de6ba5`.
+The minimum-integer storage update above supersedes those copy references.
 `sync.mjs --check` with those exact commit arguments verifies their declared bytes and warns that
 both copies are behind canonical. This checks historical copy integrity only; neither app was rerun,
 and neither is current G6 compatibility evidence. A final cross-platform check must use current
