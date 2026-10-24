@@ -237,8 +237,8 @@ export function MainScreen({
         }} />
       </div>
 
-      {/* Leave room for the list controls and rows when the panels stack on a short screen. */}
-      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] max-h-[40%] md:max-h-none p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
+      {/* Shrink the details only when the list needs its minimum height. */}
+      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
             pack={selectedPack}
@@ -259,7 +259,7 @@ export function MainScreen({
       </div>
 
       {/* Right Panel - Pack List */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 min-h-56 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
         {/* Top Bar */}
         <div className="flex items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
           {savedPacks.length > 0 && (

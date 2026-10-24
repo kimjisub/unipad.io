@@ -311,8 +311,14 @@ async function openLongList(page: Page, square: boolean) {
       const store = transaction.objectStore('unipacks');
       const request = store.getAll();
       request.onsuccess = () => {
+        const template = request.result[0];
+        if (!template) {
+          transaction.abort();
+          reject(new Error('The imported pack must be saved before cloning its metadata'));
+          return;
+        }
         for (let index = 0; index < 12; index++) {
-          store.put({ ...request.result[0], id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
+          store.put({ ...template, id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
         }
       };
       transaction.oncomplete = () => resolve();
@@ -327,16 +333,20 @@ async function openLongList(page: Page, square: boolean) {
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
   const scroll = await target.evaluate(element => {
+    const targetRect = element.getBoundingClientRect();
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-      if (getComputedStyle(parent).overflowY === 'auto') {
+      if (getComputedStyle(parent).overflowY === 'auto' && parent.scrollHeight > parent.clientHeight) {
         const rect = parent.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        const delta = targetRect.top < rect.top ? -2000 : targetRect.bottom > rect.bottom ? 2000 : 0;
+        if (delta) return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, delta };
       }
     }
-    throw new Error('Missing scroll container');
+    return null;
   });
-  await page.mouse.move(scroll.x, scroll.y);
-  await page.mouse.wheel(0, 2000);
+  if (scroll) {
+    await page.mouse.move(scroll.x, scroll.y);
+    await page.mouse.wheel(0, scroll.delta);
+  }
   // Fractional scroll offsets can leave less than one CSS pixel clipped.
   await expect(target).toBeInViewport({ ratio: 0.99 });
 }
@@ -351,11 +361,17 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   const pad = page.locator('[data-pad="7,7"]');
   const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
   // Wait for the grid's resized layout before sending real pointer input to this pad.
-  await pad.click();
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
-  const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
-  expect(source.loop).toBe(true);
-  expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
+  await pad.hover();
+  await page.mouse.down();
+  try {
+    await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
+    const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
+    expect(source.loop).toBe(true);
+    expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
+    expect(await page.evaluate(() => window.browserProbe.audio.stops)).not.toContain(source.id);
+  } finally {
+    await page.mouse.up();
+  }
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.filter(
     source => source.loop && !window.browserProbe.audio.stops.includes(source.id),
   ).length)).toBe(0);
@@ -390,3 +406,16 @@ for (const square of [true, false]) {
     });
   }
 }
+
+test('a single saved pack keeps detail playback visible in a tall phone viewport', async ({ page }, info) => {
+  await openList(page, [packs[0][0]]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Returning from playback restores this pack's selection.
+  const row = option(page, last);
+  await expect(row).toHaveAttribute('aria-selected', 'true');
+  const play = page.getByRole('button', { name: 'Play', exact: true });
+  await info.attach('tall-phone-selected-pack', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(play).toBeInViewport({ ratio: 0.99 });
+  await play.click();
+  await expectPads(page);
+});
