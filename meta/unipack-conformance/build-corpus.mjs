@@ -86,7 +86,7 @@ export function buildCorpus(makeCases = buildCases) {
     schema: SCHEMA,
     generatedBy: 'meta/unipack-conformance/build-corpus.mjs',
     grammar: grammar.edition,
-    rights: 'Every sound is a synthesized 10 ms signal made by lib.mjs (two sine tones and silence), and one of them encoded as MP3; the one file that stands for a sound that cannot be decoded is a line of text. No pack, song or third-party audio is included.',
+    rights: 'The base corpus uses synthesized 10 ms tones and silence from lib.mjs, one encoded as MP3, and text for an undecodable file. Shared audio admission revision 3 adds generated synthetic signals, silence and structurally modified variants from its pinned source. Large PCM inputs are generated from recipes. No pack, song or third-party audio is included.',
     assets,
     palette,
     cases: out,
