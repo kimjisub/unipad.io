@@ -174,6 +174,9 @@ export class SoundEngine {
 
   /** Freeze existing sources and scheduled sample ends on the audio device's own clock. */
   async setSuspended(suspended: boolean): Promise<void> {
+    // A ready connection needs no native permission round trip. Keep pending or muted transitions
+    // on the acknowledged path below, including a resume requested before suspension completes.
+    if (!suspended && !this.visibilitySuspended && !this.outputMuted && this.audioContext.state === 'running') return;
     this.visibilitySuspended = suspended;
     const revision = ++this.suspensionRevision;
     if (this.audioContext.state === 'closed') return;

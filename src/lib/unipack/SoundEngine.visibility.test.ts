@@ -70,3 +70,24 @@ test('a stale resume cannot unmute a tab that was hidden again', async t => {
   assert.equal(gain.value, 0);
   assert.equal(engine.getVolume(), 4);
 });
+
+
+test('an already running unmuted context does not request another native resume', async t => {
+  let resumes = 0;
+  class Context {
+    state = 'running'; destination = {};
+    createGain() { return { gain: { value: 1 }, connect() {} }; }
+    async resume() { resumes++; }
+    close() { this.state = 'closed'; }
+  }
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
+  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
+    else Reflect.deleteProperty(globalThis, 'AudioContext');
+  });
+  const engine = new SoundEngine(await parseWithLeds({}), () => 0, () => {});
+  t.after(() => engine.destroy());
+  await engine.setSuspended(false);
+  assert.equal(resumes, 0, 'a running connection needs no asynchronous native permission request');
+});
