@@ -142,19 +142,30 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **KS-B08, KL-BE10: Android keeps 1 less than `-2147483648` at `-2147483648`.** A keySound loop and a
-  keyLED coordinate or chain are stored 1 less than written; iOS and the web store `-2147483649` for the
-  smallest 32-bit number, which Android's 32-bit fields cannot hold. Android used to wrap it to
-  `2147483647`, so such a loop repeated practically forever; it now stays at the smallest number and the
-  sound plays once, as on iOS and the web. What is left is the number itself, below -1 and outside every
-  grid and chain on all three. The grammar does not define this stored value; the user-visible result is
-  the same. The two Android results remain pinned so a change to them is noticed.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
+  [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
+  and LED coordinate/chain storage differences. G6 already removed both old Android pins.
+  The app copy references now select that Android merge and
+  [unipad-ios#215](https://github.com/kimjisub/unipad-ios/pull/215): identical 214-case snapshots,
+  SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
+  The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
+  app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
+- **Twelve G6 web playback differences now match their existing expectations.**
+  [unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173) fixes RUN-G601..605,
+  RUN-G607..610 and RUN-G616..618. Their web failure pins were already retired in
+  [unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165). A rerun on the merged G6 main
+  confirms all twelve with unchanged inputs and expectations: 382 cases, 359 pass and 23 remaining
+  pinned web failures. RUN-G606 follows a separate revised rule and is not part of this removal.
+  The corpus SHA256 remains `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`;
+  the app pins still describe historical copies, not current compatibility results.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-playback-observations-retired-with-g6-2026-10-24)
+  for the exact tested commit, copy hashes and verification limits.
 - **RUN-A-003: Android no longer reports a chain change twice when an autoPlay chain command is
   followed by a press.** [unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283)
   fixes the command order so the recorded events match the existing expected result. Only this Android
@@ -165,7 +176,7 @@ platform's own fix removes it.
   See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-android-autoplay-chain-order-fix-2026-10-21)
   for the matching app-copy commits and the limits of the retained aggregate report.
 - **KS-B01..08, KL-BN01..08, KL-BE01..10, AP-B01..08: a number in a pack is a 32-bit integer on all
-  three (except the two pinned Android storage differences KS-B08 and KL-BE10 above).** Android always
+  three.** Android always
   read pack numbers as 32-bit integers, so `2147483648` was a format error and
   only its line or file was skipped. iOS read numbers up to 64 bits and the web any number, so the same
   value was a range error there; the web also rounded numbers past 2^53 and dropped a round LED line with

@@ -616,7 +616,12 @@ test('the corpus, the real-pack tools and the web harness hash with one fingerpr
   assert.equal(fingerprintOf, shared.fingerprintOf);
   const harness = readFileSync(new URL('../../../src/lib/unipack/conformanceHarness.ts', import.meta.url), 'utf8');
   assert.match(harness, /import \{ fingerprintOf \} from '\.\/fingerprint\.mjs';/);
-  assert.doesNotMatch(harness, /createHash\('sha256'\)\.update\(Buffer/);
+  // Only input fingerprints must use the shared framing function. The harness also
+  // hashes selected sound contents, which intentionally has no path framing.
+  const fingerprintBody = harness.match(/export function caseFingerprint\([^]*?\n\}/)?.[0];
+  assert.ok(fingerprintBody, 'the web input fingerprint entry point is present');
+  assert.match(fingerprintBody, /return fingerprintOf\(files, \(file\) => fileBytes\(file, corpus\)\);/);
+  assert.doesNotMatch(fingerprintBody, /createHash|sha256/);
 });
 
 test('a pack is described and fingerprinted from one walk of its folder', () => {

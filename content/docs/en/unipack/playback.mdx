@@ -1,0 +1,71 @@
+These are the shared playback rules that app updates are aligning. They describe the target behavior;
+they do not mean every current app version or device has completed verification.
+
+## Interruptions and returning
+
+Putting the app in the background, locking it, covering the play screen, hiding a web tab, choosing a
+device or losing audio output pauses song time and the remaining wait. All held inputs, sound and
+running lights are released. Return to playback by explicitly pressing play. A permission or connection
+notification alone never starts the song. Playback continues at the next unprocessed command and does
+not recreate earlier presses. Play, guide and step selections remain. Closing the pack or restarting
+the app removes the pending resume. Opening an in-screen menu alone does not interrupt playback.
+
+## Fingers and chains
+
+Sliding between pads is a saved option, initially off. With it off, a finger holds its first pad until
+release, even over another pad or a gap. With it on, leaving a pad releases it and entering a pad presses
+that pad. Fingers are independent. Cancellation, rotation, covering the screen or changing the option
+releases current inputs; fingers still down do not become new presses automatically.
+
+A chain button changes the chain once when pressed. Pads pressed before that finger releases use the
+new chain. Releasing or cancelling the chain press does not revert it. Dragging across chain buttons
+does not select several chains. The manual wormhole cancellation rule in `keySound` still applies.
+
+## The final wait
+
+Auto-play honors its last `delay`. `on 1 1` followed by `delay 2000` finishes at song time 2000 ms,
+then releases auto-play's own held pads. Another finger's press is not released with it. Pausing during
+that final wait freezes its remaining time. Manual stop or closing the pack cleans up immediately.
+Finite sounds and animations keep their own existing completion rules; no extra tail time is added.
+
+## Starting options and lights
+
+On pack entry and auto-play completion, press feedback is off when the pack has LED animations and on
+otherwise. A direct choice during playback applies for that interval. Watermark remembers the last
+explicit choice across restarts, initially on. Opening a pack never raises a volume the user lowered.
+Mobile system volume stays separate from saved web volume. The web reads the saved value before allowing
+playback; when absent, its existing level 7 of 7 remains. Equal levels do not promise equal sound pressure.
+
+Turning pack LEDs off discards every active, queued, looping and undelivered animation and clears screen
+and controller lights. Nothing accumulates while off. Enabling starts only animations from new input.
+Sound and auto-play continue; press feedback and watermark remain separate options.
+
+## Auto-map, backup and restore
+
+Auto-map changes the pack only after an explicit request. It puts a 1000 ms wait before the first press.
+Consecutive waits before a press form one group, replaced by the length of the last sound pressed before
+that group. Consecutive presses with no wait remain simultaneous. Chain order and sound queue indices
+are preserved. Waits after the last press are removed. If a length cannot be read, the original wait
+stays. Nonnegative milliseconds round to the nearest integer, with halves upward: 400.4 becomes 400,
+400.5 becomes 401. Each press has an immediate release, as `touch` or equivalent same-time on/off.
+
+The new auto-play and its previous version must be saved together before reporting success. A restart
+preserves both. Restore swaps the current version and the previous backup, so it can be undone too.
+Another auto-map keeps only the new previous version. Failed or interrupted storage keeps the original
+and backup and reports failure. The web retains the source archive and stores the result and backup in
+its browser pack data; opening a disk file does not allow silently overwriting it. Concurrent mapping or
+restore requests are blocked while saving and playback is stopped for the operation.
+
+## Trace
+
+Entering the play screen starts with empty trace and recording off. Numeric display is the default;
+existing saved numeric, line or dot choices remain. Turning recording off stops only new marks; existing
+marks stay and enabling continues them. Per-chain order and repeat numbers survive display-style,
+Pro light and layout changes. Clear empties every chain without changing the recording option. Keep
+both long-press clear and a separate clear-all entry in the play menu. Closing the pack clears the trace.
+
+## Audio admission and failures
+
+The exact integer rules are in [Sound files](sounds). Structural file inspection, successful decoding,
+actual output and device memory are different checks. A structural admission pass does not certify
+identical trimmed duration, successful playback, physical controllers or peak device memory.
