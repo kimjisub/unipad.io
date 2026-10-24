@@ -65,9 +65,13 @@ async function prepare(page: Page, holdSuspension = false) {
       set(this: AudioParam, next: number) {
         const wallTime = performance.now();
         value.set!.call(this, next);
+        const returned = performance.now();
         if (this === window.audioTimeline.gain?.gain) {
           window.audioTimeline.gainValue = next;
-          if (next === 0) window.audioTimeline.events.push({ type: 'output-muted', wallTime, gain: next });
+          if (next === 0) {
+            window.audioTimeline.events.push({ type: 'output-muted', wallTime, gain: next });
+            window.audioTimeline.events.push({ type: 'output-muted-return', wallTime: returned, gain: next });
+          }
         }
       },
     });
@@ -76,12 +80,16 @@ async function prepare(page: Page, holdSuspension = false) {
       mark('suspend-call');
       const completed = (async () => {
         if (window.audioTimeline.holdSuspension) await new Promise<void>(resolve => { window.audioTimeline.releaseSuspension = resolve; });
-        await suspend.call(this);
+        const pending = suspend.call(this);
+        mark('suspend-native-return');
+        await pending;
         mark('suspend-resolved');
         return { soundTime: this.currentTime, wallTime: performance.now(), state: this.state, gain: window.audioTimeline.gain!.gain.value };
       })();
       window.audioTimeline.suspended = completed;
-      return completed.then(() => {});
+      const returned = completed.then(() => {});
+      mark('suspend-wrapper-return');
+      return returned;
     };
     const resume = AudioContext.prototype.resume;
     AudioContext.prototype.resume = function () {
@@ -183,6 +191,13 @@ async function prepare(page: Page, holdSuspension = false) {
         const gain = window.audioTimeline.gainValue;
         window.audioTimeline.events.push({ type: 'hide-task-return', wallTime, gain });
         resolve({ soundTime, wallTime, output, starts: window.audioTimeline.starts.length, eventWallTime, epochMs, gain });
+        const next = new MessageChannel();
+        next.port1.onmessage = () => {
+          window.audioTimeline.events.push({ type: 'next-task-start', wallTime: performance.now(), gain: window.audioTimeline.gainValue });
+          next.port1.close();
+          next.port2.close();
+        };
+        next.port2.postMessage(null);
         hide.port1.close();
         hide.port2.close();
       };
@@ -240,9 +255,10 @@ test('a long sample, the next note and finite lights share the paused audio time
   expect(Math.abs(resumed.lights[0] - resumed.starts[0].soundTime - 1.5)).toBeLessThan(0.15);
   expect(resumed.starts[1].wallTime - resumed.starts[0].wallTime).toBeGreaterThan(3400);
   expect(hidden.gain).toBe(0);
-  const request = frozen.events.find(event => event.type === 'output-muted');
+  const request = frozen.events.find(event => event.type === 'output-muted-return');
   expect(request).toBeDefined();
   expect(request!.gain).toBe(0);
+  // Require the setter to have returned, not only started, within the same output-gating bound.
   expect((request!.wallTime - hidden.eventWallTime) / 1000).toBeLessThan(0.05);
 });
 
