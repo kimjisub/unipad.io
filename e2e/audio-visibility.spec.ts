@@ -129,7 +129,7 @@ async function prepare(page: Page, holdSuspension = false) {
   zip.file('keyLED/1 1 1', 'o 1 2 a 5\nd 1500\nf 1 2\no 1 3 a 9');
   zip.file('autoPlay', 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000\nf 1 1');
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'long-sample.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'long-sample.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   // A trusted click in the empty margin activates audio without playing a pad. Otherwise a
