@@ -653,6 +653,54 @@ test('a model picked by hand keeps lights off the synthesizer', async ({ page })
   expect(await synthMessages(page)).toEqual([]);
 });
 
+for (const [scenario, names, selected] of [
+  ['both identically named controllers', ['Launchpad X LPX MIDI Out', 'Launchpad X LPX MIDI Out'], [true, true]],
+  ['only the original Pro Standalone port', ['Launchpad Pro Live Port', 'Launchpad Pro Standalone Port', 'Launchpad Pro MIDI Port'], [false, true, false]],
+] as const) {
+  test(`pad lights reach ${scenario}`, async ({ page }, info) => {
+    await skipWithoutWebMidi(page);
+    await page.addInitScript(names => {
+      const request = navigator.requestMIDIAccess.bind(navigator);
+      Object.defineProperty(navigator, 'requestMIDIAccess', {
+        configurable: true,
+        value: async (options: MIDIOptions) => {
+          const access = await request(options);
+          const messages: number[][][] = names.map(() => []);
+          (window as unknown as { portMessages: number[][][] }).portMessages = messages;
+          const inputs = access.inputs as unknown as Map<string, unknown>;
+          const outputs = access.outputs as unknown as Map<string, unknown>;
+          inputs.clear(); outputs.clear();
+          names.forEach((name, index) => {
+            inputs.set(`input-${index}`, { id: `input-${index}`, name: name.replace(/Out$/, 'In'), manufacturer: 'Novation', onmidimessage: null });
+            outputs.set(`output-${index}`, { id: `output-${index}`, name, manufacturer: 'Novation', send: (data: number[]) => messages[index].push(Array.from(data)) });
+          });
+          return access;
+        },
+      });
+    }, [...names]);
+    await loadPack(page);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    const messages = () => page.evaluate(() => (window as unknown as { portMessages: number[][][] }).portMessages);
+    const primary = selected.indexOf(true);
+    await expect.poll(async () => (await messages())[primary].some(message => message[0] === 0x90)).toBe(true);
+    const initialization = await messages();
+    await page.evaluate(() => (window as unknown as { portMessages: number[][][] }).portMessages.forEach(messages => { messages.length = 0; }));
+    await pad(page, '0,0').hover();
+    await page.mouse.down();
+    await expect(pressed(page, '0,0')).toBeVisible();
+    await expect.poll(async () => (await messages())[primary]).toContainEqual([0x90, 81, 3]);
+    const pressedMessages = await messages();
+    await info.attach('port-routing-pressed-screen', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.mouse.up();
+    await expect(pressed(page, '0,0')).toHaveCount(0);
+    const releasedMessages = await messages();
+    await info.attach('port-routing-signals', { body: JSON.stringify({ names, initialization, pressedMessages, releasedMessages, physicalHardware: false }), contentType: 'application/json' });
+    expect.soft(initialization.map(messages => messages.some(message => message[0] === 0xf0))).toEqual(selected);
+    expect.soft(pressedMessages.map(messages => messages.some(message => message[0] === 0x90 && message[1] === 81 && message[2] === 3))).toEqual(selected);
+    expect(releasedMessages.map(messages => messages.some(message => message[0] === 0x90 && message[1] === 81 && message[2] === 0))).toEqual(selected);
+  });
+}
+
 // Android's MultiplexDriver lights every pad with its own driver. A master keyboard gets no lights; a
 // Launchpad Mini gets the Launchpad S layout (pad x,y is note x * 16 + y, palette 3 and 5 are 63 and 2).
 for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', [[0x90, 0, 63], [0x90, 1, 2]]]] as const) {

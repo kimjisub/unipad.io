@@ -134,7 +134,10 @@ function isDrumRack(profile: ResolvedProfile): boolean {
 
 /** Port labels distinguish the lighting connection from DAW and external DIN routing. */
 function isAuxiliaryPort(name: string): boolean {
-  return /(?:\bdaw\b|\bdin\b|\bmidi\s*(?:out\s*)?3\b|\bport\s*3\b)/i.test(name);
+  return /(?:\bdaw\b|\bdin\b|\bmidi\s*(?:(?:in|out)\s*)?3\b|\bport\s*3\b)/i.test(name)
+    // The original Pro exposes Live, Standalone and external MIDI port pairs on macOS.
+    // Its programmer layout uses Standalone; MIDI Port routes to the physical MIDI jack.
+    || (detectLaunchpadProfile(name) === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name));
 }
 
 function deviceName(name: string): string {
@@ -290,23 +293,31 @@ export class MidiConnection {
   /** Select the lighting port before encoding a model, including a manually chosen one. */
   private selectLightOutputs(): LightOutput[] {
     if (this.requestedProfile === 'none' || this.requestedProfile === 'master_keyboard') return [];
-    const selected = new Map<string, LightOutput>();
+    const selected = new Map<string, LightOutput[]>();
     for (const output of this.outputs) {
       const name = output.name ?? '';
       if (isAuxiliaryPort(name)) continue;
       const detected = detectLaunchpadProfile(name);
       const known = detected !== 'master_keyboard';
-      const paired = name !== '' && this.inputs.some(input => deviceName(input.name ?? '') === deviceName(name));
+      const device = deviceName(name);
+      const pairedInputs = this.inputs.filter(input => !isAuxiliaryPort(input.name ?? '') && deviceName(input.name ?? '') === device);
+      const paired = name !== '' && pairedInputs.length > 0;
       // A manual model may identify an otherwise unknown paired device, never an unrelated synth.
       if (!known && (this.requestedProfile === 'auto' || !paired || /synth|wavetable|iac|virtual/i.test(name))) continue;
       const profile = this.resolveProfile(name, this.requestedProfile);
-      const key = `${output.manufacturer ?? ''}:${deviceName(name)}`;
+      const key = `${output.manufacturer ?? ''}:${device}`;
       const previous = selected.get(key);
-      if (!previous || (/midi/i.test(name) && !/midi/i.test(previous.output.name ?? ''))) {
-        selected.set(key, { output, profile, ready: false });
+      const midiPort = /midi/i.test(name);
+      const previousMidiPort = !!previous && /midi/i.test(previous[0].output.name ?? '');
+      if (!previous || (midiPort && !previousMidiPort)) {
+        selected.set(key, [{ output, profile, ready: false }]);
+      } else if (midiPort === previousMidiPort && previous.length < pairedInputs.length) {
+        // Port IDs do not identify physical device groups. Identical labels can belong to
+        // separate controllers: keep a lighting endpoint for each matching performance input.
+        previous.push({ output, profile, ready: false });
       }
     }
-    return [...selected.values()];
+    return [...selected.values()].flat();
   }
 
   /** Keep existing modes on unrelated hot-plugs. New modes settle for 500 ms after the last SysEx

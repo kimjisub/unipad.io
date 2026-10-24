@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MidiConnection, type LaunchpadProfile } from './MidiConnection';
 
-async function connection(t: { after(fn: () => void): void }, names = ['Launchpad X MIDI'], profile: LaunchpadProfile = 'auto') {
+async function connection(t: { after(fn: () => void): void }, names = ['Launchpad X MIDI'], profile: LaunchpadProfile = 'auto', inputNames = names) {
   let now = 0;
   let nextId = 0;
   const timers = new Map<number, { at: number; fn: () => void }>();
   const sent = names.map(() => [] as number[][]);
-  const inputs = names.map(name => ({ name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null }));
+  const inputs = inputNames.map(name => ({ name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null }));
   const outputs = names.map((name, i) => ({ name, send: (data: number[]) => sent[i].push([...data]) }));
   const access = { inputs: new Map(inputs.map((input, i) => [String(i), input])), outputs: new Map(outputs.map((output, i) => [String(i), output])), onstatechange: null as (() => void) | null };
   for (const [key, value] of Object.entries({
@@ -158,6 +158,71 @@ for (const profile of ['auto', 'launchpad_x'] as const) {
     assert.deepEqual(sent, [[], [], [[0x90, 81, 5]], []]);
   });
 }
+
+for (const profile of ['auto', 'launchpad_x'] as const) {
+  test(`${profile} keeps both controllers with identically named ports`, async t => {
+    const names = ['Launchpad X LPX MIDI Out', 'Launchpad X LPX MIDI Out'];
+    const { midi, sent, advance } = await connection(t, names, profile, ['Launchpad X LPX MIDI In', 'Launchpad X LPX MIDI In']);
+    advance(1000);
+    const initialized = sent.map(messages => messages.length);
+    sent.forEach(messages => { messages.length = 0; });
+    midi.sendPadLed(0, 0, 5);
+    assert.deepEqual(sent, [[[0x90, 81, 5]], [[0x90, 81, 5]]]);
+    assert.deepEqual(initialized, [2, 2], 'both physical controllers receive mode setup');
+    midi.sendFunctionKeyLed(0, 5);
+    assert.deepEqual(sent[0], sent[1], 'round lights also reach both controllers');
+    sent.forEach(messages => { messages.length = 0; });
+    midi.clearAllLeds();
+    assert.ok(sent[0].length > 0);
+    assert.deepEqual(sent[0], sent[1], 'both controllers clear their lights');
+  });
+
+  test(`${profile} still selects one performance output when one controller exposes aliases`, async t => {
+    const { midi, sent, advance } = await connection(t, ['Launchpad X LPX', 'Launchpad X LPX DAW', 'Launchpad X LPX MIDI Out', 'Launchpad X LPX MIDI Out 1'], profile, ['Launchpad X LPX MIDI In', 'Launchpad X LPX DAW', 'MIDIIN3 (Launchpad X LPX)']);
+    advance(1000);
+    assert.deepEqual(sent.map(messages => messages.length), [0, 0, 2, 0]);
+    sent.forEach(messages => { messages.length = 0; });
+    midi.sendPadLed(0, 0, 5);
+    assert.deepEqual(sent, [[], [], [[0x90, 81, 5]], []]);
+  });
+}
+
+for (const profile of ['auto', 'launchpad_pro'] as const) {
+  for (const devices of [1, 2]) {
+    test(`${profile} lights only Standalone on ${devices} original Pro device${devices === 1 ? '' : 's'}`, async t => {
+      const names = Array.from({ length: devices }, () => ['Launchpad Pro Live Port', 'Launchpad Pro Standalone Port', 'Launchpad Pro MIDI Port']).flat();
+      const { midi, sent, advance } = await connection(t, names, profile);
+      advance(1000);
+      const initialized = sent.map(messages => messages.length);
+      sent.forEach(messages => { messages.length = 0; });
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual(sent.map(messages => messages.length), names.map(name => name.includes('Standalone') ? 1 : 0));
+      assert.deepEqual(initialized, names.map(name => name.includes('Standalone') ? 2 : 0), 'no mode messages reach Live or the external MIDI jack');
+      sent.forEach(messages => { messages.length = 0; });
+      midi.clearAllLeds();
+      assert.deepEqual(sent.map(messages => messages.length > 0), names.map(name => name.includes('Standalone')));
+    });
+  }
+}
+
+test('hot-plugging an identical controller initializes only the added device', async t => {
+  const { midi, access, sent, advance } = await connection(t, ['Launchpad X LPX MIDI Out'], 'auto', ['Launchpad X LPX MIDI In']);
+  advance(1000); sent[0].length = 0;
+  const added: number[][] = [];
+  access.inputs.set('second', { name: 'Launchpad X LPX MIDI In', onmidimessage: null });
+  access.outputs.set('second', { name: 'Launchpad X LPX MIDI Out', send: data => added.push([...data]) });
+  access.onstatechange?.(); advance(2000);
+  assert.equal(added.length, 2, 'the second identical controller receives its own initialization');
+  assert.deepEqual(sent[0], [], 'the first controller stays in its current mode');
+  midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent[0].at(-1), [0x90, 81, 5]);
+  assert.deepEqual(added.at(-1), [0x90, 81, 5]);
+  sent[0].length = 0; added.length = 0;
+  access.inputs.delete('0'); access.outputs.delete('0'); access.onstatechange?.(); advance(3000);
+  midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent[0], []);
+  assert.deepEqual(added, [[0x90, 81, 5]], 'removing the first device preserves the second mode and lights');
+});
 
 test('none sends no initialization, pad, ring, logo or clear messages', async t => {
   const { midi, sent, advance, emit, pads } = await connection(t, undefined, 'none');
