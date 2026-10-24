@@ -454,23 +454,24 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   await auto.click();
   await expect(auto).toHaveAttribute('aria-pressed', 'true');
-  await page.clock.runFor(1100);
+  await page.clock.runFor(16);
+  await page.clock.fastForward(1100);
   expect(await starts(page)).toBe(1);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   const progress = await page.getByRole('progressbar').getAttribute('aria-valuenow');
   // Cross the next note deadline: a paused/stopped runner must emit nothing.
-  await page.clock.runFor(3500);
+  await page.clock.fastForward(3500);
   expect(await starts(page)).toBe(1);
   expect(await page.getByRole('progressbar').getAttribute('aria-valuenow')).toBe(progress);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await page.clock.runFor(3200);
+  await page.clock.fastForward(3200);
   expect(await starts(page)).toBe(2);
   await expect(auto).toHaveAttribute('aria-pressed', 'true');
   await auto.click();
   await expect(auto).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('progressbar')).toHaveCount(0);
-  await page.clock.runFor(3500);
+  await page.clock.fastForward(3500);
   expect(await starts(page)).toBe(2);
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
 });
