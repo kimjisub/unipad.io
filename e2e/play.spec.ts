@@ -72,13 +72,17 @@ async function watchLight(page: Page, position: string) {
   });
   return {
     colors: () => record.evaluate(({ transitions }) => transitions.map(item => item.color)),
+    // Called from `finally`: once the page has closed, a read error here would replace the test's own failure.
     async finish(testInfo: TestInfo) {
-      await record.evaluate(({ stop }) => stop());
-      await testInfo.attach('rendered-led-transitions', {
-        body: JSON.stringify(await record.evaluate(({ transitions, inputs }) => ({ transitions, inputs }))),
-        contentType: 'application/json',
+      const timeline = await record.evaluate(({ transitions, inputs, stop }) => {
+        stop();
+        return { transitions, inputs };
+      }).catch((error: Error) => {
+        if (!page.isClosed()) throw error;
+        return { unavailable: `The page closed before the timeline was read: ${error.message}` };
       });
-      await record.dispose();
+      await testInfo.attach('rendered-led-transitions', { body: JSON.stringify(timeline), contentType: 'application/json' });
+      if (!page.isClosed()) await record.dispose();
     },
   };
 }
