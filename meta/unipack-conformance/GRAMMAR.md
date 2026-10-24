@@ -19,6 +19,10 @@ G6 product revision, 2026-10-24: PB-01..PB-09 record the adopted interruption, t
 trailing-wait, starting-option, LED-discard, structural-admission, auto-map and trace rules. Shared
 inputs specify operation results once; incomplete app or device observations remain unverified.
 The public docs distinguish the target grammar from support still pending in an app.
+G6 observation revision, 2026-10-24: RUN-P001..002 use a paired touch before the final wait, so
+wait timing does not prescribe whether the runner or the app releases held pads at completion.
+PB-04 still requires app-level release of auto-play ownership. Local copy checks require current
+canonical bytes; only an explicitly selected immutable commit can authorize its historical pin.
 
 G6 revision, 2026-10-23: a later manual chain selection cancels a press's pending wormhole
 (RS-09, RUN-G606). The later explicit player choice takes precedence over the earlier press;
@@ -42,7 +46,7 @@ G2 added T-09: numeric fields are signed decimal 32-bit integers; larger numbers
 What a UniPack is, item by item: how the Android, iOS and web apps read a pack, and what they play and
 light, in which order and when. Every conformance case names the items it checks (`items` in
 `cases.mjs`), and `report.mjs` reports each item as confirmed or not per platform. The denominator of
-every number it prints is the **105 items** below; what is left out is listed at the end.
+every number it prints is the **114 items** below; what is left out is listed at the end.
 
 An item number never changes meaning. To change or add a rule the edition goes up (G2, …) and the change
 is written at the top of this file; a number that is dropped is not used again. An expected result in

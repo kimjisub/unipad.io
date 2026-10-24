@@ -82,6 +82,27 @@ describe('cases', () => {
   }
 });
 
+test('trailing-wait fixtures leave no held input for completion cleanup', async () => {
+  class CompletionCheckedRunner extends AutoPlayRunner {
+    constructor(...args: ConstructorParameters<typeof AutoPlayRunner>) {
+      const [pack, listener, ...rest] = args;
+      const held = new Set<string>();
+      super(pack, {
+        ...listener,
+        onPadTouchOn(x, y, at) { held.add(`${x},${y}`); listener.onPadTouchOn(x, y, at); },
+        onPadTouchOff(x, y, at) { held.delete(`${x},${y}`); listener.onPadTouchOff(x, y, at); },
+        onEnd() { assert.equal(held.size, 0, 'fixture leaves a held input at completion'); listener.onEnd(); },
+      }, ...rest);
+    }
+  }
+  for (const id of ['RUN-P001', 'RUN-P002']) {
+    const c = byId(id);
+    await actualFor(c, corpus, { ...REAL, AutoPlayRunner: CompletionCheckedRunner });
+    const unpaired = { ...c, files: c.files.map(f => f.path === 'autoPlay' ? { ...f, text: f.text!.replace('touch', 'on') } : f) };
+    await assert.rejects(actualFor(unpaired, corpus, { ...REAL, AutoPlayRunner: CompletionCheckedRunner }), /fixture leaves a held input/);
+  }
+});
+
 // A check that cannot fail proves nothing: each of these breaks one thing the cases above rely on and
 // requires the comparison to notice.
 test('screen input cases cannot pass through the lower-level runner adapter', async () => {
@@ -302,11 +323,7 @@ describe('raw warnings and their number cause', () => {
       assert.deepEqual(causes.map((w) => w.id), ids);
       for (const id of ids) {
         const c = byId(id);
-        const observed = c.screenInputs ? screenActuals.get(c.id) : undefined;
-      if (c.screenInputs) assert.notEqual(observed, undefined, `${c.id}: screen adapter did not execute this case`);
-      const { actual, capture, outcome } = c.screenInputs
-        ? { actual: observed!, capture: null, outcome: classify(c, observed!) }
-        : await resultFor(c, corpus);
+        const { actual, capture, outcome } = await resultFor(c, corpus);
         assert.equal(capture?.warnings?.length, 1, id);
         assert.equal(capture!.warnings![0], `${SECTION_OF[id.slice(0, 2)]}: [${inputOf(c)}] format is incorrect`, id);
         assert.equal(causes.find((w) => w.id === id)?.raw, capture!.warnings![0], `${id}: the tool got the warning as written`);

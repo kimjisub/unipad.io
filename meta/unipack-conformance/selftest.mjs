@@ -919,7 +919,7 @@ test('explicit historical copy pins verify bytes, warn, and fail strict checks w
   const older = Buffer.from(serialize(oldCorpus));
   const olderHash = sha256(older);
   const pins = { android: { commit, corpusSha256: olderHash }, ios: 'b'.repeat(40) };
-  const inspect = (extra = {}) => checkCopies({ android: root }, { pins, ...extra });
+  const inspect = (extra = {}) => checkCopies({ android: root }, { pins, commits: { android: commit }, ...extra });
   try {
     const copied = spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root], { encoding: 'utf8' });
     assert.equal(copied.status, 0, copied.stderr);
@@ -938,7 +938,7 @@ test('explicit historical copy pins verify bytes, warn, and fail strict checks w
     assert.equal(buildReport(canonical, { android: reported }).summary.android.pass, 0);
     const cliPins = join(root, 'pins.json');
     writeFileSync(cliPins, JSON.stringify(pins));
-    const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--check', '--android', root, '--pins', cliPins, ...args], { encoding: 'utf8' });
+    const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--check', '--android', root, '--pins', cliPins, '--android-commit', commit, ...args], { encoding: 'utf8' });
     assert.equal(cli().status, 0, cli().stderr);
     assert.match(cli().stdout, /::warning::android: behind canonical/);
     assert.equal(cli('--require-current').status, 1);
@@ -999,4 +999,30 @@ test('pure product operations cannot certify complete app behavior or consume ex
     assert.ok(item);
     assert.equal(item[platform].confirmed, false, `${item.id}/${platform}`);
   }
+});
+
+
+test('local copy verification uses current bytes unless an explicit commit selects a historical pin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'unipack-local-copy-'));
+  const dir = join(root, COPY_DIRS.android);
+  const commit = 'a'.repeat(40);
+  const older = Buffer.from(serialize({ ...corpus, grammar: 'G5', cases: corpus.cases.slice(0, -1) }));
+  const pins = join(root, 'pins.json');
+  writeFileSync(pins, JSON.stringify({ android: { commit, corpusSha256: sha256(older) }, ios: 'b'.repeat(40) }));
+  const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, '--pins', pins, ...args], { encoding: 'utf8' });
+  try {
+    assert.equal(cli().status, 0);
+    const local = cli('--check');
+    assert.equal(local.status, 0, local.stderr);
+    assert.doesNotMatch(local.stdout, /behind canonical/);
+    assert.equal(cli('--check', '--require-current').status, 0);
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(older));
+    assert.equal(cli('--check').status, 1, 'an unspecified commit cannot authorize historical bytes');
+    const selected = cli('--check', '--android-commit', commit);
+    assert.equal(selected.status, 0, selected.stderr);
+    assert.match(selected.stdout, /behind canonical/);
+    assert.equal(cli('--check', '--android-commit', commit, '--require-current').status, 1);
+    assert.equal(cli('--check', '--android-commit', 'c'.repeat(40)).status, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

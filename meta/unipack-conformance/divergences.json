@@ -1268,6 +1268,11 @@
               0
             ],
             [
+              "autoOff",
+              0,
+              0
+            ],
+            [
               "autoEnd"
             ]
           ],
@@ -1285,7 +1290,7 @@
           ]
         ]
       },
-      "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
+      "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
     }
   },
   "RUN-P002": {
@@ -1296,6 +1301,11 @@
           [
             [
               "autoOn",
+              0,
+              0
+            ],
+            [
+              "autoOff",
               0,
               0
             ],
@@ -1323,7 +1333,7 @@
           ]
         ]
       },
-      "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
+      "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
     }
   }
 }

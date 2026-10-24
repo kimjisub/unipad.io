@@ -49,14 +49,14 @@ export function productCases() {
   mapping('MAP-P005', 'on 1 1\nd 50\nc 2\non 1 1\nd 50\non 1 1', { 'a.wav': 300, 'b.wav': 500 },
     [...on(1000), ['chain', 1300, 1], ...on(1300, 0, 1), ...on(1800, 0, 1, 1)]);
   const run = (id, title, scenario, checkpoints) => add(id, 'PB-04', 'runner', title,
-    pack({ keySound: '', autoPlay: 'on 1 1\nd 2000' }), { checkpoints }, { layer: 'run', scenario, expectedFailing: ['android', 'ios', 'web'] });
+    pack({ keySound: '', autoPlay: 'touch 1 1\nd 2000' }), { checkpoints }, { layer: 'run', scenario, expectedFailing: ['android', 'ios', 'web'] });
   const start = [{ do: 'watchAutoEnd' }, { do: 'autoplay' }, { do: 'advance', ms: 1 }, { do: 'observe' }];
   run('RUN-P001', 'autoPlay stays active through its trailing delay and ends only at song time 2000',
     [...start, { do: 'advance', ms: 1998 }, { do: 'autoplayState' }, { do: 'observe' }, { do: 'advance', ms: 1 }, { do: 'autoplayState' }, { do: 'observe' }],
-    [[['autoOn', 0, 0]], [['autoActive', true]], [['autoEnd'], ['autoActive', false]]]);
+    [[['autoOn', 0, 0], ['autoOff', 0, 0]], [['autoActive', true]], [['autoEnd'], ['autoActive', false]]]);
   run('RUN-P002', 'suspending a trailing delay freezes its remaining song time',
     [...start, { do: 'advance', ms: 499 }, { do: 'suspendAuto' }, { do: 'advance', ms: 3000 }, { do: 'autoplayState' }, { do: 'observe' },
       { do: 'resumeAuto' }, { do: 'advance', ms: 1499 }, { do: 'autoplayState' }, { do: 'observe' }, { do: 'advance', ms: 1 }, { do: 'autoplayState' }, { do: 'observe' }],
-    [[['autoOn', 0, 0]], [['autoActive', true]], [['autoActive', true]], [['autoEnd'], ['autoActive', false]]]);
+    [[['autoOn', 0, 0], ['autoOff', 0, 0]], [['autoActive', true]], [['autoActive', true]], [['autoEnd'], ['autoActive', false]]]);
   return cases;
 }

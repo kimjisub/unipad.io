@@ -55,13 +55,13 @@ stub('../../src/lib/unipack/index.ts', { ...real,
     }
   },
   LedRunner: class extends real.LedRunner {
-    constructor(pack, listener, chainValue, setChain) {
+    constructor(pack, listener, chainValue, setChain, ...rest) {
       super(pack, recordListener(listener, {
         onPadLedTurnOn: (x, y, color, velocity) => ['ledOn', x, y, hex(color), velocity],
         onPadLedTurnOff: (x, y) => ['ledOff', x, y],
         onChainLedTurnOn: (c, color, velocity) => ['ledOn', -1, c, hex(color), velocity],
         onChainLedTurnOff: c => ['ledOff', -1, c],
-      }), chainValue, c => { events.push(['chain', c]); setChain(c); });
+      }), chainValue, c => { events.push(['chain', c]); setChain(c); }, ...rest);
     }
   },
   AutoPlayRunner: class extends real.AutoPlayRunner {

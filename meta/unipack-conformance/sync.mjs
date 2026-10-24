@@ -34,7 +34,7 @@ export function differences(checkouts, sourceDir = here) {
 const hashOf = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const hashLine = (hash) => `${hash}  corpus.json\n`;
 
-/** Verify canonical integrity and every selected app against its immutable declared corpus. */
+/** Verify local copies against canonical bytes; explicit commits can select their declared historical corpus. */
 export function checkCopies(checkouts, { sourceDir = here, pins = {}, commits = {}, requireCurrent = false } = {}) {
   const errors = [], warnings = [];
   let bytes, currentHash, edition;
@@ -50,9 +50,9 @@ export function checkCopies(checkouts, { sourceDir = here, pins = {}, commits = 
   for (const [platform, root] of Object.entries(checkouts)) {
     const pin = entries[platform];
     if (!pin) { errors.push(`unknown platform: ${platform}`); continue; }
-    const selected = commits[platform] ?? pin.commit;
-    if (!/^[0-9a-f]{40}$/.test(selected)) { errors.push(`${platform}: invalid selected commit`); continue; }
-    // A manual or scheduled checkout of another commit must match the current corpus.
+    const selected = commits[platform];
+    if (selected !== undefined && !/^[0-9a-f]{40}$/.test(selected)) { errors.push(`${platform}: invalid selected commit`); continue; }
+    // Local copies and an explicitly selected different commit must match the current corpus.
     const expectedHash = selected === pin.commit && pin.corpusSha256 ? pin.corpusSha256 : currentHash;
     const dir = join(resolve(root), COPY_DIRS[platform]);
     try {

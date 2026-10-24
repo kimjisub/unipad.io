@@ -45,13 +45,20 @@ TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=/tmp/unipack-conformance \
   xcodebuild test -project unipad.xcodeproj -scheme unipad -only-testing:unipadTests/UniPackConformanceTests \
   -destination 'platform=iOS Simulator,name=<a simulator>'
 
-# the copies in the app checkouts are the canonical file
+# local copies must match the current canonical file (no commit arguments)
 node meta/unipack-conformance/sync.mjs --android <unipad-android checkout> --ios <unipad-ios checkout> --check
 
 # then, from unipad.io
 node meta/unipack-conformance/report.mjs --web .next/cache/unipack-conformance/web.json \
   --android <android.json> --ios <ios.json>
 ```
+
+A local `sync.mjs --check` without commit arguments always requires the current canonical bytes,
+even while `copies.json` declares historical snapshots. To verify a historical checkout, pass its
+full immutable commit explicitly with `--android-commit <commit>` or `--ios-commit <commit>`.
+Only the exact declared commit can use its historical hash; other commits require current bytes.
+`--require-current` rejects historical bytes even with an explicit historical commit. CI passes the
+selected commits explicitly, so a local sync followed by a check cannot inherit an unrelated old pin.
 
 **Android: `--rerun --no-build-cache` is part of the command.** Gradle stores a passing test task and
 answers the next run with `UP-TO-DATE` or `FROM-CACHE` without running anything; `android.json` is not an
@@ -539,7 +546,11 @@ the queue length; choosing the sound still uses the queue's usual cycling behavi
 The runner's watchAutoEnd action records `[autoEnd]` only when its real onEnd callback fires.
 autoplayState records `[autoActive,boolean]`. suspendAuto/resumeAuto invoke the real runner's suspension
 API. These observations do not synthesize screen cleanup or validate manual resume UI. Completion must
-also release auto-play ownership in app-level tests.
+also release auto-play ownership in app-level tests. RUN-P001..002 use `touch 1 1 / d 2000`,
+releasing the input before the final wait so either runner-owned or app-owned completion cleanup
+can satisfy the separate ownership rule. Their first checkpoint includes both on and off; this
+revision changes the input fingerprint and preserves earlier held-input observations under their
+original hash.
 
 The first web observation of these 113 cases was 106 passes and seven failures (all five mapper cases
 and both trailing waits). The failures are pinned with status fail. An assertion process that verifies

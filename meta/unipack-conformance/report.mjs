@@ -259,7 +259,7 @@ export function renderText(report) {
   const mark = { [BASES.common]: 'ok', [BASES.native]: 'ok app', [BASES.both]: 'ok both' };
   for (const r of g.rows) out.push(`${r.id.padEnd(11)}${PLATFORMS.map((p) => (r[p].confirmed ? mark[r[p].basis] ?? 'ok' : '-').padEnd(10)).join('')}${r.cases.join(' ') || '(none)'}`);
   if (report.native) out.push('ok: by the common cases; ok app: by the app tests, no case checks it; ok both: by the cases and the app tests, which the harness cannot observe alone');
-  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => (r[p].status !== 'pass' || r[p].reportedStatus) && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
+  const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => r[p].status !== 'pass' && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (notes.length) out.push('', 'notes', ...notes);
   const itemNotes = g.rows.flatMap((r) => PLATFORMS.filter((p) => !r[p].confirmed).map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (itemNotes.length) out.push('', 'items not confirmed', ...itemNotes);

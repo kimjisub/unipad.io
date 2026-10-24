@@ -29910,15 +29910,20 @@
         },
         {
           "path": "autoPlay",
-          "text": "on 1 1\nd 2000"
+          "text": "touch 1 1\nd 2000"
         }
       ],
-      "fingerprint": "6521601c2a75ccb315618f7a44b2933bc9a7294baed10942c597d76f0f9c93e9",
+      "fingerprint": "8a58e33486038440aa48997039f37d572671fba13351c71801e5a1167735dd89",
       "expected": {
         "checkpoints": [
           [
             [
               "autoOn",
+              0,
+              0
+            ],
+            [
+              "autoOff",
               0,
               0
             ]
@@ -29952,6 +29957,11 @@
                   0
                 ],
                 [
+                  "autoOff",
+                  0,
+                  0
+                ],
+                [
                   "autoEnd"
                 ]
               ],
@@ -29969,7 +29979,7 @@
               ]
             ]
           },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
+          "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
         }
       }
     },
@@ -30074,15 +30084,20 @@
         },
         {
           "path": "autoPlay",
-          "text": "on 1 1\nd 2000"
+          "text": "touch 1 1\nd 2000"
         }
       ],
-      "fingerprint": "6521601c2a75ccb315618f7a44b2933bc9a7294baed10942c597d76f0f9c93e9",
+      "fingerprint": "8a58e33486038440aa48997039f37d572671fba13351c71801e5a1167735dd89",
       "expected": {
         "checkpoints": [
           [
             [
               "autoOn",
+              0,
+              0
+            ],
+            [
+              "autoOff",
               0,
               0
             ]
@@ -30122,6 +30137,11 @@
                   0
                 ],
                 [
+                  "autoOff",
+                  0,
+                  0
+                ],
+                [
                   "autoEnd"
                 ]
               ],
@@ -30145,7 +30165,7 @@
               ]
             ]
           },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
+          "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
         }
       }
     }
