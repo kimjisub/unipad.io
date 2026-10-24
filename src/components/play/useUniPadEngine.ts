@@ -224,11 +224,11 @@ export function useUniPadEngine() {
     const current = stateRef.current;
     const cm = channelManagerRef.current;
     const topBar = new Array<number>(8).fill(0);
-    if (!midiOptionPanelOpenRef.current) {
+    if (!midiOptionPanelOpenRef.current || current.hideUI) {
       for (let i = 0; i < 8; i++) {
         topBar[i] = cm ? roundLedCode(cm, i) : 0;
       }
-    } else {
+    } else if (!current.hideUI) {
       const unipack = unipackRef.current;
       const sq = unipack?.info.squareButton ?? true;
       // Android: locked 상태면 LED 0 (squareButton=false이거나 기능 미존재)
@@ -246,11 +246,11 @@ export function useUniPadEngine() {
     }
 
     const volumeLevel = volumeLevelRef.current;
-    const volumeRangeStart = 8 - volumeLevel;
+    const volumeRangeStart = 7 - volumeLevel;
     for (let i = 0; i < 8; i++) {
       const c = i + CHAIN_INDEX_OFFSET;
-      if (midiOptionPanelOpenRef.current) {
-        midi.sendFunctionKeyLed(c, i >= volumeRangeStart ? LED_BLUE : 0);
+      if (midiOptionPanelOpenRef.current && !current.hideUI) {
+        midi.sendFunctionKeyLed(c, volumeLevel > 0 && i >= volumeRangeStart ? LED_BLUE : 0);
       } else {
         midi.sendFunctionKeyLed(c, cm ? roundLedCode(cm, c) : 0);
       }
@@ -343,7 +343,7 @@ export function useUniPadEngine() {
     const cm = channelManagerRef.current;
     if (!cm) return;
     updateChainVisual(c);
-    if (midiOptionPanelOpenRef.current && c < OPTION_PANEL_LED_COUNT) return;
+    if (midiOptionPanelOpenRef.current && !stateRef.current.hideUI && c < OPTION_PANEL_LED_COUNT) return;
     midiRef.current?.sendFunctionKeyLed(c, roundLedCode(cm, c));
   }, [updateChainVisual]);
 
@@ -416,6 +416,8 @@ export function useUniPadEngine() {
   }, [refreshChain, scheduleFlush]);
 
   const selectChain = useCallback((c: number) => {
+    const unipack = unipackRef.current;
+    if (!unipack || !Number.isInteger(c) || c < 0 || c >= unipack.info.chain) return;
     soundEngineRef.current?.cancelPendingChainChanges();
     setChain(c);
   }, [setChain]);
@@ -516,7 +518,7 @@ export function useUniPadEngine() {
   /** The connection reports its status whenever a controller comes or goes, one of several too, and
    *  when the model changes, so the pads held before are released. */
   const applyControllerStatus = useCallback((status: MidiConnectionStatus) => {
-    releaseControllerPads();
+    if (status.releaseHeldPads !== false) releaseControllerPads();
     applyMidiStatus(status);
   }, [releaseControllerPads, applyMidiStatus]);
 
@@ -1067,6 +1069,8 @@ export function useUniPadEngine() {
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
           if (midiOptionPanelOpenRef.current) return;
+          const info = unipackRef.current?.info;
+          if (!info || x < 0 || y < 0 || x >= info.buttonX || y >= info.buttonY) return;
           const pads = controllerPadsRef.current;
           const key = `${x},${y}`;
           if (pressed) {
@@ -1082,6 +1086,7 @@ export function useUniPadEngine() {
           if (midiOptionPanelOpenRef.current) return;
           selectChain(c);
         },
+        onResync: syncMidiStateToDevice,
         onFunctionKey: (key: number) => {
           if (!midiOptionPanelOpenRef.current) {
             switch (key) {
@@ -1127,9 +1132,6 @@ export function useUniPadEngine() {
       midi.connect(midiListener, {
         profile: midiProfileRef.current,
         onStatusChange: applyControllerStatus,
-      }).then((connected) => {
-        const status = midi.getStatus();
-        applyControllerStatus({ ...status, connected });
       });
     } catch (err) {
       console.error('Failed to load UniPack:', err);
@@ -1156,6 +1158,7 @@ export function useUniPadEngine() {
     ledInit,
     autoPlayRemoveGuide,
     applyControllerStatus,
+    syncMidiStateToDevice,
   ]);
 
   const applyFeedbackLight = useCallback((enabled: boolean) => {
@@ -1351,8 +1354,6 @@ export function useUniPadEngine() {
       profile: midiProfileRef.current,
       onStatusChange: applyControllerStatus,
     });
-    const status = midi.getStatus();
-    applyControllerStatus({ ...status, connected });
     return connected;
   }, [applyControllerStatus]);
 
