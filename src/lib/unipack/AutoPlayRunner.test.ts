@@ -195,6 +195,31 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  for (const pressedBeforeSwitch of [false, true]) test(`autoplay distinguishes queued presses on different chains, prior press=${pressedBeforeSwitch}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\no 1 2\nf 1 1\nf 1 2',
+    }));
+    let chain = 0;
+    const notes: number[][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onPadTouchOff() {},
+      onChainChange: c => { chain = c; },
+      onPadTouchOn: (x, y) => { notes.push([x, y]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1);
+    if (pressedBeforeSwitch) runner.stepPadPressed(0, 0);
+    chain = 1;
+    runner.stepPadPressed(0, 1);
+    runner.play(false); clock.tick(1);
+    assert.deepEqual(notes, pressedBeforeSwitch ? [[0, 1]] : [[0, 0], [0, 1]],
+      'only a press on the guided chain completes that pad, even before the next timer tick');
+    assert.equal(runner.active, false);
+    runner.stop();
+  });
+
   test('partial step replay retains short written gaps and skips a pressed middle pad', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,

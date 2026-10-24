@@ -86,7 +86,7 @@ export class AutoPlayRunner {
   // Step mode state
   private stepPendingPads = new Set<number>();
   private skippedStepLines = new Set<number>();
-  private pressedKeysQueue: number[] = [];
+  private pressedKeysQueue: { key: number; chain: number }[] = [];
   private stepScanned = false;
   private stepConsumedInput = false;
   private stepStartProgress = 0;
@@ -567,14 +567,14 @@ export class AutoPlayRunner {
   }
 
   stepPadPressed(x: number, y: number): void {
-    this.pressedKeysQueue.push(this.guideKey(x, y));
+    this.pressedKeysQueue.push({ key: this.guideKey(x, y), chain: this.chainValue() });
   }
 
   private drainPressedKeys(): void {
     const keys = this.pressedKeysQueue.splice(0);
     const removedKeys: number[] = [];
-    for (const key of keys) {
-      if (this.stepPendingPads.delete(key)) {
+    for (const { key, chain } of keys) {
+      if (chain === this.stepChainValue && this.stepPendingPads.delete(key)) {
         removedKeys.push(key);
       }
     }
