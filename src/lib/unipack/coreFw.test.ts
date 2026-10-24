@@ -105,7 +105,7 @@ test('stock firmware port names resolve as before', (t) => {
     ['Midi Fighter 64', 'midifighter'],
     ['Mystrix', 'matrix'],
     ['Master Keyboard', 'master_keyboard'],
-    ['IAC Driver Bus 1', 'none'],
+    ['IAC Driver Bus 1', 'master_keyboard'],
   ];
   for (const [name, profile] of stock) {
     assert.equal(resolved(name), profile, name);
@@ -153,12 +153,12 @@ test('CoreFW round buttons, chains and the logo light the notes of the firmware 
   assert.deepEqual(sent, expected);
 });
 
-test('CoreFW turns an LED off with a note off on channel 1', (t) => {
+test('CoreFW turns an LED off with note-on velocity zero on channel 1', (t) => {
   withImmediateTimers(t);
   const { midi, sent } = attachedTo('MK2 (MIDI)');
   midi.sendPadLed(7, 0, 0);
   midi.sendFunctionKeyLed(0, 0);
-  assert.deepEqual(sent, [hex([0x80, XY_DR[11], 0]), hex([0x80, XY_DR[91], 0])]);
+  assert.deepEqual(sent, [hex([0x90, XY_DR[11], 0]), hex([0x90, XY_DR[91], 0])]);
 });
 
 test('CoreFW S and Mini get the red-green colour codes of the stock Launchpad S', (t) => {
@@ -185,10 +185,10 @@ test('clearing a CoreFW Launchpad turns off every pad, round button and the logo
   midi.clearAllLeds();
   const off = new Set(sent);
   for (let x = 0; x < 8; x++) {
-    for (let y = 0; y < 8; y++) assert.ok(off.has(hex([0x80, XY_DR[padXy(x, y)], 0])), `pad ${x},${y}`);
+    for (let y = 0; y < 8; y++) assert.ok(off.has(hex([0x90, XY_DR[padXy(x, y)], 0])), `pad ${x},${y}`);
   }
-  for (let f = 0; f < 32; f++) assert.ok(off.has(hex([0x80, XY_DR[roundXy(f)], 0])), `round ${f}`);
-  assert.ok(off.has(hex([0x80, XY_DR[LOGO_XY], 0])), 'logo');
+  for (let f = 0; f < 32; f++) assert.ok(off.has(hex([0x90, XY_DR[roundXy(f)], 0])), `round ${f}`);
+  assert.ok(off.has(hex([0x90, XY_DR[LOGO_XY], 0])), 'logo');
 });
 
 test('CoreFW presses reach the pad, round button and chain under the finger', (t) => {

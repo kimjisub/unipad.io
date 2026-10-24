@@ -49,6 +49,13 @@ test('every launchpad profile option has its note and label translations', () =>
   assert.deepEqual(missing, []);
 });
 
+test('every offered controller model can be restored after reload', () => {
+  const page = read('./PlayPage.tsx');
+  const allowed = page.match(/const VALID_PROFILES = \[([\s\S]*?)\] as const/)[1];
+  const options = [...source.matchAll(/\{ value: '([^']+)'/g)].map(match => match[1]);
+  assert.deepEqual(options.filter(value => !allowed.includes(`'${value}'`)), []);
+});
+
 // Exercise the rendered settings rather than a copy of its state logic.
 const { JSDOM } = await import('jsdom');
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/play' });
