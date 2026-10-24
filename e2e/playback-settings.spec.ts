@@ -117,6 +117,7 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
     await page.clock.runFor(1);
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
+    await page.clock.resume();
     await expectFeedback(page, saved === null ? !leds : saved === 'true', saved);
     await info.attach('natural-end-screen', { body: await page.screenshot(), contentType: 'image/png' });
     await info.attach('natural-end-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
