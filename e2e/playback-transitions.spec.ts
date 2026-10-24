@@ -67,26 +67,6 @@ async function capture(page: Page, info: TestInfo) {
   await info.attach('returned', { path, contentType: 'image/png' });
 }
 
-test('returning to autoplay preserves its remaining delay and finite lights', async ({ page }, info) => {
-  await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 1000\nc 3\no 1 1\nf 1 1\nd 10000');
-  await mode(page, 'Auto').dispatchEvent('click');
-  await page.clock.runFor(100);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await visibility(page, true);
-  await page.clock.fastForward(5000);
-  await visibility(page, false);
-  await page.clock.runFor(16);
-  await capture(page, info);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await expect(page.locator('[data-pad="0,1"] .z-10')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
-  // A late foreground tick must still honor the remaining delay, without hundreds of fake ticks.
-  // The song clock starts on the sequencer's first tick, 1 ms after the click.
-  await page.clock.fastForward(884);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await page.clock.fastForward(1);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
-});
-
 test('guide next and previous redraw the upcoming pad at the selected position', async ({ page }, info) => {
   const song = Array.from({ length: 60 }, (_, i) => `o 1 ${Math.floor(i / 5) % 2 + 1}\nf 1 ${Math.floor(i / 5) % 2 + 1}\nd 1000`).join('\n');
   await open(page, song);
@@ -127,24 +107,16 @@ test('a chain button choice cancels an earlier sound wormhole', async ({ page },
 });
 
 
-test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ page }, info) => {
+test('interruption cancels a pending sound chain move', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
   const first = page.getByRole('button', { name: 'Chain 9', exact: true });
   await first.dispatchEvent('pointerdown'); await page.clock.runFor(16);
-  await expect(first.locator('div.z-10')).toHaveCount(1);
-  await page.keyboard.press('1');
-  await page.clock.runFor(50);
+  await page.keyboard.press('1'); await page.clock.runFor(50);
   await visibility(page, true); await page.clock.fastForward(5000);
-  await info.attach('hidden-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await visibility(page, false); await page.clock.runFor(1000);
   await expect(first.locator('div.z-10')).toHaveCount(1);
-  await visibility(page, false); await page.clock.runFor(49);
-  await info.attach('before-wormhole-deadline', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-  await expect(first.locator('div.z-10')).toHaveCount(1);
-  await page.clock.runFor(17);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
-  await info.attach('resumed-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('cancelled-chain-move', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
-
 
 test('clock initialization stays deterministic when its pause command is delayed 200 ms', async ({ page }, info) => {
   const pauseAt = page.clock.pauseAt.bind(page.clock);
@@ -195,8 +167,8 @@ test('compatibility: pause keeps the remaining half-second before the next note'
   await open(page, 'o 1 1\nd 1000\no 1 2\nd 10000\no 1 1');
   await mode(page, 'Auto').dispatchEvent('click');
   await page.clock.runFor(1);
-  // The first note starts the song clock; pause after exactly half a second of song time.
-  await page.clock.fastForward(500);
+  // The normal 1 ms first tick consumes 1 ms of the requested song time.
+  await page.clock.fastForward(499);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(3000);
   await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
@@ -355,4 +327,35 @@ test('clock-controlled transitions keep audio time frozen between timer steps', 
   expect(frozen.audioTime).toBe(before.audioTime);
   expect(advanced.wallTime - before.wallTime).toBe(50);
   expect(advanced.audioTime - before.audioTime).toBeCloseTo(0.05, 9);
+});
+
+
+test('manual interruption waits for Play and discards old lights', async ({ page }, info) => {
+  await open(page, 'on 1 1\nd 2000\non 1 2\nd 2000', false, { keySound: '1 1 1 tone.wav 0\n1 1 2 tone.wav 0' });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.fastForward(1000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.runFor(16);
+  await info.attach('returned-before-play', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('interruption-audio', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
+  await expect(page.getByTitle('Play', { exact: true })).toBeVisible();
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toContain(1);
+  await expect(page.locator('[data-pad="0,1"] .z-10')).toHaveCount(0);
+  await page.clock.fastForward(10000);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.getByTitle('Play', { exact: true }).dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => window.transitionAudio.state)).toBe('running');
+  await page.clock.fastForward(1899);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.runFor(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await info.attach('resumed-next-command', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });

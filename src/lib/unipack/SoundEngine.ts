@@ -50,6 +50,7 @@ export class SoundEngine {
   private visibilitySuspended = false;
   private outputMuted = false;
   private volume = 1;
+  onInterrupted: (() => void) | null = null;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -68,6 +69,11 @@ export class SoundEngine {
       latencyHint: 'interactive',
       sampleRate: 44100,
     });
+    this.audioContext.onstatechange = () => {
+      if (!this.visibilitySuspended && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
+        this.onInterrupted?.();
+      }
+    };
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
 
@@ -325,8 +331,20 @@ export class SoundEngine {
     this.pendingChainChanges.clear();
   }
 
+  /** An interruption ends every source, including finite sounds that a pad release leaves playing. */
+  stopAll(): void {
+    this.cancelPendingChainChanges();
+    this.activeNodes.forEach(node => {
+      try { node.stop(); } catch { /* already stopped */ }
+    });
+    this.activeNodes.clear();
+    this.heldPresses.clear();
+  }
+
   destroy(): void {
     this.suspensionRevision++;
+    this.onInterrupted = null;
+    this.audioContext.onstatechange = null;
     this.cancelPendingChainChanges();
     this.removeGestureResume();
     this.activeNodes.forEach((node) => {
