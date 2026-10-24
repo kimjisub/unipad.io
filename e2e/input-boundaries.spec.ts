@@ -65,9 +65,10 @@ for (const square of [true, false]) {
     expect(record.starts).toHaveLength(1);
     await stopped(page, record.starts.map(start => start.id));
     // Unmounting the captured pad also sends a document-targeted capture release.
-    expect(await events(page)).toContainEqual({
-      type: 'lostpointercapture', pointerType: 'mouse', pointerId: down.pointerId, buttons: 1, trusted: true, target: null,
-    });
+    // Its buttons reflect when the browser delivers it: before or during mouse.up().
+    expect(await events(page)).toContainEqual(expect.objectContaining({
+      type: 'lostpointercapture', pointerType: 'mouse', pointerId: down.pointerId, trusted: true, target: null,
+    }));
     expect((await events(page)).filter(event => event.type === 'pointerup')).toEqual([
       { type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null },
     ]);
