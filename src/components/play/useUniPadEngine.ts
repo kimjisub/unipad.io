@@ -491,12 +491,7 @@ export function useUniPadEngine() {
   const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
     if (document.hidden || keyboardBlockedRef.current || (interruptedRef.current && autoPlayRunnerRef.current?.active)) return;
     if (!autoPlayRunnerRef.current?.active) {
-      interruptedRef.current = false;
       if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
-    }
-    if (soundEngineRef.current?.context.state !== 'running') {
-      void soundEngineRef.current?.resume().catch(() => {});
-      return;
     }
     usageTracker.padPressed(source);
     playerHoldsRef.current.press(x, y);
@@ -1590,9 +1585,24 @@ export function useUniPadEngine() {
     };
     const handleBlur = () => interruptPlayback();
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    const handleFocus = () => {
-      if (!document.hidden && !keyboardBlockedRef.current) void soundEngineRef.current?.setSuspended(false).catch(() => {});
+    const restoreVisibleAudio = () => {
+      if (document.hidden || keyboardBlockedRef.current || !interruptedRef.current) return;
+      const sound = soundEngineRef.current;
+      const revision = interruptionRevisionRef.current;
+      if (!sound) return;
+      void sound.setSuspended(false).then(() => {
+        if (sound !== soundEngineRef.current || revision !== interruptionRevisionRef.current || document.hidden || keyboardBlockedRef.current) return;
+        if (sound.context.state !== 'running') sound.stopAll();
+        else if (!autoPlayRunnerRef.current?.active) interruptedRef.current = false;
+      }).catch(() => {
+        if (sound === soundEngineRef.current && revision === interruptionRevisionRef.current) sound.stopAll();
+      });
     };
+    const handleFocus = restoreVisibleAudio;
+    for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+      document.addEventListener(type, restoreVisibleAudio, { capture: true, passive: true });
+    }
+
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
     window.addEventListener('pagehide', handleBlur);
@@ -1600,6 +1610,9 @@ export function useUniPadEngine() {
     return () => {
       revisionRef.current++;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
+        document.removeEventListener(type, restoreVisibleAudio, { capture: true });
+      }
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('pagehide', handleBlur);

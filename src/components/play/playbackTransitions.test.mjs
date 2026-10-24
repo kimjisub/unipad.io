@@ -557,3 +557,16 @@ test('opening a menu inside the player does not interrupt autoplay', async () =>
   assert.equal(result.current.state.autoPlayPlaying, true);
   await tick(2000); assert.equal(starts.length, 2);
 });
+
+
+test('a new manual press restores audio after interruption without starting a song', async () => {
+  const { result } = await mount();
+  await flush(() => result.current.padTouchOn(0, 0, 'finger')); await tick(4);
+  await flush(() => window.dispatchEvent(new window.Event('blur')));
+  await flush(() => { audio.state = 'running'; audio.onstatechange?.(); });
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  await flush(() => result.current.padTouchOn(0, 0, 'new-finger'));
+  assert.ok(audio.outputGain.value > 0);
+  assert.equal(starts.length, 2);
+  assert.equal(result.current.state.autoPlayEnabled, false);
+});
