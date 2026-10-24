@@ -57,6 +57,39 @@ describe('archive and sound import compatibility', () => {
     }
   }
 
+  for (const reversed of [false, true]) {
+    test(`preserves colliding slash spellings and chooses by original archive path (reversed=${reversed})`, async () => {
+      const sounds: [string, Uint8Array][] = [
+        ['sounds/a.wav', new Uint8Array([1])],
+        ['sounds\\a.wav', new Uint8Array([2])],
+      ];
+      if (reversed) sounds.reverse();
+      const pack = await parseUniPack(await packZip({ info, keySound: '1 1 1 a.wav', ...Object.fromEntries(sounds) }));
+      assert.deepEqual(pack.errors, []);
+      const file = pack.soundTable[0][0][0]![0].file;
+      assert.equal(file, 'sounds/a.wav');
+      assert.deepEqual([...new Uint8Array(pack.soundFiles.get(file)!)], [1]);
+    });
+  }
+
+  test('fallback sound selection sorts original archive paths before normalizing separators', async () => {
+    const pack = await parseUniPack(await packZip({
+      info, keySound: '1 1 1 End.wav',
+      'sounds\\END.wav': new Uint8Array([1]), 'sounds/end.wav': new Uint8Array([2]),
+    }));
+    assert.deepEqual(pack.errors, []);
+    const file = pack.soundTable[0][0][0]![0].file;
+    assert.equal(file, 'sounds/end.wav');
+    assert.deepEqual([...new Uint8Array(pack.soundFiles.get(file)!)], [2]);
+  });
+
+  test('does not treat a root filename as a sounds directory', async () => {
+    const pack = await parseUniPack(await packZip({ info, keySound: '1 1 1 soundss', soundss: SILENT_WAV }));
+    assert.equal(pack.soundCount, 0);
+    assert.equal(pack.soundFiles.size, 0);
+    assert.deepEqual(pack.errors, ['keySound: [1 1 1 soundss] sound was not found']);
+  });
+
   test('sound references cannot escape the sounds directory', async () => {
     const pack = await parseUniPack(await packZip({ info, keySound: '1 1 1 ../outside.wav\n1 1 2 ..\\outside.wav', 'outside.wav': SILENT_WAV }));
     assert.equal(pack.soundCount, 0);
