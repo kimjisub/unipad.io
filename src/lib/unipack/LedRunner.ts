@@ -267,15 +267,16 @@ export class LedRunner {
     }
   }
 
-  /** Shift every boundary together, including samples rendered before native suspension finished. */
-  setSuspended(suspended: boolean, elapsedAudioMs = 0): void {
+  /** Shift every boundary together, including rendered transition samples. The caller can share
+   *  wallTimeMs with the sound runner instead of sampling a later callback entry. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0, wallTimeMs?: number): void {
     if (suspended) {
       if (this.suspendedAt === null) {
-        this.suspendedAt = performance.now();
+        this.suspendedAt = wallTimeMs ?? performance.now();
         this.suspendedStates = new Set([...this.ledAnimationStates, ...this.ledAnimationStatesAdd]);
       }
     } else if (this.suspendedAt !== null) {
-      const hiddenMs = performance.now() - this.suspendedAt;
+      const hiddenMs = (wallTimeMs ?? performance.now()) - this.suspendedAt;
       this.suspendedAt = null;
       for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
         // A light first requested while hidden has not consumed an older sample's transition time.

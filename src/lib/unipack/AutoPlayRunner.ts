@@ -331,12 +331,12 @@ export class AutoPlayRunner {
   }
 
   /** Visibility is independent of playmode. Include samples rendered during native suspension
-   *  without undoing a user's pause. */
-  setSuspended(suspended: boolean, elapsedAudioMs = 0): void {
+   *  without undoing a user's pause. A shared wallTimeMs keeps delayed callbacks on one boundary. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0, wallTimeMs?: number): void {
     if (suspended) {
-      this.suspendedAt ??= performance.now();
+      this.suspendedAt ??= wallTimeMs ?? performance.now();
     } else if (this.suspendedAt !== null) {
-      const hiddenMs = performance.now() - this.suspendedAt - elapsedAudioMs;
+      const hiddenMs = (wallTimeMs ?? performance.now()) - this.suspendedAt - elapsedAudioMs;
       this.suspendedAt = null;
       this.shiftClock(hiddenMs);
     }

@@ -1480,8 +1480,10 @@ export function useUniPadEngine() {
         // must include those rendered samples instead of adding that time again after return.
         const elapsedAudioMs = sound && suspendedAudio?.engine === sound
           ? Math.max(0, (sound.context.currentTime - suspendedAudio.time) * 1000) : 0;
-        autoPlayRunnerRef.current?.setSuspended(false, elapsedAudioMs);
-        ledRunnerRef.current?.setSuspended(false, elapsedAudioMs);
+        // Both clocks cross the same boundary even when one callback is delayed in this task.
+        const resumedAt = performance.now();
+        autoPlayRunnerRef.current?.setSuspended(false, elapsedAudioMs, resumedAt);
+        ledRunnerRef.current?.setSuspended(false, elapsedAudioMs, resumedAt);
         suspendedAudio = null;
         pausedForVisibility = false;
         syncMidiStateToDevice();
@@ -1497,9 +1499,11 @@ export function useUniPadEngine() {
         }
         pausedForVisibility = true;
         visibilityRevision++;
-        autoPlayRunnerRef.current?.setSuspended(true);
-        ledRunnerRef.current?.setSuspended(true);
+        const suspendedAt = performance.now();
+        // Gate output before pausing runners: their callbacks must not postpone the mute request.
         void soundEngineRef.current?.setSuspended(true).catch(() => {});
+        autoPlayRunnerRef.current?.setSuspended(true, 0, suspendedAt);
+        ledRunnerRef.current?.setSuspended(true, 0, suspendedAt);
         wakeLockRef.current?.release().catch(() => {});
         wakeLockRef.current = null;
         midiRef.current?.clearAllLeds?.();

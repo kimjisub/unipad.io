@@ -59,7 +59,7 @@ beforeEach(() => {
       if (this.pendingResume) await this.pendingResume;
       if (this.state !== 'closed') this.state = 'running';
     }
-    createGain() { return { gain: { value: 1 }, connect() {} }; }
+    createGain() { this.outputGain = { value: 1 }; return { gain: this.outputGain, connect() {} }; }
     async decodeAudioData() { return { duration: 0.1 }; }
     createBufferSource() { return { connect() {}, start() { starts.push(now); }, stop() {} }; }
     close() { this.state = 'closed'; }
@@ -523,4 +523,72 @@ test('pad-only light commits keep an unchanged chain snapshot while real chain c
   assert.notStrictEqual(result.current.state.chainStates, chains);
   assert.equal(result.current.state.chain, 1);
   assert.notEqual(result.current.state.chainStates[9].color, chains[9].color);
+});
+
+for (const delayedTransition of ['hide', 'show']) for (const callbackOrder of ['before', 'after']) {
+  test(`notes and finite lights share one visibility boundary with a delay ${callbackOrder} ${delayedTransition} callbacks`, async () => {
+    const { result } = await mount({
+      autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
+      led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
+    });
+    if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    const firstAudioTime = audio.currentTime;
+    await tick(100);
+    assert.equal(starts.length, 1);
+    const suspend = real.AutoPlayRunner.prototype.setSuspended;
+    mock.method(real.AutoPlayRunner.prototype, 'setSuspended', function (hidden, ...args) {
+      const delayed = hidden === (delayedTransition === 'hide');
+      const delay = () => {
+        // A callback can enter or return later in the same visibility task. The audio device
+        // keeps rendering until native suspension and resumes before the runners are released.
+        now += 80;
+        if (audio.state === 'running') audio.currentTime += 0.08;
+      };
+      if (delayed && callbackOrder === 'before') delay();
+      suspend.call(this, hidden, ...args);
+      if (delayed && callbackOrder === 'after') delay();
+    });
+    await visibility(true);
+    await tick(2000);
+    await visibility(false);
+    const nextNote = now + Math.round((firstAudioTime + 1 - audio.currentTime) * 1000);
+    await tick(nextNote - now - 1);
+    assert.equal(starts.length, 1);
+    assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'the next light must not consume another runner\'s callback delay');
+    await tick(1);
+    assert.equal(starts.length, 2);
+    assert.equal(starts[1], nextNote);
+    await tick(4);
+    assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'the due light must not add another runner\'s callback delay');
+  });
+}
+
+
+test('visibility mutes output before a slow sequencer pause callback', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  assert.equal(starts.length, 1);
+  let value = audio.outputGain.value;
+  assert.ok(value > 0);
+  let mutedAt = null;
+  Object.defineProperty(audio.outputGain, 'value', {
+    get: () => value,
+    set: next => { value = next; if (next === 0) mutedAt = now; },
+  });
+  const suspend = real.AutoPlayRunner.prototype.setSuspended;
+  mock.method(real.AutoPlayRunner.prototype, 'setSuspended', function (hidden, ...args) {
+    if (hidden) {
+      now += 80;
+      if (audio.state === 'running') audio.currentTime += 0.08;
+    }
+    suspend.call(this, hidden, ...args);
+  });
+  const hiddenAt = now;
+  await visibility(true);
+  assert.notEqual(mutedAt, null);
+  assert.ok(mutedAt - hiddenAt < 50, 'a slow runner must not hold up the output mute request');
+  assert.equal(value, 0);
 });
