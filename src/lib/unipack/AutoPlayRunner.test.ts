@@ -153,7 +153,7 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
-  test('a short pause during a wait keeps the next note at its written time', async () => {
+  test('a short pause during a wait preserves the remaining delay', async () => {
     const { runner, presses } = noteTimes(await twoNotes());
     runner.launch();
     clock.tick(1);
@@ -164,7 +164,26 @@ describe('AutoPlayRunner', () => {
     clock.tick(300);
     while (presses.length < 2 && clock.scheduled) clock.tick(1);
 
-    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 2501, pressedAt: 2501 }]);
+    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 2601, pressedAt: 2601 }]);
+    runner.stop();
+  });
+
+  test('hiding while paused excludes hidden time exactly once when playback resumes', async () => {
+    const { runner, presses } = noteTimes(await twoNotes());
+    runner.launch();
+    clock.tick(1);
+    clock.tick(499);
+    runner.pause();
+    clock.tick(100);
+    runner.setSuspended(true);
+    clock.tick(5000);
+    runner.setSuspended(false);
+    clock.tick(100);
+    runner.play();
+    clock.tick(300);
+    while (presses.length < 2 && clock.scheduled) clock.tick(1);
+
+    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 7701, pressedAt: 7701 }]);
     runner.stop();
   });
 
@@ -192,16 +211,16 @@ describe('AutoPlayRunner', () => {
   const releasedNotes = 'o 1 1\nd 100\nf 1 1\nd 1400\no 1 2\nd 100\nf 1 2\nd 1400\no 2 1\nd 100';
 
   test('a short pause before a release keeps the next note at its written time', async () => {
-    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 1, afterMs: 49, forMs: 30 }]), [1001, 2501, 4001]);
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 1, afterMs: 49, forMs: 30 }]), [1001, 2531, 4031]);
   });
 
   test('a pause right after a later note keeps the note after it at its written time', async () => {
-    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 2, afterMs: 0, forMs: 100 }]), [1001, 2501, 4001]);
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 2, afterMs: 0, forMs: 100 }]), [1001, 2501, 4101]);
   });
 
   test('a short pause in the first of two waits keeps the next note at its written time', async () => {
     const splitWait = 'o 1 1\nd 500\nd 1000\no 1 2\nd 1500\no 2 1\nd 100';
-    assert.deepEqual(await pausedPlay(splitWait, [{ atNote: 1, afterMs: 399, forMs: 30 }]), [1001, 2501, 4001]);
+    assert.deepEqual(await pausedPlay(splitWait, [{ atNote: 1, afterMs: 399, forMs: 30 }]), [1001, 2531, 4031]);
   });
 
   test('a guide shown before a pause keeps its remaining lead when a late tick resumes the song', async () => {
@@ -224,9 +243,9 @@ describe('AutoPlayRunner', () => {
     clock.tick(300);
     while (guideOff.length < 3 && clock.scheduled) clock.tick(1);
 
-    // Paused at song time 900 and resumed at 1100, past the second note's 1000: that note is due at
-    // once, and the third note's guide still has the 200 ms it had left when play was pressed.
-    assert.deepEqual(guideOff, [[0, 0, 1001], [0, 1, 2401], [1, 0, 2601]]);
+    // Pausing freezes song time at 900. The late resume tick reaches the second note after its
+    // remaining 100 ms, then keeps the written 300 ms gap to the third note.
+    assert.deepEqual(guideOff, [[0, 0, 1001], [0, 1, 2401], [1, 0, 2701]]);
     runner.stop();
   });
 

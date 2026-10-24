@@ -6,6 +6,8 @@ import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
+import { configureMidiPorts, midiPortMessages } from './midi';
+import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -62,7 +64,7 @@ test('controller buttons outside a small pack do not select chains or record pad
   const played = await page.evaluate(() => window.browserProbe.audio.starts);
   await info.attach('controller-boundary-screen', { body: await page.screenshot(), contentType: 'image/png' });
   await info.attach('controller-boundary-output', { body: JSON.stringify({ recorded, played, lights: await midiMessages(page), physicalHardware: false }), contentType: 'application/json' });
-  expect(recorded).toBe('chain 1');
+  expect(recorded).toBe('c 1');
   expect(played[0].duration).toBe(0.1);
   await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
 });
@@ -127,20 +129,20 @@ test('hiding the open option panel preserves pack lights underneath it', async (
   await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
 });
 
-for (const profile of ['launchpad_pro_cfw', 'launchpad_corefw', 'launchpad_corefw_rg']) {
+for (const { value: profile } of LAUNCHPAD_PROFILE_OPTIONS) {
   test(`the ${profile} model is selectable and survives reload`, async ({ page }, info) => {
     await skipWithoutWebMidi(page);
     await loadPack(page);
     await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
     await dialog.locator('select').selectOption(profile);
-    await expect(dialog).toContainText(`Resolved Type: ${profile}`);
+    await expect(dialog).toContainText(`Resolved Type: ${profile === 'auto' ? 'launchpad_x' : profile}`);
     await info.attach('selected-model', { body: await page.screenshot(), contentType: 'image/png' });
     await page.reload();
     await expectPads(page);
     await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
     await expect(dialog.locator('select')).toHaveValue(profile);
-    await expect(dialog).toContainText(`Resolved Type: ${profile}`);
+    await expect(dialog).toContainText(`Resolved Type: ${profile === 'auto' ? 'launchpad_x' : profile}`);
   });
 }
 
@@ -441,27 +443,39 @@ test('a chain change preserves the held loop until release and quit stops playba
 });
 
 test('auto-play starts, pauses without advancing, resumes, and stops', async ({ page }) => {
+  // Exercise state transitions without letting a delayed browser round trip finish
+  // the song before the stop click. Native output is checked in audio-visibility.
+  await page.addInitScript(() => {
+    Object.defineProperty(BaseAudioContext.prototype, 'currentTime', {
+      configurable: true,
+      get: () => performance.now() / 1000,
+    });
+  });
   await loadPack(page);
+  await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   await auto.click();
   await expect(auto).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(() => starts(page)).toBe(1);
+  await page.clock.runFor(16);
+  await page.clock.fastForward(1100);
+  expect(await starts(page)).toBe(1);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   const progress = await page.getByRole('progressbar').getAttribute('aria-valuenow');
   // Cross the next note deadline: a paused/stopped runner must emit nothing.
-  await page.waitForTimeout(3500);
+  await page.clock.fastForward(3500);
   expect(await starts(page)).toBe(1);
   expect(await page.getByRole('progressbar').getAttribute('aria-valuenow')).toBe(progress);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await expect.poll(() => starts(page)).toBe(2);
+  await page.clock.fastForward(3200);
+  expect(await starts(page)).toBe(2);
+  await expect(auto).toHaveAttribute('aria-pressed', 'true');
   await auto.click();
   await expect(auto).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('progressbar')).toHaveCount(0);
-  // Cross the next note deadline: a paused/stopped runner must emit nothing.
-  await page.waitForTimeout(3500);
+  await page.clock.fastForward(3500);
   expect(await starts(page)).toBe(2);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
 });
 
 for (const delayedInspection of [false, true]) {
@@ -539,19 +553,7 @@ for (const delayedInspection of [false, true]) {
 test('a Launchpad running CoreFW is played and lit in its own layout', async ({ page }, testInfo) => {
   test.slow();
   await skipWithoutWebMidi(page);
-  await page.addInitScript(() => {
-    const request = navigator.requestMIDIAccess.bind(navigator);
-    Object.defineProperty(navigator, 'requestMIDIAccess', {
-      configurable: true,
-      value: async (options: MIDIOptions) => {
-        const access = await request(options);
-        for (const port of [...access.inputs.values(), ...access.outputs.values()]) {
-          (port as { name: string }).name = 'LPX (MIDI)';
-        }
-        return access;
-      },
-    });
-  });
+  await configureMidiPorts(page, { rename: 'LPX (MIDI)' });
   await loadPack(page);
   await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
@@ -713,32 +715,14 @@ for (const [scenario, names, selected] of [
 ] as const) {
   test(`pad lights reach ${scenario}`, async ({ page }, info) => {
     await skipWithoutWebMidi(page);
-    await page.addInitScript(names => {
-      const request = navigator.requestMIDIAccess.bind(navigator);
-      Object.defineProperty(navigator, 'requestMIDIAccess', {
-        configurable: true,
-        value: async (options: MIDIOptions) => {
-          const access = await request(options);
-          const messages: number[][][] = names.map(() => []);
-          (window as unknown as { portMessages: number[][][] }).portMessages = messages;
-          const inputs = access.inputs as unknown as Map<string, unknown>;
-          const outputs = access.outputs as unknown as Map<string, unknown>;
-          inputs.clear(); outputs.clear();
-          names.forEach((name, index) => {
-            inputs.set(`input-${index}`, { id: `input-${index}`, name: name.replace(/Out$/, 'In'), manufacturer: 'Novation', onmidimessage: null });
-            outputs.set(`output-${index}`, { id: `output-${index}`, name, manufacturer: 'Novation', send: (data: number[]) => messages[index].push(Array.from(data)) });
-          });
-          return access;
-        },
-      });
-    }, [...names]);
+    await configureMidiPorts(page, { inputs: names.map(name => name.replace(/Out$/, 'In')), outputs: [...names], replace: true });
     await loadPack(page);
     await page.getByRole('button', { name: 'Feedback', exact: true }).click();
-    const messages = () => page.evaluate(() => (window as unknown as { portMessages: number[][][] }).portMessages);
+    const messages = () => midiPortMessages(page);
     const primary = selected.indexOf(true);
     await expect.poll(async () => (await messages())[primary].some(message => message[0] === 0x90)).toBe(true);
     const initialization = await messages();
-    await page.evaluate(() => (window as unknown as { portMessages: number[][][] }).portMessages.forEach(messages => { messages.length = 0; }));
+    await page.evaluate(() => window.midiPortProbe.messages.forEach(messages => { messages.length = 0; }));
     await pad(page, '0,0').hover();
     await page.mouse.down();
     await expect(pressed(page, '0,0')).toBeVisible();
@@ -761,28 +745,12 @@ for (const [other, otherLights] of [['Master Keyboard', []], ['Launchpad Mini', 
   for (const otherFirst of [true, false]) {
     test(`with ${other} listed ${otherFirst ? 'before' : 'after'} the Launchpad X, each gets the lights in its own layout`, async ({ page }) => {
       await skipWithoutWebMidi(page);
-      await page.addInitScript(([name, first]) => {
-        const request = navigator.requestMIDIAccess.bind(navigator);
-        Object.defineProperty(navigator, 'requestMIDIAccess', {
-          configurable: true,
-          value: async (options: MIDIOptions) => {
-            const access = await request(options);
-            const messages: number[][] = [];
-            (window as unknown as { otherMessages: number[][] }).otherMessages = messages;
-            const port = { id: 'other-device', name, send: (data: number[]) => messages.push(Array.from(data)) };
-            const outputs = access.outputs as unknown as Map<string, unknown>;
-            const listed = [...outputs];
-            outputs.clear();
-            for (const [id, output] of first ? [[port.id, port], ...listed] : [...listed, [port.id, port]]) outputs.set(id as string, output);
-            return access;
-          },
-        });
-      }, [other, otherFirst] as const);
+      await configureMidiPorts(page, { outputs: [other], first: otherFirst });
       await loadPack(page);
       await page.getByRole('button', { name: 'Feedback', exact: true }).click();
       await connectLaunchpadAndClear(page);
-      const otherMessages = () => page.evaluate(() => (window as unknown as { otherMessages: number[][] }).otherMessages);
-      await page.evaluate(() => { (window as unknown as { otherMessages: number[][] }).otherMessages.length = 0; });
+      const otherMessages = async () => (await midiPortMessages(page))[0];
+      await page.evaluate(() => { window.midiPortProbe.messages[0].length = 0; });
       await pad(page, '0,0').hover();
       await page.mouse.down();
       await expect.poll(() => padNoteMessages(page, 81)).toEqual([[0x90, 81, 3]]);
@@ -805,31 +773,13 @@ for (const [name, note] of [
   for (const otherFirst of [false, true]) {
     test(`Auto reads each input in its own layout: ${name} ${otherFirst ? 'before' : 'after'} X`, async ({ page }) => {
       await skipWithoutWebMidi(page);
-      await page.addInitScript(([name, first]) => {
-        const request = navigator.requestMIDIAccess.bind(navigator);
-        Object.defineProperty(navigator, 'requestMIDIAccess', {
-          configurable: true,
-          value: async (options: MIDIOptions) => {
-            const access = await request(options);
-            const input = { id: 'other-input', name, onmidimessage: null as ((event: { data: Uint8Array }) => void) | null };
-            const inputs = access.inputs as unknown as Map<string, unknown>;
-            const listed = [...inputs];
-            inputs.clear();
-            for (const [id, port] of first ? [[input.id, input], ...listed] : [...listed, [input.id, input]]) inputs.set(id as string, port);
-            (window as unknown as { emitOther: (data: number[]) => void }).emitOther = data => {
-              if (!input.onmidimessage) throw new Error('No second input listener attached');
-              input.onmidimessage({ data: new Uint8Array(data) });
-            };
-            return access;
-          },
-        });
-      }, [name, otherFirst] as const);
+      await configureMidiPorts(page, { inputs: [name], first: otherFirst });
       await loadPack(page);
       await page.getByRole('button', { name: 'Feedback', exact: true }).click();
       for (const source of ['X', 'other'] as const) {
         const send = (status: number, velocity: number) => page.evaluate(({ source, status, velocity, note }) => {
           if (source === 'X') window.browserProbe.midi.emit([status, 81, velocity]);
-          else (window as unknown as { emitOther: (data: number[]) => void }).emitOther([status, note, velocity]);
+          else window.midiPortProbe.emit(0, [status, note, velocity]);
         }, { source, status, velocity, note });
         await send(0x90, 127);
         await test.info().attach(`${source}-pressed`, { body: await page.screenshot(), contentType: 'image/png' });
@@ -1051,5 +1001,81 @@ for (const [name, file] of [
         await expectLandscapePads(page, screen);
       }
     }
+  });
+}
+
+
+for (const [name, selected] of [['LPX MIDI', 1], ['LPMiniMK3 MIDI', 1], ['LPProMK3 MIDI', 0]] as const) {
+  test(`Windows alias routing uses the documented interface for ${name}`, async ({ page }, info) => {
+    await skipWithoutWebMidi(page);
+    // Put the second interface first to also rule out list-order selection.
+    const names = [`MIDIOUT2 (${name})`, name];
+    const lighting = selected === 1 ? 0 : 1;
+    await configureMidiPorts(page, { inputs: names.map(n => n.replace('MIDIOUT', 'MIDIIN')), outputs: names, replace: true });
+    await loadPack(page);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await expect.poll(async () => (await midiPortMessages(page)).flat().some(m => m[0] === 0x90)).toBe(true);
+    const initialization = await midiPortMessages(page);
+    await page.evaluate(() => window.midiPortProbe.messages.forEach(m => { m.length = 0; }));
+    await pad(page, '0,0').hover(); await page.mouse.down();
+    await expect(pressed(page, '0,0')).toBeVisible();
+    const lights = await midiPortMessages(page);
+    await info.attach('windows-routing-screen', { body: await page.screenshot(), contentType: 'image/png' });
+    await info.attach('windows-routing-bytes', { body: JSON.stringify({ names, initialization, lights, physicalHardware: false }), contentType: 'application/json' });
+    await page.mouse.up();
+    expect(initialization.map(m => m.filter(b => b[0] === 0xf0).length)).toEqual(names.map((_, i) => i === lighting ? 2 : 0));
+    expect(lights.map(m => m.some(b => b[0] === 0x90 && b[1] === 81 && b[2] === 3))).toEqual(names.map((_, i) => i === lighting));
+  });
+}
+
+test('split removal keeps the remaining identical controller ready for lights', async ({ page }, info) => {
+  await skipWithoutWebMidi(page);
+  await configureMidiPorts(page, { inputs: ['Launchpad X MIDI In', 'Launchpad X MIDI In'], outputs: ['Launchpad X MIDI Out', 'Launchpad X MIDI Out'], replace: true });
+  await loadPack(page);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await expect.poll(async () => (await midiPortMessages(page)).every(m => m.some(b => b[0] === 0x90))).toBe(true);
+  await pad(page, '0,0').hover();
+  await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
+  await page.evaluate(() => {
+    window.midiPortProbe.messages.forEach(m => { m.length = 0; });
+    window.midiPortProbe.remove('inputs', 0);
+    window.midiPortProbe.remove('outputs', 0);
+    window.midiPortProbe.emit(1, [0x90, 81, 127]);
+  });
+  await page.clock.runFor(16);
+  await expect(pressed(page, '0,0')).toBeVisible();
+  const messages = await midiPortMessages(page);
+  await info.attach('split-removal-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('split-removal-bytes', { body: JSON.stringify({ messages, elapsed: 16, physicalHardware: false }), contentType: 'application/json' });
+  expect(messages[1]).toContainEqual([0x90, 81, 3]);
+  expect(messages[1].filter(m => m[0] === 0xf0)).toEqual([]);
+});
+
+
+for (const [names, selected] of [
+  [['Foo DAW Out', 'Foo MIDI Out'], 1],
+  [['Foo DIN Out', 'Foo Out'], 1],
+  [['Foo DAW Out'], 0],
+] as const) {
+  test(`a manual unknown controller chooses its best available port: ${names.join(', ')}`, async ({ page }, info) => {
+    await skipWithoutWebMidi(page);
+    await configureMidiPorts(page, { inputs: ['Foo DAW In'], outputs: [...names], replace: true, manufacturer: 'Novation' });
+    await loadPack(page);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+    await dialog.locator('select').selectOption('launchpad_x');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect.poll(async () => (await midiPortMessages(page)).flat().some(message => message[0] === 0x90)).toBe(true);
+    const initialization = await midiPortMessages(page);
+    await page.evaluate(() => window.midiPortProbe.messages.forEach(messages => { messages.length = 0; }));
+    await pad(page, '0,0').hover(); await page.mouse.down();
+    await expect(pressed(page, '0,0')).toBeVisible();
+    const lights = await midiPortMessages(page);
+    await info.attach('unknown-controller-screen', { body: await page.screenshot(), contentType: 'image/png' });
+    await info.attach('unknown-controller-routing', { body: JSON.stringify({ names, initialization, lights, physicalHardware: false }), contentType: 'application/json' });
+    await page.mouse.up();
+    expect(initialization.map(messages => messages.filter(message => message[0] === 0xf0).length)).toEqual(names.map((_, i) => i === selected ? 2 : 0));
+    expect(lights.map(messages => messages.some(message => message[0] === 0x90 && message[1] === 81 && message[2] === 3))).toEqual(names.map((_, i) => i === selected));
   });
 }

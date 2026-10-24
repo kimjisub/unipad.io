@@ -107,6 +107,24 @@ describe('LedRunner', () => {
     assert.equal(outputs.length, 2);
   });
 
+  for (const change of ['selection', 'script'] as const) {
+    test(`release ends endless pad and round lights after a ${change} chain change`, async () => {
+      const { runner, outputs, press, setChain } = await startRunner({
+        '1 1 1 0': `o 1 2 a 5\no * 2 a 5\n${change === 'script' ? 'c 2\n' : ''}d 1000`,
+      });
+      press(0, 0);
+      if (change === 'selection') setChain(1);
+      runner.eventOff(0, 0);
+      clock.tick(4);
+      assert.deepEqual(outputs, [
+        ['padOn', 0, 1, RED, 5], ['chainOn', 1, RED, 5],
+        ['padOff', 0, 1], ['chainOff', 1],
+      ]);
+      clock.tick(2000);
+      assert.equal(outputs.length, 4, 'released animation must not relight');
+    });
+  }
+
   describe('an endless animation that outruns one tick', () => {
     // Two passes of this strobe fit in one 4 ms tick, more than the per-tick budget allows.
     const STROBE = { '1 1 1 0': 'f 1 1\nd 1\no 1 1 a 5\nd 1' };
