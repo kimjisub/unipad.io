@@ -84,7 +84,7 @@ for (const names of [[LAUNCHPAD_X, KEYBOARD], [KEYBOARD, LAUNCHPAD_X]]) {
   });
 }
 
-test('a model picked by hand lights every output in that model', (t) => {
+test('a model picked by hand lights only controllers in that model', (t) => {
   withImmediateTimers(t);
   const { midi, sent } = attachedTo([LAUNCHPAD_MINI, KEYBOARD]);
   midi.setProfile('launchpad_x');
@@ -94,5 +94,5 @@ test('a model picked by hand lights every output in that model', (t) => {
   midi.sendFunctionKeyLed(0, 5);
 
   assert.deepEqual(sent[LAUNCHPAD_MINI], X_LIGHTS);
-  assert.deepEqual(sent[KEYBOARD], X_LIGHTS);
+  assert.deepEqual(sent[KEYBOARD], []);
 });

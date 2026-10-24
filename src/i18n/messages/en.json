@@ -347,7 +347,7 @@
       "resolvedType": "Resolved Type",
       "typeLabel": "Launchpad Type",
       "autoDetect": "Auto Detect",
-      "noInitSysEx": "No Init SysEx",
+      "noInitSysEx": "Disabled",
       "typeHint": "Auto Detect uses the connected output name. Changing the model applies it immediately to devices that are already connected.",
       "connecting": "Connecting...",
       "reconnect": "Reconnect",
@@ -364,7 +364,10 @@
         "midifighter": "8x8 pad grid only. No chain LEDs or function LEDs.",
         "matrix": "4-bank grid mapping with 32 function LED slots.",
         "master_keyboard": "Input-only keyboard mapping. No LED output.",
-        "none": "Generic fallback. No device-specific SysEx or Android driver mapping."
+        "none": "MIDI input and light output are disabled.",
+        "launchpad_pro_cfw": "Launchpad Open performance layout, with lights on MIDI channel 16.",
+        "launchpad_corefw": "CoreFW drum-rack layout for RGB Launchpads.",
+        "launchpad_corefw_rg": "CoreFW drum-rack layout with Launchpad S / Mini red-green colors."
       },
       "help": {
         "title": "Connection and light help",
