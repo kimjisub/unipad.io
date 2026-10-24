@@ -181,6 +181,13 @@ async function prepare(page: Page, holdSuspension = false) {
     // let the next note run. Keep audio and timers real throughout the measurement.
     window.audioTimeline.hidden = new Promise(resolve => {
       const hide = new MessageChannel();
+      // Allocate the return-boundary probe before playback, outside the task being measured.
+      const next = new MessageChannel();
+      next.port1.onmessage = () => {
+        window.audioTimeline.events.push({ type: 'next-task-start', wallTime: performance.now(), gain: window.audioTimeline.gainValue });
+        next.port1.close();
+        next.port2.close();
+      };
       hide.port1.onmessage = ({ data: output }: MessageEvent<number>) => {
         const soundTime = window.audioTimeline.context!.currentTime;
         const eventWallTime = performance.now();
@@ -191,12 +198,6 @@ async function prepare(page: Page, holdSuspension = false) {
         const gain = window.audioTimeline.gainValue;
         window.audioTimeline.events.push({ type: 'hide-task-return', wallTime, gain });
         resolve({ soundTime, wallTime, output, starts: window.audioTimeline.starts.length, eventWallTime, epochMs, gain });
-        const next = new MessageChannel();
-        next.port1.onmessage = () => {
-          window.audioTimeline.events.push({ type: 'next-task-start', wallTime: performance.now(), gain: window.audioTimeline.gainValue });
-          next.port1.close();
-          next.port2.close();
-        };
         next.port2.postMessage(null);
         hide.port1.close();
         hide.port2.close();
