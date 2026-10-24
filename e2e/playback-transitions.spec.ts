@@ -112,6 +112,29 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redraws only the next unscanned note`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
+  const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(220);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.clock.fastForward(2000);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(220);
+  const path = info.outputPath('resumed-guide.png');
+  await page.screenshot({ path, animations: 'disabled' });
+  await info.attach('resumed-guide', { path, contentType: 'image/png' });
+  const messages = await page.evaluate(() => window.browserProbe.midi.messages);
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
+  await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(1);
+  await page.clock.runFor(800);
+  await expect(guide('0,1')).toHaveCount(0);
+});
+
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
   // Key input starts the sound; a direct pointer event selects the chain on the paused clock.

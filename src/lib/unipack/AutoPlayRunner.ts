@@ -16,6 +16,7 @@ export interface AutoPlayListener {
 }
 
 interface GuideEvent {
+  index: number;
   timeMs: number;
   x: number;
   y: number;
@@ -48,6 +49,7 @@ export class AutoPlayRunner {
       this.waitStartTime += pausedMs;
       this.activeGuides.forEach((target, key) => this.activeGuides.set(key, target + pausedMs));
       this.pausedAt = null;
+      this.beforeStartPlaying = true;
     }
     this.playing = playing;
   }
@@ -106,11 +108,11 @@ export class AutoPlayRunner {
   private buildGuideTimeline(autoPlay: AutoPlay): GuideEvent[] {
     const events: GuideEvent[] = [];
     let time = 0;
-    for (const element of autoPlay.elements) {
+    for (const [index, element] of autoPlay.elements.entries()) {
       if (element.type === 'delay') {
         time += element.delay;
       } else if (element.type === 'on') {
-        events.push({ timeMs: time, x: element.x, y: element.y, chain: element.currChain });
+        events.push({ index, timeMs: time, x: element.x, y: element.y, chain: element.currChain });
       }
     }
     return events;
@@ -423,13 +425,14 @@ export class AutoPlayRunner {
 
     if (this.practiceGuide) {
       this.guideTimeline = this.buildGuideTimeline(autoPlay);
-      const idx = this.guideTimeline.findIndex((e) => e.timeMs > songTimeMs - GUIDE_LOOKAHEAD_MS);
+      const idx = this.guideTimeline.findIndex((e) => e.index >= this.progress);
       this.guideIndex = idx < 0 ? this.guideTimeline.length : idx;
       this.waitingForChain = -1;
       this.activeGuides.forEach((_val, key) => {
         this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
       });
       this.activeGuides.clear();
+      this.listener.onRemoveGuide();
     }
   }
 
@@ -529,6 +532,12 @@ export class AutoPlayRunner {
     if (this.beforeStartPlaying) {
       this.beforeStartPlaying = false;
       this.listener.onRemoveGuide();
+      // Resume clears the screen first; redraw the retained guides with their shifted deadlines.
+      if (this.practiceGuide) {
+        this.activeGuides.forEach((target, key) => {
+          this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
+        });
+      }
     }
   }
 }

@@ -159,6 +159,26 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
   assert.ok(guides.every(p => p.guideTargetWallTimeMs >= now - 800 && p.guideTargetWallTimeMs <= now + 800), 'the upcoming guide must keep its lead time at the new position');
 });
 
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} discards the scanned step and guides only upcoming notes`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true, 'the scanned step is offered until resume');
+  const progress = result.current.state.autoPlayProgress;
+  await tick(2000);
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayProgress, progress + 1, 'resume consumes only the next delay, without replaying the scanned note');
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'the scanned note must not reappear');
+  await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true, 'the next unscanned note gets its full guide');
+  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs, now + 800);
+  assert.equal(result.current.state.padStates[0][0].guide, false);
+});
+
 for (const selected of [0, 2]) test(`a chain choice of ${selected} cancels the pending wormhole`, async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));

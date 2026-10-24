@@ -789,11 +789,14 @@ export function useUniPadEngine() {
       }
       setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
+      const wasStepMode = runner.stepMode;
       runner.stepMode = false;
       runner.resetStepState();
       autoPlayRemoveGuide();
       padInit();
       ledInit();
+      // Step practice scans ahead without advancing the song clock.
+      if (wasStepMode) runner.resyncToProgress();
       runner.play();
       runner.beforeStartPlaying = true;
       if (unipack?.keyLedExist) {
