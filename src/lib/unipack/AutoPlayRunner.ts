@@ -581,9 +581,11 @@ export class AutoPlayRunner {
         if (this.waitingForChain >= 0 && this.chainValue() !== this.waitingForChain) {
           this.listener.onGuideChainOn(this.waitingForChain);
         }
-        this.activeGuides.forEach((target, key) => {
-          this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
-        });
+        if (this.playmode) {
+          this.activeGuides.forEach((target, key) => {
+            this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
+          });
+        }
       }
     }
   }

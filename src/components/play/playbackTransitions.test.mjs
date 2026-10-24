@@ -1079,3 +1079,16 @@ for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pa
   assert.equal(result.current.state.chainStates[9].guide, false);
   assert.equal(result.current.state.padStates[0][1].guide, true);
 });
+
+test('paused chain redraw does not resurrect a consumed timed pad', async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(500); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  await flush(() => { result.current.padTouchOn(0, 0); result.current.padTouchOff(0, 0); });
+  await tick(1); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'a completed step must not reappear alongside the next chain');
+});

@@ -629,3 +629,18 @@ for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pa
   await expect(chain).toHaveAttribute('data-guide', 'false');
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
+
+
+test('paused chain redraw does not resurrect a consumed timed pad', async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(500); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  const pad = page.locator('[data-pad="0,0"]');
+  await page.keyboard.press('1');
+  await page.clock.runFor(20);
+  await info.attach('next-chain-after-completed-step', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true })).toHaveAttribute('data-guide', 'true');
+  await expect(pad.locator('.z-\\[25\\]')).toHaveCount(0);
+});
