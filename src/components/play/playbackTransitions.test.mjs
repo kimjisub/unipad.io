@@ -321,7 +321,7 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} rest
   assert.equal(result.current.state.chainStates[9].guide, true);
   await flush(() => result.current.autoPlayPlayPause());
   await tick(500); await draw();
-  assert.equal(result.current.state.chainStates[9].guide, false);
+  assert.equal(result.current.state.chainStates[9].guide, true, 'paused practice must keep the waiting chain visible');
   await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
   for (let i = 0; i < 5; i++) {
     await tick(500); await draw();
@@ -1027,4 +1027,94 @@ for (const resume of [false, true]) test(`an unrelated task cannot separate a du
   assert.equal(starts[1], due, 'the second note is due before the unrelated task');
   assert.equal(writes.length, 1);
   assert.ok(writes[0] - starts[1] < 50, `light was separated from its note by ${writes[0] - starts[1]} ms`);
+});
+
+
+for (const via of ['mode', 'button']) {
+  test(`playing guide switched to autoplay via ${via}${via === 'button' ? ' before a step tick' : ''} keeps the remaining delay`, async () => {
+    const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(99);
+    if (via === 'button') await flush(() => result.current.autoPlayPlayPause());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await draw();
+    assert.equal(starts.length, 0, 'the second note must not play immediately after switching modes');
+    await tick(899);
+    assert.equal(starts.length, 0);
+    await tick(1);
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0], 2001);
+  });
+
+  test(`playing autoplay switched to guide via ${via} keeps the next pad deadline`, async () => {
+    const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await tick(99);
+    if (via === 'button') await flush(() => result.current.autoPlayPlayPause());
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(100); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, false, 'the consumed pad must not be guided again');
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true, 'the upcoming pad needs its remaining lead time');
+    assert.equal(pad.guideTargetWallTimeMs, 2001);
+    await tick(799); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+    assert.equal(starts.length, 1, 'guide mode must not start another sound');
+  });
+}
+
+for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pause} keeps the requested chain visible`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => pause === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('stepPractice'));
+  await tick(1); await tick(2000); await draw();
+  assert.equal(result.current.state.autoPlayPlaying, false);
+  assert.equal(result.current.state.chainStates[9].guide, true, 'the chain prompt must survive paused step practice');
+  await flush(() => result.current.setChain(1));
+  await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+});
+
+test('paused chain redraw does not resurrect a consumed timed pad', async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(500); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  await flush(() => { result.current.padTouchOn(0, 0); result.current.padTouchOff(0, 0); });
+  await tick(1); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'a completed step must not reappear alongside the next chain');
+});
+
+
+for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autoplay via ${via} keeps all note gaps`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\nc 2\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await tick(5000);
+  if (via === 'button') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(300); // Let paused step practice scan the chain before choosing another mode.
+  }
+  const switchedAt = now;
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await draw();
+  assert.deepEqual(starts, [], 'waiting for a chain must not create overdue notes');
+  await tick(798);
+  assert.deepEqual(starts, []);
+  await tick(1);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800]);
+  await tick(499);
+  assert.equal(starts.length, 1);
+  await tick(1);
+  await tick(500);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800, 1300, 1800]);
 });
