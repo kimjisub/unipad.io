@@ -142,13 +142,11 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **RUN-G617, RUN-G618: the web retains a later input's sound and light after that input releases.**
-  The expectations now require each input to release only the outputs it started; only the pressed
-  indicator waits for the last held input. Web play-hook observations on `b995a86f` are pinned as
-  failures again under the corrected expectations. iOS reruns after
-  [unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213) and Android observations that
-  distinguish the two input identities are pending. Earlier passes under the old expectations do
-  not establish this rule. See [RESULTS.md](unipack-conformance/RESULTS.md#input-owned-release-expectations-2026-10-25).
+- **Native input-owned release validation remains separate from the web fix.**
+  RUN-G617 and RUN-G618 require each input to release only the sound and pack lights it started;
+  only the pressed indicator waits for the last input. New Android and iOS observations must name
+  their own corpus hash and input path. Historical stored corpus copies do not establish this rule.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25-awaiting-review).
 
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
@@ -156,6 +154,13 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **RUN-G617, RUN-G618: this branch releases the later input's sound and lights immediately.**
+  The play hook preserves each input identity and handles each release while keeping the press
+  overlay until the final input. Both cases match the corrected expectations on application commit
+  `1dbf0f464611041a3da6db02ce6b2175b41e4dbf` with unchanged test input SHA256 `7ac226a8…`.
+  The two web pins are removed in regenerated corpus `cbb87354…`; the earlier failure observations
+  keep their original commit and hash. Independent review and merge are pending; no native or
+  physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25-awaiting-review).
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.
@@ -166,7 +171,7 @@ platform's own fix removes it.
   app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
 - **Twelve G6 web playback differences matched their expectations at that revision.**
   RUN-G617 and RUN-G618 have since received corrected input-owned release expectations and are
-  open web differences again, as recorded above. The following observation retains its original hash.
+  failed again before the input-owned release fix above. The following observation retains its original hash.
   [unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173) fixes RUN-G601..605,
   RUN-G607..610 and RUN-G616..618. Their web failure pins were already retired in
   [unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165). A rerun on the merged G6 main

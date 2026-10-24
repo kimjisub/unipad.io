@@ -1,5 +1,26 @@
 # Results
 
+## Web input-owned release fix (2026-10-25, awaiting review)
+
+The play hook now forwards each screen pointer, key and MIDI input identity to the sound engine
+and LED runner and handles every release. The pressed overlay still waits for the last input.
+App regression tests cover both release orders for screen, keyboard and MIDI inputs; browser tests
+also cover the same coordinate and contacts on different chains.
+
+On application commit `1dbf0f464611041a3da6db02ce6b2175b41e4dbf`, the unmodified 382-case test input
+with SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` was used through
+the actual play hook. RUN-G617 and RUN-G618 match their corrected expectations: the third checkpoint
+stops the replacement sound and light and the fourth is empty. This is a two-case assertion, not a
+full conformance pass or a physical-device or audible-output observation. The earlier results below
+retain their original commit and corpus hash.
+
+Only those two obsolete web failure pins are removed. The regenerated canonical corpus has 382 cases,
+SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`. All input files,
+fingerprints, scenarios and corrected expectations are unchanged; the other 380 cases are unchanged.
+This is the same hash as the earlier expectations-only input because the fixed app now satisfies it.
+The Android and iOS historical copy declarations remain explicit and are not current compatibility
+results. The change is awaiting independent review and has not been reported as merged.
+
 ## Input-owned release expectations (2026-10-25)
 
 RUN-G617 and RUN-G618 now expect the later input's release to stop the replacement endless sound
@@ -20,8 +41,8 @@ The subsequent asserting `pnpm test:unipack` run passed all 969 test assertions,
 compatibility results remain 357 pass and 25 fail, including these two pinned failures.
 
 The web play-hook adapter on `b995a86f4f9c7c69fd9da65827e142828d6bc799` still records an empty third
-checkpoint and stops both outputs at the fourth. Both observations are pinned in `divergences.json`.
-They remain compatibility failures even when their known-difference assertions pass. The older
+checkpoint and stops both outputs at the fourth. Both observations were pinned in `divergences.json` at that revision.
+They were compatibility failures even though their known-difference assertions passed. The older
 "Web playback observations retired with G6" entry below describes the earlier expectations and is
 superseded for these two cases; it is preserved as historical evidence.
 
