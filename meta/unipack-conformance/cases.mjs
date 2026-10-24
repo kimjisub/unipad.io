@@ -1,3 +1,5 @@
+import { productCases } from './product-cases.mjs';
+import { g6Cases } from './g6-cases.mjs';
 // The case list. Each case is one small pack (input files) with the result every platform is expected
 // to produce. Expected results come from the format docs (content/docs/en/unipack) and from intent
 // stated in the platforms' own commit history and tests. Where neither says what should happen the
@@ -1076,5 +1078,5 @@ export function buildCases(palette) {
       intent('unipad.io src/lib/unipack/PlayerHolds.test.ts', 'a pad autoPlay holds counts as released when autoPlay is turned off, as any input that goes away counts as a release, so its endless sound stops; a pad the user still holds keeps sounding until the user lets go'),
     ]);
 
-  return cases;
+  return [...cases, ...g6Cases(), ...productCases()];
 }

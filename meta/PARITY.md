@@ -155,6 +155,16 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **Twelve G6 web playback differences now match their existing expectations.**
+  [unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173) fixes RUN-G601..605,
+  RUN-G607..610 and RUN-G616..618. Their web failure pins were already retired in
+  [unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165). A rerun on the merged G6 main
+  confirms all twelve with unchanged inputs and expectations: 382 cases, 359 pass and 23 remaining
+  pinned web failures. RUN-G606 follows a separate revised rule and is not part of this removal.
+  The corpus SHA256 remains `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`;
+  the app pins still describe historical copies, not current compatibility results.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-playback-observations-retired-with-g6-2026-10-24)
+  for the exact tested commit, copy hashes and verification limits.
 - **RUN-A-003: Android no longer reports a chain change twice when an autoPlay chain command is
   followed by a press.** [unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283)
   fixes the command order so the recorded events match the existing expected result. Only this Android

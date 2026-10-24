@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
+import { admissionObservation, mappingObservation, type Operation } from './conformanceOperations';
 import { fingerprintOf } from './fingerprint.mjs';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
@@ -38,9 +39,14 @@ export interface CorpusCase {
   expectation: 'determined' | 'undetermined';
   expected?: Json;
   question?: string;
-  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean }[];
+  scenario?: { do: string; x?: number; y?: number; c?: number; ms?: number; toPads?: boolean; input?: string }[];
   /** The grammar items (meta/unipack-conformance/GRAMMAR.md) the case checks. */
   items?: string[];
+  screenInputs?: boolean;
+  /** Observe archive provenance and selected bytes, independently of native storage spelling. */
+  soundIdentity?: boolean;
+  productBehavior?: boolean;
+  observation?: Operation | 'runner';
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -188,6 +194,22 @@ export function parseResult(pack: UniPackData): Json {
   };
 }
 
+/** The web parser retains original ZIP entry names and the bytes it selected for each sound. */
+export function soundIdentityResult(pack: UniPackData): Json {
+  const actual = parseResult(pack) as { [key: string]: Json };
+  const sounds: Json[] = [];
+  for (let c = 0; c < pack.info.chain; c++) for (let x = 0; x < pack.info.buttonX; x++) for (let y = 0; y < pack.info.buttonY; y++) {
+    const queue = pack.soundTable[c][x][y];
+    if (!queue?.length) continue;
+    sounds.push({ c, x, y, queue: queue.map(sound => {
+      const bytes = pack.soundFiles.get(sound.file);
+      if (!bytes) throw new Error(`selected sound has no observed bytes: ${sound.file}`);
+      return { archiveEntry: sound.file, sha256: createHash('sha256').update(Buffer.from(bytes)).digest('hex'), loop: sound.loop, wormhole: sound.wormhole };
+    }) });
+  }
+  return { ...actual, sounds };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Running a case. `deps` lets the self-checks replace the code under test with a stand-in to prove
 // that a case fails when the call is left out.
@@ -230,14 +252,21 @@ export interface WarningCapture {
 export interface Observation { actual: Json; capture: WarningCapture | null }
 
 export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
+  if (c.screenInputs) throw new Error(`${c.id}: requires the play-screen adapter; the lower-level runner cannot observe screen inputs`);
   if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
+  if (c.observation?.startsWith('audio-')) return { actual: await admissionObservation(c.observation as Operation, fileBytes(c.files[0], corpus)), capture: null };
   const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
   if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
   const { pack } = parsed;
   const capture: WarningCapture = {
     warnings: [...pack.errors], pack: { buttonX: pack.info.buttonX, buttonY: pack.info.buttonY, chain: pack.info.chain }, refused: null,
   };
-  const actual = c.layer === 'parse' ? parseResult(pack) : { checkpoints: await runScenario(c, pack, deps) };
+  if (c.observation === 'auto-map') {
+    const input = c.files.find(f => f.path === 'operation.json');
+    if (!input) throw new Error('mapper observation has no operation input');
+    return { actual: await mappingObservation(pack, fileBytes(input, corpus)), capture };
+  }
+  const actual = c.layer === 'parse' ? (c.soundIdentity ? soundIdentityResult(pack) : parseResult(pack)) : { checkpoints: await runScenario(c, pack, deps) };
   return { actual, capture };
 }
 
@@ -389,6 +418,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     let chain = 0;
     let events: Json[] = [];
     let watchStops = false;
+    let watchAutoEnd = false;
     const chainValue = () => chain;
     // Every chain change goes through what the play screen does with it; `tag` names the event it records.
     let sound: SoundEngine | null = null;
@@ -448,6 +478,18 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
         case 'chain':
           switchChain(step.c!, null);
           break;
+        case 'watchAutoEnd':
+          watchAutoEnd = true;
+          break;
+        case 'autoplayState':
+          events.push(['autoActive', autoPlay?.active ?? false]);
+          break;
+        case 'suspendAuto':
+          autoPlay?.setSuspended(true);
+          break;
+        case 'resumeAuto':
+          autoPlay?.setSuspended(false);
+          break;
         case 'watchStops':
           watchStops = true;
           break;
@@ -462,7 +504,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           // toPads: the presses also reach the pads, as useUniPadEngine forwards them to padTouchOn/Off.
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
-            onStart() {}, onEnd() {}, onProgressUpdate() {},
+            onStart() {}, onEnd() { if (watchAutoEnd) events.push(['autoEnd']); }, onProgressUpdate() {},
             onPadTouchOn: (x, y, pressedAt) => {
               events.push(['autoOn', x, y]);
               if (toPads) {
@@ -519,6 +561,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
 
 /** What this platform reports for a case: its result and status, or why the case is not observed here. */
 export async function resultFor(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation & { outcome: Outcome }> {
+  if (c.screenInputs) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: 'requires the play-screen adapter; the lower-level runner cannot observe screen inputs' } };
   const unobserved = c.unobserved?.[PLATFORM];
   if (unobserved) return { actual: null, capture: null, outcome: { status: 'unverified', unexpected: false, detail: unobserved } };
   const { actual, capture } = await observe(c, corpus, deps);
