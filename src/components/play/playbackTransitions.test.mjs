@@ -101,7 +101,9 @@ test('hidden autoplay freezes progress, sounds and chains, then resumes without 
   assert.equal(starts.length, 1, 'hidden time must not play queued sounds');
   assert.equal(result.current.state.chain, 0);
   assert.equal(result.current.state.autoPlayProgress, progress);
-  await tick(899);
+  await tick(998);
+  assert.equal(starts.length, 1);
+  await tick(1);
   assert.equal(starts.length, 2);
   assert.equal(result.current.state.chain, 1);
 });
@@ -148,7 +150,9 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
     await tick(1);
   }
   await flush(() => result.current[direction === 'next' ? 'autoPlayNext' : 'autoPlayPrev']());
-  await tick(201); await draw();
+  // A late tick after the seek restarts the song there; the next note's guide follows its 800 ms lead.
+  await tick(201);
+  await tick(200); await draw();
   assert.equal(result.current.state.padStates[0][1].guide, true);
   const guides = result.current.state.padStates[0].filter(p => p.guide);
   assert.ok(guides.length > 0, 'the new position needs a guide');
@@ -195,11 +199,11 @@ test('repeated visibility events preserve a guide target and its remaining lead 
   await flush(() => result.current.switchPlayMode('guidePlay'));
   await tick(100); await draw();
   const target = result.current.state.padStates[0][0].guideTargetWallTimeMs;
-  assert.equal(target, 1500);
+  assert.equal(target, 1600);
   await visibility(true); await tick(1000); await visibility(true); await tick(4000);
   await visibility(false); await visibility(false); await draw();
-  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, 6500);
-  await tick(399); await draw();
+  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, 6600);
+  await tick(499); await draw();
   assert.equal(result.current.state.padStates[0][0].guide, true);
   await tick(2); await draw();
   assert.equal(result.current.state.padStates[0][0].guide, false);
@@ -273,11 +277,11 @@ test('visibility freezes an active long sound with the remaining autoplay and li
   assert.equal(audio.suspends, 1);
   await tick(5000);
   assert.equal(audio.currentTime, soundTime, 'the sample must not advance while its sequencer is frozen');
-  await visibility(false); await tick(899); await draw();
+  await visibility(false); await tick(999); await draw();
   assert.equal(starts.length, 1);
   await tick(1); await draw();
   assert.equal(starts.length, 2);
-  assert.equal(audio.currentTime - soundTime, 0.9);
+  assert.equal(Math.round((audio.currentTime - soundTime) * 1000), 1000);
 });
 
 test('the sequencer waits for asynchronous audio resume before counting its remaining delay', async () => {
@@ -288,7 +292,7 @@ test('the sequencer waits for asynchronous audio resume before counting its rema
   audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
   await visibility(false); await tick(2000);
   assert.equal(starts.length, 1, 'a slow resume must not advance the sequencer');
-  await flush(finishResume); await tick(899);
+  await flush(finishResume); await tick(999);
   assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });
@@ -326,7 +330,7 @@ test('a rejected audio resume keeps playback frozen until the next visible gestu
   audio.resume = resume;
   await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
   assert.equal(audio.state, 'running');
-  await tick(899); assert.equal(starts.length, 1);
+  await tick(999); assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });
 
@@ -357,7 +361,8 @@ test('an audio resume that resolves without running does not restart the sequenc
   assert.equal(starts.length, 1);
   audio.resume = resume;
   await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
-  await tick(900); assert.equal(starts.length, 2);
+  await tick(999); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
 });
 
 

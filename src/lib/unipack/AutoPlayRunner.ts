@@ -68,6 +68,12 @@ export class AutoPlayRunner {
   private delayAccum = 0;
   private startTime = 0;
   private suspendedAt: number | null = null;
+  // Starting, resuming, seeking and switching modes re-render the play screen before the next tick
+  // runs. If the song clock passed the time it restarts from meanwhile, that tick holds it back to
+  // that time, so the render time never shortens the gap after the next note. Starting and seeking
+  // restart from the next line; resuming restarts from the next note, so a wait the song was already
+  // in keeps its written length even when a release or another wait comes first.
+  private clockPending: 'nextLine' | 'nextNote' | null = null;
 
   // Step mode state
   private stepPendingPads = new Set<number>();
@@ -131,6 +137,7 @@ export class AutoPlayRunner {
     this.startTime = performance.now();
     this.pausedAt = this.playmode ? null : this.startTime;
     if (this.suspendedAt !== null) this.suspendedAt = this.startTime;
+    this.clockPending = 'nextLine';
     let prevPracticeGuide = this.practiceGuide;
 
     const loop = (): void => {
@@ -142,6 +149,13 @@ export class AutoPlayRunner {
       }
 
       const currTime = performance.now();
+
+      if (this.clockPending !== null) {
+        const restartMs = this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
+        this.clockPending = null;
+        const pastDueMs = currTime - this.startTime - restartMs;
+        if (pastDueMs > 0) this.shiftClock(pastDueMs);
+      }
 
       // Detect practice mode toggle
       if (this.practiceGuide !== prevPracticeGuide) {
@@ -339,21 +353,39 @@ export class AutoPlayRunner {
     } else if (this.suspendedAt !== null) {
       const hiddenMs = performance.now() - this.suspendedAt;
       this.suspendedAt = null;
-      this.startTime += hiddenMs;
       if (this.pausedAt !== null) this.pausedAt += hiddenMs;
-      this.waitStartTime += hiddenMs;
-      this.lastGuideUpdateMs += hiddenMs;
-      this.activeGuides.forEach((targetMs, key) => {
-        const target = targetMs + hiddenMs;
-        this.activeGuides.set(key, target);
-        if (this.playmode && this.practiceGuide) {
-          this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
-        }
-      });
+      this.shiftClock(hiddenMs);
     }
   }
 
+  /** Song time of the first note at or after the current position: the lines before it only release
+   *  pads, change chains or wait. */
+  private nextNoteTimeMs(autoPlay: AutoPlay): number {
+    let timeMs = this.delayAccum;
+    for (let i = this.progress; i < autoPlay.elements.length; i++) {
+      const element = autoPlay.elements[i];
+      if (element.type === 'on') break;
+      if (element.type === 'delay') timeMs += element.delay;
+    }
+    return timeMs;
+  }
+
+  /** Moves the song and every wall-clock time derived from it later, shown guides included. */
+  private shiftClock(ms: number): void {
+    this.startTime += ms;
+    this.waitStartTime += ms;
+    this.lastGuideUpdateMs += ms;
+    this.activeGuides.forEach((targetMs, key) => {
+      const target = targetMs + ms;
+      this.activeGuides.set(key, target);
+      if (this.playmode && this.practiceGuide) {
+        this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
+      }
+    });
+  }
+
   play(): void {
+    if (!this.playmode) this.clockPending ??= 'nextNote';
     this.playmode = true;
   }
 
@@ -379,6 +411,7 @@ export class AutoPlayRunner {
     this.startTime = now - songTimeMs;
     if (this.pausedAt !== null) this.pausedAt = now;
     this.delayAccum = songTimeMs;
+    this.clockPending = 'nextLine';
 
     if (this.practiceGuide) {
       this.guideTimeline = this.buildGuideTimeline(autoPlay);
