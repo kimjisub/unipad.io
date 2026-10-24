@@ -160,13 +160,14 @@ for (const [name, model, ports] of [
       const { midi, sent, advance } = await connection(t, outputs, profile, inputs);
       advance(1000);
       const modeSwitches = sent.map(messages => messages.length);
-      assert.equal(midi.getStatus().outputName, name, 'preserve the existing Windows port preference');
+      const lightingIndex = model === 'launchpad_pro_mk3' ? 0 : 1;
+      assert.equal(midi.getStatus().outputName, outputs[lightingIndex], 'use the documented Windows interface');
       for (const messages of sent) messages.length = 0;
       midi.sendPadLed(0, 0, 5);
       assert.deepEqual({ modeSwitches, lights: sent }, {
-        modeSwitches: [2, ...Array(ports - 1).fill(0)],
-        lights: [[[0x90, 81, 5]], ...Array.from({ length: ports - 1 }, () => [])],
-      }, 'aliases, including the Pro MK3 DIN output, receive neither mode switches nor lights');
+        modeSwitches: outputs.map((_, i) => i === lightingIndex ? 2 : 0),
+        lights: outputs.map((_, i) => i === lightingIndex ? [[0x90, 81, 5]] : []),
+      }, 'non-lighting interfaces, including the Pro MK3 DIN output, receive no mode switches or lights');
     });
   }
 }
@@ -291,4 +292,84 @@ test('adding an input redraws without releasing existing holds, removing it rele
   releases.length = 0;
   access.inputs.delete('other'); access.onstatechange?.();
   assert.deepEqual(releases, [true]);
+});
+
+
+for (const [name, lightingPort, ports] of [
+  ['LPX MIDI', 2, 2], ['LPMiniMK3 MIDI', 2, 2], ['LPProMK3 MIDI', 1, 3],
+  ['Launchpad Pro', 2, 3],
+] as const) {
+  for (const reverse of [false, true]) {
+    test(`${name} selects Windows interface ${lightingPort} with outputs ${reverse ? 'reversed' : 'in order'}`, async t => {
+      const names = Array.from({ length: ports }, (_, i) => i === 0 ? name : `MIDIOUT${i + 1} (${name})`);
+      const inputs = names.map(n => n.replace('MIDIOUT', 'MIDIIN'));
+      if (reverse) names.reverse();
+      const { midi, sent, advance } = await connection(t, names, 'auto', inputs);
+      advance(1000);
+      const selected = lightingPort === 1 ? name : `MIDIOUT${lightingPort} (${name})`;
+      assert.equal(midi.getStatus().outputName, selected);
+      assert.deepEqual(sent.map(messages => messages.length), names.map(n => n === selected ? 2 : 0));
+      sent.forEach(messages => { messages.length = 0; });
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual(sent, names.map(n => n === selected ? [[0x90, 81, 5]] : []));
+    });
+  }
+}
+
+for (const removed of ['0', '1']) {
+  for (const inputFirst of [true, false]) {
+    test(`removing identical controller ${removed} with ${inputFirst ? 'input' : 'output'} first preserves the remaining mode`, async t => {
+      const { midi, sent, advance, access } = await connection(t, ['Launchpad X MIDI Out', 'Launchpad X MIDI Out'], 'auto', ['Launchpad X MIDI In', 'Launchpad X MIDI In']);
+      advance(1000); sent.forEach(messages => { messages.length = 0; });
+      const remaining = removed === '0' ? 1 : 0;
+      (inputFirst ? access.inputs : access.outputs).delete(removed); access.onstatechange?.();
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual(sent[remaining], [[0x90, 81, 5]], 'no gap after the first port event');
+      sent.forEach(messages => { messages.length = 0; });
+      (inputFirst ? access.outputs : access.inputs).delete(removed); access.onstatechange?.();
+      advance(1100);
+      midi.sendPadLed(0, 0, 5);
+      assert.deepEqual(sent[remaining], [[0x90, 81, 5]], 'no new mode switch or 500 ms blackout');
+      assert.deepEqual(sent[Number(removed)], []);
+    });
+  }
+}
+
+test('a manually identified unknown DAW-named controller receives lights, but a known DAW port does not', async t => {
+  const { midi, sent, advance } = await connection(t, ['Unknown controller DAW', 'Launchpad X DAW', 'Microsoft GS Wavetable Synth'], 'launchpad_x');
+  advance(1000);
+  assert.deepEqual(sent.map(messages => messages.length), [2, 0, 0]);
+  sent.forEach(messages => { messages.length = 0; });
+  midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent, [[[0x90, 81, 5]], [], []]);
+});
+
+for (const reversed of [false, true]) {
+  test(`numbered original Pro interfaces select only Standalone (${reversed ? 'reverse' : 'forward'})`, async t => {
+    // Synthetic labels: Linux's actual labels still require hardware confirmation.
+    const names = [1, 2, 3].map(n => `Launchpad Pro MIDI ${n}`);
+    if (reversed) names.reverse();
+    const { midi, sent, advance } = await connection(t, names);
+    advance(1000);
+    assert.deepEqual(sent.map(messages => messages.length), names.map(n => n.endsWith('2') ? 2 : 0));
+    sent.forEach(messages => { messages.length = 0; });
+    midi.sendPadLed(0, 0, 5);
+    assert.deepEqual(sent, names.map(n => n.endsWith('2') ? [[0x90, 81, 5]] : []));
+  });
+}
+
+
+test('a manual layout does not change the hardware lighting interface', async t => {
+  const { midi, sent, advance } = await connection(t, ['MIDIOUT2 (LPProMK3 MIDI)', 'LPProMK3 MIDI', 'MIDIOUT3 (LPProMK3 MIDI)'], 'launchpad_x');
+  advance(1000);
+  assert.deepEqual(sent.map(messages => messages.length), [0, 2, 0]);
+  sent.forEach(messages => { messages.length = 0; });
+  midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent, [[], [[0x90, 81, 5]], []]);
+});
+
+test('an unknown DAW-named controller stays unlit on automatic detection', async t => {
+  const { midi, sent, advance } = await connection(t, ['Unknown controller DAW']);
+  advance(1000); midi.sendPadLed(0, 0, 5);
+  assert.deepEqual(sent, [[]]);
 });

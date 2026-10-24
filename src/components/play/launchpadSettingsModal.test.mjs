@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { LAUNCHPAD_PROFILE_OPTIONS, isLaunchpadProfile } from '../../lib/unipack/MidiProfiles.ts';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const source = read('./LaunchpadSettingsModal.tsx');
@@ -35,8 +36,8 @@ test('launchpad settings modal only uses translation keys that exist', () => {
 // Profile notes and descriptive labels are looked up through computed keys,
 // which the literal-key scan above cannot see.
 test('every launchpad profile option has its note and label translations', () => {
-  const values = [...source.matchAll(/\{ value: '([^']+)'/g)].map((m) => m[1]);
-  const labelKeys = [...source.matchAll(/labelKey: '([^']+)'/g)].map((m) => m[1]);
+  const values = LAUNCHPAD_PROFILE_OPTIONS.map(option => option.value);
+  const labelKeys = LAUNCHPAD_PROFILE_OPTIONS.flatMap(option => option.labelKey ? [option.labelKey] : []);
   assert.ok(values.length > 0);
 
   const missing = [];
@@ -49,12 +50,7 @@ test('every launchpad profile option has its note and label translations', () =>
   assert.deepEqual(missing, []);
 });
 
-test('every offered controller model can be restored after reload', () => {
-  const page = read('./PlayPage.tsx');
-  const allowed = page.match(/const VALID_PROFILES = \[([\s\S]*?)\] as const/)[1];
-  const options = [...source.matchAll(/\{ value: '([^']+)'/g)].map(match => match[1]);
-  assert.deepEqual(options.filter(value => !allowed.includes(`'${value}'`)), []);
-});
+
 
 // Exercise the rendered settings rather than a copy of its state logic.
 const { JSDOM } = await import('jsdom');
@@ -84,6 +80,16 @@ const props = {
 };
 const wrapped = (overrides = {}, locale = 'en') => React.createElement(NextIntlClientProvider,
   { locale, messages: locales[locale] }, React.createElement(LaunchpadSettingsModal, { ...props, ...overrides }));
+test('every offered controller model can be restored after reload', () => {
+  const view = render(wrapped());
+  const options = view.getAllByRole('option').map(option => option.value);
+  assert.ok(options.length > 0);
+  for (const value of options) assert.equal(isLaunchpadProfile(value), true, value);
+  for (const value of [null, undefined, '', 'unknown', 'toString', {}, 0]) {
+    assert.equal(isLaunchpadProfile(value), false, String(value));
+  }
+});
+
 const openHelp = view => {
   const entry = view.getByRole('button', { name: 'Connection and light help' });
   fireEvent.click(entry);
