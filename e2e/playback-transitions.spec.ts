@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 
-declare global { interface Window { transitionAudio: AudioContext } }
+declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 async function open(page: Page, autoPlay: string, wormhole = false) {
@@ -24,6 +24,35 @@ async function open(page: Page, autoPlay: string, wormhole = false) {
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
+  // These cases assert virtual timer commands and DOM changes. Keep the audio control clock
+  // on the same virtual timeline: page.clock does not freeze native Web Audio rendering.
+  // audio-visibility.spec.ts checks the unmodified clock and real output signal separately.
+  await page.evaluate(() => {
+    const context = window.transitionAudio;
+    const nativeTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'currentTime')!.get!.bind(context) as () => number;
+    window.transitionNativeAudioTime = nativeTime;
+    let audioTime = nativeTime();
+    let markedAt = performance.now();
+    let running = context.state === 'running';
+    const update = (nextRunning: boolean) => {
+      const now = performance.now();
+      if (running) audioTime += (now - markedAt) / 1000;
+      markedAt = now;
+      running = nextRunning;
+      return audioTime;
+    };
+    Object.defineProperty(context, 'currentTime', { configurable: true, get: () => update(running) });
+    const suspend = context.suspend.bind(context);
+    context.suspend = async () => {
+      update(false);
+      await suspend();
+    };
+    const resume = context.resume.bind(context);
+    context.resume = async () => {
+      await resume();
+      update(context.state === 'running');
+    };
+  });
 }
 async function visibility(page: Page, hidden: boolean) {
   await page.evaluate(value => {
@@ -51,7 +80,10 @@ test('returning to autoplay preserves its remaining delay and finite lights', as
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
   await expect(page.locator('[data-pad="0,1"] .z-10')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
   // A late foreground tick must still honor the remaining delay, without hundreds of fake ticks.
+  // The song clock starts on the sequencer's first tick, 1 ms after the click.
   await page.clock.fastForward(884);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.fastForward(1);
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
 });
 
@@ -61,6 +93,8 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await mode(page, 'Guide').dispatchEvent('click');
   await page.clock.runFor(1);
   await page.getByTitle('Skip Next').dispatchEvent('click');
+  // A late tick after the seek restarts the song there; the next note's guide follows its 800 ms lead.
+  await page.clock.fastForward(200);
   await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await capture(page, info);
@@ -68,9 +102,11 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await page.getByTitle('Skip Next').dispatchEvent('click');
   await page.getByTitle('Skip Next').dispatchEvent('click');
   await page.clock.fastForward(200);
+  await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(1);
   await page.getByTitle('Skip Previous').dispatchEvent('click');
+  await page.clock.fastForward(200);
   await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
@@ -130,4 +166,29 @@ test('clock initialization stays deterministic when its pause command is delayed
   expect(stillStopped).toEqual(stopped);
   expect(advanced.date - stopped.date).toBe(50);
   expect(advanced.ticks - stopped.ticks).toBe(50);
+});
+
+
+test('clock-controlled transitions keep audio time frozen between timer steps', async ({ page }, info) => {
+  await open(page, 'd 10000\no 1 1\nf 1 1');
+  await page.keyboard.press('Shift');
+  await page.evaluate(() => window.transitionAudio.resume());
+  const nativeTime = () => page.evaluate(() => window.transitionNativeAudioTime?.() ?? window.transitionAudio.currentTime);
+  const initialNativeTime = await nativeTime();
+  await expect.poll(nativeTime).toBeGreaterThan(initialNativeTime);
+  const snapshot = () => page.evaluate(() => ({
+    wallTime: performance.now(), audioTime: window.transitionAudio.currentTime,
+    nativeAudioTime: window.transitionNativeAudioTime?.(), state: window.transitionAudio.state,
+  }));
+  const before = await snapshot();
+  await delay(200);
+  const frozen = await snapshot();
+  await page.clock.runFor(50);
+  const advanced = await snapshot();
+  await info.attach('controlled-audio-clock', { body: JSON.stringify({ before, frozen, advanced, physicalOutputMeasured: false }, null, 2), contentType: 'application/json' });
+  expect(before.state).toBe('running');
+  expect(frozen.wallTime).toBe(before.wallTime);
+  expect(frozen.audioTime).toBe(before.audioTime);
+  expect(advanced.wallTime - before.wallTime).toBe(50);
+  expect(advanced.audioTime - before.audioTime).toBeCloseTo(0.05, 9);
 });
