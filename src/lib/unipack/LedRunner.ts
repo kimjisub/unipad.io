@@ -1,3 +1,4 @@
+import type { PlaybackTicker } from './PlaybackTicker';
 import { LedAnimation, LedEvent, UniPackData } from './types';
 
 interface Led {
@@ -104,6 +105,7 @@ export class LedRunner {
     listener: LedRunnerListener,
     chainValue: () => number,
     setChain: (c: number) => void,
+    private ticker?: PlaybackTicker,
   ) {
     this.unipack = unipack;
     this.listener = listener;
@@ -120,7 +122,7 @@ export class LedRunner {
     if (!this.active) return;
 
     if (this.suspendedAt !== null) {
-      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+      this.rafId = this.schedule(this.loop);
       return;
     }
 
@@ -153,7 +155,7 @@ export class LedRunner {
     }
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
-    this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+    this.rafId = this.schedule(this.loop);
   };
 
   /** Events already running at a time precede shutdowns there, then new starts, in request order. */
@@ -259,11 +261,15 @@ export class LedRunner {
     }
   }
 
+  private schedule(run: () => void): number {
+    return this.ticker?.request(run, LOOP_INTERVAL_MS, 1) ?? window.setTimeout(run, LOOP_INTERVAL_MS);
+  }
+
   launch(): void {
     if (!this.active) {
       this.active = true;
       // A 4 ms timer preserves the pack's sub-frame light timing.
-      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+      this.rafId = this.schedule(this.loop);
     }
   }
 
@@ -294,7 +300,8 @@ export class LedRunner {
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      window.clearTimeout(this.rafId);
+      if (this.ticker) this.ticker.cancel(this.rafId);
+      else window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     for (const state of this.ledAnimationStates) {

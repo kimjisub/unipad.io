@@ -592,3 +592,67 @@ test('visibility mutes output before a slow sequencer pause callback', async () 
   assert.ok(mutedAt - hiddenAt < 50, 'a slow runner must not hold up the output mute request');
   assert.equal(value, 0);
 });
+
+
+for (const adoptLightBeforeHide of [false, true]) test(`resumed note and ${adoptLightBeforeHide ? 'running' : 'queued'} light retain the same deadline after native audio advances`, async () => {
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+  });
+  if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
+  let finish;
+  audio.suspend = async () => { await new Promise(resolve => { finish = resolve; }); audio.state = 'suspended'; };
+  if (!adoptLightBeforeHide) {
+    const eventOn = real.LedRunner.prototype.eventOn;
+    mock.method(real.LedRunner.prototype, 'eventOn', function (...args) {
+      eventOn.apply(this, args);
+      if (args[1] === 0 && !hidden) {
+        hidden = true;
+        document.dispatchEvent(new window.Event('visibilitychange'));
+      }
+    });
+  }
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  const firstAudioTime = audio.currentTime;
+  if (adoptLightBeforeHide) await tick(4);
+  await visibility(true); await tick(80); await flush(() => finish());
+  await tick(5000); await visibility(false);
+  const due = now + Math.round((firstAudioTime + 1.5 - audio.currentTime) * 1000);
+  await tick(due - now - 1);
+  assert.equal(starts.length, 1);
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+  await tick(1); await tick(4);
+  assert.equal(starts[1], due);
+  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+});
+
+for (const resume of [false, true]) test(`an unrelated task cannot separate a due note from its light${resume ? ' after resuming' : ''}`, async () => {
+  const writes = [];
+  const processEvent = real.LedRunner.prototype.processEvent;
+  mock.method(real.LedRunner.prototype, 'processEvent', function (event, state) {
+    if (event.type === 'on' && event.y === 1) writes.push(now);
+    return processEvent.call(this, event, state);
+  });
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
+    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await tick(4);
+  if (resume) { await visibility(true); await tick(5000); await visibility(false); }
+  const due = starts[0] + 1500 + (resume ? 5000 : 0);
+  // Dispatch due timers in deadline order. A separate ready task takes 200 ms immediately after
+  // the task which plays note two, before any later timer task can begin.
+  await flush(() => {
+    audio.currentTime += (due - now) / 1000; now = due;
+    for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
+      if (timer.at > now || !timers.delete(id)) continue;
+      timer.run();
+      if (starts.length === 2 && writes.length === 0) { now += 200; audio.currentTime += 0.2; }
+    }
+  });
+  assert.equal(starts[1], due, 'the second note is due before the unrelated task');
+  assert.equal(writes.length, 1);
+  assert.ok(writes[0] - starts[1] < 50, `light was separated from its note by ${writes[0] - starts[1]} ms`);
+});

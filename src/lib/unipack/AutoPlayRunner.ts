@@ -1,3 +1,4 @@
+import type { PlaybackTicker } from './PlaybackTicker';
 import { AutoPlay, UniPackData } from './types';
 
 export interface AutoPlayListener {
@@ -73,6 +74,7 @@ export class AutoPlayRunner {
     _setChain: (c: number) => void,
     soundPushToNum: (c: number, x: number, y: number, num: number) => void,
     ledPushToNum: (c: number, x: number, y: number, num: number) => void,
+    private ticker?: PlaybackTicker,
   ) {
     this.unipack = unipack;
     this.listener = listener;
@@ -96,6 +98,10 @@ export class AutoPlayRunner {
       }
     }
     return events;
+  }
+
+  private schedule(run: () => void): number {
+    return this.ticker?.request(run, LOOP_INTERVAL_MS, 0) ?? window.setTimeout(run, LOOP_INTERVAL_MS);
   }
 
   launch(): void {
@@ -127,7 +133,7 @@ export class AutoPlayRunner {
       if (!this.active) return;
 
       if (this.suspendedAt !== null) {
-        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+        this.rafId = this.schedule(loop);
         return;
       }
 
@@ -308,7 +314,7 @@ export class AutoPlayRunner {
       }
 
       if (this.progress < autoPlay.elements.length) {
-        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+        this.rafId = this.schedule(loop);
       } else {
         this.active = false;
         this.rafId = null;
@@ -317,13 +323,14 @@ export class AutoPlayRunner {
     };
 
     // Timers preserve sub-frame note timing; visibility suspension freezes the song clock.
-    this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+    this.rafId = this.schedule(loop);
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      window.clearTimeout(this.rafId);
+      if (this.ticker) this.ticker.cancel(this.rafId);
+      else window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     this.activeGuides.clear();

@@ -21,6 +21,7 @@ import {
   getSetting,
   setSetting,
 } from '@/lib/unipack';
+import { PlaybackTicker } from '@/lib/unipack/PlaybackTicker';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
@@ -172,6 +173,8 @@ export function useUniPadEngine() {
     : 'stepPractice';
 
   const soundEngineRef = useRef<SoundEngine | null>(null);
+  const playbackTicker = useRef<PlaybackTicker | null>(null);
+  playbackTicker.current ??= new PlaybackTicker();
   const ledRunnerRef = useRef<LedRunner | null>(null);
   const autoPlayRunnerRef = useRef<AutoPlayRunner | null>(null);
   const channelManagerRef = useRef<ChannelManager | null>(null);
@@ -907,6 +910,7 @@ export function useUniPadEngine() {
         ledListener,
         () => chainRef.current,
         setChain,
+        playbackTicker.current!,
       );
       ledRunner.setSuspended(document.hidden);
       ledRunnerRef.current = ledRunner;
@@ -1027,6 +1031,7 @@ export function useUniPadEngine() {
           setChain,
           soundPushToNum,
           (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
+          playbackTicker.current!,
         );
         autoPlayRunner.setSuspended(document.hidden);
         autoPlayRunnerRef.current = autoPlayRunner;
@@ -1445,6 +1450,7 @@ export function useUniPadEngine() {
               setChain,
               soundPushToNum,
               (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
+              playbackTicker.current!,
             );
             newRunner.setSuspended(document.hidden);
             autoPlayRunnerRef.current = newRunner;
