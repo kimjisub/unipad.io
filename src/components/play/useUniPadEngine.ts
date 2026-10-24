@@ -751,15 +751,13 @@ export function useUniPadEngine() {
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay') {
       runner.practiceGuide = false;
-      runner.stepMode = false;
-      runner.resetStepState();
+      runner.leaveStepPractice();
       autoPlayRemoveGuide();
       runner.playmode = true;
       runner.beforeStartPlaying = true;
     } else if (targetMode === 'guidePlay') {
       runner.practiceGuide = true;
-      runner.stepMode = false;
-      runner.resetStepState();
+      runner.leaveStepPractice();
       autoPlayRemoveGuide();
       runner.playmode = true;
       runner.beforeStartPlaying = true;
@@ -835,8 +833,9 @@ export function useUniPadEngine() {
     } else {
       // Guide and step practice do not press pads, so autoplay would never release what it holds.
       if (!stateRef.current.practiceMode) padInit();
+      const needsResync = !runner.stepMode || runner.hasScannedStepPads;
       applyModeFlags(runner, mode);
-      runner.resyncToProgress();
+      if (needsResync) runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice, stepPractice: mode === 'stepPractice' }));
     }
   }, [usageTracker, padInit, ledInit, autoPlayRemoveGuide, applyModeFlags, activatePlaybackAudio]);
@@ -883,11 +882,12 @@ export function useUniPadEngine() {
       setState((prev) => ({ ...prev, autoPlayPlaying: false, stepPractice: prev.practiceMode }));
     } else {
       if (!await activatePlaybackAudio()) return;
-      runner.stepMode = false;
-      runner.resetStepState();
+      const scannedStep = runner.leaveStepPractice();
       autoPlayRemoveGuide();
       padInit();
       ledInit();
+      // Only consumed step pads require seeking past the paused song position.
+      if (scannedStep) runner.resyncToProgress();
       runner.play();
       runner.beforeStartPlaying = true;
       if (unipack?.keyLedExist) {

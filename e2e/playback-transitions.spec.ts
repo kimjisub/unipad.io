@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, stateTimeout } from './browser';
 
 declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
 
@@ -90,6 +90,110 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await page.clock.fastForward(200);
   await page.clock.runFor(20);
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redraws only the next unscanned note`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
+  const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(219);
+  await page.clock.runFor(16);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.clock.fastForward(2000);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(199);
+  await page.clock.runFor(20);
+  const path = info.outputPath('resumed-guide.png');
+  await page.screenshot({ path, animations: 'disabled' });
+  await info.attach('resumed-guide', { path, contentType: 'image/png' });
+  const messages = await page.evaluate(() => window.browserProbe.midi.messages);
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
+  await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(1);
+  await page.clock.fastForward(800);
+  await page.clock.runFor(16);
+  await expect(guide('0,1')).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) for (const extraDelay of [0, 1000]) test(`resuming guide via ${resume} after scanning only a chain preserves the guide with ${extraDelay}ms extra wait`, async ({ page }, info) => {
+  await open(page, `d 1000\no 1 1\nf 1 1\nd 1000\nc 2\n${extraDelay ? `d ${extraDelay}\n` : ''}o 1 2\nf 1 2\nd 10000`);
+  const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(1000);
+  await page.clock.fastForward(100);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(200);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(199);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  if (extraDelay) {
+    await page.clock.fastForward(extraDelay);
+    await page.clock.runFor(16);
+  }
+  await info.attach('resumed-after-chain-scan', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(600);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} while awaiting a chain keeps its lead time`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+  const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(1000);
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(200);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await info.attach('resumed-chain-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(700);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} before a step tick keeps the current guide`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 10000');
+  const guide = page.locator('[data-pad="0,0"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(500);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  // The virtual clock stays paused between inputs, so no step scan can run.
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await info.attach('quick-resumed-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(400);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
 });
 
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
@@ -432,4 +536,40 @@ for (const interruption of ['focus', 'dialog']) test(`current device chain light
   const messages = await page.evaluate(() => window.browserProbe.midi.messages);
   await info.attach('device-output', { body: JSON.stringify({ messages, physicalHardware: false }), contentType: 'application/json' });
   expect(messages.some(message => message[0] === 0xb0 && message[1] === 89 && message[2] > 0)).toBe(true);
+});
+
+test('an expired installation token refreshes through the local service fixture', async ({ page }) => {
+  // Seed the real SDK's expired installation before loading any application scripts.
+  await page.goto('/robots.txt');
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('firebase-installations-store');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('firebase-installations-store', 'readwrite');
+      transaction.objectStore('firebase-installations-store').put({
+        fid: 'cAAAAAAAAAAAAAAAAAAAAA', registrationStatus: 2, refreshToken: 'FAKE_REFRESH_TOKEN',
+        authToken: { token: 'EXPIRED_FAKE_TOKEN', requestStatus: 2, expiresIn: 0, creationTime: 0 },
+      }, '[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      transaction.oncomplete = () => { db.close(); resolve(); };
+      transaction.onerror = () => { db.close(); reject(transaction.error); };
+    };
+  }));
+  const refresh = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/authTokens:generate'));
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await refresh;
+  await expect.poll(() => page.evaluate(() => new Promise<unknown>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store')
+        .get('[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      read.onsuccess = () => { db.close(); resolve(read.result?.authToken); };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  })), { timeout: stateTimeout }).toMatchObject({
+    token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2, expiresIn: 604800000,
+  });
 });

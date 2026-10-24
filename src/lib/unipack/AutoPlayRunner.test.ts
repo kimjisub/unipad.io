@@ -71,6 +71,99 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  test('resuming a timed guide redraws it after clearing the paused screen', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'd 1000\no 1 1\nf 1 1\nd 10000',
+    }));
+    const screen = new Map<string, number>();
+    const leds = new Map<string, number>();
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+      onGuidePadOn: (x, y, at) => { screen.set(`${x},${y}`, at); },
+      onGuidePadOff: (x, y) => { screen.delete(`${x},${y}`); },
+      onGuideLedUpdate: (x, y, velocity) => { leds.set(`${x},${y}`, velocity); },
+      onRemoveGuide: () => { screen.clear(); },
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    const noteAt = performance.now() + 1000;
+    runner.launch();
+    clock.tick(1); clock.tick(200);
+    assert.equal(screen.get('0,0'), noteAt);
+    runner.pause();
+    screen.clear();
+    clock.tick(2000);
+    runner.play();
+    clock.tick(1);
+    assert.equal(screen.get('0,0'), noteAt + 2000, 'screen and hardware retain the same shifted deadline');
+    assert.ok(leds.get('0,0')! > 0);
+    clock.tick(797);
+    assert.equal(screen.get('0,0'), noteAt + 2000);
+    clock.tick(1);
+    assert.equal(screen.has('0,0'), false);
+    assert.equal(leds.get('0,0'), 0);
+    runner.stop();
+  });
+
+  test('step resume distinguishes consumed pads from chain-only scans and rewound groups', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 1000\nc 1\no 2 1\nd 10000',
+    }));
+    let chain = 0;
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {},
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    clock.tick(1); clock.tick(1000); clock.tick(100);
+    runner.pause();
+    const pausedProgress = runner.progress;
+    runner.stepMode = true;
+    clock.tick(200);
+    assert.equal(runner.hasScannedStepPads, false, 'a chain prompt has not consumed any pad');
+    assert.equal(runner.leaveStepPractice(), false);
+    assert.equal(runner.progress, pausedProgress, 'chain-only lines must be restored for timed playback');
+    runner.stepMode = true;
+    clock.tick(1);
+    chain = 1;
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, true);
+    chain = 0;
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, false, 'rewinding the only pad group leaves no consumed pads');
+    chain = 1;
+    clock.tick(1);
+    runner.stepPadPressed(0, 1);
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, true, 'a completed group still counts while awaiting the next chain');
+    const scannedProgress = runner.progress;
+    assert.equal(runner.leaveStepPractice(), true);
+    assert.equal(runner.progress, scannedProgress, 'consumed pad groups keep their advanced position');
+    assert.equal(runner.hasScannedStepPads, false);
+    runner.stop();
+  });
+
+  test('resync ignores earlier notes even when they share the resumed song time', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\nc 2\no 1 2\nd 1000\no 2 1\nd 10000',
+    }));
+    const chains: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {},
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {},
+      onGuideChainOn: c => { chains.push(c); },
+    }, () => 1, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    runner.progressOffset(2);
+    clock.tick(1);
+    assert.deepEqual(chains, [], 'a consumed note must not ask to return to its old chain');
+    assert.ok(runner.progress > 2, 'the note at the resumed position must advance');
+    runner.stop();
+  });
+
   test('late ticks report the scheduled press and release times', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,

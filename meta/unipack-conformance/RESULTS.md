@@ -33,6 +33,18 @@ until reviewed public copy commits exist. The explicit historical check warns fo
 the strict check; this is a byte comparison, not a native test run or a public copy-commit handoff.
 The older reports below retain their original counts and timestamps.
 
+## Combined guide-resume and trailing-wait verification (2026-10-25)
+
+After integrating [unipad.io#175](https://github.com/kimjisub/unipad.io/pull/175), merged as
+`619854a3211968bc30d1a7e892cc189ff140b330`, the combined runtime again passes 414 conformance
+assertions with no skips. Its 382 observed web cases remain **361 passes and 21 unchanged pinned
+failures**, on corpus SHA256 `c317515689ac9cb218c1de5d3159e4861898025fb47242c006da37cddc54d743`.
+RUN-P001 and RUN-P002 still pass their original expected final-wait and suspension outcomes.
+No corpus input, expectation, fingerprint or platform observation pin changed during this integration.
+Raw files are retained outside this repository; this paragraph does not recalculate the historical
+reports below or claim native compatibility. Both declared native copies still produce exactly the
+two explicit outdated-copy warnings; strict current-copy verification remains incomplete.
+
 ## Android minimum-integer storage differences resolved (2026-10-25)
 
 [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303), merged as
