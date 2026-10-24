@@ -48,6 +48,7 @@ export class AutoPlayRunner {
         this.shiftClock(now - this.waitStartTime);
       }
       this.pausedAt = now;
+      this.beforeStartPlaying = true;
     } else if (this.pausedAt !== null) {
       const pausedMs = now - this.pausedAt;
       this.startTime += pausedMs;
@@ -188,6 +189,7 @@ export class AutoPlayRunner {
       }
 
       if (this.playmode) {
+        this.doBeforeStartPlaying();
         if (this.practiceGuide && this.waitingForChain >= 0) {
           if (this.chainValue() === this.waitingForChain) {
             this.startTime += currTime - this.waitStartTime;
@@ -195,8 +197,6 @@ export class AutoPlayRunner {
             this.listener.onRemoveGuide();
           }
         } else {
-          this.doBeforeStartPlaying();
-
           // Guide lookahead
           if (this.practiceGuide) {
             const elapsed = currTime - this.startTime;
@@ -286,9 +286,9 @@ export class AutoPlayRunner {
           }
         }
       } else {
-        this.beforeStartPlaying = true;
-
         if (this.stepMode && this.practiceGuide) {
+          // Pausing clears the screen even when a chain wait prevents another scan.
+          if (this.waitingForChain >= 0) this.doBeforeStartPlaying();
           this.drainPressedKeys();
 
           const currentChain = this.chainValue();
@@ -394,21 +394,14 @@ export class AutoPlayRunner {
 
   /** Both play controls and mode controls use the same step-exit and clock rules. */
   play(practiceGuide = this.practiceGuide): void {
-    const changedGuideMode = practiceGuide !== this.practiceGuide;
-    const wasStepMode = this.stepMode;
     this.practiceGuide = practiceGuide;
     const scannedPads = this.leaveStepPractice();
     // A step scan without pads has not advanced song time. In particular, leaving
     // paused practice for autoplay must preserve the remainder of the current delay.
-    if (scannedPads || (changedGuideMode && !wasStepMode)) this.resyncToProgress();
+    if (scannedPads) this.resyncToProgress();
     if (!this.playmode) this.clockPending ??= 'nextNote';
     this.playmode = true;
     this.beforeStartPlaying = true;
-    // The controls clear rendered guides before resuming. A preserved timed chain
-    // wait bypasses lookahead, so restore its prompt along with the wait state.
-    if (this.practiceGuide && this.waitingForChain >= 0 && this.chainValue() !== this.waitingForChain) {
-      this.listener.onGuideChainOn(this.waitingForChain);
-    }
   }
 
   pause(): void {
@@ -473,9 +466,13 @@ export class AutoPlayRunner {
    *  instead stop at a chain choice, after consuming only delays and chain lines.
    *  Include earlier completed groups, but exclude pads rewound by a chain change. */
   get hasScannedStepPads(): boolean {
+    return this.stepRangeHasPads(this.stepScanOrigin);
+  }
+
+  private stepRangeHasPads(start: number | null): boolean {
     const elements = this.unipack.autoPlay?.elements;
-    if (!elements || this.stepScanOrigin === null) return false;
-    for (let i = this.stepScanOrigin; i < this.progress; i++) {
+    if (!elements || start === null) return false;
+    for (let i = start; i < this.progress; i++) {
       if (elements[i].type === 'on') return true;
     }
     return false;
@@ -486,26 +483,20 @@ export class AutoPlayRunner {
   leaveStepPractice(): boolean {
     const scannedPads = this.hasScannedStepPads;
     if (this.stepScanOrigin !== null) {
-      const lastScanHasPads = this.unipack.autoPlay?.elements
-        .slice(this.stepStartProgress, this.progress).some((element) => element.type === 'on');
+      const lastScanHasPads = this.stepRangeHasPads(this.stepStartProgress);
       if (!scannedPads) this.setProgress(this.stepScanOrigin);
       else if (!lastScanHasPads) this.setProgress(this.stepStartProgress);
     }
     // A timed chain prompt has a valid wait clock. Keep it until the chain is chosen,
     // including time spent rendering before the first resumed tick. Step scans instead
     // need a fresh guide and clock at their restored position.
-    const timedChain = this.practiceGuide && this.stepScanOrigin === null ? this.waitingForChain : -1;
-    const timedWaitStart = this.waitStartTime;
+    const preserveTimedChain = this.practiceGuide && this.stepScanOrigin === null;
     this.stepMode = false;
-    this.resetStepState();
-    if (timedChain >= 0) {
-      this.waitingForChain = timedChain;
-      this.waitStartTime = timedWaitStart;
-    }
+    this.resetStepState(preserveTimedChain);
     return scannedPads;
   }
 
-  resetStepState(): void {
+  resetStepState(preserveTimedChain = false): void {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();
     this.stepScanned = false;
@@ -514,8 +505,10 @@ export class AutoPlayRunner {
     this.stepChainValue = -1;
     // Leaving step mode while the guide waited for a chain left waitingForChain >= 0 with
     // waitStartTime 0; on resume startTime jumped far ahead and autoplay froze (Android fix).
-    this.waitingForChain = -1;
-    this.waitStartTime = performance.now();
+    if (!preserveTimedChain) {
+      this.waitingForChain = -1;
+      this.waitStartTime = performance.now();
+    }
   }
 
   stepPadPressed(x: number, y: number): void {
@@ -583,8 +576,11 @@ export class AutoPlayRunner {
     if (this.beforeStartPlaying) {
       this.beforeStartPlaying = false;
       this.listener.onRemoveGuide();
-      // Resume clears the screen first; redraw the retained guides with their shifted deadlines.
+      // Play and pause controls clear the screen, including a chain gate that skips lookahead.
       if (this.practiceGuide) {
+        if (this.waitingForChain >= 0 && this.chainValue() !== this.waitingForChain) {
+          this.listener.onGuideChainOn(this.waitingForChain);
+        }
         this.activeGuides.forEach((target, key) => {
           this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
         });

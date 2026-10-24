@@ -252,9 +252,9 @@ for (const resume of ['button', 'mode']) {
     // Rendering may delay the first resumed sequencer tick; the chain gate still holds time.
     await page.clock.fastForward(1000);
     await info.attach('chain-prompt-after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-    const chainGuide = page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10');
+    const chainGuide = page.getByRole('button', { name: 'Chain 10', exact: true });
     for (let i = 0; i < 5; i++) {
-      await expect(chainGuide).toHaveCount(1);
+      await expect(chainGuide).toHaveAttribute('data-guide', 'true');
       await page.clock.fastForward(500);
     }
     await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
@@ -576,4 +576,56 @@ test('an expired installation token refreshes through the local service fixture'
   })), { timeout: stateTimeout }).toMatchObject({
     token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2, expiresIn: 604800000,
   });
+});
+
+
+for (const via of ['mode', 'button']) {
+  test(`playing guide switched to autoplay via ${via} keeps the remaining delay`, async ({ page }, info) => {
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(99);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1);
+    await info.attach('after-mode-switch', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+    await page.clock.fastForward(899);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+    await page.clock.fastForward(1);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  });
+
+  test(`playing autoplay switched to guide via ${via} keeps the next pad deadline`, async ({ page }, info) => {
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(99);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(100); await page.clock.runFor(20);
+    await info.attach('upcoming-pad-after-mode-switch', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(0);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+    await page.clock.fastForward(779);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+    await page.clock.fastForward(1); await page.clock.runFor(20);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  });
+}
+
+for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pause} keeps the requested chain visible`, async ({ page }, info) => {
+  await open(page, 'd 1000\nc 2\no 1 2\nf 1 2\nd 10000', false, { led: 'o * 2 a 5\nd 10000' });
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(200); await page.clock.runFor(20);
+  const chain = page.getByRole('button', { name: 'Chain 10', exact: true });
+  await info.attach('chain-before-pause', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  if (pause === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  else await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20); await page.clock.fastForward(2000); await page.clock.runFor(20);
+  await info.attach('chain-while-paused', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(chain).toHaveAttribute('data-guide', 'true');
+  await chain.dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(chain).toHaveAttribute('data-guide', 'false');
+  await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
