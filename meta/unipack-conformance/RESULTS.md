@@ -45,6 +45,35 @@ Raw files are retained outside this repository; this paragraph does not recalcul
 reports below or claim native compatibility. Both declared native copies still produce exactly the
 two explicit outdated-copy warnings; strict current-copy verification remains incomplete.
 
+## Combined practice-transition corpus (2026-10-25)
+
+Integrating [unipad.io#180](https://github.com/kimjisub/unipad.io/pull/180) and
+[unipad.io#181](https://github.com/kimjisub/unipad.io/pull/181) preserves the newer
+RUN-G616 iOS observation alongside the resolved RUN-P001/RUN-P002 web records.
+The combined corpus is SHA256
+`9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`.
+Every input, scenario, fingerprint and expected value stays unchanged. The historical
+web measurements above retain their own hashes; this paragraph does not relabel
+those runs or claim a new native measurement. Both native copy references stay historical.
+
+## Two iOS partial-run observations separated (2026-10-25)
+
+The [retained nine-case run and source investigation](investigations/ios-playback-observations/README.md)
+on iOS `e8ac34d11373b3ed071535e365ddc382c1929496` distinguish an observation
+error in RUN-G613 from a real delayed chain callback in RUN-G616. RUN-G613's
+stored repeat value `-2` is not evidence that the engine repeats differently;
+it is not pinned. RUN-G616's callback after autoPlay stops is pinned as an iOS
+failure. Neither original failure is relabelled as a pass.
+
+Only RUN-G616's `known.ios` record changes. Every case's input, fingerprint,
+scenario, expected value and basis is unchanged, as are the other platform records.
+The canonical corpus remains G6, 382 cases, advancing from SHA256
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6` to
+`5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`.
+The original result and its different corpus hash remain intact; both affected
+cases are identical across those corpus revisions. No iOS run or aggregate
+compatibility result is claimed. The app copy references remain historical.
+
 ## Android minimum-integer storage differences resolved (2026-10-25)
 
 [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303), merged as

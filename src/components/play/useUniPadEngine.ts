@@ -750,18 +750,9 @@ export function useUniPadEngine() {
   }, [requestScreenWakeLock]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
-    if (targetMode === 'autoPlay') {
-      runner.practiceGuide = false;
-      runner.leaveStepPractice();
+    if (targetMode === 'autoPlay' || targetMode === 'guidePlay') {
       autoPlayRemoveGuide();
-      runner.playmode = true;
-      runner.beforeStartPlaying = true;
-    } else if (targetMode === 'guidePlay') {
-      runner.practiceGuide = true;
-      runner.leaveStepPractice();
-      autoPlayRemoveGuide();
-      runner.playmode = true;
-      runner.beforeStartPlaying = true;
+      runner.play(targetMode === 'guidePlay');
     } else if (targetMode === 'stepPractice') {
       runner.practiceGuide = true;
       runner.playmode = false;
@@ -834,9 +825,7 @@ export function useUniPadEngine() {
     } else {
       // Guide and step practice do not press pads, so autoplay would never release what it holds.
       if (!stateRef.current.practiceMode) padInit();
-      const needsResync = !runner.stepMode || runner.hasScannedStepPads;
       applyModeFlags(runner, mode);
-      if (needsResync) runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice, stepPractice: mode === 'stepPractice' }));
     }
   }, [usageTracker, padInit, ledInit, autoPlayRemoveGuide, applyModeFlags, activatePlaybackAudio]);
@@ -883,14 +872,10 @@ export function useUniPadEngine() {
       setState((prev) => ({ ...prev, autoPlayPlaying: false, stepPractice: prev.practiceMode }));
     } else {
       if (!await activatePlaybackAudio()) return;
-      const scannedStep = runner.leaveStepPractice();
       autoPlayRemoveGuide();
       padInit();
       ledInit();
-      // Only consumed step pads require seeking past the paused song position.
-      if (scannedStep) runner.resyncToProgress();
       runner.play();
-      runner.beforeStartPlaying = true;
       if (unipack?.keyLedExist) {
         feedbackLightRef.current = false;
         if (!stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
