@@ -1,3 +1,6 @@
+import { getLightingInterface, type LaunchpadProfile } from './MidiProfiles';
+export type { LaunchpadProfile } from './MidiProfiles';
+
 export interface MidiControllerListener {
   onPadTouch(x: number, y: number, pressed: boolean): void;
   onChainTouch(c: number): void;
@@ -5,22 +8,6 @@ export interface MidiControllerListener {
   /** A controller returned to its performance layout; redraw without changing playback queues. */
   onResync?(): void;
 }
-
-export type LaunchpadProfile =
-  | 'auto'
-  | 'none'
-  | 'launchpad_s'
-  | 'launchpad_mk2'
-  | 'launchpad_pro'
-  | 'launchpad_pro_cfw'
-  | 'launchpad_x'
-  | 'launchpad_mini_mk3'
-  | 'launchpad_pro_mk3'
-  | 'launchpad_corefw'
-  | 'launchpad_corefw_rg'
-  | 'midifighter'
-  | 'matrix'
-  | 'master_keyboard';
 
 export interface MidiConnectionStatus {
   connected: boolean;
@@ -132,12 +119,36 @@ function isDrumRack(profile: ResolvedProfile): boolean {
   return isCoreFw(profile) || profile === 'launchpad_pro_cfw';
 }
 
-/** Port labels distinguish the lighting connection from DAW and external DIN routing. */
-function isAuxiliaryPort(name: string): boolean {
-  return /(?:\bdaw\b|\bdin\b|\bmidi\s*(?:(?:in|out)\s*)?3\b|\bport\s*3\b)/i.test(name)
-    // The original Pro exposes Live, Standalone and external MIDI port pairs on macOS.
-    // Its programmer layout uses Standalone; MIDI Port routes to the physical MIDI jack.
-    || (detectLaunchpadProfile(name) === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name));
+/** Named interfaces win over ambiguous product labels. Numbered interfaces follow Novation's
+ * programmer references: X/Mini MK3 and original Pro use 2; Pro MK3 uses 1 (2 is DIN, 3 DAW).
+ * Resolve from the detected hardware, never the manually chosen message layout. */
+function lightPortPriority(name: string, profile: ResolvedProfile): number | null {
+  const numbered = /^midi(?:in|out)(\d+)\s*\(/i.exec(name)
+    ?? /\b(?:midi|port)\s*(?:(?:in|out)\s*)?([1-3])\b/i.exec(name);
+  const auxiliaryName = /\b(?:daw|din)\b/i.test(name);
+  const thirdInterface = Number(numbered?.[1]) === 3;
+  const namedPriority = /midi|standalone/i.test(name) ? 1 : 0;
+  if (profile === 'master_keyboard') {
+    // An explicit manual model can identify a DAW-only unknown device. Keep that fallback,
+    // but prefer a MIDI or ordinary endpoint whenever one is also available for the device.
+    return auxiliaryName || thirdInterface ? -1 : namedPriority;
+  }
+  if (auxiliaryName) return null;
+  if (profile === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name)) return null;
+  const lightingInterface = getLightingInterface(profile);
+  if (numbered && lightingInterface !== undefined) {
+    return Number(numbered[1]) === lightingInterface ? 2 : null;
+  }
+  if (thirdInterface) return null;
+  return namedPriority;
+}
+
+/** MIDI channels are zero-based in status bytes. */
+function lightChannel(profile: ResolvedProfile): number {
+  if (profile === 'midifighter') return 2;
+  if (profile === 'matrix') return 1;
+  if (profile === 'launchpad_pro_cfw') return 15;
+  return 0;
 }
 
 function deviceName(name: string): string {
@@ -293,31 +304,31 @@ export class MidiConnection {
   /** Select the lighting port before encoding a model, including a manually chosen one. */
   private selectLightOutputs(): LightOutput[] {
     if (this.requestedProfile === 'none' || this.requestedProfile === 'master_keyboard') return [];
-    const selected = new Map<string, LightOutput[]>();
+    const selected = new Map<string, { priority: number; lights: LightOutput[] }>();
+    const pairedDevices = new Set(this.inputs.map(input => deviceName(input.name ?? '')));
     for (const output of this.outputs) {
       const name = output.name ?? '';
-      if (isAuxiliaryPort(name)) continue;
       const detected = detectLaunchpadProfile(name);
+      const priority = lightPortPriority(name, detected);
+      if (priority === null) continue;
       const known = detected !== 'master_keyboard';
       const device = deviceName(name);
-      const pairedInputs = this.inputs.filter(input => !isAuxiliaryPort(input.name ?? '') && deviceName(input.name ?? '') === device);
-      const paired = name !== '' && pairedInputs.length > 0;
+      const paired = name !== '' && pairedDevices.has(device);
       // A manual model may identify an otherwise unknown paired device, never an unrelated synth.
       if (!known && (this.requestedProfile === 'auto' || !paired || /synth|wavetable|iac|virtual/i.test(name))) continue;
       const profile = this.resolveProfile(name, this.requestedProfile);
       const key = `${output.manufacturer ?? ''}:${device}`;
       const previous = selected.get(key);
-      const midiPort = /midi/i.test(name);
-      const previousMidiPort = !!previous && /midi/i.test(previous[0].output.name ?? '');
-      if (!previous || (midiPort && !previousMidiPort)) {
-        selected.set(key, [{ output, profile, ready: false }]);
-      } else if (name === previous[0].output.name && previous.length < pairedInputs.length) {
-        // Port IDs do not identify physical device groups. Identical labels can belong to
-        // separate controllers: keep a lighting endpoint for each matching performance input.
-        previous.push({ output, profile, ready: false });
+      if (!previous || priority > previous.priority) {
+        selected.set(key, { priority, lights: [{ output, profile, ready: false }] });
+      } else if (priority === previous.priority && name === previous.lights[0].output.name) {
+        // Web MIDI cannot distinguish two controllers from duplicate output labels on one device.
+        // Keep every surviving endpoint, even with only one input: input and output removals
+        // arrive independently, and input aliases do not identify physical device groups.
+        previous.lights.push({ output, profile, ready: false });
       }
     }
-    return [...selected.values()].flat();
+    return [...selected.values()].flatMap(group => group.lights);
   }
 
   /** Keep existing modes on unrelated hot-plugs. New modes settle for 500 ms after the last SysEx
@@ -614,7 +625,7 @@ export class MidiConnection {
       const note = drumRackPadNote(x, y);
       if (note === null) return null;
       // CoreFW's X, Mini MK3 and Pro MK3 light only channel 1 notes (src/app/performance/mod.rs).
-      const status = profile === 'midifighter' ? 0x92 : profile === 'matrix' ? 0x91 : profile === 'launchpad_pro_cfw' ? 0x9f : 0x90;
+      const status = 0x90 | lightChannel(profile);
       return { note, status };
     }
     return null;
@@ -651,7 +662,7 @@ export class MidiConnection {
     }
     if (profile === 'matrix' || isDrumRack(profile)) {
       const note = DRUM_RACK_CIRCLE_NOTES[index];
-      return note === undefined ? null : { type: 'note', value: note, status: profile === 'matrix' ? 0x91 : profile === 'launchpad_pro_cfw' ? 0x9f : 0x90 };
+      return note === undefined ? null : { type: 'note', value: note, status: 0x90 | lightChannel(profile) };
     }
     // Devices with no ring (Midi Fighter, a master keyboard) used to receive notes 91..98 here,
     // which a keyboard plays as audible notes when the option panel opens.
@@ -688,7 +699,7 @@ export class MidiConnection {
       // "light LED" SysEx.
       send(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
     } else if (isDrumRack(profile)) {
-      sendNote(output, DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(profile, velocity), profile === 'launchpad_pro_cfw' ? 15 : 0);
+      sendNote(output, DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(profile, velocity), lightChannel(profile));
     }
   }
 

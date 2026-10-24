@@ -41,7 +41,7 @@ import {
   type StoreItem,
 } from '@/lib/store';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
-import type { LaunchpadProfile } from '@/lib/unipack';
+import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
 const PACK_QUERY_KEY = 'pack';
@@ -207,16 +207,8 @@ export function PlayPage() {
       try {
         await refreshLists();
         const savedMidiProfile = await getSetting(MIDI_PROFILE_SETTING_KEY);
-        // Every profile the picker offers: launchpad_s, launchpad_mk2, midifighter, matrix and
-        // master_keyboard were missing, so those choices silently reset to Auto on reload.
-        const VALID_PROFILES = [
-          'auto', 'none', 'launchpad_s', 'launchpad_mk2', 'launchpad_pro', 'launchpad_x',
-          'launchpad_mini_mk3', 'launchpad_pro_mk3', 'launchpad_pro_cfw',
-          'launchpad_corefw', 'launchpad_corefw_rg', 'midifighter', 'matrix', 'master_keyboard',
-        ] as const;
-        if (typeof savedMidiProfile === 'string'
-          && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {
-          setMidiProfile(savedMidiProfile as LaunchpadProfile);
+        if (isLaunchpadProfile(savedMidiProfile)) {
+          setMidiProfile(savedMidiProfile);
         }
         const savedLastPackId = await getSetting('lastUniPackId');
         if (!cancelled && savedLastPackId) setLastPlayedPackId(savedLastPackId);
