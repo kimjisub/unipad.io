@@ -47,7 +47,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
       for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
         document.addEventListener(type, event => {
           const e = event as PointerEvent;
-          const target = (e.target as Element).closest('[data-pad], button');
+          const target = e.target instanceof Element ? e.target.closest('[data-pad], button') : null;
           window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
             buttons: e.buttons, trusted: e.isTrusted,
             target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });

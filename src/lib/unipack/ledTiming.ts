@@ -26,7 +26,7 @@ export interface IntendedTimeline {
   autoPlayLengthMs: number;
   /** Endless animations with no delay in a pass; LedRunner plays them a pass per tick, which no timeline can state. */
   delaylessEndlessAnimations: number;
-  /** Endless animations still running on another chain at autoplay end; truncated there. */
+  /** Endless animations that did not yield to the final release; truncated there. */
   unreleasedEndlessAnimations: number;
   /** Chain changes inside LED animations, which this timeline does not follow. */
   ledChainEvents: number;
@@ -204,8 +204,8 @@ const sentCode = (code: number) => Math.max(0, Math.min(127, Math.trunc(Number.i
  * it last and only that owner's off turns it off; a press ends the running animation of the same pad
  * and chain and turns off every LED it owns; a release ends only endless (loop 0) animations. The play
  * screen redraws every pad twice as autoplay starts (switching the mode, then autoplay's first tick
- * clearing the guide) and twice as it ends (ledInit, then clearing the guide), which with nothing else
- * lit sends 0 to each; the end first releases every pad, as padInit does. Events due in the same
+ * clearing the guide) and once as it ends (clearing the guide), preserving finite animation lights.
+ * The end first releases autoplay's pads, including endless animations from earlier chains. Events due in the same
  * millisecond play animations in press order, then autoplay.
  */
 export function intendedTimeline(pack: UniPackData): IntendedTimeline {
@@ -235,6 +235,7 @@ class TimelineSimulation {
   /** The pack's multi-mapping queues, copied so that rotating them leaves the pack as it was. */
   private readonly table: (LedAnimation[] | null)[][][] | null;
   private readonly pads: (Owner | null)[][];
+  private readonly padCodes: number[][];
   private readonly rounds = new Map<number, Owner>();
   private running: Animation[] = [];
   private readonly animations: Animation[] = [];
@@ -247,6 +248,7 @@ class TimelineSimulation {
     ({ buttonX: this.buttonX, buttonY: this.buttonY, chain: this.chainCount } = pack.info);
     this.table = pack.ledAnimationTable?.map((xs) => xs.map((ys) => ys.map((anims) => anims && [...anims]))) ?? null;
     this.pads = Array.from({ length: this.buttonX }, () => Array.from({ length: this.buttonY }, () => null));
+    this.padCodes = Array.from({ length: this.buttonX }, () => Array.from({ length: this.buttonY }, () => 0));
   }
 
   run(): IntendedTimeline {
@@ -280,9 +282,7 @@ class TimelineSimulation {
         if (next >= elements.length) {
           for (let x = 0; x < this.buttonX; x++) for (let y = 0; y < this.buttonY; y++) this.release(x, y, t);
           this.repaintPads(t);
-          this.repaintPads(t);
-          // A release only reaches the current chain. Endless animations on earlier chains have no
-          // finite tail: stop modelling them here without inventing off commands the player never sent.
+          // Keep the bound for malformed animations that do not yield to a release.
           unreleasedEndlessAnimations = this.running.filter((a) => a.playing && a.led.loop === 0).length;
           this.running = this.running.filter((a) => a.led.loop !== 0);
           ended = true;
@@ -358,8 +358,7 @@ class TimelineSimulation {
   }
 
   private release(x: number, y: number, t: number): void {
-    const owner = { x, y, chain: this.chain };
-    this.end(t, (a) => sameOwner(a.owner, owner) && a.led.loop === 0);
+    this.end(t, (a) => a.owner.x === x && a.owner.y === y && a.led.loop === 0);
   }
 
   private end(t: number, which: (a: Animation) => boolean): void {
@@ -371,6 +370,7 @@ class TimelineSimulation {
           if (sameOwner(this.pads[x][y], animation.owner)) {
             this.out.push({ ms: t, x, y, code: 0 });
             this.pads[x][y] = null;
+            this.padCodes[x][y] = 0;
           }
         }
       }
@@ -384,9 +384,9 @@ class TimelineSimulation {
     this.running = this.running.filter((a) => !ended.includes(a));
   }
 
-  /** Every pad redrawn from its channels with no LED channel left, as ledInit does; owners stay. */
+  /** Guide removal redraws the current pack light instead of clearing it. */
   private repaintPads(t: number): void {
-    for (let x = 0; x < this.buttonX; x++) for (let y = 0; y < this.buttonY; y++) this.out.push({ ms: t, x, y, code: 0 });
+    for (let x = 0; x < this.buttonX; x++) for (let y = 0; y < this.buttonY; y++) this.out.push({ ms: t, x, y, code: this.padCodes[x][y] });
   }
 
   /** One animation's events due by `t`, as LedRunner.loop plays one state. */
@@ -435,6 +435,7 @@ class TimelineSimulation {
     } else {
       if (this.pads[x]?.[y] === undefined) return;
       this.pads[x][y] = animation.owner;
+      this.padCodes[x][y] = sentCode(velocity);
     }
     this.out.push({ ms: t, x, y, code: sentCode(velocity), animation: animation.id });
   }
@@ -446,6 +447,7 @@ class TimelineSimulation {
     } else {
       if (!sameOwner(this.pads[x]?.[y], animation.owner)) return;
       this.pads[x][y] = null;
+      this.padCodes[x][y] = 0;
     }
     this.out.push({ ms: t, x, y, code: 0, animation: animation.id });
   }

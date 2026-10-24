@@ -1,3 +1,4 @@
+import type { PlaybackTicker } from './PlaybackTicker';
 import { LedAnimation, LedEvent, UniPackData } from './types';
 
 interface Led {
@@ -10,6 +11,7 @@ interface LedAnimationState {
   buttonX: number;
   buttonY: number;
   chainAtCreation: number;
+  input: string;
   index: number;
   delay: number;
   isPlaying: boolean;
@@ -95,6 +97,7 @@ export class LedRunner {
   private rafId: number | null = null;
   private requests = 0;
   private suspendedAt: number | null = null;
+  private suspendedStates = new Set<LedAnimationState>();
 
   active = false;
 
@@ -103,6 +106,7 @@ export class LedRunner {
     listener: LedRunnerListener,
     chainValue: () => number,
     setChain: (c: number) => void,
+    private ticker?: PlaybackTicker,
   ) {
     this.unipack = unipack;
     this.listener = listener;
@@ -119,7 +123,7 @@ export class LedRunner {
     if (!this.active) return;
 
     if (this.suspendedAt !== null) {
-      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+      this.rafId = this.schedule(this.loop);
       return;
     }
 
@@ -152,7 +156,7 @@ export class LedRunner {
     }
     this.ledAnimationStates = this.ledAnimationStates.filter((s) => !s.remove);
 
-    this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+    this.rafId = this.schedule(this.loop);
   };
 
   /** Events already running at a time precede shutdowns there, then new starts, in request order. */
@@ -258,35 +262,47 @@ export class LedRunner {
     }
   }
 
+  private schedule(run: () => void): number {
+    return this.ticker?.request(run, LOOP_INTERVAL_MS, 1) ?? window.setTimeout(run, LOOP_INTERVAL_MS);
+  }
+
   launch(): void {
     if (!this.active) {
       this.active = true;
       // A 4 ms timer preserves the pack's sub-frame light timing.
-      this.rafId = window.setTimeout(this.loop, LOOP_INTERVAL_MS);
+      this.rafId = this.schedule(this.loop);
     }
   }
 
-  /** Shift every scheduled boundary together, preserving order and remaining delays. */
-  setSuspended(suspended: boolean): void {
+  /** Shift every boundary together, including rendered transition samples. The caller can share
+   *  wallTimeMs with the sound runner instead of sampling a later callback entry. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0, wallTimeMs?: number): void {
     if (suspended) {
-      this.suspendedAt ??= performance.now();
+      if (this.suspendedAt === null) {
+        this.suspendedAt = wallTimeMs ?? performance.now();
+        this.suspendedStates = new Set([...this.ledAnimationStates, ...this.ledAnimationStatesAdd]);
+      }
     } else if (this.suspendedAt !== null) {
-      const hiddenMs = performance.now() - this.suspendedAt;
+      const hiddenMs = (wallTimeMs ?? performance.now()) - this.suspendedAt;
       this.suspendedAt = null;
       for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
-        state.delay += hiddenMs;
-        state.startedAt += hiddenMs;
-        state.passStart += hiddenMs;
-        if (state.shutdownAt !== null) state.shutdownAt += hiddenMs;
-        if (state.finishedAt !== null) state.finishedAt += hiddenMs;
+        // A light first requested while hidden has not consumed an older sample's transition time.
+        const shift = hiddenMs - (this.suspendedStates.has(state) ? elapsedAudioMs : 0);
+        state.delay += shift;
+        state.startedAt += shift;
+        state.passStart += shift;
+        if (state.shutdownAt !== null) state.shutdownAt += shift;
+        if (state.finishedAt !== null) state.finishedAt += shift;
       }
+      this.suspendedStates.clear();
     }
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      window.clearTimeout(this.rafId);
+      if (this.ticker) this.ticker.cancel(this.rafId);
+      else window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     for (const state of this.ledAnimationStates) {
@@ -294,6 +310,7 @@ export class LedRunner {
     }
     this.ledAnimationStates.length = 0;
     this.ledAnimationStatesAdd.length = 0;
+    this.suspendedStates.clear();
   }
 
   private ledGet(c: number, x: number, y: number): LedAnimation | null {
@@ -313,7 +330,7 @@ export class LedRunner {
     anims.push(first);
   }
 
-  eventOn(x: number, y: number, pressedAt = performance.now()): void {
+  eventOn(x: number, y: number, pressedAt = performance.now(), input = ''): void {
     if (!this.active) return;
     pressedAt = this.suspendedAt ?? pressedAt;
 
@@ -334,6 +351,7 @@ export class LedRunner {
         buttonX: x,
         buttonY: y,
         chainAtCreation: chain,
+        input,
         index: 0,
         delay: pressedAt,
         isPlaying: animation.ledEvents.length > 0,
@@ -351,12 +369,12 @@ export class LedRunner {
     }
   }
 
-  eventOff(x: number, y: number, releasedAt = performance.now()): void {
+  eventOff(x: number, y: number, releasedAt = performance.now(), input?: string): void {
     if (!this.active) return;
     releasedAt = this.suspendedAt ?? releasedAt;
     const order = ++this.requests;
     for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
-      if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === this.chainValue() && state.ledAnimation?.loop === 0) {
+      if (state.buttonX === x && state.buttonY === y && (input === undefined || state.input === input) && state.ledAnimation?.loop === 0) {
         this.shutDownAt(state, releasedAt, order);
       }
     }

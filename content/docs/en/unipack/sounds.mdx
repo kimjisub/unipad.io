@@ -7,7 +7,10 @@ The `sounds` folder stores sound files referenced by the `keySound` file.
 | WAV | `.wav` | Recommended (PCM 16bit) |
 | MP3 | `.mp3` | Supported |
 | M4A (AAC) | `.m4a` | Supported |
-| OGG Vorbis | `.ogg` | The iOS app does **not** play it at present. Use WAV, MP3 or M4A for packs played on iOS. |
+| OGG Vorbis | `.ogg` | Supported on Android and the web. The current iOS App Store version does not play it; support is planned for an iOS update. |
+
+The format also allows OGG Opus (`.ogg`). Android and the web play it; iOS support is pending.
+For packs that must play on all current apps, use WAV, MP3 or M4A.
 
 A sound is decoded by its content, not its extension: an MP3 saved as `.wav` still plays.
 
@@ -25,8 +28,49 @@ sounds/
 
 <Callout title="Notes">
 - Files are referenced by name in `keySound`, so write paths and names exactly as the files are named, including upper and lower case.
-- If no file has exactly that path, the player uses a file whose path differs only in upper and lower case (e.g., `End.wav` plays `sounds/END.wav`, `FX/Sweep.wav` plays `sounds/fx/sweep.wav`). A folder is never a sound.
+- The shared format resolves an exact path first, then an NFC-equivalent name (composed and decomposed letters), then NFC with letter case ignored. At a fallback, the first full original archive path in UTF-16 code-unit order wins. An exact original spelling wins even if another archive entry has an equivalent composed/decomposed name and different contents. Import must preserve the chosen file rather than silently overwrite it. Native storage may change how letters are composed; the chosen archive entry and its contents determine playback. A folder is never a sound.
+- Paths are relative to `sounds/`: backslashes become `/`, leading `/` and `./` are removed, repeated `/` is collapsed, and `.` components are ignored. A path must never escape `sounds/` using `..`.
+- These matching and path rules describe the shared format; app updates are still aligning the less common spellings. Use exact names and ordinary relative paths for compatibility with current versions.
 - Subdirectories are supported (e.g., `fx/sweep.wav`).
 - For compatibility, use only **alphanumeric characters, hyphens, and underscores** in file names.
 - At least **30 sounds** can play at the same time.
 </Callout>
+
+## Shared audio admission
+
+App updates are aligning these exact structural rules. They are not a guarantee of playback on every
+current version or of available device memory.
+
+Let `r` be sample rate, `c` channels, and `n` physical frames per channel. Require `8000 ≤ r ≤ 384000`,
+`1 ≤ c ≤ 8`, and `n ≤ 600 × r`. Converted frames are `n` for rates at least 48000, otherwise
+`ceil(n × 48000 / r)`. Cost is converted frames times `max(c, 2)`. Accept at most **67,108,864** per
+sound and **134,217,728** per pack, inclusive. Use exact integers and check before overflow. Do not
+substitute an approximate number of minutes for this calculation.
+
+Visit references by chain, x, y, then keySound line order, excluding out-of-grid references. Decide each
+resolved file once, at its first reference. A read failure, individual exclusion or remaining-budget
+exclusion consumes no cost; keep checking later, smaller files. Finish selection before decoding.
+A subsequent decoder or memory failure does not release its reservation for another file, and decoder
+completion order cannot change the selection. The same file's later references keep its first decision.
+
+For example, three 48 kHz stereo 10-minute sounds followed by a 44.1 kHz stereo 5-second sound select
+the first, second and fourth. The first two leave cost 19,017,728. A 48 kHz stereo sound of 9,508,864
+frames fits exactly; one more frame does not. The corresponding 44.1 kHz boundary is 8,736,268 frames.
+
+Read actual sound data before decoding, rather than trusting a header's duration. WAV data extents,
+MP3 frames, M4A packet data and tables, and Ogg pages must agree with the reserved amount. A misleading
+extension does not change the inspection. Do not truncate a valid sound to force it under a limit or
+silently reject an existing supported format because its inspection is missing. Codec padding,
+edit-list trimming and native decoder output still need playback verification.
+
+Rule exclusions, unreadable files, decoder failures after selection, and insufficient device memory
+are reported separately, with file names and reasons under details. Partial failures allow the
+remaining sounds, with one notice listing each count. If every referenced sound fails, stay out of
+the play screen and offer retry and return to packs. A pack with no sound references is not that
+failure: light-only packs remain valid. Retry reopens the pack without changing its source files.
+Decoder or memory failure is not successful compatibility.
+
+This budget measures retained sound values, not peak process memory, temporary copies or concurrent
+decoding. Existing allocation guards remain. iOS retains audio at 48 kHz stereo independently of output
+device and adapts at playback. Device memory, external outputs, browser differences and actual failures
+need separate tests; preventing every browser tab termination is not promised.

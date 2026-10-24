@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import type { PadState } from './useUniPadEngine';
 import type { ThemeAssets } from '@/lib/unipack';
 import { SkinImage } from './SkinImage';
@@ -16,6 +16,132 @@ interface PadGridProps {
   onPadDown: (x: number, y: number, input: string) => void;
   onPadUp: (x: number, y: number, input: string) => void;
 }
+
+interface PadCellProps {
+  x: number;
+  y: number;
+  buttonX: number;
+  buttonY: number;
+  squareButton: boolean;
+  theme: ThemeAssets | null;
+  bgColor: string;
+  isPressed: boolean;
+  pressedIsWinning: boolean;
+  isGuide: boolean;
+  guideTargetWallTimeMs: number | null;
+  guideNowMs: number;
+}
+
+// Lights often change only one pad. Keep the other pads' skin and guide layers out of the
+// synchronous light commit, even when an engine snapshot contains new pad objects.
+const PadCell = memo(function PadCell({
+  x, y, buttonX, buttonY, squareButton, theme, bgColor, isPressed,
+  pressedIsWinning, isGuide, guideTargetWallTimeMs, guideNowMs,
+}: PadCellProps) {
+  const hasThemeBtn = theme?.btn || theme?.btnPressed;
+  const centerX = Math.floor(buttonX / 2) - 1;
+  const centerY = Math.floor(buttonY / 2) - 1;
+  let phantomImage: string | null = null;
+  let phantomRotation = 0;
+  // Android: phantom is only shown when grid is smaller than 16x16
+  phantomImage = (buttonX < 16 && buttonY < 16) ? (theme?.phantom ?? null) : null;
+  // Android parity: phantom_ is only used for center 2x2 in even square grids.
+  if (
+    theme?.phantomVariant
+    && squareButton
+    && buttonX % 2 === 0
+    && buttonY % 2 === 0
+  ) {
+    if (x === centerX && y === centerY) {
+      phantomImage = theme.phantomVariant;
+    } else if (x === centerX + 1 && y === centerY) {
+      phantomImage = theme.phantomVariant;
+      phantomRotation = 270;
+    } else if (x === centerX && y === centerY + 1) {
+      phantomImage = theme.phantomVariant;
+      phantomRotation = 90;
+    } else if (x === centerX + 1 && y === centerY + 1) {
+      phantomImage = theme.phantomVariant;
+      phantomRotation = 180;
+    }
+  }
+
+  // Android PadView order:
+  // background(btn) -> led(color or btn_) -> phantom -> traceLog
+  const hasLedColor = bgColor !== 'transparent';
+  const buttonBase = theme?.btn;
+  const ledPressedOverlay = pressedIsWinning && theme?.btnPressed ? theme.btnPressed : null;
+  const guideRemaining = guideTargetWallTimeMs ? Math.max(0, guideTargetWallTimeMs - guideNowMs) : 0;
+  const guideProgress = guideTargetWallTimeMs ? Math.min(1, Math.max(0, 1 - guideRemaining / 800)) : 0;
+  return (
+    <div
+      data-pad={`${x},${y}`}
+      className={`
+        relative overflow-hidden
+        ${!hasThemeBtn ? 'rounded-[2px] sm:rounded-[3px]' : ''}
+        ${!hasThemeBtn ? 'transition-[filter] duration-75' : ''}
+        ${!hasThemeBtn && isPressed ? 'brightness-125' : ''}
+      `}
+      style={{
+        aspectRatio: squareButton ? '1' : undefined,
+        minHeight: squareButton ? undefined : 0,
+      }}
+    >
+      {/* Layer 1: button base */}
+      {buttonBase ? (
+        <SkinImage
+          src={buttonBase}
+          className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
+        />
+      ) : (
+        <div
+          className="absolute inset-0 z-0"
+          style={{ background: 'rgba(255,255,255,0.03)' }}
+        />
+      )}
+
+      {/* Layer 2: color overlay */}
+      {ledPressedOverlay ? (
+        <SkinImage
+          src={ledPressedOverlay}
+          className="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
+        />
+      ) : hasLedColor ? (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ backgroundColor: bgColor }}
+        />
+      ) : null}
+
+      {/* Layer 3: Phantom overlay for guide state */}
+      {phantomImage && (
+        <SkinImage
+          src={phantomImage}
+          className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
+          style={{ transform: `rotate(${phantomRotation}deg)` }}
+        />
+      )}
+
+      {/* GuideTimingView: dark rect that shrinks toward center (Android parity) */}
+      {isGuide && (() => {
+        const insetPct = guideProgress * 50;
+        return (
+          <div
+            className="absolute pointer-events-none z-[25]"
+            style={{
+              top: `${insetPct}%`,
+              left: `${insetPct}%`,
+              right: `${insetPct}%`,
+              bottom: `${insetPct}%`,
+              backgroundColor: 'rgba(0,0,0,0.87)',
+            }}
+          />
+        );
+      })()}
+
+    </div>
+  );
+});
 
 export function PadGrid({
   buttonX,
@@ -161,9 +287,6 @@ export function PadGrid({
     };
   }, []);
 
-  const hasThemeBtn = theme?.btn || theme?.btnPressed;
-  const centerX = Math.floor(buttonX / 2) - 1;
-  const centerY = Math.floor(buttonY / 2) - 1;
   const padCellWidth = buttonY > 0 ? gridSize.width / buttonY : 0;
   const padCellHeight = buttonX > 0 ? gridSize.height / buttonX : 0;
   const padCellMin = Math.min(padCellWidth || 0, padCellHeight || 0);
@@ -222,112 +345,18 @@ export function PadGrid({
       {Array.from({ length: buttonX }, (_, x) =>
         Array.from({ length: buttonY }, (_, y) => {
           const pad = padStates[x]?.[y];
-          const bgColor = pad?.color || 'transparent';
-          const isPressed = pad?.pressed || false;
-          const pressedIsWinning = pad?.pressedIsWinning || false;
-          const isGuide = pad?.guide || false;
-          const guideTargetWallTimeMs = pad?.guideTargetWallTimeMs ?? null;
-
-          let phantomImage: string | null = null;
-          let phantomRotation = 0;
-          // Android: phantom is only shown when grid is smaller than 16x16
-          phantomImage = (buttonX < 16 && buttonY < 16) ? (theme?.phantom ?? null) : null;
-          // Android parity: phantom_ is only used for center 2x2 in even square grids.
-          if (
-            theme?.phantomVariant
-            && squareButton
-            && buttonX % 2 === 0
-            && buttonY % 2 === 0
-          ) {
-            if (x === centerX && y === centerY) {
-              phantomImage = theme.phantomVariant;
-            } else if (x === centerX + 1 && y === centerY) {
-              phantomImage = theme.phantomVariant;
-              phantomRotation = 270;
-            } else if (x === centerX && y === centerY + 1) {
-              phantomImage = theme.phantomVariant;
-              phantomRotation = 90;
-            } else if (x === centerX + 1 && y === centerY + 1) {
-              phantomImage = theme.phantomVariant;
-              phantomRotation = 180;
-            }
-          }
-
-          // Android PadView order:
-          // background(btn) -> led(color or btn_) -> phantom -> traceLog
-          const hasLedColor = bgColor !== 'transparent';
-          const buttonBase = theme?.btn;
-          const ledPressedOverlay = pressedIsWinning && theme?.btnPressed ? theme.btnPressed : null;
-          const guideRemaining = guideTargetWallTimeMs ? Math.max(0, guideTargetWallTimeMs - guideNowMs) : 0;
-          const guideProgress = guideTargetWallTimeMs ? Math.min(1, Math.max(0, 1 - guideRemaining / 800)) : 0;
           return (
-            <div
+            <PadCell
               key={`${x}-${y}`}
-              data-pad={`${x},${y}`}
-              className={`
-                relative overflow-hidden
-                ${!hasThemeBtn ? 'rounded-[2px] sm:rounded-[3px]' : ''}
-                ${!hasThemeBtn ? 'transition-[filter] duration-75' : ''}
-                ${!hasThemeBtn && isPressed ? 'brightness-125' : ''}
-              `}
-              style={{
-                aspectRatio: squareButton ? '1' : undefined,
-                minHeight: squareButton ? undefined : 0,
-              }}
-            >
-              {/* Layer 1: button base */}
-              {buttonBase ? (
-                <SkinImage
-                  src={buttonBase}
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0"
-                />
-              ) : (
-                <div
-                  className="absolute inset-0 z-0"
-                  style={{ background: 'rgba(255,255,255,0.03)' }}
-                />
-              )}
-
-              {/* Layer 2: color overlay */}
-              {ledPressedOverlay ? (
-                <SkinImage
-                  src={ledPressedOverlay}
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
-                />
-              ) : hasLedColor ? (
-                <div
-                  className="absolute inset-0 pointer-events-none z-10"
-                  style={{ backgroundColor: bgColor }}
-                />
-              ) : null}
-
-              {/* Layer 3: Phantom overlay for guide state */}
-              {phantomImage && (
-                <SkinImage
-                  src={phantomImage}
-                  className="absolute inset-0 w-full h-full object-fill pointer-events-none z-20"
-                  style={{ transform: `rotate(${phantomRotation}deg)` }}
-                />
-              )}
-
-              {/* GuideTimingView: dark rect that shrinks toward center (Android parity) */}
-              {isGuide && (() => {
-                const insetPct = guideProgress * 50;
-                return (
-                  <div
-                    className="absolute pointer-events-none z-[25]"
-                    style={{
-                      top: `${insetPct}%`,
-                      left: `${insetPct}%`,
-                      right: `${insetPct}%`,
-                      bottom: `${insetPct}%`,
-                      backgroundColor: 'rgba(0,0,0,0.87)',
-                    }}
-                  />
-                );
-              })()}
-
-            </div>
+              x={x} y={y} buttonX={buttonX} buttonY={buttonY}
+              squareButton={squareButton} theme={theme}
+              bgColor={pad?.color || 'transparent'}
+              isPressed={pad?.pressed || false}
+              pressedIsWinning={pad?.pressedIsWinning || false}
+              isGuide={pad?.guide || false}
+              guideTargetWallTimeMs={pad?.guideTargetWallTimeMs ?? null}
+              guideNowMs={pad?.guide ? guideNowMs : 0}
+            />
           );
         }),
       )}

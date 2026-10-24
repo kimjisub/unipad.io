@@ -35,3 +35,15 @@ website=https://unipad.io
 - Loading is **aborted** if `chain` is outside the 1~24 range.
 - Loading is **aborted** if `buttonX` or `buttonY` is not an integer (for example `abc`).
 - Loading is **aborted** if `buttonX` or `buttonY` is negative or greater than 64.
+
+## Shared format rules
+
+- A missing `buttonX` or `buttonY` refuses the pack with a missing-size reason. This differs from explicitly writing `0`, which loads with a warning. Current apps are being updated to enforce missing keys.
+- `squareButton=false` changes the shape only: pack lights still play, and press feedback follows its usual default (off with keyLED, on without it). Android and iOS are being aligned with this rule.
+- `website` is stored as written. When opened, an address with no scheme uses `https://`; only `http://` and `https://` are opened. Support for scheme-free addresses is being aligned.
+
+Importing an archive opens exactly one pack and ignores wrappers and unrelated sidecar files. An archive containing multiple packs must be refused with a clear reason; the web import is being aligned.
+Archive names use a valid Info-ZIP Unicode Path field when present; otherwise valid UTF-8 is read as UTF-8 and other bytes as CP949, even with an incorrect UTF-8 flag. Support for those archive-name edge cases is being aligned. Other Windows encodings are not guessed and may be unreadable. Save new text and names as UTF-8.
+
+Computer keyboard pad, chain and option shortcuts are available on the web. Android and iOS do not need those shortcuts to play the same pack.
+Leaving play or disconnecting a Launchpad does not restore its previous device mode.

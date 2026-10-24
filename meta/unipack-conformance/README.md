@@ -12,7 +12,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 
 | File | Role |
 |---|---|
-| `GRAMMAR.md` | The UniPack grammar, edition G4: 104 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
+| `GRAMMAR.md` | The UniPack grammar, edition G6: 114 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
 | `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
 | `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
@@ -45,13 +45,20 @@ TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=/tmp/unipack-conformance \
   xcodebuild test -project unipad.xcodeproj -scheme unipad -only-testing:unipadTests/UniPackConformanceTests \
   -destination 'platform=iOS Simulator,name=<a simulator>'
 
-# the copies in the app checkouts are the canonical file
+# local copies must match the current canonical file (no commit arguments)
 node meta/unipack-conformance/sync.mjs --android <unipad-android checkout> --ios <unipad-ios checkout> --check
 
 # then, from unipad.io
 node meta/unipack-conformance/report.mjs --web .next/cache/unipack-conformance/web.json \
   --android <android.json> --ios <ios.json>
 ```
+
+A local `sync.mjs --check` without commit arguments always requires the current canonical bytes,
+even while `copies.json` declares historical snapshots. To verify a historical checkout, pass its
+full immutable commit explicitly with `--android-commit <commit>` or `--ios-commit <commit>`.
+Only the exact declared commit can use its historical hash; other commits require current bytes.
+`--require-current` rejects historical bytes even with an explicit historical commit. CI passes the
+selected commits explicitly, so a local sync followed by a check cannot inherit an unrelated old pin.
 
 **Android: `--rerun --no-build-cache` is part of the command.** Gradle stores a passing test task and
 answers the next run with `UP-TO-DATE` or `FROM-CACHE` without running anything; `android.json` is not an
@@ -84,21 +91,22 @@ so an old file or a record-only one is visible.
 
 **Grammar items.** Every case names the items of [GRAMMAR.md](GRAMMAR.md) it checks (`items`);
 `build-corpus.mjs` refuses a case without them or with a number the grammar does not list. `report.mjs`
-then reports each of the 104 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
+then reports each of the 114 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
 on a platform when
 
 - at least one case checks it;
 - every case that checks it is a `pass` on that platform;
 - for an `output` item, at least one of those cases is a `run` or `palette` case (a parse result does not
   show what is played or lit);
-- the platform's harness can observe the item at all (`HARNESS_LIMITS` in `grammar.mjs`): Android and
-  the web do not decode sounds, so A-01 to A-05 are never confirmed there; no harness imports an archive
+- the platform's harness can observe the item at all (`HARNESS_LIMITS` in `grammar.mjs`): the Android
+  and web common cases do not decode sounds, so those cases alone cannot confirm A-01 to A-05;
+  no common harness imports an archive
   (F-05, F-06); and where the pack is written to a disk that does not tell `INFO` from `info`, a parser
   that opens only the exact name passes F-01 too, so Android and iOS confirm F-01 only when their result
   file says `"caseSensitiveFileSystem": true`.
 
-The four numbers it prints: confirmed items per platform of 104, items confirmed on all three platforms
-of 104, and items any case checks of 104 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
+The four numbers it prints: confirmed items per platform of 114, items confirmed on all three platforms
+of 114, and items any case checks of 114 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
 `grammar.withCases`). Five items have no case, because these cases cannot reach them: importing an
 archive (F-05, F-06) and decoding OGG, M4A and a sound whose name does not match its content (A-03 to
 A-05) are for each platform's own tests.
@@ -120,8 +128,9 @@ platform:
   only when its cases pass **and** the listed app tests pass; neither covers the other;
 - otherwise: by its cases alone, as before. The app tests are not looked at.
 
-An item no test is listed for (today Android A-01 to A-05) stays unconfirmed whatever the
-file says. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
+When app tests are required, an item no test is listed for stays unconfirmed whatever the file says.
+Android A-01 to A-05 now list emulator output tests; A-05 requires both the tagged and untagged MP3
+output tests. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
 `app tests`, or `common and app tests`) and `native` the SHA-256 of each file and the commit its tests
 ran on; the text marks the cells `ok`, `ok app` and `ok both` and prints that commit under the time the
 platform's common results were written. Running the common cases and the app tests on the same commit is
@@ -149,24 +158,15 @@ Each case is reported per platform as exactly one of:
 
 | Status | Meaning |
 |---|---|
-| `pass` | The platform's result equals the expected result, including the two equivalent Android storage representations allowed by T-09 (below). |
+| `pass` | The platform's result equals the expected result. |
 | `fail` | It does not, and nothing in the corpus calls that intended. Pinned in `divergences.json` when it is a known difference, so the suite stays green while the report shows it. |
 | `unsupported` | The platform does not support this format. Pinned like `fail`, with the observed result. |
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
 | `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`) and recorded no result for it, or the case is `undetermined` (below). Never counted as a pass. |
 
-**T-09 storage representations.** In Android KS-B08, the first sound's loop may be `-2147483648`
-or `-2147483649`. In Android KL-BE10, the first LED command's x coordinate, the second command's y
-coordinate and the third command's chain may each use either value. The report compares every other
-field and warning exactly and counts only these equivalent results as `pass`, so they can confirm
-T-09. Positive wraparound, other values and changed format or range warnings still fail. Other
-platforms and pinned differences get no exception.
-
-The app harnesses still record their exact comparisons against the unchanged corpus and pins.
-The report first verifies that original classification, then checks the allowed representations.
-Its JSON keeps the original `actual`, `reportedStatus` and `reportedDetail`, with the T-09 reason
-in `detail`; the text report includes that reason too. This does not change the corpus, expected
-values, pins or app copies, and existing result files for the same corpus can be reported again.
+**T-09 storage.** Every platform stores minus one exactly, including -2147483649 for the
+smallest input integer. Saturating that result at -2147483648 fails KS-B08 / KL-BE10;
+there is no pinned difference or report-only exception.
 
 A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
@@ -208,6 +208,57 @@ iOS, and the queue reset on a chain change (RUN-S-012, RUN-S-013) on iOS (see "W
 harness measures"). RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the autoPlay runner read the wall
 clock) and RUN-L-006, RUN-L-007 (leaving the play screen) were marked on iOS until its harness came to
 record results for them (see `stop` and autoPlay below).
+
+## G6 cases and current app corrections
+
+`g6-cases.mjs` adds 55 cases (49 initial cases and six archive-identity collision cases). Each declares `expectedFailing`: the apps expected to need a
+correction, based on the code comparison. This field never changes classification or expected output.
+Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
+KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
+
+`screenInputs: true` routes a web case through `web-screen.mjs`, which loads the real play hook
+in a DOM process and supplies distinct pointer/MIDI input identities, manual chain selection and
+mode changes. The sound engine and runners stay real; only audio, MIDI transport, storage and the
+clock are replaced. The adapter records calls, not audible output or a real controller.
+A case cannot silently fall back to the lower-level runner when its screen result is missing.
+
+KS-G617..619 require distinct case-sensitive stored paths. The web ZIP can hold these; a host disk
+that cannot must leave them unverified. App adapters must measure filesystem support before overriding
+that limitation. A result recorded on a merged case-insensitive directory is not evidence for them.
+
+The initial baseline web run on production code 184c1e4b observed 27 G6 failures and 22 G6 passes.
+The 2026-10-23 RS-09 revision makes a later explicit player chain selection take precedence over
+a pending manual wormhole. RUN-G606 now expects cancellation and names Android as needing correction.
+Its former web failure pin is removed because the rule changed, not because an app result was waived.
+With that revision the web has 26 G6 failures and 23 G6 passes; earlier observations keep their original
+corpus hash. The remaining failures stay failures in reports while pins keep the ordinary suite usable.
+Android and iOS observations are recorded separately when their updated adapters run this corpus.
+
+## Archive sound identity
+
+For `soundIdentity: true` parse cases (KS-G601..604 and KS-G620..625), each sound queue entry is
+`{ "archiveEntry": "sounds/<original name>", "sha256": "<64 lowercase hex>", "loop": 0, "wormhole": -1 }`.
+`archiveEntry` is the original full ZIP entry name, including `sounds/`, compared by exact code points.
+`sha256` hashes the bytes actually selected for decoding, not the expected asset or merely the name's
+original archive bytes. A later import overwrite must therefore change the observed hash and fail.
+The harness must track provenance from import to the selected file. It must not infer the entry from
+the expected result, normalize the reported archive spelling, or choose a candidate by matching a hash
+alone. If provenance cannot be observed, leave the case unverified.
+
+Native disk paths may use another canonical spelling. Record those paths and original-to-stored
+mappings as diagnostics outside `actual`; they do not decide the result. On web, the parser's selected
+ZIP path and its `soundFiles` bytes supply the identity directly. These parser cases prove which file
+reaches the sound queue; decoded/audible output remains a separate native playback check.
+
+KS-G620/621 and KS-G623/624 require each exact NFC/NFD entry to win even with a different-content
+canonical equivalent present. KS-G622/625 have no exact spelling and require the first original entry
+in UTF-16 order. Archive orders vary, so neither last-write-wins nor first-entry-wins implements all
+six expectations. An importer on a filesystem that merges canonical spellings must detect the collision
+and retain the intended identity and bytes. It must not silently overwrite one entry with another.
+
+The first web run of the identity revision observes 27 G6 passes and 28 failures; KS-G622 and KS-G625
+are the two additional failures and remain failures in reports. Native observations of these six new
+cases are pending; earlier four-case unverified records retain their original corpus hash.
 
 ## Case format
 
@@ -299,7 +350,7 @@ user turns autoPlay off and stays on the play screen: the runner stops, and ever
 that the user does not also hold through `press` is released to the sound engine and the LED runner;
 no `autoOff` event is recorded for it), `looping` (record one `looping` event per endless sound still
 playing), `stop` (leave the play screen), `watchStops` (from here on also report the voices the sound engine stops). Events:
-`["sound", chain, x, y, file, loop]` (loop as stored: -1 endless, 0 once, N repeats),
+`["sound", chain, x, y, file, loop]` (effective playback repeats: -1 endless, 0 once, positive N additional repeats; stored values below -1 play once and are reported as 0),
 `["soundStop", chain, x, y, file]` (only after `watchStops`: the engine stopped a voice that a press
 started, the first time; chain, x, y and file are those of its `sound` event; a stop scheduled when a
 repeated sound starts is not one),
@@ -357,7 +408,7 @@ result; an undetermined case never counts as a pass; a case marked `unobserved` 
 unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
 without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
 iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
-`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 104 items,
+`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 114 items,
 `build-corpus.mjs` refuses a case without items or with an unknown or repeated one, and an item is
 confirmed only as described in [What `report.mjs` counts](#running-it).
 
@@ -393,7 +444,7 @@ repository at an exact commit and runs `selftest.mjs`, `build-corpus.mjs --check
 - the weekly scheduled run: the latest commit of each app's default branch, so a copy changed only in an
   app is noticed.
 
-`copies.json` holds exactly `android` and `ios`, each a full 40-character commit hash; `copies.mjs` refuses a
+`copies.json` holds exactly `android` and `ios`. A plain full 40-character commit hash requires that copy to match the canonical bytes. An explicit `{ "commit": "<40 lowercase hex characters>", "corpusSha256": "<64 lowercase hex characters>" }` pins an older corpus by its exact bytes; `copies.mjs` refuses a
 branch, a tag or a short hash, so the comparison never runs against a moving target. When a change to the
 corpus is reviewed together with its app copies, `copies.json` names the commits of the app pull requests;
 once those are merged, `copies.json` is moved to the merge commits on the app default branches. To run the
@@ -434,3 +485,76 @@ Per item, `report.mjs` lists the cases that check it. In short:
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
 - Whether an `agreed` result is the right behaviour: it is only what the three platforms did.
+
+
+### Explicit historical app copies
+
+A canonical corpus can advance before each app adopts it. A historical pin records the public app commit
+and that commit's corpus hash together. The check verifies the exact corpus bytes and the sidecar hash,
+then prints an `::warning::` annotation naming both editions and hashes if the app is behind. A changed byte,
+missing file, mismatched sidecar, malformed pin, or invalid canonical hash fails the check. This verifies
+what copy the app contains; it does not claim the app conforms to the current corpus. Reports from a
+different corpus remain unverified, even if those reports claim every case passes.
+
+`copies.mjs` continues to print immutable commit hashes for checkout. `sync.mjs --check` reads `copies.json`
+by default (`--pins <file>` selects another manifest). CI supplies `--android-commit` and `--ios-commit` with
+its actual selected checkout commits; a manual or scheduled override to another commit must match the
+current corpus and cannot inherit a historical pin from an unrelated commit.
+
+Use `sync.mjs --check --require-current --android <checkout> --ios <checkout>` for final compatibility
+and release verification. It rejects every copy behind canonical. After an app adopts the corpus and
+its reviewed commit is public, replace its historical object with that commit hash alone; verify both
+apps with the strict check before claiming synchronization. Copying with `sync.mjs` still writes the
+current corpus and hash; historical pins never change what gets copied.
+
+
+## Adopted product operations
+
+`product-cases.mjs` extends the same canonical corpus with 113 cases: 21 exact integer costs,
+76 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
+outputs and two trailing-wait observations. The resulting corpus has 382 cases. The nine PB items in
+GRAMMAR.md state the adopted behavior. Their app-level confirmation remains limited: common operation
+results never certify interruption, screen input ownership, stored settings, atomic backup/restore,
+real decoding, device output or resource failures. Missing app evidence remains unverified.
+
+The audio inputs and expected values are the unchanged third shared admission revision from Android
+commit `cab0f17c373e6830c750c6f289d059c40907f4eb`, manifest SHA-256
+`b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`.
+The web fixture folder records its immutable source. The builder checks the manifest and every binary
+hash, includes the exact physical bytes in each SAFE-F case, and retains only inputs in operation.json.
+SAFE-C uses integer rate/channels/frame inputs; SAFE-W describes the same physical zero-PCM recipe,
+generated one at a time; SAFE-S describes references, bounds and facts. No expected cost, exclusion or
+selected set is passed to an operation. These are explicit operations, not parseable UniPack folders.
+
+A case's `observation` selects the operation: audio-cost, audio-file, audio-wave, audio-selection or
+auto-map. For audio-file the first input file is inspected by content; the original filename is retained
+for provenance. Frame counts, costs and reservations are decimal strings in normalized actual results.
+An inspector result certifies structural facts only, not audible or trimmed duration. The admission
+module is not yet the app loading path. Native adapters must invoke their own corresponding operation
+and report observed values, never read expectations as observations or relabel older corpus files.
+Until supported, these cases remain unverified or explicitly fail; do not feed operation.json into a
+pack parser and call the result a successful operation.
+
+Mapper cases use a real parsed pack plus operation.json with explicit per-sound duration inputs in ms
+(or null for unreadable length). This is transformation, not a decoder test. Report `{events: [...]}`:
+`[on,time,chain,x,y,num]`, `[off,time,chain,x,y]`, `[chain,time,chain]`, and
+`[trailingDelay,time]` when the mapper retains a wait after its last command. Coordinates are zero-based,
+times are milliseconds. Observe actual mapped commands; do not invent missing releases or drop extra
+waits. Touch is equivalent to same-time on/off. Preserve parser queue indices, including values past
+the queue length; choosing the sound still uses the queue's usual cycling behavior.
+
+The runner's watchAutoEnd action records `[autoEnd]` only when its real onEnd callback fires.
+autoplayState records `[autoActive,boolean]`. suspendAuto/resumeAuto invoke the real runner's suspension
+API. These observations do not synthesize screen cleanup or validate manual resume UI. Completion must
+also release auto-play ownership in app-level tests. RUN-P001..002 use `touch 1 1 / d 2000`,
+releasing the input before the final wait so either runner-owned or app-owned completion cleanup
+can satisfy the separate ownership rule. Their first checkpoint includes both on and off; this
+revision changes the input fingerprint and preserves earlier held-input observations under their
+original hash.
+
+The first web observation of these 113 cases was 106 passes and seven failures (all five mapper cases
+and both trailing waits). The failures are pinned with status fail. An assertion process that verifies
+those pins does not make them compatibility passes. The first expected mapper queue indices for two
+repeated presses were corrected from 0 to 1 to preserve the original parser indices; the first raw
+record is retained separately. Native behavior must be observed before corrections and already-equal
+behavior recorded as equal, without manufacturing a failure.

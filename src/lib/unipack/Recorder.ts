@@ -36,7 +36,6 @@ export class Recorder {
 
   recordOff(x: number, y: number): void {
     if (!this.recording) return;
-    this.addDelay();
     this.events.push({ type: 'off', x, y, timestamp: performance.now() });
   }
 
@@ -65,7 +64,7 @@ export class Recorder {
           // Android에서는 off 이벤트를 기록하지 않음 (touch on만 기록)
           break;
         case 'chain':
-          lines.push(`chain ${(event.chain ?? 0) + 1}`);
+          lines.push(`c ${(event.chain ?? 0) + 1}`);
           break;
         case 'delay':
           lines.push(`d ${event.delay ?? 0}`);

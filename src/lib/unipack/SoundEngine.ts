@@ -37,8 +37,8 @@ export class SoundEngine {
   private activeNodes = new Map<string, AudioBufferSourceNode>();
   // Each press (a pad and the input holding it) owns the source selected at down time,
   // independently of the current chain and the (already advanced) sound sequence.
-  // Pad "x-y" → input → press.
-  private heldPresses = new Map<string, Map<string, Press>>();
+  // Pad "x-y" → input → presses, including earlier chains awaiting that input's release.
+  private heldPresses = new Map<string, Map<string, Press[]>>();
   private chainValue: () => number;
   private setChain: (c: number) => void;
   private unipack: UniPackData;
@@ -48,6 +48,8 @@ export class SoundEngine {
   private chainChangesSuspended = false;
   private suspensionRevision = 0;
   private visibilitySuspended = false;
+  private outputMuted = false;
+  private volume = 1;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -101,11 +103,16 @@ export class SoundEngine {
   }
 
   setVolume(level: number, maxLevel: number = 7): void {
-    this.gainNode.gain.value = maxLevel > 0 ? level / maxLevel : 1;
+    this.volume = maxLevel > 0 ? level / maxLevel : 1;
+    this.applyOutputVolume();
   }
 
   getVolume(maxLevel: number = 7): number {
-    return Math.round(this.gainNode.gain.value * maxLevel);
+    return Math.round(this.volume * maxLevel);
+  }
+
+  private applyOutputVolume(): void {
+    this.gainNode.gain.value = this.outputMuted ? 0 : this.volume;
   }
 
   async load(): Promise<string[]> {
@@ -165,6 +172,9 @@ export class SoundEngine {
     const revision = ++this.suspensionRevision;
     if (this.audioContext.state === 'closed') return;
     if (suspended) {
+      // Native suspension is asynchronous. Silence output before waiting for its acknowledgement.
+      this.outputMuted = true;
+      this.applyOutputVolume();
       if (!this.chainChangesSuspended) {
         this.chainChangesSuspended = true;
         const now = performance.now();
@@ -179,6 +189,8 @@ export class SoundEngine {
       // Always enqueue resume, even if an earlier suspend has not changed state yet.
       await this.audioContext.resume();
       if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
+      this.outputMuted = false;
+      this.applyOutputVolume();
       if (this.chainChangesSuspended) {
         this.chainChangesSuspended = false;
         for (const change of this.pendingChainChanges) this.scheduleChainChange(change);
@@ -190,7 +202,7 @@ export class SoundEngine {
     return `${chain}-${x}-${y}`;
   }
 
-  private padPresses(x: number, y: number): Map<string, Press> {
+  private padPresses(x: number, y: number): Map<string, Press[]> {
     const padKey = `${x}-${y}`;
     let presses = this.heldPresses.get(padKey);
     if (!presses) {
@@ -208,7 +220,7 @@ export class SoundEngine {
     const chain = this.chainValue();
     const key = this.stopKey(chain, x, y);
     const presses = this.padPresses(x, y);
-    presses.delete(input);
+    // Keep earlier chains reachable by this input's eventual release.
 
     // Stop currently playing sound for this pad
     const existing = this.activeNodes.get(key);
@@ -222,7 +234,7 @@ export class SoundEngine {
     // A sound that could not be decoded is silent, but the pad still moves on to its next sound and
     // follows its wormhole, so the rest of the pad's sequence plays as written.
     this.soundPush(chain, x, y);
-    if (sound.wormhole !== NO_WORMHOLE) {
+    if (sound.wormhole !== NO_WORMHOLE && input !== AUTO_PLAY_INPUT) {
       const change: PendingChainChange = { chain: sound.wormhole, remaining: 100, dueAt: 0, timer: null };
       this.pendingChainChanges.add(change);
       if (!this.chainChangesSuspended) this.scheduleChainChange(change);
@@ -242,14 +254,14 @@ export class SoundEngine {
     }
     this.activeNodes.set(key, source);
     const press: Press = { key, node: source, infinite: sound.loop === -1 };
-    presses.set(input, press);
+    presses.set(input, [...(presses.get(input) ?? []), press]);
     source.onended = () => this.forgetNode(presses, input, press);
   }
 
   /** Without `input`, every press of the pad is released. */
   soundOff(x: number, y: number, input?: string): void {
     const presses = this.padPresses(x, y);
-    const released = input === undefined ? Array.from(presses.values()) : [presses.get(input)];
+    const released = input === undefined ? Array.from(presses.values()).flat() : (presses.get(input) ?? []);
     if (input === undefined) presses.clear();
     else presses.delete(input);
     for (const press of released) {
@@ -261,9 +273,11 @@ export class SoundEngine {
 
   /** onended of an older node must not drop the newer node registered under the same key;
    *  it left an infinite-loop sample with nothing that could stop it. */
-  private forgetNode(presses: Map<string, Press>, input: string, press: Press): void {
+  private forgetNode(presses: Map<string, Press[]>, input: string, press: Press): void {
     if (this.activeNodes.get(press.key) === press.node) this.activeNodes.delete(press.key);
-    if (presses.get(input) === press) presses.delete(input);
+    const remaining = presses.get(input)?.filter(held => held !== press);
+    if (remaining?.length) presses.set(input, remaining);
+    else presses.delete(input);
   }
 
   private soundGet(c: number, x: number, y: number): Sound | null {

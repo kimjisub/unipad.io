@@ -38,15 +38,23 @@ describe('intendedTimeline', () => {
       '25 pad 1,1=7',
       '35 pad 0,0=0', '35 pad 1,1=0',
       '105 pad 1,1=9',
-      // Releasing the second pad ends its endless animation; then autoplay ends and redraws every pad twice.
+      // Releasing the second pad ends its endless animation; then autoplay ends and redraws every pad once.
       '115 pad 1,1=0',
-      ...repaint(115), ...repaint(115),
+      ...repaint(115),
     ]);
     assert.equal(timeline.autoPlayLengthMs, 115);
     assert.equal(timeline.delaylessEndlessAnimations, 0);
   });
 
-  test('bounds an endless animation left on a previous chain', async () => {
+  test('the natural end redraw preserves a finite light until its own off', async () => {
+    const timeline = intendedTimeline(await packWith('o 1 1\nd 10\nf 1 1', {
+      '1 1 1': 'o 1 1 a 5\nd 30\nf 1 1',
+    }));
+    assert.deepEqual(timeline.commands.filter(c => c.ms === 10 && c.x === 0 && c.y === 0).map(c => c.code), [5]);
+    assert.deepEqual(timeline.commands.filter(c => c.ms === 30 && c.x === 0 && c.y === 0).map(c => c.code), [0]);
+  });
+
+  test('releases an endless animation from a previous chain', async () => {
     const pack = await packWith('o 1 1\nd 10\nc 2\nd 10\nf 1 1\nd 10\n', {
       '1 1 1 0': 'o 1 1 a 5\nd 20\nf 1 1\nd 20\n',
     });
@@ -58,7 +66,7 @@ describe('intendedTimeline', () => {
     assert.equal(run.status, 0, String(run.error ?? run.stderr));
     const timeline = JSON.parse(run.stdout);
     assert.equal(timeline.autoPlayLengthMs, 20);
-    assert.equal(timeline.unreleasedEndlessAnimations, 1);
+    assert.equal(timeline.unreleasedEndlessAnimations, 0);
     assert.ok(timeline.commands.every((c: LedCommand) => c.ms <= 20));
   });
 
@@ -68,7 +76,7 @@ describe('intendedTimeline', () => {
     const timeline = intendedTimeline(pack);
 
     assert.equal(timeline.autoPlayLengthMs, 10);
-    assert.deepEqual(lines(timeline.commands), [...repaint(0), ...repaint(0), '0 pad 0,0=5', ...repaint(10), ...repaint(10), '30 pad 0,0=0']);
+    assert.deepEqual(lines(timeline.commands), [...repaint(0), ...repaint(0), '0 pad 0,0=5', '10 pad 0,0=5', '10 pad 0,1=0', '10 pad 1,0=0', '10 pad 1,1=0', '30 pad 0,0=0']);
   });
 
   test('plays the animation autoplay names on a pad with several and leaves the pack as it was', async () => {
@@ -81,7 +89,8 @@ describe('intendedTimeline', () => {
 
     const pads = intendedTimeline(pack).commands.filter((c) => c.x === 0 && c.y === 0 && c.code !== 0).map((c) => c.code);
 
-    assert.deepEqual(pads, [5, 9]);
+    // The end redraw precedes the pending second animation and preserves the first light.
+    assert.deepEqual(pads, [5, 5, 9]);
     assert.deepEqual(queue(), before);
   });
 
@@ -202,7 +211,7 @@ describe('stallExplains', () => {
   const padTimeline = async () => intendedTimeline(await packWith(
     `${'o 1 1\nd 2\nf 1 1\nd 313\n'.repeat(4)}d 400\nf 2 2\n`, { '1 1 1 1': pass.repeat(10) },
   )).commands.filter((c) => c.x === 0 && c.y === 0);
-  /** Pad 0,0's commands: two redraws, four animations of 40 steps, two redraws. */
+  /** Pad 0,0's commands: two start redraws, four animations of 40 steps, one end redraw. */
   const step = (animation: number, index: number) => 2 + animation * 40 + index;
   const off = (ms: number): LedCommand => ({ ms, x: 0, y: 0, code: 0 });
   const later = (commands: LedCommand[], by: number) => commands.map((c) => ({ ...c, ms: c.ms + by }));
@@ -215,7 +224,7 @@ describe('stallExplains', () => {
 
   test('dates each step by the next press of its pad', async () => {
     const want = await padTimeline();
-    assert.equal(want.length, 2 + 4 * 40 + 2);
+    assert.equal(want.length, 2 + 4 * 40 + 1);
     assert.deepEqual([want[step(0, 0)].cutMs, want[step(2, 39)].cutMs, want[step(3, 0)].cutMs], [315, 945, Infinity]);
     assert.equal(want[0].animation, undefined);
   });
@@ -339,7 +348,7 @@ describe('stallExplains', () => {
     const recorded: [number, number, number][] = [
       [1244.4, 1, 1], [1256.6, 12, 0], [1257, 0, 12], [1273.2, 16, 0], [1293.2, 0, 16], [1308.4, 11, 0], [1309.1, 0, 11],
     ];
-    const got = [...want.slice(0, step(2, 0)), ...sideBySide(want, recorded), ...later(want.slice(-2), 28.2)];
+    const got = [...want.slice(0, step(2, 0)), ...sideBySide(want, recorded), ...later(want.slice(-1), 28.2)];
     assert.equal(stallExplains(want, got, ticks([630.5, 1244.4])), false);
     // Without a stall the third animation started before the next press, which would have ended it.
     assert.equal(stallExplains(want, got, ticks()), false);
@@ -361,10 +370,10 @@ describe('stallExplains', () => {
     const unsent = played.findIndex((c) => c.ms === 1112.8);
     assert.equal(played[unsent - 1].code, 0);
     assert.equal(played[unsent].code, 0);
-    const got = [...want.slice(0, step(2, 0)), ...played.filter((_, i) => i !== unsent), ...want.slice(-2)];
+    const got = [...want.slice(0, step(2, 0)), ...played.filter((_, i) => i !== unsent), ...want.slice(-1)];
     assert.equal(stallExplains(want, got, ticks([600, 1068.3])), false);
     // That off cannot arrive: the pad was already off.
-    assert.equal(stallExplains(want, [...want.slice(0, step(2, 0)), ...played, ...want.slice(-2)], ticks([600, 1068.3])), false);
+    assert.equal(stallExplains(want, [...want.slice(0, step(2, 0)), ...played, ...want.slice(-1)], ticks([600, 1068.3])), false);
   });
 
   test('does not explain a hole inside an animation that kept playing, even after a stall elsewhere', async () => {
@@ -394,7 +403,7 @@ describe('stallExplains', () => {
   test('explains the final redraw overtaking the last steps only when the timers stalled until it', async () => {
     const want = await padTimeline();
     // The 31st step of the last animation was due at 975 ms, the redraw at 1660 ms.
-    const got = [...want.slice(0, step(3, 30)), ...later(want.slice(-2), 0.5), ...later(want.slice(step(3, 30), -2), 686)];
+    const got = [...want.slice(0, step(3, 30)), ...later(want.slice(-1), 0.5), ...later(want.slice(step(3, 30), -1), 686)];
     assert.equal(stallExplains(want, got, ticks([976, 1660])), true);
     assert.equal(stallExplains(want, got, ticks()), false);
   });

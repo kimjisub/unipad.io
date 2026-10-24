@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const GRAMMAR_FILE = new URL('./GRAMMAR.md', import.meta.url);
 
-const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G[1-4] decision) \| .* \|$/;
+const ITEM_ROW = /^\| ([A-Z]{1,2}-\d{2}) \| (.+?) \| (parse|output) \| (doc|apps agree|G[1-9] decision) \| .* \|$/;
 
 /** `{ edition, items: [{ id, rule, kind, basis }] }` in the order GRAMMAR.md lists them. */
 export function readGrammar(text = readFileSync(GRAMMAR_FILE, 'utf8')) {
@@ -43,19 +43,24 @@ const CASE_BLIND = {
  * Per platform, the items its harness cannot observe, with the reason. An item listed here is never
  * confirmed on that platform, unless the result file sets the flag named by `unless` to true.
  */
+const PRODUCT_LIMITS = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`PB-${String(i + 1).padStart(2, '0')}`, { reason: 'shared operation results do not certify app interruption, input ownership, preferences, storage, device output or resource failures; app verification is required' }]));
+
 export const HARNESS_LIMITS = {
   android: {
+    ...PRODUCT_LIMITS,
     'F-01': CASE_BLIND,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
     ...Object.fromEntries(['A-01', 'A-02', 'A-03', 'A-04', 'A-05'].map((id) => [id, { reason: NOT_DECODED }])),
   },
   ios: {
+    ...PRODUCT_LIMITS,
     'F-01': CASE_BLIND,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
   },
   web: {
+    ...PRODUCT_LIMITS,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
     ...Object.fromEntries(['A-01', 'A-02', 'A-03', 'A-04', 'A-05'].map((id) => [id, { reason: NOT_DECODED }])),
@@ -68,11 +73,16 @@ const inAndroidApp = (...names) => names.map((name) => `com.kimjisub.launchpad.$
  * Per platform and item, the app's own tests that must each have run once and passed, in that app's
  * result file, for the item to count where no case checks it or the harness cannot observe it (see
  * report.mjs). The list is reviewed and fixed here; it is never taken from what a result file names or
- * passed. An output item lists only tests that measure what is played. An item the app's tests cannot yet
- * confirm (Android A-01 to A-05) is not listed.
+ * passed. An output item lists only tests that measure what is played.
  */
 export const NATIVE_TESTS = {
   android: {
+    'A-01': inAndroidApp('audio.EmulatorOutput#wavIsHeardAtTheEmulatorOutput'),
+    'A-02': inAndroidApp('audio.EmulatorOutput#mp3IsHeardAtTheEmulatorOutput'),
+    'A-03': inAndroidApp('audio.EmulatorOutput#oggIsHeardAtTheEmulatorOutput'),
+    'A-04': inAndroidApp('audio.EmulatorOutput#m4aIsHeardAtTheEmulatorOutput'),
+    'A-05': inAndroidApp('audio.EmulatorOutput#bareMp3NamedWavIsHeardAtTheEmulatorOutput',
+      'audio.EmulatorOutput#taggedMp3NamedWavIsHeardAtTheEmulatorOutput'),
     'F-01': inAndroidApp('unipack.PackRootNamesDeviceTest#uppercaseRootNamesLoadOnCaseSensitiveStorage',
       'unipack.PackRootNamesDeviceTest#infoWithAnExtensionIsNotInfo',
       'unipack.PackRootNamesDeviceTest#pluralKeySoundsIsNotKeySound'),
