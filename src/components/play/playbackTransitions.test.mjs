@@ -314,6 +314,40 @@ for (const resume of ['button', 'mode']) {
   });
 }
 
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} restores the chain prompt until selection`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(1000); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(500); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+  for (let i = 0; i < 5; i++) {
+    await tick(500); await draw();
+    assert.equal(result.current.state.chainStates[9].guide, true, 'the waiting chain must remain visible until selected');
+  }
+  await flush(() => result.current.setChain(1));
+  await tick(1); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs - now, 799);
+});
+
+for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(pauseMs);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(500);
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1000 - pauseMs - 1);
+  assert.equal(starts.length, 0, 'autoplay must keep the unconsumed delay when step practice scanned no pads');
+  await tick(1);
+  assert.equal(starts.length, 1);
+  assert.equal(result.current.state.chain, 1);
+});
+
 test('switching autoplay to guide skips earlier pads at the same song time', async () => {
   const { result } = await mount({ autoPlay: 'o 1 1\nc 2\no 1 2\nd 300\no 1 1\nf 1 1\nd 10000' });
   await flush(() => result.current.switchPlayMode('autoPlay'));

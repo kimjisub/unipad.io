@@ -251,6 +251,12 @@ for (const resume of ['button', 'mode']) {
     await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
     // Rendering may delay the first resumed sequencer tick; the chain gate still holds time.
     await page.clock.fastForward(1000);
+    await info.attach('chain-prompt-after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const chainGuide = page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10');
+    for (let i = 0; i < 5; i++) {
+      await expect(chainGuide).toHaveCount(1);
+      await page.clock.fastForward(500);
+    }
     await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
     await page.clock.runFor(20);
     await info.attach('pad-after-long-chain-wait', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
@@ -262,6 +268,23 @@ for (const resume of ['button', 'mode']) {
     await expect(guide).toHaveCount(0);
   });
 }
+
+for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async ({ page }, info) => {
+  await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(pauseMs);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(500);
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.fastForward(1);
+  await info.attach('autoplay-before-remaining-delay', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1000 - pauseMs - 2);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await info.attach('autoplay-after-remaining-delay', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+});
 
 test('switching autoplay to guide never asks for an earlier chain at the same song time', async ({ page }, info) => {
   await open(page, 'o 1 1\nc 2\no 1 2\nd 300\no 1 1\nf 1 1\nd 10000');

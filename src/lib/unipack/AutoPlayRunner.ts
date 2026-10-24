@@ -395,12 +395,20 @@ export class AutoPlayRunner {
   /** Both play controls and mode controls use the same step-exit and clock rules. */
   play(practiceGuide = this.practiceGuide): void {
     const changedGuideMode = practiceGuide !== this.practiceGuide;
+    const wasStepMode = this.stepMode;
     this.practiceGuide = practiceGuide;
     const scannedPads = this.leaveStepPractice();
-    if (changedGuideMode || scannedPads) this.resyncToProgress();
+    // A step scan without pads has not advanced song time. In particular, leaving
+    // paused practice for autoplay must preserve the remainder of the current delay.
+    if (scannedPads || (changedGuideMode && !wasStepMode)) this.resyncToProgress();
     if (!this.playmode) this.clockPending ??= 'nextNote';
     this.playmode = true;
     this.beforeStartPlaying = true;
+    // The controls clear rendered guides before resuming. A preserved timed chain
+    // wait bypasses lookahead, so restore its prompt along with the wait state.
+    if (this.practiceGuide && this.waitingForChain >= 0 && this.chainValue() !== this.waitingForChain) {
+      this.listener.onGuideChainOn(this.waitingForChain);
+    }
   }
 
   pause(): void {
