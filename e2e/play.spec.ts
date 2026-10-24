@@ -40,8 +40,9 @@ async function skipWithoutWebMidi(page: Page) {
 }
 
 /**
- * Records a pad's rendered light on every frame, beside the page's pointer and key input, on the page's
- * own clock. Start it before the input: driver round trips can outlast the pack's 1,200 ms light.
+ * Records a pad's rendered light on every frame, on the page's own clock; the attached timeline also holds
+ * the page's pointer and key input. Start it before the input: driver round trips can outlast the pack's
+ * 1,200 ms light.
  */
 async function watchLight(page: Page, position: string) {
   const record = await pad(page, position).evaluateHandle(element => {
@@ -172,6 +173,7 @@ for (const delayedInspection of [false, true]) {
       await expect(pressed(page, '0,0')).toHaveCount(0);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
       await expect(led(page, '0,1')).toHaveCount(0);
+      expect(await light.colors(), 'the release lights nothing again').toEqual([null, 'rgb(239, 83, 80)', null]);
     } finally {
       await light.finish(testInfo);
     }
@@ -335,6 +337,7 @@ for (const delayedInspection of [false, true]) {
       await expect(pressed(page, '0,0')).toHaveCount(0);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
       await expect.poll(() => page.evaluate(() => window.browserProbe.midi.messages)).toContainEqual([0x80, 82, 0]);
+      expect(await light.colors(), 'the note-off lights nothing again').toEqual([null, 'rgb(239, 83, 80)', null]);
     } finally {
       await light.finish(testInfo);
     }
@@ -392,6 +395,7 @@ test('a Launchpad running CoreFW is played and lit in its own layout', async ({ 
     await expect(pressed(page, '0,0')).toHaveCount(0);
     await expect.poll(() => padNoteMessages(page, 64)).toEqual([[0x90, 64, 3], [0x80, 64, 0]]);
     await expect.poll(() => midiMessages(page)).toContainEqual([0x80, 65, 0]);
+    expect(await light.colors(), 'the note-off lights nothing again').toEqual([null, 'rgb(239, 83, 80)', null]);
   } finally {
     await light.finish(testInfo);
   }
