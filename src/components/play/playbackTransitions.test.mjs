@@ -528,20 +528,24 @@ for (const direct of [false, true]) test(`opening another pack resets session op
   assert.equal(starts.length, count + 1, 'the old held keyboard key must not suppress the new press');
 });
 
-for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sound and lights until the final release (${releaseFirst})`, async () => {
+for (const second of ['screen', 'keyboard', 'midi']) for (const releaseFirst of ['first', 'second']) test(`each player input releases its own sound and lights (${second}, ${releaseFirst} first)`, async () => {
   const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000' });
   await flush(() => result.current.setFeedbackLight(true));
   await flush(() => result.current.padTouchOn(0, 0, 'first'));
   await tick(4);
-  await flush(() => result.current.padTouchOn(0, 0, 'second'));
+  const secondInput = down => second === 'screen'
+    ? result.current[down ? 'padTouchOn' : 'padTouchOff'](0, 0, 'second')
+    : second === 'midi' ? midiListener.onPadTouch(0, 0, down)
+    : window.dispatchEvent(new window.KeyboardEvent(down ? 'keydown' : 'keyup', { key: '1', code: 'Digit1' }));
+  await flush(() => secondInput(true));
   await tick(4); await draw();
-  await flush(() => result.current.padTouchOff(0, 0, releaseFirst));
+  await flush(() => releaseFirst === 'first' ? result.current.padTouchOff(0, 0, 'first') : secondInput(false));
   await tick(4); await draw();
-  assert.equal(sources.at(-1).stopped, false);
+  assert.equal(sources.at(-1).stopped, releaseFirst === 'second');
   assert.equal(result.current.state.padStates[0][0].pressedIsWinning, true);
-  assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+  assert.equal(result.current.state.padStates[1][1].color === 'transparent', releaseFirst === 'second');
   assert.equal(result.current.state.padStates[0][0].pressed, true);
-  await flush(() => result.current.padTouchOff(0, 0, releaseFirst === 'first' ? 'second' : 'first'));
+  await flush(() => releaseFirst === 'first' ? secondInput(false) : result.current.padTouchOff(0, 0, 'first'));
   await tick(4); await draw();
   assert.equal(sources.at(-1).stopped, true);
   assert.equal(result.current.state.padStates[1][1].color, 'transparent');
