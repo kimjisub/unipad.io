@@ -1026,3 +1026,15 @@ test('local copy verification uses current bytes unless an explicit commit selec
     assert.equal(cli('--check', '--android-commit', 'c'.repeat(40)).status, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('later input release stops its replacement sound and light before the remaining input releases', () => {
+  for (const id of ['RUN-G617', 'RUN-G618']) {
+    const c = buildCorpus().cases.find(c => c.id === id);
+    assert.deepEqual(c.expected.checkpoints, [
+      [['sound', 0, 0, 0, 'a.wav', -1], ['ledOn', 0, 0, 'ffff0000', 4]],
+      [['soundStop', 0, 0, 0, 'a.wav'], ['sound', 0, 0, 0, 'a.wav', -1], ['ledOff', 0, 0], ['ledOn', 0, 0, 'ffff0000', 4]],
+      [['soundStop', 0, 0, 0, 'a.wav'], ['ledOff', 0, 0]],
+      [],
+    ], id);
+  }
+});
