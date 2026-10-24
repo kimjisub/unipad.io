@@ -2,6 +2,7 @@ import { Link } from '@/i18n/navigation';
 import { setRequestLocale } from 'next-intl/server';
 
 const pages = [
+  { href: '/docs/unipack/playback', title: 'Playback', emoji: '🎵', description: '공통 연주·중단·설정·자동 맞춤 동작 기준' },
   { href: '/docs/unipack/info', title: 'info', emoji: '📄', description: 'UniPack의 메타데이터를 정의하는 필수 파일' },
   { href: '/docs/unipack/sounds', title: 'sounds/', emoji: '📁', description: '사운드 파일을 저장하는 폴더' },
   { href: '/docs/unipack/key-sound', title: 'keySound', emoji: '📄', description: '버튼과 사운드 파일의 매핑을 정의하는 필수 파일' },

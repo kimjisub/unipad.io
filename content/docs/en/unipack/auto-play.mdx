@@ -48,3 +48,7 @@ off 1 1
 
 The shared format applies a parsed wormhole immediately, without also scheduling the manual sound's 100 ms chain switch. Stopping auto-play cancels its pending changes. Before each scripted press or release, auto-play restores the chain calculated from its file; a player's chain selection or an LED `chain` event lasts only until that next event.
 Manual and auto-play releases end only what their own press currently owns. App updates are aligning these overlapping-input and wormhole rules.
+
+## Completion and editing
+
+The final delay is part of auto-play, including a pause during that wait. Completion releases only auto-play-owned inputs. See [Playback behavior](playback) for interruptions, explicit resume and auto-map with backup and restore.

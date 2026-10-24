@@ -12,7 +12,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 
 | File | Role |
 |---|---|
-| `GRAMMAR.md` | The UniPack grammar, edition G6: 105 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
+| `GRAMMAR.md` | The UniPack grammar, edition G6: 114 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
 | `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
 | `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
 | `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
@@ -84,7 +84,7 @@ so an old file or a record-only one is visible.
 
 **Grammar items.** Every case names the items of [GRAMMAR.md](GRAMMAR.md) it checks (`items`);
 `build-corpus.mjs` refuses a case without them or with a number the grammar does not list. `report.mjs`
-then reports each of the 105 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
+then reports each of the 114 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
 on a platform when
 
 - at least one case checks it;
@@ -98,8 +98,8 @@ on a platform when
   that opens only the exact name passes F-01 too, so Android and iOS confirm F-01 only when their result
   file says `"caseSensitiveFileSystem": true`.
 
-The four numbers it prints: confirmed items per platform of 105, items confirmed on all three platforms
-of 105, and items any case checks of 105 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
+The four numbers it prints: confirmed items per platform of 114, items confirmed on all three platforms
+of 114, and items any case checks of 114 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
 `grammar.withCases`). Five items have no case, because these cases cannot reach them: importing an
 archive (F-05, F-06) and decoding OGG, M4A and a sound whose name does not match its content (A-03 to
 A-05) are for each platform's own tests.
@@ -401,7 +401,7 @@ result; an undetermined case never counts as a pass; a case marked `unobserved` 
 unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
 without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
 iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
-`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 105 items,
+`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 114 items,
 `build-corpus.mjs` refuses a case without items or with an unknown or repeated one, and an item is
 confirmed only as described in [What `report.mjs` counts](#running-it).
 
@@ -499,3 +499,51 @@ and release verification. It rejects every copy behind canonical. After an app a
 its reviewed commit is public, replace its historical object with that commit hash alone; verify both
 apps with the strict check before claiming synchronization. Copying with `sync.mjs` still writes the
 current corpus and hash; historical pins never change what gets copied.
+
+
+## Adopted product operations
+
+`product-cases.mjs` extends the same canonical corpus with 113 cases: 21 exact integer costs,
+76 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
+outputs and two trailing-wait observations. The resulting corpus has 382 cases. The nine PB items in
+GRAMMAR.md state the adopted behavior. Their app-level confirmation remains limited: common operation
+results never certify interruption, screen input ownership, stored settings, atomic backup/restore,
+real decoding, device output or resource failures. Missing app evidence remains unverified.
+
+The audio inputs and expected values are the unchanged third shared admission revision from Android
+commit `cab0f17c373e6830c750c6f289d059c40907f4eb`, manifest SHA-256
+`b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`.
+The web fixture folder records its immutable source. The builder checks the manifest and every binary
+hash, includes the exact physical bytes in each SAFE-F case, and retains only inputs in operation.json.
+SAFE-C uses integer rate/channels/frame inputs; SAFE-W describes the same physical zero-PCM recipe,
+generated one at a time; SAFE-S describes references, bounds and facts. No expected cost, exclusion or
+selected set is passed to an operation. These are explicit operations, not parseable UniPack folders.
+
+A case's `observation` selects the operation: audio-cost, audio-file, audio-wave, audio-selection or
+auto-map. For audio-file the first input file is inspected by content; the original filename is retained
+for provenance. Frame counts, costs and reservations are decimal strings in normalized actual results.
+An inspector result certifies structural facts only, not audible or trimmed duration. The admission
+module is not yet the app loading path. Native adapters must invoke their own corresponding operation
+and report observed values, never read expectations as observations or relabel older corpus files.
+Until supported, these cases remain unverified or explicitly fail; do not feed operation.json into a
+pack parser and call the result a successful operation.
+
+Mapper cases use a real parsed pack plus operation.json with explicit per-sound duration inputs in ms
+(or null for unreadable length). This is transformation, not a decoder test. Report `{events: [...]}`:
+`[on,time,chain,x,y,num]`, `[off,time,chain,x,y]`, `[chain,time,chain]`, and
+`[trailingDelay,time]` when the mapper retains a wait after its last command. Coordinates are zero-based,
+times are milliseconds. Observe actual mapped commands; do not invent missing releases or drop extra
+waits. Touch is equivalent to same-time on/off. Preserve parser queue indices, including values past
+the queue length; choosing the sound still uses the queue's usual cycling behavior.
+
+The runner's watchAutoEnd action records `[autoEnd]` only when its real onEnd callback fires.
+autoplayState records `[autoActive,boolean]`. suspendAuto/resumeAuto invoke the real runner's suspension
+API. These observations do not synthesize screen cleanup or validate manual resume UI. Completion must
+also release auto-play ownership in app-level tests.
+
+The first web observation of these 113 cases was 106 passes and seven failures (all five mapper cases
+and both trailing waits). The failures are pinned with status fail. An assertion process that verifies
+those pins does not make them compatibility passes. The first expected mapper queue indices for two
+repeated presses were corrected from 0 to 1 to preserve the original parser indices; the first raw
+record is retained separately. Native behavior must be observed before corrections and already-equal
+behavior recorded as equal, without manufacturing a failure.

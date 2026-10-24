@@ -43,19 +43,24 @@ const CASE_BLIND = {
  * Per platform, the items its harness cannot observe, with the reason. An item listed here is never
  * confirmed on that platform, unless the result file sets the flag named by `unless` to true.
  */
+const PRODUCT_LIMITS = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`PB-${String(i + 1).padStart(2, '0')}`, { reason: 'shared operation results do not certify app interruption, input ownership, preferences, storage, device output or resource failures; app verification is required' }]));
+
 export const HARNESS_LIMITS = {
   android: {
+    ...PRODUCT_LIMITS,
     'F-01': CASE_BLIND,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
     ...Object.fromEntries(['A-01', 'A-02', 'A-03', 'A-04', 'A-05'].map((id) => [id, { reason: NOT_DECODED }])),
   },
   ios: {
+    ...PRODUCT_LIMITS,
     'F-01': CASE_BLIND,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
   },
   web: {
+    ...PRODUCT_LIMITS,
     'F-05': { reason: NO_ARCHIVE },
     'F-06': { reason: NO_ARCHIVE },
     ...Object.fromEntries(['A-01', 'A-02', 'A-03', 'A-04', 'A-05'].map((id) => [id, { reason: NOT_DECODED }])),

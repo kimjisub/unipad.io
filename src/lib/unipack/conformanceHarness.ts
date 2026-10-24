@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import JSZip from 'jszip';
 import { AutoPlayListener, AutoPlayRunner } from './AutoPlayRunner';
 import { changeChain, ledPushToNum } from './chainChange';
+import { admissionObservation, mappingObservation, type Operation } from './conformanceOperations';
 import { fingerprintOf } from './fingerprint.mjs';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
@@ -44,6 +45,8 @@ export interface CorpusCase {
   screenInputs?: boolean;
   /** Observe archive provenance and selected bytes, independently of native storage spelling. */
   soundIdentity?: boolean;
+  productBehavior?: boolean;
+  observation?: Operation | 'runner';
   known?: Record<string, Known>;
   /** Per platform, why its harness cannot observe this case; it is unverified there and not run. */
   unobserved?: Record<string, string>;
@@ -251,12 +254,18 @@ export interface Observation { actual: Json; capture: WarningCapture | null }
 export async function observe(c: CorpusCase, corpus: Corpus, deps: Deps = REAL): Promise<Observation> {
   if (c.screenInputs) throw new Error(`${c.id}: requires the play-screen adapter; the lower-level runner cannot observe screen inputs`);
   if (c.layer === 'palette') return { actual: { argb: (await import('./colors')).LAUNCHPAD_ARGB.map(hex8) }, capture: null };
+  if (c.observation?.startsWith('audio-')) return { actual: await admissionObservation(c.observation as Operation, fileBytes(c.files[0], corpus)), capture: null };
   const parsed = await parseOrRefuse(await zipOf(c, corpus), deps);
   if ('refused' in parsed) return { actual: { loaded: false }, capture: { warnings: null, pack: null, refused: parsed.refused } };
   const { pack } = parsed;
   const capture: WarningCapture = {
     warnings: [...pack.errors], pack: { buttonX: pack.info.buttonX, buttonY: pack.info.buttonY, chain: pack.info.chain }, refused: null,
   };
+  if (c.observation === 'auto-map') {
+    const input = c.files.find(f => f.path === 'operation.json');
+    if (!input) throw new Error('mapper observation has no operation input');
+    return { actual: await mappingObservation(pack, fileBytes(input, corpus)), capture };
+  }
   const actual = c.layer === 'parse' ? (c.soundIdentity ? soundIdentityResult(pack) : parseResult(pack)) : { checkpoints: await runScenario(c, pack, deps) };
   return { actual, capture };
 }
@@ -409,6 +418,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     let chain = 0;
     let events: Json[] = [];
     let watchStops = false;
+    let watchAutoEnd = false;
     const chainValue = () => chain;
     // Every chain change goes through what the play screen does with it; `tag` names the event it records.
     let sound: SoundEngine | null = null;
@@ -468,6 +478,18 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
         case 'chain':
           switchChain(step.c!, null);
           break;
+        case 'watchAutoEnd':
+          watchAutoEnd = true;
+          break;
+        case 'autoplayState':
+          events.push(['autoActive', autoPlay?.active ?? false]);
+          break;
+        case 'suspendAuto':
+          autoPlay?.setSuspended(true);
+          break;
+        case 'resumeAuto':
+          autoPlay?.setSuspended(false);
+          break;
         case 'watchStops':
           watchStops = true;
           break;
@@ -482,7 +504,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           // toPads: the presses also reach the pads, as useUniPadEngine forwards them to padTouchOn/Off.
           const toPads = step.toPads === true;
           const listener: AutoPlayListener = {
-            onStart() {}, onEnd() {}, onProgressUpdate() {},
+            onStart() {}, onEnd() { if (watchAutoEnd) events.push(['autoEnd']); }, onProgressUpdate() {},
             onPadTouchOn: (x, y, pressedAt) => {
               events.push(['autoOn', x, y]);
               if (toPads) {

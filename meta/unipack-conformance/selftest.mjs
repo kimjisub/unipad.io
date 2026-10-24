@@ -222,12 +222,12 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
 });
 
-test('GRAMMAR.md lists 105 items of edition G6, each of kind parse or output, and the corpus names its edition', () => {
+test('GRAMMAR.md lists 114 items of edition G6, each of kind parse or output, and the corpus names its edition', () => {
   const grammar = readGrammar();
   assert.equal(grammar.edition, 'G6');
   assert.equal(corpus.grammar, 'G6');
-  assert.equal(grammar.items.length, 105);
-  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 105);
+  assert.equal(grammar.items.length, 114);
+  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 114);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
   for (const limits of [...Object.values(HARNESS_LIMITS), ...Object.values(NATIVE_TESTS)]) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
   assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
@@ -305,13 +305,13 @@ describe('an item is confirmed on a platform', () => {
     const results = allPass();
     const { grammar } = buildReport(canonical, results);
     const rows = grammar.rows;
-    assert.equal(grammar.items, 105);
+    assert.equal(grammar.items, 114);
     for (const p of PLATFORMS) assert.equal(grammar.confirmed[p], rows.filter((r) => r[p].confirmed).length, p);
     assert.equal(grammar.confirmedOnAllThree, rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length);
     assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
     assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
     const text = renderText(buildReport(canonical, results));
-    assert.match(text, new RegExp(`^grammar G6: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 105 items; on all three platforms ${grammar.confirmedOnAllThree} of 105; ${grammar.withCases} of 105 have a case$`, 'm'));
+    assert.match(text, new RegExp(`^grammar G6: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 114 items; on all three platforms ${grammar.confirmedOnAllThree} of 114; ${grammar.withCases} of 114 have a case$`, 'm'));
     assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
   });
 });
@@ -771,11 +771,11 @@ describe('app test results', () => {
     assert.match(renderText(withNative), new RegExp(`app test results ${all().ios.sha256.slice(0, 12)}, run on commit ${COMMIT}`));
   });
 
-  test('9. an item confirmed on all three counts once, of the same 105', () => {
+  test('9. an item confirmed on all three counts once, of the same 114', () => {
     const before = buildReport(canonical, passing()).grammar;
     const after = buildReport(canonical, passing(), all()).grammar;
-    assert.equal(after.items, 105);
-    assert.equal(after.rows.length, 105);
+    assert.equal(after.items, 114);
+    assert.equal(after.rows.length, 114);
     const onAll = (g) => g.rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).map((r) => r.id);
     assert.equal(after.confirmedOnAllThree, onAll(after).length);
     assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06', 'A-01', 'A-02', 'A-03', 'A-04', 'A-05']);
@@ -960,5 +960,43 @@ test('historical pins require exact keys, lowercase hashes and immutable commits
   assert.deepEqual(resolveCommits(text), { android: a, ios: b });
   for (const pin of [{ commit: a }, { corpusSha256: hash }, { commit: 'main', corpusSha256: hash }, { commit: a, corpusSha256: 'short' }, { commit: a, corpusSha256: hash.toUpperCase() }, { commit: a, corpusSha256: hash, extra: true }, null, []]) {
     assert.throws(() => resolvePins(JSON.stringify({ android: pin, ios: b })));
+  }
+});
+
+
+test('adopted product cases share the pinned audio inputs and reject fabricated observations', () => {
+  const audio = JSON.parse(readFileSync(new URL('../../src/lib/unipack/__fixtures__/audio-safety/cases.json', import.meta.url), 'utf8'));
+  const added = corpus.cases.filter(c => c.productBehavior);
+  assert.equal(added.filter(c => c.observation === 'audio-cost').length, audio.costs.length);
+  assert.equal(added.filter(c => c.observation === 'audio-file').length, audio.files.length);
+  assert.equal(added.filter(c => c.observation === 'audio-wave').length, audio.wavRecipes.length);
+  assert.equal(added.filter(c => c.observation === 'audio-selection').length, audio.selections.length);
+  assert.ok(added.some(c => c.observation === 'auto-map'));
+  assert.ok(added.some(c => c.id === 'RUN-P001'));
+  for (const c of added) for (const platform of PLATFORMS) {
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    const result = cases => ({ platform, corpusSha256: canonical.sha256, cases });
+    assert.equal(judge(only, platform, result([])).get(c.id).status, 'unverified', c.id);
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'pass' }])).get(c.id).status, 'unverified', c.id);
+    const actual = { injectedWrongResult: true };
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'pass', actual }])).get(c.id).status, 'unverified', c.id);
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'fail', actual }])).get(c.id).status, 'fail', c.id);
+  }
+});
+
+
+test('pure product operations cannot certify complete app behavior or consume expected inputs', () => {
+  for (const c of corpus.cases.filter(c => c.productBehavior)) {
+    const input = c.files.find(f => f.path === 'operation.json');
+    if (input) {
+      const data = JSON.parse(input.text);
+      for (const key of ['expected', 'expectedCost', 'exclusion', 'selected', 'reservedCost', 'events']) assert.equal(key in data, false, `${c.id}/${key}`);
+    }
+  }
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map(p => [p, fullResults(p)])));
+  for (let i = 1; i <= 9; i++) for (const platform of PLATFORMS) {
+    const item = report.grammar.rows.find(row => row.id === `PB-${String(i).padStart(2, '0')}`);
+    assert.ok(item);
+    assert.equal(item[platform].confirmed, false, `${item.id}/${platform}`);
   }
 });

@@ -15,6 +15,9 @@ remain distinct candidates: an exact original spelling wins, otherwise the first
 in UTF-16 order wins. Import must not silently overwrite the selected contents. KS-G601..604 adopt
 this identity observation and KS-G620..625 cover collisions. Earlier unverified observations stay
 archived under their original corpus hash. T-09 still requires exact decremented stored numbers.
+G6 product revision, 2026-10-24: PB-01..PB-09 record the adopted interruption, touch, chain-press,
+trailing-wait, starting-option, LED-discard, structural-admission, auto-map and trace rules. Shared
+inputs specify operation results once; incomplete app or device observations remain unverified.
 The public docs distinguish the target grammar from support still pending in an app.
 
 G6 revision, 2026-10-23: a later manual chain selection cancels a press's pending wormhole
@@ -259,18 +262,36 @@ These screen and hardware conventions need app or device tests; a parser result 
 | RA-03 | Leaving the play screen stops autoPlay, and no press follows. | output | apps agree | the basis of cases.mjs RUN-A-002 |
 | RA-04 | AutoPlay's parsed chain and wormholes switch at their scripted time. Do not also schedule the sound's 100 ms manual wormhole, and cancel pending autoPlay changes when stopped. Before each scripted press or release restore the parsed chain; an LED or user chain change lasts only until that event. Queue numbers come from parsing. | output | G6 decision | auto-play.mdx; chain and sound event ordering must be observed at each checkpoint. |
 
+### PB. Product behavior (9)
+
+These adopted playback rules extend the pack grammar. Cases of pure conversion or structural admission
+certify only that operation. Settings, touch ownership, interruption, storage, device output and memory
+still require the app's own tests; a parser or recorder cannot certify them.
+
+| Item | Rule | Kind | Basis | Where |
+|---|---|---|---|---|
+| PB-01 | Hiding or covering the play screen, changing devices, losing audio output or an interruption suspends song time and the remaining wait, releases every input, sound and animation, and waits for an explicit play request. Resume starts at the next unprocessed command, without recreating earlier presses. A later permission notification alone never starts playback. Preserve play, guide and step choices; closing the pack or restarting the app removes any resume reservation. An in-screen menu alone does not interrupt playback. | output | G6 decision | App interruption, visibility, focus and device tests; automatic reconnection is separate from song resume. |
+| PB-02 | Sliding between pads is a saved option, initially off. Off keeps a finger on its original pad until release; on releases the previous pad when entering another pad or leaving the grid. Fingers are independent. Cancellation, rotation, covering the screen or changing the option releases current inputs and does not resurrect a finger still down. | output | G6 decision | App touch, cancellation, layout and preference tests; RS-05 still governs input ownership. |
+| PB-03 | A direct screen chain press changes the chain once at press time. A pad pressed before the chain finger releases uses the new chain. Release or cancellation does not revert it; dragging across chain buttons does not repeatedly select chains. | output | G6 decision | Screen, keyboard and controller tests; RS-02, RS-09 and RS-10. |
+| PB-04 | AutoPlay waits through its last delay before ending and releases only its own held pads on completion. Pausing the last wait preserves its remainder. Manual stop or pack closure cleans up immediately. Finite sounds and animations retain their existing end rules, with no new tail delay. | output | G6 decision | RA-01; runner completion plus screen input-ownership tests. |
+| PB-05 | On pack entry and autoPlay completion, press feedback is off for a pack with LEDs and on otherwise. An explicit in-play selection lasts for that interval. Watermark remembers the last explicit choice across restarts, initially on. Opening a pack never raises the user's volume; mobile system volume is not replaced with web storage. Web waits for saved volume before allowing playback and retains its existing level 7 of 7 when absent. Equal numbers do not guarantee equal sound pressure. | output | G6 decision | App entry, completion, preference and restart tests. |
+| PB-06 | Disabling pack LEDs discards active, queued, finite, endless and not-yet-delivered lights on screen and hardware. No new animation is queued while off; enabling starts only new inputs. Audio and autoPlay continue. Press feedback and watermark remain separate options. | output | G6 decision | App LED-toggle and controller-output tests; RL-08. |
+| PB-07 | Admit audio using exact structural facts: 8000..384000 Hz, 1..8 channels, at most 600 seconds. Converted frames are n when r is at least 48000, otherwise ceil(n*48000/r); cost is converted frames times max(c,2). Accept cost up to 67108864 per sound and 134217728 per pack, inclusive. Check arithmetic before overflow. Traverse chain, x, y, then keySound line order, skip out-of-grid references, and decide each resolved file once. Read failure or an individual/remaining-budget exclusion consumes no cost, so later smaller files are considered. Finish admission before decoding; decoder or memory failure never returns reserved cost or changes the selected set. Inspect physical data rather than trusting a declared duration. Unsupported inspection of an existing playback format is not silent exclusion. Report rule exclusions, decode failures and device memory failures separately. | parse | G6 decision | Shared structural audio inputs, revision 3; real decoding, trimmed duration, peak memory, device output and failure UI remain separate app checks. |
+| PB-08 | Explicit auto-map starts with 1000 ms before the first press, replaces a consecutive wait group before a press with the preceding last pressed sound's length, preserves simultaneous presses, chain order and queue indices, and discards waits after the last press. Missing sound length preserves the original wait; never replace it with zero. Nonnegative milliseconds round to nearest integer, with halves upward. Emit touch pairs or equivalent same-time on/off, leaving no endless hold. Save new data and the previous version atomically before success, preserve both on failure, and allow swapping them back after restart. Do not overwrite a user's source archive implicitly. | output | G6 decision | Shared conversion inputs and observed mapper output; atomic storage, backup, restore, space failure and UI require app tests. |
+| PB-09 | Trace starts empty and recording off on each play-screen entry. Numeric display is the default, with existing saved numeric/line/dot choices preserved. Turning recording off stops only new recording and retains existing marks; enabling continues. Chain order and repeat counts survive style changes, Pro light and relayout. Clear and pack closure empty all chains; clear preserves the recording option. Keep long-press clear and a separate clear-all menu entry. | output | G6 decision | App trace, menu, layout, preference and lifecycle tests. |
+
 ### C. Palette (1)
 
 | Item | Rule | Kind | Basis | Where |
 |---|---|---|---|---|
 | C-01 | The 128 colours an `auto` velocity 0..127 stands for. | output | apps agree | palette.json (Android `LaunchpadColor.ARGB`). Comparing them with a Launchpad's real colours is for the device checks. |
 
-### Not counted (out of scope)
+### Other checks outside the common harness
 
 | What | Why |
 |---|---|
 | Practice, guide and step modes | App features, not pack grammar (they use the autoPlay file as it is). What the screen does is a product question. |
-| The lights left on when autoPlay is stopped on the play screen | The result of using the app, not something written in the pack. |
+| Lights and owned inputs when stopping or interrupting playback | PB-01/PB-04/PB-06 are product rules; the real app paths still require app tests. |
 | How many sounds play at once (the docs say 30, Android and iOS 64, the web has no limit) | Engine performance, for the device checks. The docs should say "at least 30". |
 | Android hiding round and logo lights while its Pro light mode is off | An app setting. The checks measure with it on. |
 | What reaches a real Launchpad, real sound latency and mixing | Outside these checks (the device checks). |

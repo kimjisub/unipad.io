@@ -35,3 +35,42 @@ sounds/
 - For compatibility, use only **alphanumeric characters, hyphens, and underscores** in file names.
 - At least **30 sounds** can play at the same time.
 </Callout>
+
+## Shared audio admission
+
+App updates are aligning these exact structural rules. They are not a guarantee of playback on every
+current version or of available device memory.
+
+Let `r` be sample rate, `c` channels, and `n` physical frames per channel. Require `8000 ≤ r ≤ 384000`,
+`1 ≤ c ≤ 8`, and `n ≤ 600 × r`. Converted frames are `n` for rates at least 48000, otherwise
+`ceil(n × 48000 / r)`. Cost is converted frames times `max(c, 2)`. Accept at most **67,108,864** per
+sound and **134,217,728** per pack, inclusive. Use exact integers and check before overflow. Do not
+substitute an approximate number of minutes for this calculation.
+
+Visit references by chain, x, y, then keySound line order, excluding out-of-grid references. Decide each
+resolved file once, at its first reference. A read failure, individual exclusion or remaining-budget
+exclusion consumes no cost; keep checking later, smaller files. Finish selection before decoding.
+A subsequent decoder or memory failure does not release its reservation for another file, and decoder
+completion order cannot change the selection. The same file's later references keep its first decision.
+
+For example, three 48 kHz stereo 10-minute sounds followed by a 44.1 kHz stereo 5-second sound select
+the first, second and fourth. The first two leave cost 19,017,728. A 48 kHz stereo sound of 9,508,864
+frames fits exactly; one more frame does not. The corresponding 44.1 kHz boundary is 8,736,268 frames.
+
+Read actual sound data before decoding, rather than trusting a header's duration. WAV data extents,
+MP3 frames, M4A packet data and tables, and Ogg pages must agree with the reserved amount. A misleading
+extension does not change the inspection. Do not truncate a valid sound to force it under a limit or
+silently reject an existing supported format because its inspection is missing. Codec padding,
+edit-list trimming and native decoder output still need playback verification.
+
+Rule exclusions, unreadable files, decoder failures after selection, and insufficient device memory
+are reported separately, with file names and reasons under details. Partial failures allow the
+remaining sounds, with one notice listing each count. If every referenced sound fails, stay out of
+the play screen and offer retry and return to packs. A pack with no sound references is not that
+failure: light-only packs remain valid. Retry reopens the pack without changing its source files.
+Decoder or memory failure is not successful compatibility.
+
+This budget measures retained sound values, not peak process memory, temporary copies or concurrent
+decoding. Existing allocation guards remain. iOS retains audio at 48 kHz stereo independently of output
+device and adapts at playback. Device memory, external outputs, browser differences and actual failures
+need separate tests; preventing every browser tab termination is not promised.
