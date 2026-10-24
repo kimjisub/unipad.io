@@ -32,6 +32,36 @@ until reviewed public copy commits exist. The explicit historical check warns fo
 the strict check; this is a byte comparison, not a native test run or a public copy-commit handoff.
 The older reports below retain their original counts and timestamps.
 
+## Web playback observations retired with G6 (2026-10-24)
+
+[unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173), merged as
+`cf7409543b5e24d936ba73c80e92121d0c80da34`, fixes twelve observed playback differences:
+RUN-G601, RUN-G602, RUN-G603, RUN-G604, RUN-G605, RUN-G607, RUN-G608, RUN-G609,
+RUN-G610, RUN-G616, RUN-G617 and RUN-G618. The G6 corpus merge
+([unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165),
+`d60027651f347043b7a7766a0686d3109f3d9f3c`) already retired their web failure pins.
+No further pin removal or corpus regeneration is needed for these twelve cases.
+
+An asserting `pnpm test:unipack` rerun on that merged main passed all 969 tests and recorded
+382 cases: 359 pass and 23 fail. Each of the twelve actual results equals its unchanged expected
+result and retains its input fingerprint. The 23 remaining pinned web failures are still failures
+in compatibility results, even though their assertions pass. RUN-G606 also passes under the revised
+manual-chain-selection rule documented in the README; it is separate from these twelve fixes.
+
+The canonical corpus remains grammar G6, 382 cases, SHA256
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`.
+`build-corpus.mjs --check` and the tooling self-tests pass. No case input, expected result, basis,
+other platform record or generated corpus byte was changed by this documentation update.
+
+`copies.json` retains the explicit historical snapshots introduced with G6: Android
+`ea259f65bd28ea9c5efb631b151ce651c9ff214e` and iOS
+`9aac4c159a67ce1774a588745f6ffbb4afad2f4a`, both with corpus SHA256
+`47b3a60d056ab0e6e4695eb2d5d123689ce2161a90d4aa7d8ad9d7ac20de6ba5`.
+`sync.mjs --check` with those exact commit arguments verifies their declared bytes and warns that
+both copies are behind canonical. This checks historical copy integrity only; neither app was rerun,
+and neither is current G6 compatibility evidence. A final cross-platform check must use current
+copies and `--require-current`. The aggregate reports below remain historical.
+
 ## Changes after normalized LED filename ordering and wormhole warning cases (2026-10-22)
 
 The canonical corpus advances from SHA256
