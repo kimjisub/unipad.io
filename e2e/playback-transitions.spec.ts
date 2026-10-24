@@ -4,7 +4,11 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 
-declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
+declare global { interface Window {
+  transitionAudio: AudioContext;
+  transitionNativeAudioTime?: () => number;
+  wakeProbe: { requests: { released: boolean; resolved: boolean }[]; reply: (index: number) => void };
+} }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string } = {}) {
@@ -516,6 +520,46 @@ test('returning manual play requests screen wake protection again', async ({ pag
   expect(await count()).toBe(2);
   await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
 });
+
+for (const interruption of ['hidden', 'focus']) for (const playFirst of [true, false]) {
+  test(`screen wake protection survives ${interruption} when ${playFirst ? 'Play' : 'the lock reply'} arrives first`, async ({ page }, info) => {
+    await page.addInitScript(() => {
+      const replies: (() => void)[] = [];
+      window.wakeProbe = { requests: [], reply: index => replies[index]() };
+      Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: () => {
+        const state = { released: false, resolved: false };
+        const index = window.wakeProbe.requests.push(state) - 1;
+        const lock = { async release() { state.released = true; }, addEventListener() {} };
+        return new Promise(resolve => {
+          replies[index] = () => { state.resolved = true; resolve(lock); };
+          if (index === 0) replies[index]();
+        });
+      } } });
+    });
+    await open(page, 'd 10000\ntouch 1 1');
+    await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+    if (interruption === 'hidden') {
+      await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false);
+    } else {
+      await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+      await page.clock.fastForward(1000);
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    }
+    const requests = () => page.evaluate(() => window.wakeProbe.requests);
+    await expect.poll(async () => (await requests()).length).toBe(2);
+    expect((await requests())[0].released).toBe(true);
+    if (!playFirst) await page.evaluate(() => window.wakeProbe.reply(1));
+    await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
+    if (playFirst) await page.evaluate(() => window.wakeProbe.reply(1));
+    await page.clock.runFor(20);
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.poll(async () => (await requests()).filter(lock => lock.resolved && !lock.released).length).toBe(1);
+    await page.evaluate(() => document.dispatchEvent(new Event('pointerdown')));
+    expect((await requests()).length).toBe(2);
+    await info.attach('screen-wake-response-order', { body: JSON.stringify({ interruption, playFirst, requests: await requests(), physicalLockMeasured: false }), contentType: 'application/json' });
+    await snapshot(page, info, 'playing-with-screen-protection');
+  });
+}
 
 for (const interruption of ['focus', 'dialog']) test(`current device chain light returns after ${interruption}`, async ({ page }, info) => {
   await open(page, 'd 10000\ntouch 1 1');

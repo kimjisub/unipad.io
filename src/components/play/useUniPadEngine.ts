@@ -232,12 +232,13 @@ export function useUniPadEngine() {
   const requestScreenWakeLock = useCallback(() => {
     const pack = unipackRef.current;
     if (!pack || document.hidden || keyboardBlockedRef.current || wakeLockRef.current || wakeLockRequestRef.current) return;
-    const revision = interruptionRevisionRef.current;
     const pending = navigator.wakeLock?.request('screen');
     if (!pending) return;
+    // Audio authorization can change while this request is pending without invalidating the screen lock.
+    // Only a replaced request, pack lifecycle or current screen coverage makes its reply obsolete.
     wakeLockRequestRef.current = pending;
     void pending.then(lock => {
-      if (pack !== unipackRef.current || revision !== interruptionRevisionRef.current || document.hidden || keyboardBlockedRef.current) {
+      if (wakeLockRequestRef.current !== pending || pack !== unipackRef.current || document.hidden || keyboardBlockedRef.current) {
         void lock.release().catch(() => {});
         return;
       }
@@ -938,6 +939,7 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current?.stop();
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
+    wakeLockRequestRef.current = null;
     soundEngineRef.current = null;
     ledRunnerRef.current = null;
     autoPlayRunnerRef.current = null;
@@ -1651,6 +1653,8 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current?.stop();
       midiRef.current?.release();
       wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      wakeLockRequestRef.current = null;
       visualFlushRef.current = null;
     };
   }, []);

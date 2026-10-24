@@ -843,3 +843,105 @@ test('manual guide resume after a chain-only step scan preserves every remaining
   await tick(1); await draw();
   assert.equal(result.current.state.padStates[0][1].guide, false);
 });
+
+function deferScreenWakeLocks() {
+  const requests = [];
+  Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: () => {
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    const lock = { released: false, async release() { this.released = true; }, addEventListener() {} };
+    requests.push({ lock, resolve: () => resolve(lock) });
+    return promise;
+  } } });
+  return requests;
+}
+
+for (const interruption of ['hidden', 'blur']) for (const playFirst of [true, false]) {
+  test(`screen wake protection survives ${interruption} return when ${playFirst ? 'Play' : 'the lock reply'} arrives first`, async () => {
+    const requests = deferScreenWakeLocks();
+    const { result } = await mount();
+    await flush(() => requests[0].resolve());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    if (interruption === 'hidden') await visibility(true);
+    else await flush(() => window.dispatchEvent(new window.Event('blur')));
+    assert.equal(requests[0].lock.released, true);
+    if (interruption === 'hidden') await visibility(false);
+    else await flush(() => window.dispatchEvent(new window.Event('focus')));
+    assert.equal(requests.length, 2, 'return starts one pending request');
+    if (!playFirst) await flush(() => requests[1].resolve());
+    await flush(() => result.current.autoPlayPlayPause());
+    if (playFirst) await flush(() => requests[1].resolve());
+    assert.equal(result.current.state.autoPlayPlaying, true);
+    assert.equal(requests.filter(request => !request.lock.released).length, 1, 'playing keeps one live screen lock');
+    await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+    assert.equal(requests.length, 2, 'gestures reuse the accepted lock');
+  });
+}
+
+test('quick mode changes reuse the pending screen lock', async () => {
+  const requests = deferScreenWakeLocks();
+  const { result } = await mount();
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await flush(() => requests[0].resolve());
+  assert.equal(result.current.playMode, 'guidePlay');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].lock.released, false);
+});
+
+for (const obsolete of ['hidden', 'dialog', 'unloaded', 'unmounted']) test(`a pending screen lock is released while ${obsolete}`, async () => {
+  const requests = deferScreenWakeLocks();
+  const view = await mount();
+  if (obsolete === 'hidden') await visibility(true);
+  if (obsolete === 'dialog') await flush(() => view.result.current.setKeyboardBlocked(true));
+  if (obsolete === 'unloaded') await flush(() => view.result.current.unload());
+  if (obsolete === 'unmounted') view.unmount();
+  await flush(() => requests[0].resolve());
+  assert.equal(requests[0].lock.released, true);
+});
+
+test('a new pack requests its screen lock without waiting for the previous pack reply', async () => {
+  const requests = deferScreenWakeLocks();
+  const { result, data } = await mount();
+  await flush(() => result.current.loadUniPack(data));
+  assert.equal(requests.length, 2);
+  await flush(() => requests[1].resolve());
+  await flush(() => requests[0].resolve());
+  assert.equal(requests[0].lock.released, true);
+  assert.equal(requests[1].lock.released, false);
+});
+
+for (const resume of [false, true]) test(`an unrelated task cannot separate a due note from its light${resume ? ' after resuming' : ''}`, async () => {
+  const writes = [];
+  const processEvent = real.LedRunner.prototype.processEvent;
+  mock.method(real.LedRunner.prototype, 'processEvent', function (event, state) {
+    if (event.type === 'on' && event.y === 1) writes.push(now);
+    return processEvent.call(this, event, state);
+  });
+  const { result } = await mount({
+    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
+    led: resume ? 'o 1 2 a 9' : 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+    ledName: resume ? '1 1 2' : '1 1 1',
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await tick(4);
+  if (resume) {
+    await visibility(true); await tick(5000); await visibility(false);
+    await flush(() => result.current.autoPlayPlayPause());
+  }
+  const due = starts[0] + 1500 + (resume ? 5000 : 0);
+  // Dispatch due timers in deadline order. A separate ready task takes 200 ms immediately after
+  // the task which plays note two, before any later timer task can begin.
+  await flush(() => {
+    audio.currentTime += (due - now) / 1000; now = due;
+    for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
+      if (timer.at > now || !timers.delete(id)) continue;
+      timer.run();
+      if (starts.length === 2 && writes.length === 0) { now += 200; audio.currentTime += 0.2; }
+    }
+  });
+  assert.equal(starts[1], due, 'the second note is due before the unrelated task');
+  assert.equal(writes.length, 1);
+  assert.ok(writes[0] - starts[1] < 50, `light was separated from its note by ${writes[0] - starts[1]} ms`);
+});
