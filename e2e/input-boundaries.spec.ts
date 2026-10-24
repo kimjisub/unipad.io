@@ -33,6 +33,41 @@ const screens = [
   { name: 'laptop', width: 1280, height: 800 },
 ];
 
+for (const square of [true, false]) {
+  test(`mouse: release after quitting a held ${square ? 'square' : 'rectangular'} pad records the document event`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 594, height: 406 });
+    await loadInputPack(page, 8, 8, square);
+    const position = await point(page, '4,4', 1);
+    await page.mouse.move(position.x, position.y);
+    await page.mouse.down();
+    await held(page, ['4,4'], ['4,4']);
+    await stopped(page, []);
+    const [down] = (await events(page)).filter(event => event.type === 'pointerdown');
+    expect(down).toMatchObject({ pointerType: 'mouse', trusted: true, target: '4,4', buttons: 1 });
+
+    await page.keyboard.press('Escape');
+    const quit = page.getByRole('button', { name: 'Quit', exact: true });
+    await expect(quit).toBeVisible();
+    // Traverse the real menu without releasing the mouse or forcing focus.
+    for (let tabs = 0; tabs < 40 && !await quit.evaluate(button => button === document.activeElement); tabs++) {
+      await page.keyboard.press('Tab');
+    }
+    await expect(quit).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('[data-pad]')).toHaveCount(0, { timeout: stateTimeout });
+    await page.mouse.up();
+    await evidence(page, info, 'released-after-quitting');
+
+    await expect.poll(() => lit(page), { timeout: stateTimeout }).toEqual([]);
+    const record = await audio(page);
+    expect(record.starts).toHaveLength(1);
+    await stopped(page, record.starts.map(start => start.id));
+    expect((await events(page)).filter(event => event.type === 'pointerup')).toEqual([
+      { type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null },
+    ]);
+  });
+}
+
 for (const mode of ['mouse', 'touch'] as const) {
   test(`${mode}: held input survives viewport round trips and releases after layout changes`, async ({ page, context, browserName }, info) => {
     test.skip(mode === 'touch' && browserName !== 'chromium', 'WebKit has no CDP session or multi-contact touch API; mouse resize runs separately.');
