@@ -455,6 +455,11 @@ export class AutoPlayRunner {
     this.listener.onProgressUpdate(this.progress);
   }
 
+  /** A pause can enter step mode without a tick ever scanning the next group. */
+  get hasScannedStep(): boolean {
+    return this.stepScanned;
+  }
+
   resetStepState(): void {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();

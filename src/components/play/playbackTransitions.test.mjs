@@ -179,6 +179,50 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} disc
   assert.equal(result.current.state.padStates[0][0].guide, false);
 });
 
+for (const resume of ['button', 'mode']) {
+  const resumeGuide = result => flush(() => resume === 'button'
+    ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+
+  test(`resuming guide via ${resume} before a step tick preserves the remaining half-second`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(500); await draw();
+    const target = result.current.state.padStates[0][0].guideTargetWallTimeMs;
+    assert.equal(target - now, 500);
+    await flush(() => result.current.autoPlayPlayPause());
+    // Both inputs happen before the sequencer can scan a step.
+    await resumeGuide(result);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, true);
+    assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, target);
+    await tick(498); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, false);
+  });
+
+  test(`resuming guide via ${resume} while awaiting a chain preserves the next note lead time`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(1000); await tick(200); await draw();
+    const progress = result.current.state.autoPlayProgress;
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    assert.equal(result.current.state.autoPlayProgress, progress, 'waiting for a chain does not scan a step');
+    await resumeGuide(result);
+    await tick(1);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true);
+    assert.equal(pad.guideTargetWallTimeMs - now, 798);
+    await tick(797); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+}
+
 for (const selected of [0, 2]) test(`a chain choice of ${selected} cancels the pending wormhole`, async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));

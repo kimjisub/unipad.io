@@ -754,8 +754,9 @@ export function useUniPadEngine() {
     } else {
       // Guide and step practice do not press pads, so autoplay would never release what it holds.
       if (currentMode === 'autoPlay') padInit();
+      const needsResync = currentMode !== 'stepPractice' || runner.hasScannedStep;
       applyModeFlags(runner, mode);
-      runner.resyncToProgress();
+      if (needsResync) runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
     }
   }, [usageTracker, padInit, ledInit, autoPlayRemoveGuide, applyModeFlags]);
@@ -789,14 +790,14 @@ export function useUniPadEngine() {
       }
       setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
-      const wasStepMode = runner.stepMode;
+      const scannedStep = runner.hasScannedStep;
       runner.stepMode = false;
       runner.resetStepState();
       autoPlayRemoveGuide();
       padInit();
       ledInit();
-      // Step practice scans ahead without advancing the song clock.
-      if (wasStepMode) runner.resyncToProgress();
+      // Only a scanned step moves progress ahead of the paused song clock.
+      if (scannedStep) runner.resyncToProgress();
       runner.play();
       runner.beforeStartPlaying = true;
       if (unipack?.keyLedExist) {

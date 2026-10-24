@@ -116,14 +116,18 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redr
   await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
   const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
   await mode(page, 'Guide').dispatchEvent('click');
-  await page.clock.runFor(220);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(219);
+  await page.clock.runFor(16);
   await expect(guide('0,0')).toHaveCount(1);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.runFor(20);
   await expect(guide('0,0')).toHaveCount(1);
   await page.clock.fastForward(2000);
   await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
-  await page.clock.runFor(220);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(199);
+  await page.clock.runFor(20);
   const path = info.outputPath('resumed-guide.png');
   await page.screenshot({ path, animations: 'disabled' });
   await info.attach('resumed-guide', { path, contentType: 'image/png' });
@@ -131,8 +135,56 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redr
   await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
   await expect(guide('0,0')).toHaveCount(0);
   await expect(guide('0,1')).toHaveCount(1);
-  await page.clock.runFor(800);
+  await page.clock.fastForward(800);
+  await page.clock.runFor(16);
   await expect(guide('0,1')).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} while awaiting a chain keeps its lead time`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+  const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(1000);
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(200);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await info.attach('resumed-chain-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(700);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} before a step tick keeps the current guide`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 10000');
+  const guide = page.locator('[data-pad="0,0"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(500);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  // The virtual clock stays paused between inputs, so no step scan can run.
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await info.attach('quick-resumed-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(400);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
 });
 
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
