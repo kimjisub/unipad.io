@@ -19,7 +19,10 @@ export const test = base.extend<{ checkedPage: void }>({
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.hostname === 'firebaseinstallations.googleapis.com') {
-        return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
+        const authToken = { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' };
+        // Creation wraps the token; refresh returns it directly. Clock changes can trigger either.
+        return route.fulfill({ json: url.pathname.endsWith('/authTokens:generate') ? authToken
+          : { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken } });
       }
       if (url.hostname === 'firebase.googleapis.com') {
         return route.fulfill({ json: { appId: '1:000000000000:web:fake-ci-placeholder', measurementId: 'G-FAKE-CI' } });
