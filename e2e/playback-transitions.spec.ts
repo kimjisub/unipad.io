@@ -817,3 +817,41 @@ for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autop
   await page.clock.fastForward(1);
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(3);
 });
+
+
+for (const via of ['mode', 'button']) for (const gap of [0, 1, 300, 5000]) {
+  test(`unpressed step note resumes via ${via} after ${gap}ms`, async ({ page }, info) => {
+    // Starting in Auto lets the transport button retain Auto mode when it resumes.
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 500\no 1 1\nf 1 1\nd 1000');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(100);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    else await mode(page, 'Step').dispatchEvent('click');
+    if (gap) await page.clock.runFor(gap);
+    await info.attach('before-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await (via === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Auto')).dispatchEvent('click');
+    await page.clock.runFor(1);
+    await info.attach('after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const count = () => page.evaluate(() => window.browserProbe.audio.starts.length);
+    // Auto pause does not scan steps; Step mode does. Only a shown note is immediately due.
+    const shown = via === 'mode' && gap > 0;
+    expect(await count()).toBe(shown ? 2 : 1);
+    if (!shown) await page.clock.runFor(899);
+    expect(await count()).toBe(2);
+    await page.clock.runFor(499); expect(await count()).toBe(2);
+    await page.clock.runFor(1); expect(await count()).toBe(3);
+  });
+}
+
+test('autoplay from a partially played final step sounds only its unpressed pad', async ({ page }, info) => {
+  await open(page, 'o 1 1\no 1 2\nf 1 1\nf 1 2');
+  await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20);
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await info.attach('partial-final-before', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(20);
+  await info.attach('partial-final-after', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
+});

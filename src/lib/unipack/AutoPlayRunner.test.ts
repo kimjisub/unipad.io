@@ -144,6 +144,81 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  for (const gap of [0, 1, 300, 5000]) {
+    for (const finalGroup of [false, true]) {
+      test(`autoplay retains unpressed step pads after ${gap}ms, final=${finalGroup}`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+          autoPlay: `d 1000\no 1 1\nf 1 1${finalGroup ? '' : '\nd 500\no 1 2\nf 1 2\nd 1000'}`,
+        }));
+        const notes: [number, number][] = [];
+        const runner = new AutoPlayRunner(pack, {
+          onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+          onPadTouchOn: (_x, y, at) => { notes.push([y, at]); },
+          onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+        }, () => 0, () => {}, () => {}, () => {});
+        runner.practiceGuide = true; runner.launch(); clock.tick(1); clock.tick(100);
+        runner.pause(); runner.stepMode = true;
+        if (gap) clock.tick(gap);
+        const resumedAt = clock.now;
+        runner.play(false); clock.tick(1);
+        const firstAt = gap ? resumedAt + 1 : 2001;
+        if (!gap) clock.tick(firstAt - clock.now);
+        assert.deepEqual(notes, [[0, firstAt]], 'the shown unpressed note plays immediately; an unshown note keeps its delay');
+        if (!finalGroup) {
+          clock.tick(499); assert.equal(notes.length, 1);
+          clock.tick(1); assert.deepEqual(notes, [[0, firstAt], [1, firstAt + 500]]);
+        } else assert.equal(runner.active, false, 'the last group sounds before ending');
+        runner.stop();
+      });
+    }
+  }
+
+  for (const queuedPress of [false, true]) test(`autoplay skips completed groups and pressed members, queued=${queuedPress}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 2 1\nf 2 1\nd 500\no 1 1\no 1 2\nf 1 1\nf 1 2',
+    }));
+    const notes: string[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y) => { notes.push(`${x},${y}`); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(1, 0); clock.tick(1);
+    runner.stepPadPressed(0, 0);
+    if (!queuedPress) clock.tick(300);
+    runner.play(false); clock.tick(1);
+    assert.deepEqual(notes, ['0,1'], 'only the unpressed member of the last group sounds');
+    assert.equal(runner.active, false);
+    runner.stop();
+  });
+
+  test('partial step replay retains short written gaps and skips a pressed middle pad', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\nf 1 1\nd 10\no 1 2\nf 1 2\nd 20\no 2 1\nf 2 1\nd 500\no 2 2\nf 2 2',
+    }));
+    const notes: [number, number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y, at) => { notes.push([x, y, at]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    runner.play(false); clock.tick(1);
+    const firstAt = clock.now;
+    assert.deepEqual(notes, [[0, 0, firstAt]]);
+    clock.tick(5); runner.pause(); clock.tick(100); runner.play(false); clock.tick(0);
+    clock.tick(24); assert.equal(notes.length, 1);
+    clock.tick(1); assert.deepEqual(notes.at(-1), [1, 0, firstAt + 130]);
+    clock.tick(499); assert.equal(notes.length, 2);
+    clock.tick(1); assert.deepEqual(notes.at(-1), [1, 1, firstAt + 630]);
+    runner.stop();
+  });
+
   test('resync ignores earlier notes even when they share the resumed song time', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
