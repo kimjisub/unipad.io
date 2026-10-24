@@ -827,7 +827,7 @@ for (const via of ['mode', 'button']) for (const gap of [0, 1, 300, 5000]) {
     await page.clock.runFor(1); await page.clock.fastForward(100);
     if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
     else await mode(page, 'Step').dispatchEvent('click');
-    if (gap) await page.clock.runFor(gap);
+    if (gap) await page.clock.fastForward(gap);
     await info.attach('before-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     await (via === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Auto')).dispatchEvent('click');
     await page.clock.runFor(1);
@@ -836,10 +836,11 @@ for (const via of ['mode', 'button']) for (const gap of [0, 1, 300, 5000]) {
     // Auto pause does not scan steps; Step mode does. Only a shown note is immediately due.
     const shown = via === 'mode' && gap > 0;
     expect(await count()).toBe(shown ? 2 : 1);
-    if (!shown) await page.clock.runFor(899);
+    if (!shown) await page.clock.fastForward(899);
     expect(await count()).toBe(2);
-    await page.clock.runFor(499); expect(await count()).toBe(2);
+    await page.clock.fastForward(499); expect(await count()).toBe(2);
     await page.clock.runFor(1); expect(await count()).toBe(3);
+    await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
   });
 }
 
