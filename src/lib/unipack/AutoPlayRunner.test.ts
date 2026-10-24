@@ -103,6 +103,39 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  test('step resume distinguishes consumed pads from chain-only scans and rewound groups', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 1000\nc 1\no 2 1\nd 10000',
+    }));
+    let chain = 0;
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {},
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    clock.tick(1); clock.tick(1000); clock.tick(100);
+    runner.pause();
+    runner.stepMode = true;
+    clock.tick(200);
+    assert.equal(runner.hasScannedStepPads, false, 'a chain prompt has not consumed any pad');
+    chain = 1;
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, true);
+    chain = 0;
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, false, 'rewinding the only pad group leaves no consumed pads');
+    chain = 1;
+    clock.tick(1);
+    runner.stepPadPressed(0, 1);
+    clock.tick(1);
+    assert.equal(runner.hasScannedStepPads, true, 'a completed group still counts while awaiting the next chain');
+    runner.resetStepState();
+    assert.equal(runner.hasScannedStepPads, false);
+    runner.stop();
+  });
+
   test('resync ignores earlier notes even when they share the resumed song time', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,

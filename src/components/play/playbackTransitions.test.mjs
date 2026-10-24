@@ -201,6 +201,28 @@ for (const resume of ['button', 'mode']) {
     assert.equal(result.current.state.padStates[0][0].guide, false);
   });
 
+  test(`resuming guide via ${resume} after scanning only a chain keeps the remaining delay`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(1000); await tick(100); await draw();
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    assert.equal(result.current.state.chainStates.some(chain => chain.guide), true);
+    await resumeGuide(result);
+    await tick(1); await tick(199);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true, 'finding another chain without scanning a pad must preserve song time');
+    // Of the remaining 900 ms, 200 ms elapse before the chain prompt, then one tick draws the pad.
+    const remainingMs = 699;
+    assert.equal(pad.guideTargetWallTimeMs - now, remainingMs);
+    await tick(remainingMs - 1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+
   test(`resuming guide via ${resume} while awaiting a chain preserves the next note lead time`, async () => {
     const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
     await flush(() => result.current.switchPlayMode('guidePlay'));

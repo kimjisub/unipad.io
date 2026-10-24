@@ -83,6 +83,7 @@ export class AutoPlayRunner {
   private pressedKeysQueue: number[] = [];
   private stepScanned = false;
   private stepStartProgress = 0;
+  private stepScanOrigin: number | null = null;
   private stepChainValue = -1;
 
   constructor(
@@ -321,6 +322,7 @@ export class AutoPlayRunner {
 
           if (needsScan) {
             this.listener.onRemoveGuide();
+            this.stepScanOrigin ??= this.progress;
             this.stepStartProgress = this.progress;
             this.stepScanNext(autoPlay);
             this.stepScanned = this.stepPendingPads.size > 0 || this.waitingForChain >= 0;
@@ -455,9 +457,16 @@ export class AutoPlayRunner {
     this.listener.onProgressUpdate(this.progress);
   }
 
-  /** A pause can enter step mode without a tick ever scanning the next group. */
-  get hasScannedStep(): boolean {
-    return this.stepScanned;
+  /** Only consumed pad lines advance step practice past the paused note. A scan can
+   *  instead stop at a chain choice, after consuming only delays and chain lines.
+   *  Include earlier completed groups, but exclude pads rewound by a chain change. */
+  get hasScannedStepPads(): boolean {
+    const elements = this.unipack.autoPlay?.elements;
+    if (!elements || this.stepScanOrigin === null) return false;
+    for (let i = this.stepScanOrigin; i < this.progress; i++) {
+      if (elements[i].type === 'on') return true;
+    }
+    return false;
   }
 
   resetStepState(): void {
@@ -465,6 +474,7 @@ export class AutoPlayRunner {
     this.stepPendingPads.clear();
     this.stepScanned = false;
     this.stepStartProgress = 0;
+    this.stepScanOrigin = null;
     this.stepChainValue = -1;
     // Leaving step mode while the guide waited for a chain left waitingForChain >= 0 with
     // waitStartTime 0; on resume startTime jumped far ahead and autoplay froze (Android fix).

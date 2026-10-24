@@ -754,7 +754,7 @@ export function useUniPadEngine() {
     } else {
       // Guide and step practice do not press pads, so autoplay would never release what it holds.
       if (currentMode === 'autoPlay') padInit();
-      const needsResync = currentMode !== 'stepPractice' || runner.hasScannedStep;
+      const needsResync = currentMode !== 'stepPractice' || runner.hasScannedStepPads;
       applyModeFlags(runner, mode);
       if (needsResync) runner.resyncToProgress();
       setState((s) => ({ ...s, autoPlayPlaying: isPlaying, practiceMode: isPractice }));
@@ -790,7 +790,7 @@ export function useUniPadEngine() {
       }
       setState((prev) => ({ ...prev, autoPlayPlaying: false }));
     } else {
-      const scannedStep = runner.hasScannedStep;
+      const scannedStep = runner.hasScannedStepPads;
       runner.stepMode = false;
       runner.resetStepState();
       autoPlayRemoveGuide();
