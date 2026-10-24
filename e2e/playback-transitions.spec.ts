@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 
-declare global { interface Window { transitionAudio: AudioContext } }
+declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 async function open(page: Page, autoPlay: string, wormhole = false) {
@@ -24,6 +24,35 @@ async function open(page: Page, autoPlay: string, wormhole = false) {
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
+  // These cases assert virtual timer commands and DOM changes. Keep the audio control clock
+  // on the same virtual timeline: page.clock does not freeze native Web Audio rendering.
+  // audio-visibility.spec.ts checks the unmodified clock and real output signal separately.
+  await page.evaluate(() => {
+    const context = window.transitionAudio;
+    const nativeTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'currentTime')!.get!.bind(context) as () => number;
+    window.transitionNativeAudioTime = nativeTime;
+    let audioTime = nativeTime();
+    let markedAt = performance.now();
+    let running = context.state === 'running';
+    const update = (nextRunning: boolean) => {
+      const now = performance.now();
+      if (running) audioTime += (now - markedAt) / 1000;
+      markedAt = now;
+      running = nextRunning;
+      return audioTime;
+    };
+    Object.defineProperty(context, 'currentTime', { configurable: true, get: () => update(running) });
+    const suspend = context.suspend.bind(context);
+    context.suspend = async () => {
+      update(false);
+      await suspend();
+    };
+    const resume = context.resume.bind(context);
+    context.resume = async () => {
+      await resume();
+      update(context.state === 'running');
+    };
+  });
 }
 async function visibility(page: Page, hidden: boolean) {
   await page.evaluate(value => {
@@ -137,4 +166,29 @@ test('clock initialization stays deterministic when its pause command is delayed
   expect(stillStopped).toEqual(stopped);
   expect(advanced.date - stopped.date).toBe(50);
   expect(advanced.ticks - stopped.ticks).toBe(50);
+});
+
+
+test('clock-controlled transitions keep audio time frozen between timer steps', async ({ page }, info) => {
+  await open(page, 'd 10000\no 1 1\nf 1 1');
+  await page.keyboard.press('Shift');
+  await page.evaluate(() => window.transitionAudio.resume());
+  const nativeTime = () => page.evaluate(() => window.transitionNativeAudioTime?.() ?? window.transitionAudio.currentTime);
+  const initialNativeTime = await nativeTime();
+  await expect.poll(nativeTime).toBeGreaterThan(initialNativeTime);
+  const snapshot = () => page.evaluate(() => ({
+    wallTime: performance.now(), audioTime: window.transitionAudio.currentTime,
+    nativeAudioTime: window.transitionNativeAudioTime?.(), state: window.transitionAudio.state,
+  }));
+  const before = await snapshot();
+  await delay(200);
+  const frozen = await snapshot();
+  await page.clock.runFor(50);
+  const advanced = await snapshot();
+  await info.attach('controlled-audio-clock', { body: JSON.stringify({ before, frozen, advanced, physicalOutputMeasured: false }, null, 2), contentType: 'application/json' });
+  expect(before.state).toBe('running');
+  expect(frozen.wallTime).toBe(before.wallTime);
+  expect(frozen.audioTime).toBe(before.audioTime);
+  expect(advanced.wallTime - before.wallTime).toBe(50);
+  expect(advanced.audioTime - before.audioTime).toBeCloseTo(0.05, 9);
 });
