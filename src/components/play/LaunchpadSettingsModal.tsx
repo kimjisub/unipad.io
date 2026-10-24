@@ -5,7 +5,7 @@ import { LaunchpadConnectionHelp } from './LaunchpadConnectionHelp';
 
 import { useTranslations } from 'next-intl';
 
-import type { LaunchpadProfile } from '@/lib/unipack';
+import { LAUNCHPAD_PROFILE_OPTIONS, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
 import { getChainKey, getPadForKeyCode } from '@/lib/unipack/KeyboardMapping';
 
 interface LaunchpadSettingsModalProps {
@@ -21,26 +21,6 @@ interface LaunchpadSettingsModalProps {
   onConnect: () => void;
   onDisconnect: () => void;
 }
-
-/** Device names stay untranslated; the two descriptive entries carry a key
- *  so they read in the user's language. */
-const PROFILE_OPTIONS: Array<{ value: LaunchpadProfile; label: string; labelKey?: 'autoDetect' | 'noInitSysEx' }> = [
-  { value: 'auto', label: 'Auto Detect', labelKey: 'autoDetect' },
-  { value: 'launchpad_s', label: 'Launchpad S' },
-  { value: 'launchpad_mk2', label: 'Launchpad MK2' },
-  { value: 'launchpad_pro', label: 'Launchpad Pro (Original)' },
-  { value: 'launchpad_pro_cfw', label: 'Launchpad Pro (Launchpad Open)' },
-  { value: 'launchpad_corefw', label: 'Launchpad CoreFW (RGB)' },
-  { value: 'launchpad_corefw_rg', label: 'Launchpad CoreFW (S / Mini)' },
-  { value: 'launchpad_x', label: 'Launchpad X' },
-  { value: 'launchpad_mini_mk3', label: 'Launchpad Mini MK3' },
-  { value: 'launchpad_pro_mk3', label: 'Launchpad Pro MK3' },
-  { value: 'midifighter', label: 'Midi Fighter' },
-  { value: 'matrix', label: 'Matrix' },
-  { value: 'master_keyboard', label: 'Master Keyboard' },
-  { value: 'none', label: 'No Init SysEx', labelKey: 'noInitSysEx' },
-];
-
 
 export function LaunchpadSettingsModal(props: LaunchpadSettingsModalProps) {
   return props.visible ? <LaunchpadSettingsContent {...props} /> : null;
@@ -64,7 +44,7 @@ function LaunchpadSettingsContent({
   const [helpOpen, setHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
   const closeHelp = useCallback(() => setHelpOpen(false), []);
-  const option = PROFILE_OPTIONS.find(opt => opt.value === requestedProfile);
+  const option = LAUNCHPAD_PROFILE_OPTIONS.find(opt => opt.value === requestedProfile);
   const modelLabel = option?.labelKey ? t(option.labelKey) : (option?.label ?? requestedProfile);
 
   return (
@@ -98,7 +78,7 @@ function LaunchpadSettingsContent({
                 value={requestedProfile}
                 onChange={(e) => onChangeProfile(e.target.value as LaunchpadProfile)}
               >
-                {PROFILE_OPTIONS.map((opt) => (
+                {LAUNCHPAD_PROFILE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.labelKey ? t(opt.labelKey) : opt.label}
                   </option>
