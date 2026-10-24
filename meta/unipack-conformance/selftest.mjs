@@ -1026,3 +1026,31 @@ test('local copy verification uses current bytes unless an explicit commit selec
     assert.equal(cli('--check', '--android-commit', 'c'.repeat(40)).status, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test('iOS playback observations distinguish stored repeats from a delayed chain change', () => {
+  const bytes = readFileSync(join(here, 'investigations/ios-playback-observations/ios.json'));
+  assert.equal(sha256(bytes), 'c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2');
+  const original = JSON.parse(bytes);
+  assert.equal(original.assertions, 'partial');
+  assert.equal(original.cases.length, 9);
+  const observed = new Map(original.cases.map((c) => [c.id, c]));
+  const negative = corpus.cases.find((c) => c.id === 'RUN-G613');
+  const delayed = corpus.cases.find((c) => c.id === 'RUN-G616');
+  for (const c of [negative, delayed]) assert.equal(observed.get(c.id).fingerprint, c.fingerprint);
+  assert.deepEqual(negative.expected.checkpoints, [[['sound', 0, 0, 0, 'a.wav', 0]], []]);
+  assert.equal(observed.get(negative.id).actual.checkpoints[0][0][5], -2);
+  assert.equal(negative.known?.ios, undefined, 'a stored loop is not an observed playback defect');
+  assert.deepEqual(delayed.expected.checkpoints[1], []);
+  assert.deepEqual(delayed.known?.ios?.actual, observed.get(delayed.id).actual);
+  assert.equal(delayed.known.ios.status, 'fail');
+  const pinned = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: observed.get(delayed.id) }));
+  assert.equal(pinned.get(delayed.id).status, 'fail');
+  const changed = judge(canonical, 'ios', fullResults('ios', {
+    [delayed.id]: { status: 'pass', actual: delayed.expected },
+  }));
+  assert.equal(changed.get(delayed.id).status, 'unverified', 'a fix must retire its failure pin before counting as a pass');
+  assert.notEqual(original.corpusSha256, canonical.sha256);
+  assert.equal(judge(canonical, 'ios', original).get(delayed.id).status, 'unverified',
+    'the historical partial run must not be relabelled as a run on the current corpus');
+});
