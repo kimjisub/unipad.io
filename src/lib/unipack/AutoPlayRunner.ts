@@ -1,3 +1,4 @@
+import type { PlaybackTicker } from './PlaybackTicker';
 import { AutoPlay, UniPackData } from './types';
 
 export interface AutoPlayListener {
@@ -89,6 +90,7 @@ export class AutoPlayRunner {
     _setChain: (c: number) => void,
     soundPushToNum: (c: number, x: number, y: number, num: number) => void,
     ledPushToNum: (c: number, x: number, y: number, num: number) => void,
+    private ticker?: PlaybackTicker,
   ) {
     this.unipack = unipack;
     this.listener = listener;
@@ -112,6 +114,10 @@ export class AutoPlayRunner {
       }
     }
     return events;
+  }
+
+  private schedule(run: () => void): number {
+    return this.ticker?.request(run, LOOP_INTERVAL_MS, 0) ?? window.setTimeout(run, LOOP_INTERVAL_MS);
   }
 
   launch(): void {
@@ -144,7 +150,7 @@ export class AutoPlayRunner {
       if (!this.active) return;
 
       if (this.suspendedAt !== null) {
-        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+        this.rafId = this.schedule(loop);
         return;
       }
 
@@ -324,7 +330,7 @@ export class AutoPlayRunner {
       const awaitsLastStep = this.stepMode && this.practiceGuide && !this.playmode &&
         (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
       if (this.progress < autoPlay.elements.length || awaitsLastStep) {
-        this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+        this.rafId = this.schedule(loop);
       } else {
         this.active = false;
         this.rafId = null;
@@ -333,25 +339,27 @@ export class AutoPlayRunner {
     };
 
     // Timers preserve sub-frame note timing; visibility suspension freezes the song clock.
-    this.rafId = window.setTimeout(loop, LOOP_INTERVAL_MS);
+    this.rafId = this.schedule(loop);
   }
 
   stop(): void {
     this.active = false;
     if (this.rafId !== null) {
-      window.clearTimeout(this.rafId);
+      if (this.ticker) this.ticker.cancel(this.rafId);
+      else window.clearTimeout(this.rafId);
       this.rafId = null;
     }
     this.activeGuides.clear();
     this.resetStepState();
   }
 
-  /** Visibility is independent of playmode, so returning never undoes a user's pause. */
-  setSuspended(suspended: boolean): void {
+  /** Visibility is independent of playmode. Include samples rendered during native suspension
+   *  without undoing a user's pause. A shared wallTimeMs keeps delayed callbacks on one boundary. */
+  setSuspended(suspended: boolean, elapsedAudioMs = 0, wallTimeMs?: number): void {
     if (suspended) {
-      this.suspendedAt ??= performance.now();
+      this.suspendedAt ??= wallTimeMs ?? performance.now();
     } else if (this.suspendedAt !== null) {
-      const hiddenMs = performance.now() - this.suspendedAt;
+      const hiddenMs = (wallTimeMs ?? performance.now()) - this.suspendedAt - elapsedAudioMs;
       this.suspendedAt = null;
       if (this.pausedAt !== null) this.pausedAt += hiddenMs;
       this.shiftClock(hiddenMs);

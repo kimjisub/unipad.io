@@ -212,7 +212,8 @@ export function PlayPage() {
         // master_keyboard were missing, so those choices silently reset to Auto on reload.
         const VALID_PROFILES = [
           'auto', 'none', 'launchpad_s', 'launchpad_mk2', 'launchpad_pro', 'launchpad_x',
-          'launchpad_mini_mk3', 'launchpad_pro_mk3', 'midifighter', 'matrix', 'master_keyboard',
+          'launchpad_mini_mk3', 'launchpad_pro_mk3', 'launchpad_pro_cfw',
+          'launchpad_corefw', 'launchpad_corefw_rg', 'midifighter', 'matrix', 'master_keyboard',
         ] as const;
         if (typeof savedMidiProfile === 'string'
           && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {

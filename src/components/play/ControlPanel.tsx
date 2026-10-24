@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type { ThemeColors } from '@/lib/unipack';
 import type { PlayMode } from './useUniPadEngine';
@@ -35,7 +35,7 @@ interface ControlPanelProps {
   onClearTraceLog: () => void;
 }
 
-export function ControlPanel({
+export const ControlPanel = memo(function ControlPanel({
   squareButton,
   keyLedExist,
   feedbackLight,
@@ -140,7 +140,7 @@ export function ControlPanel({
       )}
     </div>
   );
-}
+});
 
 const PLAY_MODES: { mode: PlayMode; labelKey: 'auto' | 'guide' | 'step' }[] = [
   { mode: 'autoPlay', labelKey: 'auto' },

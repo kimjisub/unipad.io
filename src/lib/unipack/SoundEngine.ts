@@ -48,6 +48,8 @@ export class SoundEngine {
   private chainChangesSuspended = false;
   private suspensionRevision = 0;
   private visibilitySuspended = false;
+  private outputMuted = false;
+  private volume = 1;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -101,11 +103,16 @@ export class SoundEngine {
   }
 
   setVolume(level: number, maxLevel: number = 7): void {
-    this.gainNode.gain.value = maxLevel > 0 ? level / maxLevel : 1;
+    this.volume = maxLevel > 0 ? level / maxLevel : 1;
+    this.applyOutputVolume();
   }
 
   getVolume(maxLevel: number = 7): number {
-    return Math.round(this.gainNode.gain.value * maxLevel);
+    return Math.round(this.volume * maxLevel);
+  }
+
+  private applyOutputVolume(): void {
+    this.gainNode.gain.value = this.outputMuted ? 0 : this.volume;
   }
 
   async load(): Promise<string[]> {
@@ -165,6 +172,9 @@ export class SoundEngine {
     const revision = ++this.suspensionRevision;
     if (this.audioContext.state === 'closed') return;
     if (suspended) {
+      // Native suspension is asynchronous. Silence output before waiting for its acknowledgement.
+      this.outputMuted = true;
+      this.applyOutputVolume();
       if (!this.chainChangesSuspended) {
         this.chainChangesSuspended = true;
         const now = performance.now();
@@ -179,6 +189,8 @@ export class SoundEngine {
       // Always enqueue resume, even if an earlier suspend has not changed state yet.
       await this.audioContext.resume();
       if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
+      this.outputMuted = false;
+      this.applyOutputVolume();
       if (this.chainChangesSuspended) {
         this.chainChangesSuspended = false;
         for (const change of this.pendingChainChanges) this.scheduleChainChange(change);

@@ -2,6 +2,8 @@ export interface MidiControllerListener {
   onPadTouch(x: number, y: number, pressed: boolean): void;
   onChainTouch(c: number): void;
   onFunctionKey(key: number): void;
+  /** A controller returned to its performance layout; redraw without changing playback queues. */
+  onResync?(): void;
 }
 
 export type LaunchpadProfile =
@@ -10,6 +12,7 @@ export type LaunchpadProfile =
   | 'launchpad_s'
   | 'launchpad_mk2'
   | 'launchpad_pro'
+  | 'launchpad_pro_cfw'
   | 'launchpad_x'
   | 'launchpad_mini_mk3'
   | 'launchpad_pro_mk3'
@@ -25,6 +28,8 @@ export interface MidiConnectionStatus {
   outputName: string | null;
   requestedProfile: LaunchpadProfile;
   resolvedProfile: Exclude<LaunchpadProfile, 'auto'>;
+  /** Additions need a redraw; only removal or remapping invalidates existing held inputs. */
+  releaseHeldPads?: boolean;
 }
 
 type ResolvedProfile = Exclude<LaunchpadProfile, 'auto'>;
@@ -33,6 +38,7 @@ type ResolvedProfile = Exclude<LaunchpadProfile, 'auto'>;
 interface LightOutput {
   output: MIDIOutput;
   profile: ResolvedProfile;
+  ready: boolean;
 }
 
 /** Round buttons are function keys 0 until this: top, right, bottom and left rows of 8. */
@@ -122,6 +128,22 @@ function isCoreFw(profile: ResolvedProfile): boolean {
   return profile === 'launchpad_corefw' || profile === 'launchpad_corefw_rg';
 }
 
+function isDrumRack(profile: ResolvedProfile): boolean {
+  return isCoreFw(profile) || profile === 'launchpad_pro_cfw';
+}
+
+/** Port labels distinguish the lighting connection from DAW and external DIN routing. */
+function isAuxiliaryPort(name: string): boolean {
+  return /(?:\bdaw\b|\bdin\b|\bmidi\s*(?:(?:in|out)\s*)?3\b|\bport\s*3\b)/i.test(name)
+    // The original Pro exposes Live, Standalone and external MIDI port pairs on macOS.
+    // Its programmer layout uses Standalone; MIDI Port routes to the physical MIDI jack.
+    || (detectLaunchpadProfile(name) === 'launchpad_pro' && /\b(?:live|midi)\s+port\b/i.test(name));
+}
+
+function deviceName(name: string): string {
+  return name.toLowerCase().replace(/\bmidi(?:in|out)\d+\b/g, '').replace(/\b(?:midi|daw|din|in|out|input|output|port)(?:\s+[123])?\b|[()]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 /** Pads in two 4x4 blocks from note 36 (left) and 68 (right), bottom row first. */
 function drumRackPadNote(x: number, y: number): number | null {
   const padX = x + 1;
@@ -134,6 +156,7 @@ function drumRackPadNote(x: number, y: number): number | null {
 /** The profile Auto Detect picks for a MIDI port name. */
 export function detectLaunchpadProfile(portName: string): ResolvedProfile {
   const name = portName.toLowerCase();
+  if (name.includes('launchpad open')) return 'launchpad_pro_cfw';
   const coreFwModel = COREFW_PORT_NAME.exec(name)?.[1];
   if (coreFwModel) return COREFW_RED_GREEN_MODELS.has(coreFwModel) ? 'launchpad_corefw_rg' : 'launchpad_corefw';
 
@@ -154,19 +177,17 @@ export function detectLaunchpadProfile(portName: string): ResolvedProfile {
   // is indistinguishable from not owning one. `matrix` stays as the internal
   // profile id because the driver tables are keyed on it.
   if (name.includes('mystrix') || name.includes('matrix')) return 'matrix';
+  // Original Launchpad Programmer's Reference: Key = 16 * Row + Column, with red/green velocity bits.
+  if (['launchpad', 'novation launchpad'].includes(deviceName(name))) return 'launchpad_s';
   if (name.includes('master keyboard')) return 'master_keyboard';
-  return 'none';
+  return 'master_keyboard';
 }
 
 export class MidiConnection {
   private midiAccess: MIDIAccess | null = null;
   private inputs: MIDIInput[] = [];
   private outputs: MIDIOutput[] = [];
-  /** The outputs light messages go to, each with the model its lights are encoded for. On Auto only
-   *  those named as a lit controller, each in its own model's layout as Android's MultiplexDriver
-   *  sends to every pad: Android and iOS connect any other device with a driver that sends nothing,
-   *  while a synthesizer (Microsoft GS Wavetable Synth) or a virtual cable into a music program plays
-   *  every light as a note. A model picked by hand applies to every output. */
+  /** One lighting port per controller, each encoded for its own model. */
   private lightOutputs: LightOutput[] = [];
   private listener: MidiControllerListener | null = null;
   private padSize = 8;
@@ -176,7 +197,7 @@ export class MidiConnection {
   private requestedProfile: LaunchpadProfile = 'auto';
   private resolvedProfile: ResolvedProfile = 'none';
   private onStatusChange: ((status: MidiConnectionStatus) => void) | null = null;
-  /** The mode switch (and the status report after it) still waiting to be sent. */
+  /** Mode switches and light redraws still waiting for the controller to settle. */
   private pendingInitTimers: number[] = [];
   private connectionRevision = 0;
 
@@ -202,11 +223,12 @@ export class MidiConnection {
       this.midiAccess = access;
       this.setupDevices();
       this.sendInitSysExToAllOutputs();
-      this.notifyStatus();
       this.midiAccess.onstatechange = () => {
-        this.setupDevices();
-        this.sendInitSysExToAllOutputs();
-        this.notifyStatus();
+        const previousInputs = this.inputs;
+        const inputsChanged = this.setupDevices();
+        const removed = previousInputs.some(input => !this.inputs.includes(input));
+        const outputsChanged = this.sendInitSysExToAllOutputs(false, removed);
+        if (inputsChanged && !outputsChanged) this.notifyStatus(removed);
       };
       return this.connected;
     } catch (err) {
@@ -217,13 +239,15 @@ export class MidiConnection {
     }
   }
 
-  private setupDevices(): void {
-    if (!this.midiAccess) return;
+  private setupDevices(): boolean {
+    if (!this.midiAccess) return false;
 
+    const previousInputs = this.inputs;
     this.inputs = [];
     this.outputs = [];
 
     this.midiAccess.inputs.forEach((input) => {
+      if (input.state === 'disconnected') return;
       this.inputs.push(input);
       // Decode the originating device, as Android's per-session driver does. Resolve on each
       // message so a manual model change applies to every input immediately.
@@ -231,19 +255,24 @@ export class MidiConnection {
     });
 
     this.midiAccess.outputs.forEach((output) => {
+      if (output.state === 'disconnected') return;
       this.outputs.push(output);
     });
 
     this.inputName = this.inputs[0]?.name ?? null;
     this.outputName = this.outputs[0]?.name ?? null;
     this.connected = this.inputs.length > 0;
+    for (const input of previousInputs) {
+      if (!this.inputs.includes(input)) input.onmidimessage = null;
+    }
+    return previousInputs.length !== this.inputs.length || previousInputs.some(input => !this.inputs.includes(input));
   }
 
   /**
    * Applies a model at once, in the order of Android's MidiConnection.driver setter and iOS's
    * MidiManager.driver: the lights go off in the old model's layout, the new model's mode switch is
-   * sent, and only after its last message is the status reported, so the listener redraws the board
-   * on a device already in its new mode and shows the model that is now in use. With no port at
+   * scheduled, and the new status immediately releases holds from the old mapping. Only lights wait
+   * for the new mode to settle; their redraw must preserve presses received meanwhile. With no port at
    * all (disconnected, or no Web MIDI) the choice is only kept for the next connect, so no model is
    * shown as in use.
    */
@@ -254,16 +283,11 @@ export class MidiConnection {
     }
     if (this.connected) this.clearAllLeds();
     this.requestedProfile = profile;
-    const lastInitDelay = this.sendInitSysExToAllOutputs();
-    if (lastInitDelay === null) {
-      this.notifyStatus();
-    } else {
-      this.pendingInitTimers.push(window.setTimeout(() => this.notifyStatus(), lastInitDelay));
-    }
+    this.sendInitSysExToAllOutputs();
   }
 
-  private notifyStatus(): void {
-    this.onStatusChange?.(this.getStatus());
+  private notifyStatus(releaseHeldPads = true): void {
+    this.onStatusChange?.({ ...this.getStatus(), releaseHeldPads });
   }
 
   private cancelPendingInit(): void {
@@ -271,39 +295,63 @@ export class MidiConnection {
     this.pendingInitTimers = [];
   }
 
-  /** Re-resolves the profile and the outputs that get lights, and sends each output its mode
-   *  switch, replacing one still waiting; returns when the last message goes out, or null when
-   *  there is none. The status shows the first lit controller, else the first known output;
-   *  input decoding uses the originating input's own profile. */
-  private sendInitSysExToAllOutputs(): number | null {
-    this.cancelPendingInit();
-    this.lightOutputs = [];
-    let firstKnownProfile: ResolvedProfile = 'none';
-    let lastDelay: number | null = null;
+  /** Select the lighting port before encoding a model, including a manually chosen one. */
+  private selectLightOutputs(): LightOutput[] {
+    if (this.requestedProfile === 'none' || this.requestedProfile === 'master_keyboard') return [];
+    const selected = new Map<string, LightOutput[]>();
     for (const output of this.outputs) {
-      const profile = this.resolveProfile(output.name ?? '', this.requestedProfile);
-      if (this.requestedProfile !== 'auto' || (profile !== 'none' && profile !== 'master_keyboard')) {
-        this.lightOutputs.push({ output, profile });
+      const name = output.name ?? '';
+      if (isAuxiliaryPort(name)) continue;
+      const detected = detectLaunchpadProfile(name);
+      const known = detected !== 'master_keyboard';
+      const device = deviceName(name);
+      const pairedInputs = this.inputs.filter(input => !isAuxiliaryPort(input.name ?? '') && deviceName(input.name ?? '') === device);
+      const paired = name !== '' && pairedInputs.length > 0;
+      // A manual model may identify an otherwise unknown paired device, never an unrelated synth.
+      if (!known && (this.requestedProfile === 'auto' || !paired || /synth|wavetable|iac|virtual/i.test(name))) continue;
+      const profile = this.resolveProfile(name, this.requestedProfile);
+      const key = `${output.manufacturer ?? ''}:${device}`;
+      const previous = selected.get(key);
+      const midiPort = /midi/i.test(name);
+      const previousMidiPort = !!previous && /midi/i.test(previous[0].output.name ?? '');
+      if (!previous || (midiPort && !previousMidiPort)) {
+        selected.set(key, [{ output, profile, ready: false }]);
+      } else if (name === previous[0].output.name && previous.length < pairedInputs.length) {
+        // Port IDs do not identify physical device groups. Identical labels can belong to
+        // separate controllers: keep a lighting endpoint for each matching performance input.
+        previous.push({ output, profile, ready: false });
       }
-      const messages = this.getInitSysExMessages(profile);
-      if (firstKnownProfile === 'none') firstKnownProfile = profile;
-      // 50 ms apart, as Android and iOS send them: the device needs the gap to switch mode.
+    }
+    return [...selected.values()].flat();
+  }
+
+  /** Keep existing modes on unrelated hot-plugs. New modes settle for 500 ms after the last SysEx
+   *  before any lights or redraw notification reach the device. */
+  private sendInitSysExToAllOutputs(force = true, releaseHeldPads = force): boolean {
+    const selected = this.selectLightOutputs();
+    const previous = this.lightOutputs;
+    this.outputName = selected[0]?.output.name ?? this.outputs[0]?.name ?? null;
+    const changed = force || selected.length !== previous.length || selected.some(light => !previous.some(old => old.output === light.output && old.profile === light.profile));
+    if (!changed) return false;
+    this.cancelPendingInit();
+    this.lightOutputs = selected.map(light => !force ? previous.find(old => old.output === light.output && old.profile === light.profile) ?? light : light);
+    this.resolvedProfile = this.lightOutputs[0]?.profile ?? (this.requestedProfile === 'auto' ? (this.outputs[0] ? detectLaunchpadProfile(this.outputs[0].name ?? '') : 'none') : this.requestedProfile);
+    for (const light of this.lightOutputs) {
+      if (light.ready) continue;
+      const messages = this.getInitSysExMessages(light.profile);
+      if (!messages.length) { light.ready = true; continue; }
       messages.forEach((message, index) => {
         this.pendingInitTimers.push(window.setTimeout(() => {
-          try {
-            output.send(message);
-          } catch {
-            // ignore per-device SysEx failures
-          }
+          send(light.output, message);
         }, index * 50));
       });
-      if (messages.length > 0) lastDelay = Math.max(lastDelay ?? 0, (messages.length - 1) * 50);
+      this.pendingInitTimers.push(window.setTimeout(() => {
+        light.ready = true;
+        if (this.lightOutputs.every(item => item.ready)) this.listener?.onResync?.();
+      }, (messages.length - 1) * 50 + 500));
     }
-    this.resolvedProfile = this.lightOutputs[0]?.profile ?? firstKnownProfile;
-    if (this.outputs.length === 0 && this.requestedProfile !== 'auto') {
-      this.resolvedProfile = this.requestedProfile;
-    }
-    return lastDelay;
+    this.notifyStatus(releaseHeldPads);
+    return true;
   }
 
   private resolveProfile(portName: string, requested: LaunchpadProfile): ResolvedProfile {
@@ -311,6 +359,12 @@ export class MidiConnection {
   }
 
   private getInitSysExMessages(profile: ResolvedProfile): number[][] {
+    if (profile === 'launchpad_pro_cfw') {
+      return [
+        [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x21, 0x01, 0xf7],
+        [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0e, 0x00, 0xf7],
+      ];
+    }
     if (profile === 'launchpad_mini_mk3') {
       return [
         [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0d, 0x10, 0x00, 0xf7],
@@ -351,6 +405,12 @@ export class MidiConnection {
   private handleMessage(event: MIDIMessageEvent, profile: ResolvedProfile = this.getMappingProfile()): void {
     if (!this.listener || !event.data) return;
 
+    if (profile === 'launchpad_pro' && event.data.length === 9 &&
+      [0xf0, 0, 0x20, 0x29, 2, 0x10, 0x2e, 0, 0xf7].every((byte, index) => event.data![index] === byte)) {
+      this.listener.onResync?.();
+      return;
+    }
+
     const [status = 0, note = 0, velocity = 0] = event.data;
     const kind = this.getEventKind(status, velocity);
     if (!kind) return;
@@ -378,12 +438,18 @@ export class MidiConnection {
       case 'launchpad_corefw_rg':
         this.handleMatrixInput(kind, note, velocity);
         break;
+      case 'launchpad_pro_cfw':
+        if (note === DRUM_RACK_LOGO_NOTE) {
+          if (kind !== 'noteOff' && velocity > 0) this.listener.onFunctionKey(LOGO_FUNCTION_KEY);
+          break;
+        }
+        this.handleFourByFourBlockInput(kind === 'cc' ? (velocity > 0 ? 'noteOn' : 'noteOff') : kind, note, true);
+        break;
       case 'master_keyboard':
         this.handleMasterKeyboardInput(kind, note);
         break;
       case 'none':
       default:
-        this.handleGenericInput(kind, note, velocity);
         break;
     }
   }
@@ -530,35 +596,13 @@ export class MidiConnection {
     this.handleFourByFourBlockInput(kind, note, false);
   }
 
-  private handleGenericInput(kind: MidiEventKind, note: number, velocity: number): void {
-    if (!this.listener) return;
-    if (kind === 'cc') {
-      if (note >= 104 && note <= 111 && velocity > 0) {
-        this.listener.onFunctionKey(note - 104);
-      }
-      return;
-    }
-
-    const pressed = kind === 'noteOn';
-    if (note >= 91 && note <= 98) {
-      if (pressed) this.listener.onFunctionKey(note - 91);
-      return;
-    }
-    const row = Math.floor(note / 10) - 1;
-    const col = (note % 10) - 1;
-    if (col === this.padSize) {
-      if (pressed) this.listener.onChainTouch(row);
-    } else if (row >= 0 && row < this.padSize && col >= 0 && col < this.padSize) {
-      this.listener.onPadTouch(col, row, pressed);
-    }
-  }
-
   private getMappingProfile(): ResolvedProfile {
     if (this.requestedProfile !== 'auto') return this.requestedProfile;
     return this.resolvedProfile;
   }
 
   private getPadNoteForProfile(profile: ResolvedProfile, x: number, y: number): { note: number; status: number } | null {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x >= 8 || y < 0 || y >= 8) return null;
     if (
       profile === 'launchpad_x' ||
       profile === 'launchpad_mini_mk3' ||
@@ -571,17 +615,14 @@ export class MidiConnection {
     if (profile === 'launchpad_s') {
       return { note: x * 16 + y, status: 0x90 };
     }
-    if (profile === 'midifighter' || profile === 'matrix' || isCoreFw(profile)) {
+    if (profile === 'midifighter' || profile === 'matrix' || isDrumRack(profile)) {
       const note = drumRackPadNote(x, y);
       if (note === null) return null;
       // CoreFW's X, Mini MK3 and Pro MK3 light only channel 1 notes (src/app/performance/mod.rs).
-      const status = profile === 'midifighter' ? 0x92 : profile === 'matrix' ? 0x91 : 0x90;
+      const status = profile === 'midifighter' ? 0x92 : profile === 'matrix' ? 0x91 : profile === 'launchpad_pro_cfw' ? 0x9f : 0x90;
       return { note, status };
     }
-    if (profile === 'master_keyboard') {
-      return null;
-    }
-    return { note: (y + 1) * 10 + (x + 1), status: 0x90 };
+    return null;
   }
 
   private getFunctionTargetForProfile(
@@ -613,14 +654,12 @@ export class MidiConnection {
         ? { type: 'cc', value: target.value, status: 0xb0 }
         : { type: 'note', value: target.value, status: 0x90 };
     }
-    if (profile === 'matrix' || isCoreFw(profile)) {
+    if (profile === 'matrix' || isDrumRack(profile)) {
       const note = DRUM_RACK_CIRCLE_NOTES[index];
-      return note === undefined ? null : { type: 'note', value: note, status: profile === 'matrix' ? 0x91 : 0x90 };
+      return note === undefined ? null : { type: 'note', value: note, status: profile === 'matrix' ? 0x91 : profile === 'launchpad_pro_cfw' ? 0x9f : 0x90 };
     }
     // Devices with no ring (Midi Fighter, a master keyboard) used to receive notes 91..98 here,
     // which a keyboard plays as audible notes when the option panel opens.
-    if (profile === 'midifighter' || profile === 'master_keyboard') return null;
-    if (index >= 0 && index < 8) return { type: 'note', value: 91 + index, status: 0x90 };
     return null;
   }
 
@@ -629,6 +668,7 @@ export class MidiConnection {
   }
 
   private sendFunctionKeyLedTo(light: LightOutput, index: number, velocity: number): void {
+    if (!light.ready) return;
     if (index === LOGO_FUNCTION_KEY) {
       this.sendLogoLedTo(light, velocity);
       return;
@@ -652,14 +692,14 @@ export class MidiConnection {
       // Launchpad Pro programmer's reference: the side LED is index 99 (63h), reachable only by the
       // "light LED" SysEx.
       send(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
-    } else if (isCoreFw(profile)) {
-      sendNote(output, DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(profile, velocity));
+    } else if (isDrumRack(profile)) {
+      sendNote(output, DRUM_RACK_LOGO_NOTE, this.getFunctionVelocityForProfile(profile, velocity), profile === 'launchpad_pro_cfw' ? 15 : 0);
     }
   }
 
   private getFunctionVelocityForProfile(profile: ResolvedProfile, velocity: number): number {
     if (profile === 'launchpad_s' || profile === 'launchpad_corefw_rg') {
-      return LAUNCHPAD_S_COLOR_CODES[velocity] ?? 0;
+      return LAUNCHPAD_S_COLOR_CODES[clampData(velocity)];
     }
     return velocity;
   }
@@ -675,7 +715,7 @@ export class MidiConnection {
       profile === 'launchpad_mk2' ||
       profile === 'launchpad_s' ||
       profile === 'matrix' ||
-      isCoreFw(profile)
+      isDrumRack(profile)
     ) {
       return c + 8;
     }
@@ -687,6 +727,7 @@ export class MidiConnection {
   }
 
   private sendPadLedTo(light: LightOutput, x: number, y: number, velocity: number): void {
+    if (!light.ready) return;
     const target = this.getPadNoteForProfile(light.profile, x, y);
     if (!target) return;
     const mappedVelocity = this.getFunctionVelocityForProfile(light.profile, velocity);
@@ -706,7 +747,7 @@ export class MidiConnection {
 
   private clearLeds(light: LightOutput): void {
     const { profile } = light;
-    if (profile === 'master_keyboard') return;
+    if (!light.ready) return;
     for (let x = 0; x < this.padSize; x++) {
       for (let y = 0; y < this.padSize; y++) {
         this.sendPadLedTo(light, x, y, 0);
@@ -715,7 +756,7 @@ export class MidiConnection {
     // The X/Pro/Pro MK3 ring has 32 buttons; clearing only 16 left the bottom row and the left
     // column lit after leaving the pack.
     const functionKeyCount =
-      profile === 'matrix' || isCoreFw(profile) || profile === 'launchpad_x' || profile === 'launchpad_mini_mk3'
+      profile === 'matrix' || isDrumRack(profile) || profile === 'launchpad_x' || profile === 'launchpad_mini_mk3'
         || profile === 'launchpad_pro_mk3' || profile === 'launchpad_pro'
         ? ROUND_BUTTON_COUNT
         : profile === 'midifighter' ? 0 : 16;
@@ -753,8 +794,7 @@ export class MidiConnection {
 
 function sendNote(output: MIDIOutput, note: number, velocity: number, channel = 0): void {
   const v = clampData(velocity);
-  const status = v > 0 ? 0x90 | channel : 0x80 | channel;
-  send(output, [status, clampData(note), v]);
+  send(output, [0x90 | channel, clampData(note), v]);
 }
 
 function sendCC(output: MIDIOutput, cc: number, value: number, channel = 0): void {

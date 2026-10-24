@@ -347,7 +347,7 @@
       "resolvedType": "적용된 기종",
       "typeLabel": "런치패드 기종",
       "autoDetect": "자동 감지",
-      "noInitSysEx": "초기화 SysEx 없음",
+      "noInitSysEx": "사용 안 함",
       "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종을 바꾸면 이미 연결된 장치에 바로 적용돼요.",
       "connecting": "연결 중...",
       "reconnect": "다시 연결",
@@ -364,7 +364,10 @@
         "midifighter": "8x8 패드 그리드만 씁니다. 체인 LED 와 기능 LED 가 없습니다.",
         "matrix": "기능 LED 32칸을 쓰는 4뱅크 그리드 매핑입니다.",
         "master_keyboard": "입력 전용 키보드 매핑입니다. LED 출력이 없습니다.",
-        "none": "기본 대체 매핑입니다. 기종별 SysEx 와 안드로이드 드라이버 매핑을 쓰지 않습니다."
+        "none": "MIDI 입력과 조명 출력을 사용하지 않습니다.",
+        "launchpad_pro_cfw": "Launchpad Open 연주 배치입니다. 조명은 MIDI 채널 16으로 보냅니다.",
+        "launchpad_corefw": "RGB Launchpad용 CoreFW 패드 배치입니다.",
+        "launchpad_corefw_rg": "Launchpad S / Mini의 빨강·초록 색을 사용하는 CoreFW 패드 배치입니다."
       },
       "help": {
         "title": "연결·불빛 도움말",
