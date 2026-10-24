@@ -349,16 +349,13 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
     await page.setViewportSize({ width: 844, height: 390 });
   }
   const pad = page.locator('[data-pad="7,7"]');
-  const box = await pad.boundingBox();
-  expect(box).not.toBeNull();
   const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
-  await page.mouse.down();
+  // Wait for the grid's resized layout before sending real pointer input to this pad.
+  await pad.click();
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
   const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
   expect(source.loop).toBe(true);
   expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
-  await page.mouse.up();
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.filter(
     source => source.loop && !window.browserProbe.audio.stops.includes(source.id),
   ).length)).toBe(0);
