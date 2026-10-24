@@ -570,3 +570,14 @@ test('a new manual press restores audio after interruption without starting a so
   assert.equal(starts.length, 2);
   assert.equal(result.current.state.autoPlayEnabled, false);
 });
+
+
+for (const selected of ['autoPlay', 'guidePlay']) test(`pausing the final wait preserves its remaining time in ${selected}`, async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000' });
+  await flush(() => result.current.switchPlayMode(selected)); await tick(1); await tick(499);
+  await flush(() => result.current.autoPlayPlayPause()); await tick(10000);
+  assert.equal(result.current.state.autoPlayEnabled, true, 'a paused final wait cannot end');
+  await flush(() => result.current.autoPlayPlayPause()); await tick(1499);
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  await tick(1); assert.equal(result.current.state.autoPlayEnabled, false);
+});

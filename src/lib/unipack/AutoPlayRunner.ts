@@ -333,7 +333,7 @@ export class AutoPlayRunner {
 
       const awaitsLastStep = this.stepMode && this.practiceGuide && !this.playmode &&
         (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
-      const awaitsFinalDelay = !this.stepMode && this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
+      const awaitsFinalDelay = this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
       if (this.suspendedAt !== null || this.progress < autoPlay.elements.length || awaitsLastStep || awaitsFinalDelay) {
         this.rafId = this.schedule(loop);
       } else {
