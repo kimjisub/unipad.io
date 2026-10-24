@@ -452,6 +452,20 @@ test('pad lights commit even while the browser delays animation frames', async (
   assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'a due light must not wait for a later animation-frame callback');
 });
 
+test('a due light commits before React waits for another browser task', async () => {
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  await flush(() => result.current.padTouchOn(0, 0));
+  await act(async () => {
+    now += 4;
+    audio.currentTime += 0.004;
+    for (const [id, timer] of [...timers]) if (timer.at <= now && timers.delete(id)) timer.run();
+    // Keep React's deferred work queued while the engine's light microtask runs. A visible
+    // light must commit there, rather than depend on a later scheduler task getting CPU time.
+    await new Promise(queueMicrotask);
+    assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+  });
+});
+
 test('resumed notes and lights account for audio rendered while suspension was pending', async () => {
   const { result } = await mount({
     autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',

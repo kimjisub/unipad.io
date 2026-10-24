@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   parseUniPack,
   SoundEngine,
@@ -360,12 +361,12 @@ export function useUniPadEngine() {
     if (visualFlushRef.current !== null) return;
     const pending = {};
     visualFlushRef.current = pending;
-    // Batch a runner tick's lights without waiting for a separate animation frame while
-    // sound timers keep running. React can coalesce the resulting state updates.
+    // Batch a runner tick's lights, then commit in this microtask. A concurrent React
+    // render can otherwise wait for another browser task while sound keeps playing.
     queueMicrotask(() => {
       if (visualFlushRef.current !== pending) return;
       visualFlushRef.current = null;
-      flushVisualState();
+      flushSync(flushVisualState);
     });
   }, [flushVisualState]);
 
