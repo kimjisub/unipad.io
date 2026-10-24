@@ -11,6 +11,7 @@ interface LedAnimationState {
   buttonX: number;
   buttonY: number;
   chainAtCreation: number;
+  input: string;
   index: number;
   delay: number;
   isPlaying: boolean;
@@ -329,7 +330,7 @@ export class LedRunner {
     anims.push(first);
   }
 
-  eventOn(x: number, y: number, pressedAt = performance.now()): void {
+  eventOn(x: number, y: number, pressedAt = performance.now(), input = ''): void {
     if (!this.active) return;
     pressedAt = this.suspendedAt ?? pressedAt;
 
@@ -350,6 +351,7 @@ export class LedRunner {
         buttonX: x,
         buttonY: y,
         chainAtCreation: chain,
+        input,
         index: 0,
         delay: pressedAt,
         isPlaying: animation.ledEvents.length > 0,
@@ -367,12 +369,12 @@ export class LedRunner {
     }
   }
 
-  eventOff(x: number, y: number, releasedAt = performance.now()): void {
+  eventOff(x: number, y: number, releasedAt = performance.now(), input?: string): void {
     if (!this.active) return;
     releasedAt = this.suspendedAt ?? releasedAt;
     const order = ++this.requests;
     for (const state of [...this.ledAnimationStates, ...this.ledAnimationStatesAdd]) {
-      if (state.buttonX === x && state.buttonY === y && state.chainAtCreation === this.chainValue() && state.ledAnimation?.loop === 0) {
+      if (state.buttonX === x && state.buttonY === y && (input === undefined || state.input === input) && state.ledAnimation?.loop === 0) {
         this.shutDownAt(state, releasedAt, order);
       }
     }
