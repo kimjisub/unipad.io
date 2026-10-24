@@ -29342,43 +29342,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "autoOff",
-                  0,
-                  0
-                ],
-                [
-                  "autoEnd"
-                ]
-              ],
-              [
-                [
-                  "autoActive",
-                  false
-                ]
-              ],
-              [
-                [
-                  "autoActive",
-                  false
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {
@@ -29522,49 +29485,6 @@
             ]
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "autoOff",
-                  0,
-                  0
-                ],
-                [
-                  "autoEnd"
-                ]
-              ],
-              [
-                [
-                  "autoActive",
-                  false
-                ]
-              ],
-              [
-                [
-                  "autoActive",
-                  false
-                ]
-              ],
-              [
-                [
-                  "autoActive",
-                  false
-                ]
-              ]
-            ]
-          },
-          "note": "Observed with a paired touch before the final delay: the real runner still ends immediately instead of waiting until song time 2000. Completion cleanup is a separate app-level requirement. This remains a failure, not a compatibility pass."
-        }
       }
     }
   ]

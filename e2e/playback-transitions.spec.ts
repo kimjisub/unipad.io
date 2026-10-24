@@ -4,7 +4,11 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 
-declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
+declare global { interface Window {
+  transitionAudio: AudioContext;
+  transitionNativeAudioTime?: () => number;
+  wakeProbe: { requests: { released: boolean; resolved: boolean }[]; reply: (index: number) => void };
+} }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string } = {}) {
@@ -66,26 +70,6 @@ async function capture(page: Page, info: TestInfo) {
   await page.screenshot({ path, animations: 'disabled' });
   await info.attach('returned', { path, contentType: 'image/png' });
 }
-
-test('returning to autoplay preserves its remaining delay and finite lights', async ({ page }, info) => {
-  await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 1000\nc 3\no 1 1\nf 1 1\nd 10000');
-  await mode(page, 'Auto').dispatchEvent('click');
-  await page.clock.runFor(100);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await visibility(page, true);
-  await page.clock.fastForward(5000);
-  await visibility(page, false);
-  await page.clock.runFor(16);
-  await capture(page, info);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await expect(page.locator('[data-pad="0,1"] .z-10')).toHaveCSS('background-color', 'rgb(239, 83, 80)');
-  // A late foreground tick must still honor the remaining delay, without hundreds of fake ticks.
-  // The song clock starts on the sequencer's first tick, 1 ms after the click.
-  await page.clock.fastForward(884);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
-  await page.clock.fastForward(1);
-  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
-});
 
 test('guide next and previous redraw the upcoming pad at the selected position', async ({ page }, info) => {
   const song = Array.from({ length: 60 }, (_, i) => `o 1 ${Math.floor(i / 5) % 2 + 1}\nf 1 ${Math.floor(i / 5) % 2 + 1}\nd 1000`).join('\n');
@@ -272,7 +256,8 @@ for (const resume of ['button', 'mode']) {
 for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async ({ page }, info) => {
   await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000');
   await mode(page, 'Guide').dispatchEvent('click');
-  await page.clock.runFor(1); await page.clock.fastForward(pauseMs);
+  // Include the first timer in the authored pause position.
+  await page.clock.runFor(1); await page.clock.fastForward(pauseMs - 1);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(500);
   await mode(page, 'Auto').dispatchEvent('click');
@@ -312,24 +297,16 @@ test('a chain button choice cancels an earlier sound wormhole', async ({ page },
 });
 
 
-test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ page }, info) => {
+test('interruption cancels a pending sound chain move', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
   const first = page.getByRole('button', { name: 'Chain 9', exact: true });
   await first.dispatchEvent('pointerdown'); await page.clock.runFor(16);
-  await expect(first.locator('div.z-10')).toHaveCount(1);
-  await page.keyboard.press('1');
-  await page.clock.runFor(50);
+  await page.keyboard.press('1'); await page.clock.runFor(50);
   await visibility(page, true); await page.clock.fastForward(5000);
-  await info.attach('hidden-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await visibility(page, false); await page.clock.runFor(1000);
   await expect(first.locator('div.z-10')).toHaveCount(1);
-  await visibility(page, false); await page.clock.runFor(49);
-  await info.attach('before-wormhole-deadline', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-  await expect(first.locator('div.z-10')).toHaveCount(1);
-  await page.clock.runFor(17);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
-  await info.attach('resumed-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('cancelled-chain-move', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
-
 
 test('clock initialization stays deterministic when its pause command is delayed 200 ms', async ({ page }, info) => {
   const pauseAt = page.clock.pauseAt.bind(page.clock);
@@ -380,8 +357,8 @@ test('compatibility: pause keeps the remaining half-second before the next note'
   await open(page, 'o 1 1\nd 1000\no 1 2\nd 10000\no 1 1');
   await mode(page, 'Auto').dispatchEvent('click');
   await page.clock.runFor(1);
-  // The first note starts the song clock; pause after exactly half a second of song time.
-  await page.clock.fastForward(500);
+  // The normal 1 ms first tick consumes 1 ms of the requested song time.
+  await page.clock.fastForward(499);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(3000);
   await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
@@ -542,38 +519,203 @@ test('clock-controlled transitions keep audio time frozen between timer steps', 
   expect(advanced.audioTime - before.audioTime).toBeCloseTo(0.05, 9);
 });
 
-test('an expired installation token refreshes through the local service fixture', async ({ page }) => {
-  // Seed the real SDK's expired installation before loading any application scripts.
-  await page.goto('/robots.txt');
-  await page.evaluate(() => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('firebase-installations-database', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('firebase-installations-store');
+
+test('manual interruption waits for Play and discards old lights', async ({ page }, info) => {
+  await open(page, 'on 1 1\nd 2000\non 1 2\nd 2000', false, { keySound: '1 1 1 tone.wav 0\n1 1 2 tone.wav 0' });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.fastForward(1000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.runFor(16);
+  await info.attach('returned-before-play', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('interruption-audio', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
+  await expect(page.getByTitle('Play', { exact: true })).toBeVisible();
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toContain(1);
+  await expect(page.locator('[data-pad="0,1"] .z-10')).toHaveCount(0);
+  await page.clock.fastForward(10000);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.getByTitle('Play', { exact: true }).dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => window.transitionAudio.state)).toBe('running');
+  await page.clock.fastForward(1899);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.runFor(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await info.attach('resumed-next-command', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+});
+
+
+test('installation token refresh returns the token fields consumed by the SDK', async ({ page }) => {
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  const token = await page.evaluate(async () => {
+    const response = await fetch('https://firebaseinstallations.googleapis.com/v1/projects/unipad-ci-placeholder/installations/cAAAAAAAAAAAAAAAAAAAAA/authTokens:generate', { method: 'POST' });
+    return response.json();
+  });
+  expect(token.token).toBe('FAKE_INSTALLATION_TOKEN');
+  expect(token.expiresIn).toBe('604800s');
+});
+
+
+test('a pack imported while hidden can show fresh lights after returning', async ({ page }, info) => {
+  await page.addInitScript(() => Object.defineProperty(document, 'hidden', { configurable: true, value: true }));
+  await open(page, 'd 10000\ntouch 1 1');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  await snapshot(page, info, 'fresh-light-after-hidden-import');
+  await expect(packLight(page)).toHaveCount(1);
+});
+
+test('paused guide finishes after the last manual step', async ({ page }, info) => {
+  await open(page, 'o 1 1\nf 1 1\nd 1000\no 2 1\nf 2 1');
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(100);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(5);
+  await expect(page.locator('[data-pad="1,0"] .z-\\[25\\]')).toHaveCount(1);
+  await page.keyboard.press('q'); await page.clock.runFor(5);
+  await snapshot(page, info, 'completed-last-step');
+  await expect(mode(page, 'Step')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('returning manual play requests screen wake protection again', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'wakeRequests', { value: 0, writable: true });
+    Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
+      (window as unknown as { wakeRequests: number }).wakeRequests++;
+      return { release: async () => {}, addEventListener() {} };
+    } } });
+  });
+  await open(page, 'd 10000\ntouch 1 1');
+  const count = () => page.evaluate(() => (window as unknown as { wakeRequests: number }).wakeRequests);
+  expect(await count()).toBe(1);
+  await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false);
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  await snapshot(page, info, 'manual-wake-protection-after-return');
+  expect(await count()).toBe(2);
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const interruption of ['hidden', 'focus']) for (const playFirst of [true, false]) {
+  test(`screen wake protection survives ${interruption} when ${playFirst ? 'Play' : 'the lock reply'} arrives first`, async ({ page }, info) => {
+    await page.addInitScript(() => {
+      const replies: (() => void)[] = [];
+      window.wakeProbe = { requests: [], reply: index => replies[index]() };
+      Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: () => {
+        const state = { released: false, resolved: false };
+        const index = window.wakeProbe.requests.push(state) - 1;
+        const lock = { async release() { state.released = true; }, addEventListener() {} };
+        return new Promise(resolve => {
+          replies[index] = () => { state.resolved = true; resolve(lock); };
+          if (index === 0) replies[index]();
+        });
+      } } });
+    });
+    await open(page, 'd 10000\ntouch 1 1');
+    await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+    if (interruption === 'hidden') {
+      await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false);
+    } else {
+      await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+      await page.clock.fastForward(1000);
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    }
+    const requests = () => page.evaluate(() => window.wakeProbe.requests);
+    await expect.poll(async () => (await requests()).length).toBe(2);
+    expect((await requests())[0].released).toBe(true);
+    if (!playFirst) await page.evaluate(() => window.wakeProbe.reply(1));
+    await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
+    if (playFirst) await page.evaluate(() => window.wakeProbe.reply(1));
+    await page.clock.runFor(20);
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.poll(async () => (await requests()).filter(lock => lock.resolved && !lock.released).length).toBe(1);
+    await page.evaluate(() => document.dispatchEvent(new Event('pointerdown')));
+    expect((await requests()).length).toBe(2);
+    await info.attach('screen-wake-response-order', { body: JSON.stringify({ interruption, playFirst, requests: await requests(), physicalLockMeasured: false }), contentType: 'application/json' });
+    await snapshot(page, info, 'playing-with-screen-protection');
+  });
+}
+
+for (const interruption of ['focus', 'dialog']) test(`current device chain light returns after ${interruption}`, async ({ page }, info) => {
+  await open(page, 'd 10000\ntouch 1 1');
+  await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBeGreaterThan(0);
+  await page.clock.runFor(600);
+  await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+  if (interruption === 'focus') {
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; window.dispatchEvent(new Event('focus')); });
+  } else {
+    await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(300);
+    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
+    await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
+  }
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'device-chain-after-return');
+  const messages = await page.evaluate(() => window.browserProbe.midi.messages);
+  await info.attach('device-output', { body: JSON.stringify({ messages, physicalHardware: false }), contentType: 'application/json' });
+  expect(messages.some(message => message[0] === 0xb0 && message[1] === 89 && message[2] > 0)).toBe(true);
+});
+
+test('an expired installation token refreshes through the local service fixture', async ({ page }, info) => {
+  const registration = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.hostname === 'firebaseinstallations.googleapis.com' && url.pathname.endsWith('/installations');
+  });
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await registration;
+  // The real SDK chooses its storage key from the build's public app configuration.
+  // Let it register first instead of seeding an unrelated hardcoded application key.
+  const readInstallation = () => page.evaluate(() => new Promise<{ key: string; authToken: unknown } | null>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('firebase-installations-store')) { db.close(); resolve(null); return; }
+      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store').openCursor();
+      read.onsuccess = () => {
+        const cursor = read.result;
+        db.close();
+        if (cursor && typeof cursor.key !== 'string') { reject(new Error('installation key must be a string')); return; }
+        resolve(cursor ? { key: cursor.key as string, authToken: cursor.value.authToken } : null);
+      };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  }));
+  await expect.poll(async () => (await readInstallation())?.authToken, { timeout: stateTimeout }).toMatchObject({
+    token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2,
+  });
+  const installation = (await readInstallation())!;
+  await info.attach('installation-key-selection', {
+    body: JSON.stringify({ usesHardcodedCiKey: installation.key === '[DEFAULT]!1:000000000000:web:fake-ci-placeholder' }),
+    contentType: 'application/json',
+  });
+  await page.evaluate(key => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database');
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
       const transaction = db.transaction('firebase-installations-store', 'readwrite');
-      transaction.objectStore('firebase-installations-store').put({
-        fid: 'cAAAAAAAAAAAAAAAAAAAAA', registrationStatus: 2, refreshToken: 'FAKE_REFRESH_TOKEN',
+      const store = transaction.objectStore('firebase-installations-store');
+      const read = store.get(key);
+      read.onsuccess = () => store.put({ ...read.result,
         authToken: { token: 'EXPIRED_FAKE_TOKEN', requestStatus: 2, expiresIn: 0, creationTime: 0 },
-      }, '[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      }, key);
       transaction.oncomplete = () => { db.close(); resolve(); };
       transaction.onerror = () => { db.close(); reject(transaction.error); };
     };
-  }));
+  }), installation.key);
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/authTokens:generate'));
-  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await refresh;
-  await expect.poll(() => page.evaluate(() => new Promise<unknown>((resolve, reject) => {
-    const request = indexedDB.open('firebase-installations-database', 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store')
-        .get('[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
-      read.onsuccess = () => { db.close(); resolve(read.result?.authToken); };
-      read.onerror = () => { db.close(); reject(read.error); };
-    };
-  })), { timeout: stateTimeout }).toMatchObject({
+  await expect.poll(async () => (await readInstallation())?.authToken, { timeout: stateTimeout }).toMatchObject({
     token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2, expiresIn: 604800000,
   });
 });
