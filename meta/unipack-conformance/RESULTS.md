@@ -1,5 +1,23 @@
 # Results
 
+## Two iOS partial-run observations separated (2026-10-25)
+
+The [retained nine-case run and source investigation](investigations/ios-playback-observations/README.md)
+on iOS `e8ac34d11373b3ed071535e365ddc382c1929496` distinguish an observation
+error in RUN-G613 from a real delayed chain callback in RUN-G616. RUN-G613's
+stored repeat value `-2` is not evidence that the engine repeats differently;
+it is not pinned. RUN-G616's callback after autoPlay stops is pinned as an iOS
+failure. Neither original failure is relabelled as a pass.
+
+Only RUN-G616's `known.ios` record changes. Every case's input, fingerprint,
+scenario, expected value and basis is unchanged, as are the other platform records.
+The canonical corpus remains G6, 382 cases, advancing from SHA256
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6` to
+`5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`.
+The original result and its different corpus hash remain intact; both affected
+cases are identical across those corpus revisions. No iOS run or aggregate
+compatibility result is claimed. The app copy references remain historical.
+
 ## Android minimum-integer storage differences resolved (2026-10-25)
 
 [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303), merged as

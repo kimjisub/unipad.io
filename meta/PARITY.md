@@ -142,6 +142,13 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
+- **RUN-G616: iOS can change chain after autoPlay is turned off.** The retained
+  partial run records a real delayed sound-wormhole callback after the stop.
+  Its unchanged expected final checkpoint is empty; the observation is pinned
+  as a failure. RUN-G613 from the same run is excluded from app playback pins:
+  the harness writes a stored negative loop value even though the engine schedules
+  one playback. See the [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md)
+  for provenance, source references and the checks still needed on iOS.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
