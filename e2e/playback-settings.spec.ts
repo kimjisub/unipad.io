@@ -91,6 +91,7 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
   test(`direct feedback choice survives pause restart exit and reload: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
     await openFeedbackModePack(page, leds, saved);
     await playMode(page, 'Auto').click();
+    await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Feedback', exact: true }).click();
     await expectFeedback(page, leds, String(leds));
     await page.getByRole('button', { name: 'Pause', exact: true }).click();

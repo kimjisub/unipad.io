@@ -538,38 +538,58 @@ for (const interruption of ['focus', 'dialog']) test(`current device chain light
   expect(messages.some(message => message[0] === 0xb0 && message[1] === 89 && message[2] > 0)).toBe(true);
 });
 
-test('an expired installation token refreshes through the local service fixture', async ({ page }) => {
-  // Seed the real SDK's expired installation before loading any application scripts.
-  await page.goto('/robots.txt');
-  await page.evaluate(() => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('firebase-installations-database', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('firebase-installations-store');
+test('an expired installation token refreshes through the local service fixture', async ({ page }, info) => {
+  const registration = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.hostname === 'firebaseinstallations.googleapis.com' && url.pathname.endsWith('/installations');
+  });
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await registration;
+  // The real SDK chooses its storage key from the build's public app configuration.
+  // Let it register first instead of seeding an unrelated hardcoded application key.
+  const readInstallation = () => page.evaluate(() => new Promise<{ key: string; authToken: unknown } | null>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('firebase-installations-store')) { db.close(); resolve(null); return; }
+      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store').openCursor();
+      read.onsuccess = () => {
+        const cursor = read.result;
+        db.close();
+        if (cursor && typeof cursor.key !== 'string') { reject(new Error('installation key must be a string')); return; }
+        resolve(cursor ? { key: cursor.key as string, authToken: cursor.value.authToken } : null);
+      };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  }));
+  await expect.poll(async () => (await readInstallation())?.authToken, { timeout: stateTimeout }).toMatchObject({
+    token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2,
+  });
+  const installation = (await readInstallation())!;
+  await info.attach('installation-key-selection', {
+    body: JSON.stringify({ usesHardcodedCiKey: installation.key === '[DEFAULT]!1:000000000000:web:fake-ci-placeholder' }),
+    contentType: 'application/json',
+  });
+  await page.evaluate(key => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database');
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
       const transaction = db.transaction('firebase-installations-store', 'readwrite');
-      transaction.objectStore('firebase-installations-store').put({
-        fid: 'cAAAAAAAAAAAAAAAAAAAAA', registrationStatus: 2, refreshToken: 'FAKE_REFRESH_TOKEN',
+      const store = transaction.objectStore('firebase-installations-store');
+      const read = store.get(key);
+      read.onsuccess = () => store.put({ ...read.result,
         authToken: { token: 'EXPIRED_FAKE_TOKEN', requestStatus: 2, expiresIn: 0, creationTime: 0 },
-      }, '[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      }, key);
       transaction.oncomplete = () => { db.close(); resolve(); };
       transaction.onerror = () => { db.close(); reject(transaction.error); };
     };
-  }));
+  }), installation.key);
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/authTokens:generate'));
-  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await refresh;
-  await expect.poll(() => page.evaluate(() => new Promise<unknown>((resolve, reject) => {
-    const request = indexedDB.open('firebase-installations-database', 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store')
-        .get('[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
-      read.onsuccess = () => { db.close(); resolve(read.result?.authToken); };
-      read.onerror = () => { db.close(); reject(read.error); };
-    };
-  })), { timeout: stateTimeout }).toMatchObject({
+  await expect.poll(async () => (await readInstallation())?.authToken, { timeout: stateTimeout }).toMatchObject({
     token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2, expiresIn: 604800000,
   });
 });
