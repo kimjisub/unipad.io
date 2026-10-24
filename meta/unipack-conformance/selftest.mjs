@@ -15,8 +15,8 @@ import { ASSET_GENERATORS, buildAssets, fingerprint, restsOnAgreement, restsOnDe
 import { checkNativeTests, grammarRecord, HARNESS_LIMITS, NATIVE_TESTS, readGrammar } from './grammar.mjs';
 import { readNative } from './native.mjs';
 import { BASES, buildReport, classify, judge, loadCanonical, parseResults, PLATFORMS, renderText } from './report.mjs';
-import { resolveCommits } from './copies.mjs';
-import { COPIED_FILES, COPY_DIRS, differences } from './sync.mjs';
+import { resolveCommits, resolvePins } from './copies.mjs';
+import { COPIED_FILES, COPY_DIRS, differences, checkCopies } from './sync.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const canonical = loadCanonical();
@@ -86,6 +86,65 @@ test('iOS sound-stop and chain-reset cases require observed results', () => {
   }
 });
 
+test('G6 cases cannot count a missing result, a claimed pass or an injected wrong output', () => {
+  const added = corpus.cases.filter((c) => /-G6/.test(c.id));
+  assert.equal(added.length, 55);
+  for (const c of added) for (const platform of PLATFORMS) {
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    const result = (cases) => ({ platform, corpusSha256: canonical.sha256, cases });
+    const record = { id: c.id, fingerprint: c.fingerprint };
+    assert.equal(judge(only, platform, result([])).get(c.id).status, 'unverified', `${c.id} missing`);
+    assert.equal(judge(only, platform, result([{ ...record, status: 'pass' }])).get(c.id).status, 'unverified', `${c.id} claim`);
+    const wrong = c.expected.loaded === false ? { loaded: true } : c.layer === 'run' ? { checkpoints: [] } : { loaded: false };
+    assert.equal(judge(only, platform, result([{ ...record, status: 'fail', actual: wrong }])).get(c.id).status, 'fail', `${c.id} mutation`);
+    assert.equal(judge(only, platform, result([{ ...record, status: 'pass', actual: wrong }])).get(c.id).status, 'unverified', `${c.id} dishonest mutation`);
+  }
+});
+
+test('a later manual chain choice cancels the pending wormhole and must be observed', () => {
+  const c = corpus.cases.find((entry) => entry.id === 'RUN-G606');
+  const cancelled = { checkpoints: [[['sound', 0, 0, 0, 'a.wav', 0]], [], []] };
+  const pending = { checkpoints: [[['sound', 0, 0, 0, 'a.wav', 0]], [], [['chain', 1]]] };
+  const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+  for (const platform of PLATFORMS) {
+    const record = { id: c.id, fingerprint: c.fingerprint };
+    const result = (entry) => ({ platform, corpusSha256: canonical.sha256, cases: [entry] });
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass', actual: cancelled })).get(c.id).status, 'pass', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'fail', actual: pending })).get(c.id).status, 'fail', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass', actual: pending })).get(c.id).status, 'unverified', platform);
+    assert.equal(judge(only, platform, result({ ...record, status: 'pass' })).get(c.id).status, 'unverified', platform);
+  }
+});
+
+test('archive identity cases distinguish canonically equivalent entries and overwritten contents', () => {
+  const ids = ['KS-G601', 'KS-G602', 'KS-G603', 'KS-G604', 'KS-G620', 'KS-G621', 'KS-G622', 'KS-G623', 'KS-G624', 'KS-G625'];
+  for (const id of ids) {
+    const c = corpus.cases.find(entry => entry.id === id);
+    assert.ok(c?.soundIdentity, id);
+    const q = c.expected.sounds[0].queue[0];
+    assert.match(q.archiveEntry, /^sounds\//);
+    assert.match(q.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(q.file, undefined);
+    if (Number(id.slice(-3)) >= 620) {
+      const files = c.files.filter(f => f.path.startsWith('sounds/') && f.asset);
+      assert.equal(files.length, 2, id);
+      assert.notEqual(files[0].path, files[1].path);
+      assert.equal(files[0].path.normalize('NFC'), files[1].path.normalize('NFC'));
+      assert.notEqual(corpus.assets[files[0].asset].sha256, corpus.assets[files[1].asset].sha256);
+    }
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    for (const field of ['archiveEntry', 'sha256']) {
+      const wrong = structuredClone(c.expected);
+      wrong.sounds[0].queue[0][field] = field === 'sha256' ? '0'.repeat(64) : q.archiveEntry.normalize('NFD') === q.archiveEntry ? q.archiveEntry.normalize('NFC') : q.archiveEntry.normalize('NFD');
+      for (const platform of PLATFORMS) {
+        const result = status => ({ platform, corpusSha256: canonical.sha256, cases: [{ id, fingerprint: c.fingerprint, status, actual: wrong }] });
+        assert.equal(judge(only, platform, result('fail')).get(id).status, 'fail');
+        assert.equal(judge(only, platform, result('pass')).get(id).status, 'unverified');
+      }
+    }
+  }
+});
+
 test('the MP3 asset is MPEG audio, not a renamed WAV', () => {
   const mp3 = ASSET_GENERATORS['tone-440-mp3'].make();
   assert.ok(startsWithMpegFrame(mp3));
@@ -133,15 +192,14 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.ok(decidedIds.includes('KL-024'));
   assert.equal(decided.filter((c) => c.basis.some((b) => b.type === 'agreed')).length, 0);
 
-  // Pinned differences are unverified, except the two storage forms explicitly allowed by T-09.
+  // Pinned differences are never confirmed.
   const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map((p) => [p, fullResults(p)])));
   assert.deepEqual(report.rows.filter((r) => r.decided).map((r) => r.id), decidedIds);
   assert.equal(report.decided.cases, decidedIds.length);
-  const allowedStorage = (c, p) => p === 'android' && ['KS-B08', 'KL-BE10'].includes(c.id);
-  const clean = (p) => decided.filter((c) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p]);
+  const clean = (p) => decided.filter((c) => !c.known?.[p] && !c.unobserved?.[p]);
   const pass = Object.fromEntries(PLATFORMS.map((p) => [p, clean(p).length]));
   assert.deepEqual(report.decided.pass, pass);
-  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => (!c.known?.[p] || allowedStorage(c, p)) && !c.unobserved?.[p])).length;
+  const onAllThree = decided.filter((c) => PLATFORMS.every((p) => !c.known?.[p] && !c.unobserved?.[p])).length;
   assert.equal(report.decided.passOnAllThree, onAllThree);
   const text = renderText(report);
   assert.match(text, new RegExp(`, ${onAllThree} on a decision basis$`, 'm'));
@@ -164,12 +222,12 @@ test('a decided case is checked like any other, and the report counts it apart f
   assert.equal(statusOf('web', { status: 'pass', actual: kl024.expected }), 'unverified');
 });
 
-test('GRAMMAR.md lists 104 items of edition G5, each of kind parse or output, and the corpus names its edition', () => {
+test('GRAMMAR.md lists 114 items of edition G6, each of kind parse or output, and the corpus names its edition', () => {
   const grammar = readGrammar();
-  assert.equal(grammar.edition, 'G5');
-  assert.equal(corpus.grammar, 'G5');
-  assert.equal(grammar.items.length, 104);
-  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 104);
+  assert.equal(grammar.edition, 'G6');
+  assert.equal(corpus.grammar, 'G6');
+  assert.equal(grammar.items.length, 114);
+  assert.equal(new Set(grammar.items.map((i) => i.id)).size, 114);
   for (const item of grammar.items) assert.ok(['parse', 'output'].includes(item.kind), item.id);
   for (const limits of [...Object.values(HARNESS_LIMITS), ...Object.values(NATIVE_TESTS)]) for (const id of Object.keys(limits)) assert.ok(grammar.items.some((i) => i.id === id), id);
   assert.throws(() => readGrammar('# UniPack grammar\n'), /edition G<n>/);
@@ -186,7 +244,7 @@ test('every case names the grammar items it checks, and the build refuses one wi
   const editing = (edit) => () => buildCorpus((palette) => buildCases(palette).map((c) => (c.id === 'KS-001' ? edit(structuredClone(c)) : c)));
   assert.throws(editing((c) => { delete c.items; return c; }), /KS-001: names no grammar item/);
   assert.throws(editing((c) => ({ ...c, items: [] })), /KS-001: names no grammar item/);
-  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G5/);
+  assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-99'] })), /KS-001: item S-99 is not in GRAMMAR.md G6/);
   assert.throws(editing((c) => ({ ...c, items: ['S-01', 'S-01'] })), /KS-001: names an item twice/);
 });
 
@@ -247,13 +305,13 @@ describe('an item is confirmed on a platform', () => {
     const results = allPass();
     const { grammar } = buildReport(canonical, results);
     const rows = grammar.rows;
-    assert.equal(grammar.items, 104);
+    assert.equal(grammar.items, 114);
     for (const p of PLATFORMS) assert.equal(grammar.confirmed[p], rows.filter((r) => r[p].confirmed).length, p);
     assert.equal(grammar.confirmedOnAllThree, rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length);
     assert.equal(grammar.withCases, rows.filter((r) => r.cases.length > 0).length);
     assert.ok(grammar.confirmedOnAllThree <= Math.min(...PLATFORMS.map((p) => grammar.confirmed[p])));
     const text = renderText(buildReport(canonical, results));
-    assert.match(text, new RegExp(`^grammar G5: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 104 items; on all three platforms ${grammar.confirmedOnAllThree} of 104; ${grammar.withCases} of 104 have a case$`, 'm'));
+    assert.match(text, new RegExp(`^grammar G6: confirmed android ${grammar.confirmed.android}, ios ${grammar.confirmed.ios}, web ${grammar.confirmed.web} of 114 items; on all three platforms ${grammar.confirmedOnAllThree} of 114; ${grammar.withCases} of 114 have a case$`, 'm'));
     assert.match(text, /^F-05 {7}- {9}- {9}- {9}\(none\)$/m);
   });
 });
@@ -368,93 +426,27 @@ test('a status the platform reports is checked against its own actual result', (
   assert.equal(judge(canonical, 'web', honest).get(determined.id).status, 'pass');
 });
 
-describe('T-09 allows only the specified Android storage representations', () => {
+describe('T-09 requires exact storage after subtracting one', () => {
   const pathsByCase = {
     'KS-B08': [['sounds', 0, 'queue', 0, 'loop']],
-    'KL-BE10': [
-      ['leds', 0, 'queue', 0, 'events', 0, 1],
-      ['leds', 0, 'queue', 0, 'events', 1, 2],
-      ['leds', 0, 'queue', 0, 'events', 2, 1],
-    ],
+    'KL-BE10': [['leds', 0, 'queue', 0, 'events', 0, 1], ['leds', 0, 'queue', 0, 'events', 1, 2], ['leds', 0, 'queue', 0, 'events', 2, 1]],
   };
-  const set = (object, path, value) => { path.slice(0, -1).reduce((o, key) => o[key], object)[path.at(-1)] = value; };
-  const seen = (c, actual, platform = 'android', overrides = {}) => judge(canonical, platform, fullResults(platform, {
-    [c.id]: { actual, status: classify(c, actual, platform), detail: 'original harness note', ...overrides },
-  })).get(c.id);
-
-  test('both values and every combination pass without changing the actual result or its original status', () => {
-    for (const [id, paths] of Object.entries(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
-      for (let mask = 0; mask < 2 ** paths.length; mask++) {
-        const actual = structuredClone(c.expected);
-        paths.forEach((path, index) => {
-          assert.equal(path.reduce((o, key) => o[key], actual), -2147483649);
-          if (mask & (1 << index)) set(actual, path, -2147483648);
-        });
-        const before = structuredClone(actual);
-        const result = seen(c, actual);
-        assert.equal(result.status, 'pass', `${id} combination ${mask}`);
-        assert.equal(result.reportedStatus, classify(c, before, 'android'));
-        assert.equal(result.reportedDetail, 'original harness note');
-        assert.match(result.detail, /T-09.*representation/);
-        assert.deepEqual(result.actual, before);
-        assert.deepEqual(actual, before);
-      }
-    }
-  });
-
-  test('positive wraparound, other integers, malformed values and missing fields still fail', () => {
-    for (const [id, paths] of Object.entries(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
+  for (const [id, paths] of Object.entries(pathsByCase)) test(`${id} rejects saturation on every platform`, () => {
+    const c = corpus.cases.find((c) => c.id === id);
+    assert.equal(c.known?.android, undefined, 'no fixed difference exempts Android');
+    for (const p of PLATFORMS) {
+      assert.equal(classify(c, c.expected, p), 'pass');
       for (const path of paths) {
-        for (const wrong of [2147483647, -2147483647, -2147483650, '-2147483648', null, undefined]) {
-          const actual = structuredClone(c.known.android.actual);
-          set(actual, path, wrong);
-          assert.equal(seen(c, actual).status, 'fail', `${id} ${path.join('.')} ${wrong}`);
-        }
+        const actual = structuredClone(c.expected);
+        assert.equal(path.reduce((o, k) => o[k], actual), -2147483649);
+        path.slice(0, -1).reduce((o, k) => o[k], actual)[path.at(-1)] = -2147483648;
+        const r = fullResults(p, { [id]: { actual, status: 'fail' } });
+        assert.equal(judge(canonical, p, r).get(id).status, 'fail');
+        assert.equal(buildReport(canonical, { [p]: r }).grammar.rows.find((r) => r.id === 'T-09')[p].confirmed, false);
+        r.cases.find((r) => r.id === id).status = 'pass';
+        assert.equal(judge(canonical, p, r).get(id).status, 'unverified');
       }
     }
-  });
-
-  test('format and range warnings and every other field are still compared exactly', () => {
-    for (const id of Object.keys(pathsByCase)) {
-      const c = corpus.cases.find((c) => c.id === id);
-      for (const edit of [
-        (a) => { a.errors.push('keyLED:format'); },
-        (a) => { a.errors.push('keySound:range'); },
-        (a) => { a.errors.pop(); if (!c.expected.errors.length) a.errors.push('keyLED:range'); },
-        (a) => { a.sounds[0].queue[0].file = 'wrong.wav'; },
-        (a) => { a.loaded = false; },
-      ]) {
-        const actual = structuredClone(c.known.android.actual);
-        edit(actual);
-        assert.equal(seen(c, actual).status, 'fail', id);
-      }
-    }
-  });
-
-  test('does not accept other platforms, other pins, dishonest statuses or mismatched inputs', () => {
-    const c = corpus.cases.find((c) => c.id === 'KS-B08');
-    for (const platform of ['web', 'ios']) assert.equal(seen(c, c.known.android.actual, platform).status, 'fail');
-    assert.equal(seen(c, c.known.android.actual, 'android', { status: 'pass' }).status, 'unverified');
-    assert.equal(seen(c, c.known.android.actual, 'android', { fingerprint: '0'.repeat(64) }).status, 'unverified');
-    const pinned = structuredClone(canonical);
-    const other = pinned.corpus.cases.find((c) => c.id === 'RUN-A-003');
-    const actual = structuredClone(other.expected);
-    actual.checkpoints[5].unshift(['autoChain', 1]);
-    other.known = { android: { status: 'fail', actual, note: 'Synthetic non-storage divergence' } };
-    const result = fullResults('android', { [other.id]: { status: 'fail', actual } });
-    assert.equal(judge(pinned, 'android', result).get(other.id).status, 'fail');
-  });
-
-  test('confirms T-09 from the allowed representations and keeps their reasons visible in text', () => {
-    const android = fullResults('android', Object.fromEntries(Object.keys(pathsByCase).map((id) => {
-      const c = corpus.cases.find((c) => c.id === id);
-      return [id, { status: 'fail', actual: c.known.android.actual }];
-    })));
-    const report = buildReport(canonical, { android });
-    assert.equal(report.grammar.rows.find((r) => r.id === 'T-09').android.confirmed, true);
-    for (const id of Object.keys(pathsByCase)) assert.match(renderText(report), new RegExp(`${id} android: .*T-09`));
   });
 });
 
@@ -534,7 +526,9 @@ const copyIsSelfConsistent = (dir) => readFileSync(join(dir, 'corpus.sha256'), '
 test('the sync check fails on a drifted, missing or outdated copy and passes once it is restored', () => {
   const root = mkdtempSync(join(tmpdir(), 'unipack-sync-'));
   const dir = join(root, COPY_DIRS.android);
-  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, ...args], { encoding: 'utf8' });
+  const pinsPath = join(root, 'pins.json');
+  writeFileSync(pinsPath, JSON.stringify({ android: 'a'.repeat(40), ios: 'b'.repeat(40) }));
+  const sync = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, '--pins', pinsPath, ...args], { encoding: 'utf8' });
   const restore = () => { for (const name of COPIED_FILES) writeFileSync(join(dir, name), readFileSync(join(here, name))); };
   try {
     assert.equal(differences({ android: root }).length, COPIED_FILES.length);
@@ -578,7 +572,7 @@ test('copies.json pins the app copies CI compares to full commit hashes only', (
   const a = 'a'.repeat(40);
   const b = 'b'.repeat(40);
   const pins = JSON.stringify({ android: a, ios: b });
-  assert.deepEqual(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8')), JSON.parse(readFileSync(join(here, 'copies.json'), 'utf8')));
+  assert.ok(Object.values(resolveCommits(readFileSync(join(here, 'copies.json'), 'utf8'))).every((value) => /^[a-f0-9]{40}$/.test(value)));
   assert.deepEqual(resolveCommits(pins), { android: a, ios: b });
   assert.deepEqual(resolveCommits(pins, { android: '', ios: 'c'.repeat(40) }), { android: a, ios: 'c'.repeat(40) });
   for (const commit of ['main', a.slice(0, 7), `${a}0`, a.toUpperCase(), `refs/heads/${a}`]) {
@@ -728,8 +722,8 @@ describe('app test results', () => {
     refused('web', { ...web, items: [...web.items, web.items[0]] }, /reports F-05 more than once/);
     refused('android', nativeFile('ios'), /the file is ios's, not android's/);
     refused('web', nativeFile('android'), /the file is android's, not web's/);
-    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G5/);
-    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G5/);
+    refused('ios', nativeFile('ios', { grammarVersion: 'G2' }), /checked against grammar G2, this tool reads G6/);
+    refused('android', nativeFile('android', { grammar: { version: 'G2', revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }), /checked against grammar G2, this tool reads G6/);
     refused('web', { ...web, grammar: { version: RECORD.version, revision: '7a38cd71-4570-4738-9732-229bbc339eed' } }, /grammar revision 7a38cd71.* is not the SHA-256/);
     refused('android', nativeFile('android', { sourceDirty: true }), /uncommitted changes/);
     refused('ios', nativeFile('ios', { sourceStatus: ' M unipad/SoundEngine.swift' }), /uncommitted changes/);
@@ -744,7 +738,7 @@ describe('app test results', () => {
       const run = spawnSync(process.execPath, [join(here, 'report.mjs'), '--web-native', old], { encoding: 'utf8' });
       assert.equal(run.status, 3);
       assert.equal(run.stdout, '');
-      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G5/);
+      assert.match(run.stderr, /cannot use web app test results .*checked against grammar G2, this tool reads G6/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -777,11 +771,11 @@ describe('app test results', () => {
     assert.match(renderText(withNative), new RegExp(`app test results ${all().ios.sha256.slice(0, 12)}, run on commit ${COMMIT}`));
   });
 
-  test('9. an item confirmed on all three counts once, of the same 104', () => {
+  test('9. an item confirmed on all three counts once, of the same 114', () => {
     const before = buildReport(canonical, passing()).grammar;
     const after = buildReport(canonical, passing(), all()).grammar;
-    assert.equal(after.items, 104);
-    assert.equal(after.rows.length, 104);
+    assert.equal(after.items, 114);
+    assert.equal(after.rows.length, 114);
     const onAll = (g) => g.rows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).map((r) => r.id);
     assert.equal(after.confirmedOnAllThree, onAll(after).length);
     assert.deepEqual(onAll(after).filter((id) => !onAll(before).includes(id)), ['F-01', 'F-05', 'F-06', 'A-01', 'A-02', 'A-03', 'A-04', 'A-05']);
@@ -874,6 +868,16 @@ describe('app test results', () => {
     }
   });
 
+  test('G6 Opus cannot be confirmed by an unregistered app test on any platform', () => {
+    for (const p of PLATFORMS) {
+      assert.equal(NATIVE_TESTS[p]['A-07'], undefined, p);
+      const file = nativeFile(p, { items: { ...NATIVE_TESTS[p], 'A-07': ['unregisteredOpusOutputTest'] } });
+      const cell = items({ [p]: read(p, file) }).get('A-07')[p];
+      assert.equal(cell.confirmed, false, p);
+      assert.match(cell.detail, /no .* app test is listed/);
+    }
+  });
+
   test('13. Android A-03 stays unconfirmed when the file marks it passed on a test NATIVE_TESTS does not list', () => {
     const unlisted = 'com.kimjisub.launchpad.audio.AudioFormatDecodeDeviceTest#decodesOggVorbis';
     const standIn = 'com.kimjisub.launchpad.audio.SoundOutputDeviceTest#anOggVorbisSoundPlays';
@@ -904,4 +908,121 @@ describe('app test results', () => {
     check(actual);
     check(actual ? undefined : [standIn]);
   });
+});
+
+
+test('explicit historical copy pins verify bytes, warn, and fail strict checks without verifying old results', () => {
+  const root = mkdtempSync(join(tmpdir(), 'unipack-pinned-copy-'));
+  const dir = join(root, COPY_DIRS.android);
+  const commit = 'a'.repeat(40);
+  const oldCorpus = { ...corpus, grammar: 'G5', cases: corpus.cases.slice(0, -1) };
+  const older = Buffer.from(serialize(oldCorpus));
+  const olderHash = sha256(older);
+  const pins = { android: { commit, corpusSha256: olderHash }, ios: 'b'.repeat(40) };
+  const inspect = (extra = {}) => checkCopies({ android: root }, { pins, commits: { android: commit }, ...extra });
+  try {
+    const copied = spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root], { encoding: 'utf8' });
+    assert.equal(copied.status, 0, copied.stderr);
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(older));
+    const seen = inspect();
+    assert.deepEqual(seen.errors, []);
+    assert.equal(seen.warnings.length, 1);
+    assert.match(seen.warnings[0], /android: behind canonical/);
+    assert.ok(seen.warnings[0].includes(olderHash));
+    assert.ok(seen.warnings[0].includes(canonical.sha256));
+    assert.ok(inspect({ requireCurrent: true }).errors.some((e) => /behind canonical/.test(e)));
+    assert.ok(inspect({ commits: { android: 'c'.repeat(40) } }).errors.length > 0, 'an override cannot inherit an unrelated pin');
+    const reported = { ...fullResults('android'), corpusSha256: olderHash };
+    assert.deepEqual(statusesOf(judge(canonical, 'android', reported)), ['unverified']);
+    assert.equal(buildReport(canonical, { android: reported }).summary.android.pass, 0);
+    const cliPins = join(root, 'pins.json');
+    writeFileSync(cliPins, JSON.stringify(pins));
+    const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--check', '--android', root, '--pins', cliPins, '--android-commit', commit, ...args], { encoding: 'utf8' });
+    assert.equal(cli().status, 0, cli().stderr);
+    assert.match(cli().stdout, /::warning::android: behind canonical/);
+    assert.equal(cli('--require-current').status, 1);
+    writeFileSync(join(dir, 'corpus.json'), Buffer.concat([older, Buffer.from(' ')]));
+    assert.ok(inspect().errors.length > 0, 'one changed byte fails even if JSON still parses');
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(readFileSync(join(here, 'corpus.json'))));
+    assert.ok(inspect().errors.length > 0, 'a forged sidecar hash fails');
+    rmSync(join(dir, 'corpus.sha256'));
+    assert.ok(inspect().errors.length > 0, 'a missing hash fails');
+    assert.ok(checkCopies({ android: root }, { sourceDir: root, pins }).errors.length > 0, 'missing canonical data fails closed');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('historical pins require exact keys, lowercase hashes and immutable commits', () => {
+  const a = 'a'.repeat(40), b = 'b'.repeat(40), hash = 'c'.repeat(64);
+  const text = JSON.stringify({ android: { commit: a, corpusSha256: hash }, ios: b });
+  assert.deepEqual(resolvePins(text).android, { commit: a, corpusSha256: hash });
+  assert.deepEqual(resolveCommits(text), { android: a, ios: b });
+  for (const pin of [{ commit: a }, { corpusSha256: hash }, { commit: 'main', corpusSha256: hash }, { commit: a, corpusSha256: 'short' }, { commit: a, corpusSha256: hash.toUpperCase() }, { commit: a, corpusSha256: hash, extra: true }, null, []]) {
+    assert.throws(() => resolvePins(JSON.stringify({ android: pin, ios: b })));
+  }
+});
+
+
+test('adopted product cases share the pinned audio inputs and reject fabricated observations', () => {
+  const audio = JSON.parse(readFileSync(new URL('../../src/lib/unipack/__fixtures__/audio-safety/cases.json', import.meta.url), 'utf8'));
+  const added = corpus.cases.filter(c => c.productBehavior);
+  assert.equal(added.filter(c => c.observation === 'audio-cost').length, audio.costs.length);
+  assert.equal(added.filter(c => c.observation === 'audio-file').length, audio.files.length);
+  assert.equal(added.filter(c => c.observation === 'audio-wave').length, audio.wavRecipes.length);
+  assert.equal(added.filter(c => c.observation === 'audio-selection').length, audio.selections.length);
+  assert.ok(added.some(c => c.observation === 'auto-map'));
+  assert.ok(added.some(c => c.id === 'RUN-P001'));
+  for (const c of added) for (const platform of PLATFORMS) {
+    const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
+    const result = cases => ({ platform, corpusSha256: canonical.sha256, cases });
+    assert.equal(judge(only, platform, result([])).get(c.id).status, 'unverified', c.id);
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'pass' }])).get(c.id).status, 'unverified', c.id);
+    const actual = { injectedWrongResult: true };
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'pass', actual }])).get(c.id).status, 'unverified', c.id);
+    assert.equal(judge(only, platform, result([{ id: c.id, fingerprint: c.fingerprint, status: 'fail', actual }])).get(c.id).status, 'fail', c.id);
+  }
+});
+
+
+test('pure product operations cannot certify complete app behavior or consume expected inputs', () => {
+  for (const c of corpus.cases.filter(c => c.productBehavior)) {
+    const input = c.files.find(f => f.path === 'operation.json');
+    if (input) {
+      const data = JSON.parse(input.text);
+      for (const key of ['expected', 'expectedCost', 'exclusion', 'selected', 'reservedCost', 'events']) assert.equal(key in data, false, `${c.id}/${key}`);
+    }
+  }
+  const report = buildReport(canonical, Object.fromEntries(PLATFORMS.map(p => [p, fullResults(p)])));
+  for (let i = 1; i <= 9; i++) for (const platform of PLATFORMS) {
+    const item = report.grammar.rows.find(row => row.id === `PB-${String(i).padStart(2, '0')}`);
+    assert.ok(item);
+    assert.equal(item[platform].confirmed, false, `${item.id}/${platform}`);
+  }
+});
+
+
+test('local copy verification uses current bytes unless an explicit commit selects a historical pin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'unipack-local-copy-'));
+  const dir = join(root, COPY_DIRS.android);
+  const commit = 'a'.repeat(40);
+  const older = Buffer.from(serialize({ ...corpus, grammar: 'G5', cases: corpus.cases.slice(0, -1) }));
+  const pins = join(root, 'pins.json');
+  writeFileSync(pins, JSON.stringify({ android: { commit, corpusSha256: sha256(older) }, ios: 'b'.repeat(40) }));
+  const cli = (...args) => spawnSync(process.execPath, [join(here, 'sync.mjs'), '--android', root, '--pins', pins, ...args], { encoding: 'utf8' });
+  try {
+    assert.equal(cli().status, 0);
+    const local = cli('--check');
+    assert.equal(local.status, 0, local.stderr);
+    assert.doesNotMatch(local.stdout, /behind canonical/);
+    assert.equal(cli('--check', '--require-current').status, 0);
+    writeFileSync(join(dir, 'corpus.json'), older);
+    writeFileSync(join(dir, 'corpus.sha256'), digestLine(older));
+    assert.equal(cli('--check').status, 1, 'an unspecified commit cannot authorize historical bytes');
+    const selected = cli('--check', '--android-commit', commit);
+    assert.equal(selected.status, 0, selected.stderr);
+    assert.match(selected.stdout, /behind canonical/);
+    assert.equal(cli('--check', '--android-commit', commit, '--require-current').status, 1);
+    assert.equal(cli('--check', '--android-commit', 'c'.repeat(40)).status, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

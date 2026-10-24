@@ -63,12 +63,10 @@ Pass on all three platforms: 198 of 204. Confirmed grammar items: Android 94/104
 web 97/104; 90/104 on all three; 99/104 have a case. These figures describe the corpus and what the
 harnesses can observe, not compatibility with every UniPack.
 
-T-09 explicitly allows the two Android internal storage representations in KS-B08 and KL-BE10.
-The report now counts those exact results as passes while retaining their original values and
-harness classifications (`reportedStatus`, `reportedDetail`). Only the four specified fields may
-differ between `-2147483648` and `-2147483649`; all other fields and warnings must match exactly.
-Positive wraparound and changed format or range warnings still fail. The expected values, pins,
-corpus bytes and app copies are unchanged.
+At the time of this retained report, T-09 allowed two Android internal storage representations
+in KS-B08 and KL-BE10. That historical reporting exception no longer applies: G6 requires the exact
+decremented value `-2147483649` on every platform and rejects saturation at `-2147483648`.
+The old aggregate above is retained evidence, not a result under the current rule.
 
 At the time of this report, RUN-A-003's Android observation-order pin still counted as a failure,
 and iOS could not observe sound stops in RUN-S-008 through RUN-S-010 or chain-change counter resets
