@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { duration, loadInputPack } from './input-fixture';
 
 // Newest first: the list sorts by the date a pack was added.
 const packs = [
@@ -294,3 +295,101 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
   await expect(list(page).getByRole('option')).toHaveCount(1);
   await expect(option(page, first)).toBeVisible();
 });
+
+// Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
+async function openLongList(page: Page, square: boolean) {
+  await loadInputPack(page, 8, 8, square);
+  await expect(page).toHaveURL(/pack=/);
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('unipad');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('unipacks', 'readwrite');
+      const store = transaction.objectStore('unipacks');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        for (let index = 0; index < 12; index++) {
+          store.put({ ...request.result[0], id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
+        }
+      };
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.goto('/play');
+  await expect(list(page).getByRole('option')).toHaveCount(13);
+}
+
+// Use actual wheel input; never scroll a hidden target into view through DOM methods.
+async function wheelTo(page: Page, target: Locator) {
+  const scroll = await target.evaluate(element => {
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (getComputedStyle(parent).overflowY === 'auto') {
+        const rect = parent.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      }
+    }
+    throw new Error('Missing scroll container');
+  });
+  await page.mouse.move(scroll.x, scroll.y);
+  await page.mouse.wheel(0, 2000);
+  // Fractional scroll offsets can leave less than one CSS pixel clipped.
+  await expect(target).toBeInViewport({ ratio: 0.99 });
+}
+
+async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
+  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
+  await expectPads(page);
+  if (viewport.width < viewport.height) {
+    await expect(page.getByText('Rotate to landscape', { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 844, height: 390 });
+  }
+  const pad = page.locator('[data-pad="7,7"]');
+  const box = await pad.boundingBox();
+  expect(box).not.toBeNull();
+  const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
+  const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
+  expect(source.loop).toBe(true);
+  expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.filter(
+    source => source.loop && !window.browserProbe.audio.stops.includes(source.id),
+  ).length)).toBe(0);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await page.setViewportSize(viewport);
+  await expect(list(page).getByRole('option')).toHaveCount(13);
+}
+
+for (const square of [true, false]) {
+  for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [1280, 800]]) {
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
+      test.setTimeout(60_000);
+      await openLongList(page, square);
+      const viewport = { width, height };
+      await page.setViewportSize(viewport);
+      await info.attach('list-before-scroll', { body: await page.screenshot(), contentType: 'image/png' });
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
+      await wheelTo(page, tail);
+      await info.attach('list-tail-after-wheel', { body: await page.screenshot(), contentType: 'image/png' });
+      await tail.click();
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+      const detailPlay = page.getByRole('button', { name: 'Play', exact: true });
+      await wheelTo(page, detailPlay);
+      await info.attach('detail-play-reachable', { body: await page.screenshot(), contentType: 'image/png' });
+      await detailPlay.click();
+      await playAndReturn(page, viewport);
+      await wheelTo(page, tail);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+      await tail.locator(':scope > [aria-hidden="true"]').click();
+      await playAndReturn(page, viewport);
+    });
+  }
+}
