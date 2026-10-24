@@ -1,5 +1,37 @@
 # Results
 
+## Trailing-wait observations after the web runner fix (2026-10-24)
+
+The prepared canonical corpus advances from `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`
+to `c317515689ac9cb218c1de5d3159e4861898025fb47242c006da37cddc54d743` (382 cases, grammar G6,
+114 items). Only the web failure observations for RUN-P001 and RUN-P002 are removed.
+All 382 inputs, per-case fingerprints, scenarios and expected outputs are unchanged; the earlier
+removal of twelve resolved web playback observations is preserved.
+
+The complete web conformance run used the exact `AutoPlayRunner.ts`, `SoundEngine.ts` and
+`useUniPadEngine.ts` source blobs from application commit `7f231f6fbb4b47bc59388cbd5ff6b360f05bf6c9`
+overlaid for validation. The canonical change itself contains no application implementation.
+`node --import tsx --test src/lib/unipack/conformance.test.ts` passed 414 assertions with zero skips.
+The 382 recorded case results contain **361 passes and 21 failures**. Every remaining failure matches
+its unchanged web pin: sixteen parsing/selection cases and five mapper cases. Assertions accepting
+those pins do not turn the failures into compatibility passes.
+
+| Case | Before the fix | With the fix |
+|---|---|---|
+| RUN-P001 | Ends at the first checkpoint, before the final wait | Paired touch, active before 2000 ms, one end at 2000 ms |
+| RUN-P002 | Ends before suspension can preserve the final wait | Paired touch, suspension freezes the remaining wait, one end after resuming the remaining time |
+
+On the same new corpus, the unmodified application at `cf7409543b5e24d936ba73c80e92121d0c80da34`
+fails exactly these two assertions; the other 21 recorded failures remain pinned. Raw before/after
+results retain their original corpus hashes and source provenance. These virtual-clock runner
+observations do not establish real audio, manual-resume UI, device output or native application results.
+
+Android and iOS were not rerun. Their existing historical objects in `copies.json` remain unchanged
+until reviewed public copy commits exist. The explicit historical check warns for both apps, while
+`sync.mjs --check --require-current` rejects both old copies. Prepared copies of the new bytes pass
+the strict check; this is a byte comparison, not a native test run or a public copy-commit handoff.
+The older reports below retain their original counts and timestamps.
+
 ## Changes after normalized LED filename ordering and wormhole warning cases (2026-10-22)
 
 The canonical corpus advances from SHA256
