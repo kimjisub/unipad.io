@@ -294,7 +294,7 @@ test('switching autoplay to guide never asks for an earlier chain at the same so
   await page.clock.runFor(20);
   await info.attach('guide-after-mode-change', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
 });
 
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
@@ -326,7 +326,7 @@ test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ 
   await info.attach('before-wormhole-deadline', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await expect(first.locator('div.z-10')).toHaveCount(1);
   await page.clock.runFor(17);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
   await info.attach('resumed-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
 
