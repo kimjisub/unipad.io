@@ -349,11 +349,19 @@ export function useUniPadEngine() {
   }, [updateChainVisual]);
 
   const flushVisualState = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
-      chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-    }));
+    setState((prev) => {
+      const chains = chainStatesRef.current;
+      // A pad-only light must not pull unchanged chain bars into a synchronous commit.
+      const sameChains = prev.chainStates.length === chains.length && chains.every((chain, i) => {
+        const previous = prev.chainStates[i];
+        return chain.color === previous.color && chain.active === previous.active && chain.guide === previous.guide;
+      });
+      return {
+        ...prev,
+        padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
+        chainStates: sameChains ? prev.chainStates : chains.map((chain) => ({ ...chain })),
+      };
+    });
   }, []);
 
   const visualFlushRef = useRef<object | null>(null);

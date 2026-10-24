@@ -512,3 +512,15 @@ test('a light first requested after suspension keeps its full delay on return', 
   await tick(4);
   assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
 });
+
+test('pad-only light commits keep an unchanged chain snapshot while real chain changes still publish', async () => {
+  const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
+  const chains = result.current.state.chainStates;
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(4);
+  assert.strictEqual(result.current.state.chainStates, chains, 'unchanged chains must not force chain bars into a pad light commit');
+  await flush(() => result.current.setChain(1));
+  assert.notStrictEqual(result.current.state.chainStates, chains);
+  assert.equal(result.current.state.chain, 1);
+  assert.notEqual(result.current.state.chainStates[9].color, chains[9].color);
+});

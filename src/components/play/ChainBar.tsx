@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { ThemeAssets } from '@/lib/unipack';
 import { SkinImage } from './SkinImage';
 
@@ -23,7 +24,7 @@ interface ChainBarProps {
 
 const CHAINS_PER_SIDE = 8;
 
-export function ChainBar({
+export const ChainBar = memo(function ChainBar({
   chainCount,
   slotCount,
   chainStates,
@@ -138,4 +139,4 @@ export function ChainBar({
       })}
     </div>
   );
-}
+});
