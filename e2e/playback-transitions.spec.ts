@@ -256,7 +256,7 @@ for (const resume of ['button', 'mode']) {
 for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async ({ page }, info) => {
   await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000');
   await mode(page, 'Guide').dispatchEvent('click');
-  // Include the first timer in the authored pause position.
+  // The first tick plays at the click and starts the song clock there.
   await page.clock.runFor(1); await page.clock.fastForward(pauseMs - 1);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(500);
@@ -357,7 +357,7 @@ test('compatibility: pause keeps the remaining half-second before the next note'
   await open(page, 'o 1 1\nd 1000\no 1 2\nd 10000\no 1 1');
   await mode(page, 'Auto').dispatchEvent('click');
   await page.clock.runFor(1);
-  // The normal 1 ms first tick consumes 1 ms of the requested song time.
+  // The first tick plays the first note at the click and starts the song clock there.
   await page.clock.fastForward(499);
   await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
   await page.clock.fastForward(3000);
@@ -731,7 +731,7 @@ for (const via of ['mode', 'button']) {
     await page.clock.runFor(1);
     await info.attach('after-mode-switch', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
     expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
-    // Include the initial timer in the authored 1000 ms delay.
+    // The song clock started at the click, where the first tick played the first note.
     await page.clock.fastForward(898);
     expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
     await page.clock.fastForward(1);
