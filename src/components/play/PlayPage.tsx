@@ -12,6 +12,7 @@ import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { PackErrorDialog } from './PackErrorDialog';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
@@ -77,8 +78,9 @@ export function PlayPage() {
     toggleRecording,
     toggleHideUI,
     toggleWatermark,
-    setWatermark,
+    setSlideMode,
     toggleTraceLog,
+    setTraceLogStyle,
     clearTraceLog,
     toggleProLightMode,
     loadTheme,
@@ -279,60 +281,19 @@ export function PlayPage() {
     };
   }, [downloadingStoreCode]);
 
-  // 로딩 완료 후 에러가 있으면 다이얼로그 표시
+  // A refused pack never becomes loaded, but its critical error still needs a visible reason.
   useEffect(() => {
-    if (state.loaded && !prevLoadedRef.current && state.errors.length > 0) {
+    if ((state.criticalError || (state.loaded && !prevLoadedRef.current)) && state.errors.length > 0) {
       setErrorDialogShown(true);
     }
     prevLoadedRef.current = state.loaded;
-  }, [state.loaded, state.errors]);
-
-  // A new pack supplies defaults. Read preferences again before saving any of them.
-  const [restoredSettings, setRestoredSettings] = useState<{
-    packInfo: NonNullable<typeof state.unipack>['info'];
-    volume: boolean;
-    watermark: boolean;
-  } | null>(null);
-  useEffect(() => {
-    if (!state.loaded || !state.unipack) return;
-    let cancelled = false;
-    const packInfo = state.unipack.info;
-    void Promise.allSettled([
-      getSetting('volumeLevel'),
-      getSetting('watermark'),
-    ]).then(([volume, watermark]) => {
-      if (cancelled) return;
-      if (volume.status === 'fulfilled' && volume.value !== null) {
-        const level = Number(volume.value);
-        if (Number.isFinite(level)) setVolumeLevel(level);
-      }
-      if (watermark.status === 'fulfilled' && (watermark.value === 'true' || watermark.value === 'false')) {
-        setWatermark(watermark.value === 'true');
-      }
-      // Unread preferences must stay untouched, even when other reads succeed.
-      setRestoredSettings({
-        packInfo,
-        volume: volume.status === 'fulfilled',
-        watermark: watermark.status === 'fulfilled',
-      });
-    });
-    return () => { cancelled = true; };
-  }, [state.loaded, state.unipack, setVolumeLevel, setWatermark]);
-
-  useEffect(() => {
-    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.volume) return;
-    setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
-  }, [state.loaded, state.unipack, state.volumeLevel, restoredSettings]);
-  useEffect(() => {
-    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.watermark) return;
-    setSetting('watermark', String(state.watermark)).catch(() => {});
-  }, [state.loaded, state.unipack, state.watermark, restoredSettings]);
+  }, [state.loaded, state.criticalError, state.errors]);
 
   const handleImportFile = useCallback(
     async (file: File) => {
       await resumeAudio();
       const buffer = await file.arrayBuffer();
-      await loadUniPack(buffer);
+      const opened = await loadUniPack(buffer);
 
       try {
         const parsed = await parseUniPack(buffer.slice(0));
@@ -343,6 +304,13 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
+        if (!opened) {
+          // Opening it closed whatever was playing, so nothing is current any more.
+          currentPackIdRef.current = null;
+          syncPackUrl(null);
+          await refreshLists();
+          return;
+        }
         currentPackIdRef.current = id;
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
@@ -401,10 +369,14 @@ export function PlayPage() {
         if (!pack) return false;
         currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
+        await updateUniPackLastOpened(id);
+        // The address and the last pack name only packs that opened: either would open a failed one again.
+        if (!(await loadUniPack(pack.zipData))) {
+          currentPackIdRef.current = null;
+          return false;
+        }
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
-        await updateUniPackLastOpened(id);
-        await loadUniPack(pack.zipData);
 
         const lastThemeId = await getSetting('lastThemeId');
         if (lastThemeId) {
@@ -434,10 +406,13 @@ export function PlayPage() {
     return new URLSearchParams(window.location.search).get(CODE_QUERY_KEY)?.trim() || null;
   }, []);
 
-  // Restore from ?pack=<localId> URL parameter
+  // Restore from ?pack=<localId> URL parameter, decided once when the page opens. Later addresses come
+  // from this page itself and must not reopen a pack that closed or failed.
+  const decidedUrlPackRestoreRef = useRef(false);
   useEffect(() => {
-    if (restoringFromStorage || state.loaded || state.loading) return;
-    if (triedUrlPackRestoreRef.current) return;
+    if (restoringFromStorage || decidedUrlPackRestoreRef.current) return;
+    decidedUrlPackRestoreRef.current = true;
+    if (state.loaded || state.loading || triedUrlPackRestoreRef.current) return;
     const packId = getPackIdFromUrl();
     if (!packId) return;
 
@@ -553,7 +528,7 @@ export function PlayPage() {
 
   const handleQuit = useCallback(() => {
     setOptionPanelOpen(false);
-    setLastPlayedPackId(currentPackIdRef.current);
+    if (currentPackIdRef.current) setLastPlayedPackId(currentPackIdRef.current);
     setLoadingPackTitle(null);
     unload();
     currentPackIdRef.current = null;
@@ -974,6 +949,18 @@ export function PlayPage() {
     />
   );
 
+  // The same error dialog is needed when an import fails before the player is mounted.
+  const errorDialog = errorDialogShown && state.errors.length > 0 && (
+    <PackErrorDialog
+      errors={state.errors}
+      critical={state.criticalError}
+      onClose={() => {
+        setErrorDialogShown(false);
+        if (state.criticalError) handleQuit();
+      }}
+    />
+  );
+
   // Loading spinner
   if (restoringFromStorage) {
     return (
@@ -997,7 +984,7 @@ export function PlayPage() {
           savedThemes={savedThemes}
           activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
-          keyboardDisabled={storeOpen}
+          keyboardDisabled={storeOpen || dialogOpen}
           onPlay={handlePlay}
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
@@ -1038,6 +1025,7 @@ export function PlayPage() {
         />
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
+        {errorDialog}
 
         <AnimatePresence>
           {toast && (
@@ -1252,7 +1240,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1488,7 +1478,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1576,7 +1568,9 @@ export function PlayPage() {
         recording={state.recording}
         hideUI={state.hideUI}
         watermark={state.watermark}
+        slideMode={state.slideMode}
         traceLog={state.traceLog}
+        traceLogStyle={state.traceLogStyle}
         proLightMode={state.proLightMode}
         midiConnected={state.midiConnected}
         midiConnecting={midiConnecting}
@@ -1590,7 +1584,9 @@ export function PlayPage() {
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}
+        onToggleSlideMode={() => setSlideMode(!state.slideMode)}
         onToggleTraceLog={toggleTraceLog}
+        onTraceLogStyleChange={setTraceLogStyle}
         onClearTraceLog={handleClearTraceLog}
         onToggleProLightMode={toggleProLightMode}
         volumeLevel={state.volumeLevel}
@@ -1622,44 +1618,7 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Error/Warning Dialog */}
-      {errorDialogShown && state.errors.length > 0 && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
-            if (!state.criticalError) setErrorDialogShown(false);
-          }} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
-            <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {state.criticalError ? t('error') : t('warning')}
-                </h2>
-                <span className="text-[10px] text-white/40">
-                  {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {state.errors.map((err, i) => (
-                  <ErrorMessageItem key={i} message={err} />
-                ))}
-              </div>
-              <button
-                className={`w-full py-2 rounded-lg text-sm font-medium ${
-                  state.criticalError
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-                onClick={() => {
-                  setErrorDialogShown(false);
-                  if (state.criticalError) handleQuit();
-                }}
-              >
-                {state.criticalError ? t('quit') : t('ok')}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      {errorDialog}
 
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
@@ -1688,36 +1647,6 @@ export function PlayPage() {
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
-    </div>
-  );
-}
-
-const ERROR_MSG_TRUNCATE = 120;
-
-function ErrorMessageItem({ message }: { message: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = message.length > ERROR_MSG_TRUNCATE;
-  const label = message.split(':')[0] || 'Error';
-  const detail = message.includes(':') ? message.slice(message.indexOf(':') + 1).trim() : message;
-
-  return (
-    <div className="rounded-md bg-white/5 px-3 py-2">
-      <div className="text-[11px] font-medium text-white/80 mb-0.5">{label}</div>
-      <div
-        className={`text-[10px] text-white/50 font-mono break-all leading-relaxed ${
-          !expanded && isLong ? 'line-clamp-3' : ''
-        }`}
-      >
-        {detail}
-      </div>
-      {isLong && (
-        <button
-          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
     </div>
   );
 }

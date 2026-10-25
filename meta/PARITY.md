@@ -151,24 +151,49 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
   stored historical app copies remain separate from these observations. See
   [RESULTS.md](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
 
+- **Native input-owned release validation remains separate from the web fix.**
+  RUN-G617 and RUN-G618 require each input to release only the sound and pack lights it started;
+  only the pressed indicator waits for the last input. New Android and iOS observations must name
+  their own corpus hash and input path. Historical stored corpus copies do not establish this rule.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
+
+- **RUN-G616: iOS can change chain after autoPlay is turned off.** The retained
+  partial run records a real delayed sound-wormhole callback after the stop.
+  Its unchanged expected final checkpoint is empty; the observation is pinned
+  as a failure. RUN-G613 from the same run is excluded from app playback pins:
+  the harness writes a stored negative loop value even though the engine schedules
+  one playback. See the [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md)
+  for provenance, source references and the checks still needed on iOS.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
-- **RUN-G617, RUN-G618: this branch releases the later input's sound and lights immediately.**
+- **RUN-G617, RUN-G618: the web play hook releases the later input's sound and lights immediately.**
   The play hook preserves each input identity and handles each release while keeping the press
   overlay until the final input. Both cases match the corrected expectations on application commit
   `1dbf0f464611041a3da6db02ce6b2175b41e4dbf` with unchanged test input SHA256 `7ac226a8…`.
-  The two web pins are removed in regenerated corpus `cbb87354…`; the earlier failure observations
-  keep their original commit and hash. Independent review and merge are pending; no native or
-  physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25-awaiting-review).
+  The two web pins are removed in regenerated corpus `cbb87354…` (`859e24aa…` together with the
+  iOS RUN-G616 pin, the resolved RUN-P001/RUN-P002 web pins and the sixteen web sound lookup pins
+  retired by [unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183)); the earlier failure observations
+  keep their original commit and hash. No native or physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
+- **RUN-P001, RUN-P002: web trailing-wait observations match their existing expectations.**
+  [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178), merged as
+  `d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`, resolves the two web observations without
+  changing inputs, fingerprints, scenarios or expected results. Only their web failure pins were
+  removed. The reviewed 382-case corpus records 361 web passes and 21 remaining pinned failures;
+  its SHA256 is `9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`, including
+  the newer RUN-G616 iOS failure observation. Both native references still select historical
+  214-case snapshots: their two warnings remain, and strict current-copy verification is incomplete.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
+  for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms and other
+  verification limits.
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.
-  The app copy references now select that Android merge and
-  [unipad-ios#215](https://github.com/kimjisub/unipad-ios/pull/215): identical 214-case snapshots,
+  The app copy references now select that Android merge and iOS merge `e8ac34d…`
+  ([unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213)): identical 214-case snapshots,
   SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
   The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
   app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
