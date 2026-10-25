@@ -168,6 +168,17 @@ platform's own fix removes it.
   The two web pins are removed in regenerated corpus `cbb87354…` (`5f92bb56…` together with the
   iOS RUN-G616 pin and the resolved RUN-P001/RUN-P002 web pins); the earlier failure observations
   keep their original commit and hash. No native or physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
+- **RUN-P001, RUN-P002: web trailing-wait observations match their existing expectations.**
+  [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178), merged as
+  `d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`, resolves the two web observations without
+  changing inputs, fingerprints, scenarios or expected results. Only their web failure pins were
+  removed. The reviewed 382-case corpus records 361 web passes and 21 remaining pinned failures;
+  its SHA256 is `9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`, including
+  the newer RUN-G616 iOS failure observation. Both native references still select historical
+  214-case snapshots: their two warnings remain, and strict current-copy verification is incomplete.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
+  for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms and other
+  verification limits.
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.

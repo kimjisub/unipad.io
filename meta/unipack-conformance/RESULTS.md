@@ -128,6 +128,31 @@ Every input, scenario, fingerprint and expected value stays unchanged. The histo
 web measurements above retain their own hashes; this paragraph does not relabel
 those runs or claim a new native measurement. Both native copy references stay historical.
 
+## Web trailing-wait fix merged (2026-10-25)
+
+[unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) was merged as
+`d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`. Its reviewed head was
+`0a132513c431fe0dcf76e0cea1cc7a47ed2a88e8`, whose tree is identical to the merge commit.
+In the Node conformance run, that head passes 414 assertions without skips and records
+**361 passes and 21 unchanged pinned web failures** across all 382 cases.
+The merged corpus has SHA256
+`9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6` (grammar G6, 114 items).
+It preserves the newer RUN-G616 iOS failure observation. RUN-P001 and RUN-P002 use their existing
+inputs, fingerprints, scenarios and expected results; only their web failure pins were removed.
+The earlier runs above retain their original commits and hashes.
+
+These results include virtual-clock observations. A separate runner-unit measurement at the reviewed
+head found an initial-timer edge. The initial delay is not compensated when it is at most 1 ms,
+so the first interval can be shortened by up to 1 ms. In the retained measurement with the first
+callback exactly 1 ms after play starts, the first 1000 ms note interval measures 999 ms, and a
+2000 ms trailing wait measures 1999 ms from the first note. This accepted timing limitation is
+retained separately from the Node corpus result;
+no expected value was changed to remove the two pins. Raw measurements are retained outside this repository.
+
+Both native copy declarations still select historical 214-case snapshots. Their explicit integrity
+check keeps two outdated-copy warnings, and strict current-copy verification rejects those snapshots.
+This merge does not establish current native compatibility or a new complete browser run.
+
 ## Two iOS partial-run observations separated (2026-10-25)
 
 The [retained nine-case run and source investigation](investigations/ios-playback-observations/README.md)
