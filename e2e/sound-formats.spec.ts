@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { basicTone, openBasicWith } from './basic-pack';
+import { BASIC_PACK, basicTone, openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
 import { pad } from './touch';
 import { formatAudio, observeFormatBuffers } from './sound-format-probe';
@@ -95,6 +96,26 @@ test('a sound that cannot be decoded is silent once and the pad goes on to its n
   expect((await audio(page)).starts).toEqual([]);
   await tap(page, '0,0');
   await expect.poll(async () => (await audio(page)).starts.length).toBe(1);
+});
+
+test('a pack none of whose sounds decode ends loading with the reason and a way back to the list', async ({ page }, info) => {
+  const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
+  zip.file('sounds/tone.wav', 'not audio');
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+    name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
+  });
+  const dialog = page.getByRole('alertdialog', { name: 'Error', exact: true });
+  try {
+    await expect(dialog).toContainText('1 audio file(s) failed to decode');
+    await expect(page.getByText(/Loading audio/)).toHaveCount(0);
+  } finally {
+    await info.attach('all-sounds-failed', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  await dialog.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(1);
+  await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
 // touch is on + off in one line: the wormhole of the touched pad's sound moves the lines after it to

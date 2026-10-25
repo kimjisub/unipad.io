@@ -1030,8 +1030,7 @@ export function useUniPadEngine() {
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
       if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
-        return;
+        throw new Error(soundWarnings[0]);
       }
 
       const ledListener: LedRunnerListener = {

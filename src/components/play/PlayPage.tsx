@@ -12,6 +12,7 @@ import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { PackErrorDialog } from './PackErrorDialog';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
@@ -986,6 +987,8 @@ export function PlayPage() {
 
   // Main Screen (UniPack list)
   if (!state.loaded && !state.loading) {
+    // A pack that could not open returns here; its reason stays until Quit clears it.
+    const loadFailed = state.criticalError && state.errors.length > 0;
     return (
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -997,7 +1000,7 @@ export function PlayPage() {
           savedThemes={savedThemes}
           activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
-          keyboardDisabled={storeOpen}
+          keyboardDisabled={storeOpen || loadFailed}
           onPlay={handlePlay}
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
@@ -1036,6 +1039,8 @@ export function PlayPage() {
           onCancelDownload={handleCancelStoreDownload}
           onYoutube={handleStoreYoutube}
         />
+
+        {loadFailed && <PackErrorDialog errors={state.errors} critical onClose={handleQuit} />}
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
@@ -1622,43 +1627,15 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Error/Warning Dialog */}
       {errorDialogShown && state.errors.length > 0 && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
-            if (!state.criticalError) setErrorDialogShown(false);
-          }} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
-            <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {state.criticalError ? t('error') : t('warning')}
-                </h2>
-                <span className="text-[10px] text-white/40">
-                  {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {state.errors.map((err, i) => (
-                  <ErrorMessageItem key={i} message={err} />
-                ))}
-              </div>
-              <button
-                className={`w-full py-2 rounded-lg text-sm font-medium ${
-                  state.criticalError
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-                onClick={() => {
-                  setErrorDialogShown(false);
-                  if (state.criticalError) handleQuit();
-                }}
-              >
-                {state.criticalError ? t('quit') : t('ok')}
-              </button>
-            </div>
-          </div>
-        </>
+        <PackErrorDialog
+          errors={state.errors}
+          critical={state.criticalError}
+          onClose={() => {
+            setErrorDialogShown(false);
+            if (state.criticalError) handleQuit();
+          }}
+        />
       )}
 
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
@@ -1688,36 +1665,6 @@ export function PlayPage() {
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
-    </div>
-  );
-}
-
-const ERROR_MSG_TRUNCATE = 120;
-
-function ErrorMessageItem({ message }: { message: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = message.length > ERROR_MSG_TRUNCATE;
-  const label = message.split(':')[0] || 'Error';
-  const detail = message.includes(':') ? message.slice(message.indexOf(':') + 1).trim() : message;
-
-  return (
-    <div className="rounded-md bg-white/5 px-3 py-2">
-      <div className="text-[11px] font-medium text-white/80 mb-0.5">{label}</div>
-      <div
-        className={`text-[10px] text-white/50 font-mono break-all leading-relaxed ${
-          !expanded && isLong ? 'line-clamp-3' : ''
-        }`}
-      >
-        {detail}
-      </div>
-      {isLong && (
-        <button
-          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
     </div>
   );
 }
