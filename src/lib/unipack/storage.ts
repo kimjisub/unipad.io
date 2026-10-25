@@ -1,8 +1,10 @@
 import type { AutoPlayElement } from './types';
 
 const DB_NAME = 'unipad';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_UNIPACKS = 'unipacks';
+const STORE_PACK_METADATA = 'unipackMetadata';
+const PACK_STORES = [STORE_UNIPACKS, STORE_PACK_METADATA];
 const STORE_THEMES = 'themes';
 const STORE_SETTINGS = 'settings';
 
@@ -25,6 +27,14 @@ export interface StoredUniPack {
   autoPlay?: StoredAutoPlay;
   addedAt: number;
   lastOpenedAt: number;
+}
+
+type UniPackMetadata = Omit<StoredUniPack, 'zipData'>;
+
+function packMetadata(record: StoredUniPack): UniPackMetadata {
+  const { zipData, ...metadata } = record;
+  void zipData;
+  return metadata;
 }
 
 /** The autoPlay a pack plays and the one it replaced, which restoring swaps back. */
@@ -50,6 +60,22 @@ function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore(STORE_UNIPACKS, { keyPath: 'id' });
         store.createIndex('lastOpenedAt', 'lastOpenedAt');
       }
+      if (!db.objectStoreNames.contains(STORE_PACK_METADATA)) {
+        const metadata = db.createObjectStore(STORE_PACK_METADATA, { keyPath: 'id' });
+        metadata.createIndex('lastOpenedAt', 'lastOpenedAt');
+        // Copy only small fields. Legacy archives stay untouched, and an interrupted or failed
+        // upgrade rolls back this entire store so the next open can retry without losing packs.
+        const cursor = request.transaction!.objectStore(STORE_UNIPACKS).openCursor();
+        cursor.onsuccess = () => {
+          if (!cursor.result) return;
+          try {
+            metadata.put(packMetadata(cursor.result.value as StoredUniPack));
+            cursor.result.continue();
+          } catch {
+            request.transaction!.abort();
+          }
+        };
+      }
       if (!db.objectStoreNames.contains(STORE_THEMES)) {
         db.createObjectStore(STORE_THEMES, { keyPath: 'id' });
       }
@@ -57,7 +83,11 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -86,8 +116,8 @@ function tx<T>(
  * `write` calls `fail` to abort with its own reason.
  */
 async function commit(
-  storeName: string,
-  write: (store: IDBObjectStore, fail: (error: unknown) => void) => void,
+  storeName: string | string[],
+  write: (transaction: IDBTransaction, fail: (error: unknown) => void) => void,
 ): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -110,7 +140,7 @@ async function commit(
       reject(transaction.error ?? failure ?? new DOMException('The write was aborted.', 'AbortError'));
     };
     try {
-      write(transaction.objectStore(storeName), fail);
+      write(transaction, fail);
     } catch (error) {
       fail(error);
     }
@@ -120,15 +150,16 @@ async function commit(
 /** Updates only the requested fields from the latest record, within one transaction. */
 async function updateStoredUniPack(
   id: string,
-  change: (record: StoredUniPack) => Partial<StoredUniPack>,
+  change: (record: UniPackMetadata) => Partial<UniPackMetadata>,
   onMissing: () => void = () => {},
-): Promise<StoredUniPack | undefined> {
-  let updated: StoredUniPack | undefined;
-  await commit(STORE_UNIPACKS, (store, fail) => {
+): Promise<UniPackMetadata | undefined> {
+  let updated: UniPackMetadata | undefined;
+  await commit(STORE_PACK_METADATA, (transaction, fail) => {
+    const store = transaction.objectStore(STORE_PACK_METADATA);
     const request = store.get(id);
     request.onsuccess = () => {
       try {
-        const record = request.result as StoredUniPack | undefined;
+        const record = request.result as UniPackMetadata | undefined;
         if (!record) {
           onMissing();
           return;
@@ -181,7 +212,10 @@ function createUniPackRecord(zipData: ArrayBuffer, info: UniPackInfo): StoredUni
 
 export async function saveUniPack(zipData: ArrayBuffer, info: UniPackInfo): Promise<string> {
   const record = createUniPackRecord(zipData, info);
-  await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
+  await commit(PACK_STORES, (transaction) => {
+    transaction.objectStore(STORE_UNIPACKS).put({ id: record.id, zipData });
+    transaction.objectStore(STORE_PACK_METADATA).put(packMetadata(record));
+  });
   return record.id;
 }
 
@@ -200,9 +234,12 @@ export async function saveStoreUniPack(
     .filter((pack) => pack.storeCode === info.storeCode)
     .map((pack) => pack.id);
   const record = createUniPackRecord(zipData, info);
-  await commit(STORE_UNIPACKS, (store) => {
-    store.put(record);
-    for (const id of previousIds) store.delete(id);
+  await commit(PACK_STORES, (transaction) => {
+    transaction.objectStore(STORE_UNIPACKS).put({ id: record.id, zipData });
+    transaction.objectStore(STORE_PACK_METADATA).put(packMetadata(record));
+    for (const id of previousIds) {
+      for (const name of PACK_STORES) transaction.objectStore(name).delete(id);
+    }
   });
   return record.id;
 }
@@ -218,24 +255,38 @@ export async function saveUniPackAutoPlay(id: string, autoPlay: StoredAutoPlay):
 }
 
 export async function getUniPack(id: string): Promise<StoredUniPack | undefined> {
-  return tx(STORE_UNIPACKS, 'readonly', (store) => store.get(id));
+  const db = await openDB();
+  const transaction = db.transaction(PACK_STORES, 'readonly');
+  transaction.oncomplete = () => db.close();
+  return new Promise((resolve, reject) => {
+    const archive = transaction.objectStore(STORE_UNIPACKS).get(id);
+    const metadata = transaction.objectStore(STORE_PACK_METADATA).get(id);
+    let reads = 0;
+    const loaded = () => {
+      if (++reads === 2) resolve(archive.result && metadata.result
+        ? { ...metadata.result, zipData: archive.result.zipData } as StoredUniPack : undefined);
+    };
+    archive.onsuccess = loaded;
+    metadata.onsuccess = loaded;
+    transaction.onabort = () => { db.close(); reject(transaction.error); };
+  });
 }
 
 export async function listUniPacks(): Promise<StoredUniPack[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_UNIPACKS, 'readonly');
-    const store = transaction.objectStore(STORE_UNIPACKS);
+    const transaction = db.transaction(STORE_PACK_METADATA, 'readonly');
+    const store = transaction.objectStore(STORE_PACK_METADATA);
     const index = store.index('lastOpenedAt');
     const request = index.openCursor(null, 'prev');
     const results: StoredUniPack[] = [];
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor) {
-        const record = cursor.value as StoredUniPack;
+        const record = cursor.value as UniPackMetadata;
         results.push({
           ...record,
-          zipData: null as unknown as ArrayBuffer, // 목록 조회 시 ZIP 데이터 제외
+          zipData: null as unknown as ArrayBuffer, // Lists never read archives.
           autoPlay: undefined,
         });
         cursor.continue();
@@ -249,7 +300,9 @@ export async function listUniPacks(): Promise<StoredUniPack[]> {
 }
 
 export async function deleteUniPack(id: string): Promise<void> {
-  await tx(STORE_UNIPACKS, 'readwrite', (store) => store.delete(id));
+  await commit(PACK_STORES, (transaction) => {
+    for (const name of PACK_STORES) transaction.objectStore(name).delete(id);
+  });
 }
 
 export async function updateUniPackLastOpened(id: string): Promise<void> {

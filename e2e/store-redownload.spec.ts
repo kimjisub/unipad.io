@@ -36,8 +36,8 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
     const open = indexedDB.open('unipad');
     open.onsuccess = () => {
       const db = open.result;
-      const transaction = db.transaction('unipacks', 'readwrite');
-      const store = transaction.objectStore('unipacks');
+      const transaction = db.transaction('unipackMetadata', 'readwrite');
+      const store = transaction.objectStore('unipackMetadata');
       const request = store.getAll();
       request.onsuccess = () => request.result.forEach(record => store.put({ ...record, storeCode }));
       transaction.oncomplete = () => { db.close(); resolve(); };

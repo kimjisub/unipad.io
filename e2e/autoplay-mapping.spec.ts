@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { storedPackRecords } from './saved-packs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
@@ -24,22 +26,10 @@ const MAPPED = [
 interface StoredPack { zipSha256: string; autoPlay?: { current: unknown[]; backup: unknown[] } }
 
 /** The one stored pack: a digest of its archive and the autoPlay stored beside it. */
-function storedPack(page: Page): Promise<StoredPack[]> {
-  return page.evaluate(() => new Promise<StoredPack[]>((resolve, reject) => {
-    const open = indexedDB.open('unipad');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const request = db.transaction('unipacks').objectStore('unipacks').getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = async () => {
-        db.close();
-        resolve(await Promise.all(request.result.map(async ({ zipData, autoPlay }) => ({
-          zipSha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', zipData)), b => b.toString(16).padStart(2, '0')).join(''),
-          ...(autoPlay ? { autoPlay } : {}),
-        }))));
-      };
-    };
+async function storedPack(page: Page): Promise<StoredPack[]> {
+  return (await storedPackRecords(page)).map(({ zipData, autoPlay }) => ({
+    zipSha256: createHash('sha256').update(new Uint8Array(zipData)).digest('hex'),
+    ...(autoPlay ? { autoPlay } : {}),
   }));
 }
 

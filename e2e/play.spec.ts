@@ -314,10 +314,11 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
     });
     try {
       await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction('unipacks', 'readwrite');
-        const store = transaction.objectStore('unipacks');
+        const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const store = transaction.objectStore('unipackMetadata');
+        transaction.objectStore('unipacks').put({ id: 'earlier-pack', zipData: new Uint8Array(bytes).buffer });
         const request = store.getAll();
-        request.onsuccess = () => store.put({ ...request.result[0], id: 'earlier-pack', title: 'Earlier Pack', zipData: new Uint8Array(bytes).buffer });
+        request.onsuccess = () => store.put({ ...request.result[0], id: 'earlier-pack', title: 'Earlier Pack' });
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
       });
