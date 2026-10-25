@@ -104,6 +104,34 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  test('a guide launched after auto-mapping replaced the script follows the new script', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 2 2 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'o 1 1\nd 1000',
+    }));
+    const mapped = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 2 2 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'd 500\no 2 2\nd 1000',
+    }));
+    const guides: [string, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+      onGuidePadOn: (x, y, at) => { guides.push([`${x},${y}`, at]); },
+      onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    clock.tick(1);
+    assert.deepEqual(guides.map(([pad]) => pad), ['0,0']);
+    runner.stop();
+
+    pack.autoPlay = mapped.autoPlay;
+    guides.length = 0;
+    const noteAt = performance.now() + 500;
+    runner.launch();
+    clock.tick(1);
+    assert.deepEqual(guides, [['1,1', noteAt]]);
+    runner.stop();
+  });
+
   test('step resume distinguishes consumed pads from chain-only scans and rewound groups', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
