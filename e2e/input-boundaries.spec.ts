@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, stateTimeout } from './browser';
-import { chain2, lit, pad, point, touch, touchScreens } from './touch';
+import { chain2, lit, pad, point, slideAcrossPads, touch, touchScreens } from './touch';
 import { duration, loadInputPack } from './input-fixture';
 
 test.use({ hasTouch: true });
@@ -111,8 +111,9 @@ for (const mode of ['mouse', 'touch'] as const) {
   });
 }
 
-test('mouse: press, drag to a neighbour, release and click a different chain', async ({ page }, info) => {
+test('mouse: with slide on, press, drag to a neighbour, release and click a different chain', async ({ page }, info) => {
   await loadInputPack(page);
+  await slideAcrossPads(page);
   const a = await point(page, '2,2', 1);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
@@ -133,6 +134,22 @@ test('mouse: press, drag to a neighbour, release and click a different chain', a
   await expect.poll(() => lit(page)).toEqual([]);
   await stopped(page, [1, 2, 3]);
   await evidence(page, info, 'mouse-chain-released');
+});
+
+test('mouse: with slide off, a drag to a neighbour keeps the first pad until release', async ({ page }, info) => {
+  await loadInputPack(page);
+  const a = await point(page, '2,2', 1);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await held(page, ['2,2'], ['2,2']);
+  const b = await point(page, '2,3', 1);
+  await page.mouse.move(b.x, b.y);
+  await held(page, ['2,2'], ['2,2']);
+  await stopped(page, []);
+  await page.mouse.up();
+  await held(page, [], ['2,2']);
+  await stopped(page, [1]);
+  await evidence(page, info, 'mouse-slide-off-released');
 });
 
 for (const order of ['mouse then touch', 'touch then mouse']) {
