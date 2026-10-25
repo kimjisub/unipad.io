@@ -161,6 +161,7 @@ export function PlayPage() {
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
   const triedUrlPackRestoreRef = useRef(false);
 
+  // With no pack open the address names none, not even the shared link that opened one: either would open it again.
   const syncPackUrl = useCallback((packId: string | null) => {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
@@ -168,6 +169,7 @@ export function PlayPage() {
       url.searchParams.set(PACK_QUERY_KEY, packId);
     } else {
       url.searchParams.delete(PACK_QUERY_KEY);
+      url.searchParams.delete(CODE_QUERY_KEY);
     }
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
@@ -294,8 +296,15 @@ export function PlayPage() {
       await resumeAudio();
       const buffer = await file.arrayBuffer();
       const opened = await loadUniPack(buffer);
+      if (opened === false) {
+        // Opening it closed whatever was playing, so nothing is current any more. A later open
+        // that replaced this one (null) has made its own pack current.
+        currentPackIdRef.current = null;
+        syncPackUrl(null);
+      }
 
       try {
+        // An archive that cannot be read fails here as well as in the open above, and is not saved.
         const parsed = await parseUniPack(buffer.slice(0));
         const id = await saveUniPack(buffer, {
           ...parsed.info,
@@ -305,12 +314,6 @@ export function PlayPage() {
           ledCount: parsed.ledCount,
         });
         if (!opened) {
-          // Opening it closed whatever was playing, so nothing is current any more. A later open
-          // that replaced this one has made its own pack current.
-          if (opened === false) {
-            currentPackIdRef.current = null;
-            syncPackUrl(null);
-          }
           await refreshLists();
           return;
         }
@@ -381,6 +384,7 @@ export function PlayPage() {
         if (opened === null) return null;
         if (!opened) {
           currentPackIdRef.current = null;
+          syncPackUrl(null);
           return false;
         }
         await setSetting('lastUniPackId', id);

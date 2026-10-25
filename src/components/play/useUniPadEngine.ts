@@ -969,9 +969,8 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current?.progressOffset(40);
   }, [padInit, ledInit, autoPlayRemoveGuide]);
 
-  const unload = useCallback(() => {
-    usageTracker.unloaded();
-    loadRevisionRef.current++;
+  /** Lets go of the open pack's audio, runners, controller and screen lock; the state is the caller's. */
+  const releasePack = useCallback(() => {
     interruptionRevisionRef.current++;
     interruptedRef.current = false;
     soundEngineRef.current?.destroy();
@@ -997,6 +996,12 @@ export function useUniPadEngine() {
     midiRef.current?.release();
     midiRef.current = null;
     midiListenerRef.current = null;
+  }, []);
+
+  const unload = useCallback(() => {
+    usageTracker.unloaded();
+    loadRevisionRef.current++;
+    releasePack();
     setState((prev) => {
       if (prev.theme) releaseThemeUrls(prev.theme);
       return {
@@ -1031,7 +1036,7 @@ export function useUniPadEngine() {
         theme: getDefaultTheme(),
       };
     });
-  }, [usageTracker]);
+  }, [usageTracker, releasePack]);
 
   /**
    * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
@@ -1383,6 +1388,8 @@ export function useUniPadEngine() {
       if (superseded()) return null;
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
+      // A pack that did not open must not keep its audio or count as open for the screen lock.
+      releasePack();
       setState((prev) => ({
         ...prev,
         loading: false,
@@ -1393,6 +1400,7 @@ export function useUniPadEngine() {
     }
   }, [
     unload,
+    releasePack,
     readPlayPreferences,
     setChain,
     selectChain,

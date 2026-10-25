@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { BASIC_PACK, basicTone, openBasicWith } from './basic-pack';
+import { basicTone, openBasicWith, undecodablePack } from './basic-pack';
 import { test, expect } from './browser';
 import { savedRecords } from './saved-packs';
 import { pad } from './touch';
@@ -99,13 +98,6 @@ test('a sound that cannot be decoded is silent once and the pad goes on to its n
   await expect.poll(async () => (await audio(page)).starts.length).toBe(1);
 });
 
-/** basic.uni with its only sound replaced by bytes no browser decodes. */
-async function undecodablePack() {
-  const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
-  zip.file('sounds/tone.wav', 'not audio');
-  return { name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
-}
-
 /** Counts the pack opens that failed from now on. */
 function countLoadFailures(page: Page) {
   const count = { failures: 0 };
@@ -196,6 +188,48 @@ test('a pack none of whose sounds decode, dropped over a playing pack, keeps its
   await info.attach('dropped-over-playing', { body: await page.screenshot(), contentType: 'image/png' });
   await quitLoadError(page);
   expect(count.failures).toBe(1);
+});
+
+test('an archive that cannot be read, dropped over a playing pack, shows the reason and leaves the address', async ({ page }, info) => {
+  await loadPack(page, {});
+  await expect(page).toHaveURL(/[?&]pack=/);
+  const count = countLoadFailures(page);
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+    name: 'broken.uni', mimeType: 'application/zip', buffer: Buffer.from('not a zip archive'),
+  });
+  try {
+    await expect(loadError(page)).toBeVisible();
+  } finally {
+    await info.attach('unreadable-dropped-over-playing', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  // The playing pack closed when this one began to open; its address would open it on the next reload.
+  await expect(page).not.toHaveURL(/[?&]pack=/);
+  await page.reload();
+  await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(1);
+  // Give an address restore time to open the pack.
+  await page.waitForTimeout(1000);
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  expect(count.failures).toBe(1);
+});
+
+test('a pack none of whose sounds decode closes its audio when loading ends', async ({ page }) => {
+  await page.addInitScript(() => {
+    const contexts: AudioContext[] = [];
+    Reflect.set(window, 'audioContexts', contexts);
+    window.AudioContext = class extends AudioContext {
+      constructor(...args: ConstructorParameters<typeof AudioContext>) {
+        super(...args);
+        contexts.push(this);
+      }
+    };
+  });
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  // A pack left behind would keep its audio and could hold the screen awake while the reason is shown.
+  await expect.poll(() => page.evaluate(() =>
+    (Reflect.get(window, 'audioContexts') as AudioContext[]).map(context => context.state))).toEqual(['closed']);
 });
 
 // touch is on + off in one line: the wormhole of the touched pad's sound moves the lines after it to
