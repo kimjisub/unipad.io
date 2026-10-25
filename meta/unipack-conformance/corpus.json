@@ -28365,44 +28365,6 @@
             0
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "events": [
-              [
-                "on",
-                80,
-                0,
-                0,
-                0,
-                0
-              ],
-              [
-                "on",
-                480,
-                0,
-                1,
-                0,
-                0
-              ],
-              [
-                "on",
-                931,
-                0,
-                0,
-                0,
-                1
-              ],
-              [
-                "trailingDelay",
-                2330
-              ]
-            ]
-          },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {
@@ -28490,36 +28452,6 @@
             0
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "events": [
-              [
-                "on",
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
-              [
-                "on",
-                70,
-                0,
-                1,
-                0,
-                0
-              ],
-              [
-                "trailingDelay",
-                1969
-              ]
-            ]
-          },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {
@@ -28607,36 +28539,6 @@
             0
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "events": [
-              [
-                "on",
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
-              [
-                "on",
-                480,
-                0,
-                1,
-                0,
-                0
-              ],
-              [
-                "trailingDelay",
-                1380
-              ]
-            ]
-          },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {
@@ -28724,36 +28626,6 @@
             0
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "events": [
-              [
-                "on",
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
-              [
-                "on",
-                481,
-                0,
-                1,
-                0,
-                0
-              ],
-              [
-                "trailingDelay",
-                1381
-              ]
-            ]
-          },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {
@@ -28861,49 +28733,6 @@
             0
           ]
         ]
-      },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "events": [
-              [
-                "on",
-                0,
-                0,
-                0,
-                0,
-                0
-              ],
-              [
-                "chain",
-                350,
-                1
-              ],
-              [
-                "on",
-                350,
-                1,
-                0,
-                0,
-                0
-              ],
-              [
-                "on",
-                900,
-                1,
-                0,
-                0,
-                1
-              ],
-              [
-                "trailingDelay",
-                1400
-              ]
-            ]
-          },
-          "note": "Observed on the real web mapper or runner before product behavior corrections: missing paired releases, added sound-length waits or early completion before the final delay. This remains a failure, not a compatibility pass."
-        }
       }
     },
     {

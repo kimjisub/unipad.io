@@ -26,7 +26,7 @@ let main;
 stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: () => null });
 stub('../../lib/store.ts', { subscribeStoreCount: async () => noop });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: noop });
-let held = {}, storage, loads, themes, engine, nextResult, library;
+let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides;
 const deferred = () => { let resolve, reject; return { promise: new Promise((r, j) => { resolve = r; reject = j; }), resolve, reject }; };
 const hold = kind => {
   const waiting = { ...deferred(), entered: deferred() };
@@ -38,7 +38,8 @@ const step = async (kind, run) => {
   if (waiting) { waiting.entered.resolve(); await waiting.promise; }
   return run();
 };
-const pack = id => ({ id, title: id, zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
+const savedAutoPlay = { current: [{ type: 'delay', delay: 1000 }], backup: [] };
+const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
 stub('../../lib/unipack/index.ts', {
   listUniPacks: () => step('list', () => [...library.values()]), listThemes: async () => [],
   getUniPack: id => step('read', () => pack(id)),
@@ -58,7 +59,8 @@ function useTestEngine() {
     revision.current++;
     setState(prev => ({ ...prev, loaded: false, loading: false, unipack: null }));
   }, []);
-  const loadUniPack = React.useCallback(async data => {
+  const loadUniPack = React.useCallback(async (data, autoPlay) => {
+    loadOverrides.push(autoPlay);
     unload(); const own = revision.current;
     loads.push(data);
     setState(prev => ({ ...prev, loading: true }));
@@ -86,7 +88,7 @@ const { PlayPage } = require('./PlayPage.tsx');
 const flush = async action => act(async () => { await action?.(); });
 async function mount(url = '/play', prepare = noop) {
   library = new Map([['A', pack('A')], ['B', pack('B')]]);
-  held = {}; storage = new Map(); loads = []; themes = []; nextResult = true; engine = null; main = null;
+  held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; nextResult = true; engine = null; main = null;
   prepare();
   window.history.replaceState(null, '', url);
   const view = render(React.createElement(PlayPage));
@@ -112,6 +114,12 @@ for (const phase of ['resume', 'read', 'recent']) {
     });
   }
 }
+
+test('a saved open passes its stored autoPlay to the player', async () => {
+  await mount();
+  await flush(() => main.onPlay('B'));
+  assert.deepEqual(loadOverrides, [savedAutoPlay]);
+});
 
 test('requests that finish reading in reverse order keep the last requested pack and its record', async () => {
   await mount();
@@ -289,7 +297,9 @@ for (const phase of ['resume', 'file', 'load', 'save']) {
       if (action === 'replace') {
         assert.equal(engine.state.unipack.id, 'B');
         // Reveal the page's already-refreshed list without running handleQuit's own list refresh.
-        await flush(() => engine.unload());
+        assert.ok(main.savedPacks.some(pack => pack.id === 'Imported'));
+        await flush(() => engine.onQuit());
+        assert.equal(main.lastPlayedPackId, 'B', 'the canceled import preserves the current pack used for saving autoPlay');
       } else if (action === 'leave') {
         render(React.createElement(PlayPage));
         await flush();

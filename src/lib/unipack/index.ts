@@ -21,6 +21,7 @@ export {
   deleteUniPack,
   updateUniPackLastOpened,
   toggleUniPackBookmark,
+  saveUniPackAutoPlay,
   saveTheme,
   getTheme,
   listThemes,
@@ -28,4 +29,4 @@ export {
   setSetting,
   getSetting,
 } from './storage';
-export type { StoredUniPack, StoredTheme } from './storage';
+export type { StoredUniPack, StoredTheme, StoredAutoPlay } from './storage';
