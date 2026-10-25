@@ -1065,3 +1065,30 @@ test('iOS playback observations distinguish stored repeats from a delayed chain 
   assert.equal(judge(canonical, 'ios', original).get(delayed.id).status, 'unverified',
     'the historical partial run must not be relabelled as a run on the current corpus');
 });
+
+test('current Android release observations pin both later-input pack failures', () => {
+  const cases = buildCorpus().cases;
+  for (const id of ['RUN-G617', 'RUN-G618']) {
+    const c = cases.find(c => c.id === id);
+    const raw = readFileSync(join(here, 'investigations/android-input-release-observations', `${id}.json`));
+    const observed = JSON.parse(raw);
+    assert.equal(sha256(raw), id === 'RUN-G617'
+      ? '90aa9083125a706bba3da30cc62d48c01090256cd6b05fad84fd70d12f09a330'
+      : '5866b8aa01d14c230421c6a94dd322705378ac404a19d0dbe246a34ca2b2dde0');
+    assert.equal(observed.corpusSha256, 'fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8');
+    assert.equal(observed.fingerprint, c.fingerprint);
+    assert.deepEqual(observed.expected, c.expected);
+    assert.deepEqual(c.expectedFailing, ['android']);
+    assert.equal(c.known.android.status, 'fail');
+    assert.deepEqual(c.known.android.actual, observed.actual);
+    assert.deepEqual(observed.actual.checkpoints[2], []);
+    assert.deepEqual(observed.actual.checkpoints[3], c.expected.checkpoints[2]);
+    assert.deepEqual(observed.pressedActual, [true, true, true, false]);
+    assert.deepEqual(observed.pressedActual, observed.pressedExpected);
+    assert.equal(classify(c, observed.actual, 'android'), 'fail');
+    assert.equal(classify(c, c.expected, 'android'), 'unverified',
+      'a fixed output must retire its Android failure pin before counting as a pass');
+    assert.equal(classify(c, c.expected, 'ios'), 'pass');
+    assert.equal(classify(c, c.expected, 'web'), 'pass');
+  }
+});
