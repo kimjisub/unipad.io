@@ -19,7 +19,13 @@ const stub = (path, exports) => {
 };
 // Reading an archive and decoding its audio each wait, in call order, on the steps a test holds.
 // A step left unheld runs at once.
-let held = { parse: [], decode: [] };
+let held = { parse: [], decode: [], theme: [] };
+let started = { led: 0, wake: 0, midi: 0 };
+const releasedThemes = [];
+const runners = [];
+Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
+  started.wake++; return { release: async () => {}, addEventListener() {} };
+} } });
 const step = async (kind, run) => {
   const waiting = held[kind].shift();
   if (waiting) { waiting.entered.resolve(); await waiting.promise; }
@@ -28,6 +34,12 @@ const step = async (kind, run) => {
 const real = require('../../lib/unipack/index.ts');
 stub('../../lib/unipack/index.ts', { ...real,
   parseUniPack: (...args) => step('parse', () => real.parseUniPack(...args)),
+  LedRunner: class extends real.LedRunner {
+    constructor(...args) { super(...args); runners.push(this); }
+    launch(...args) { started.led++; return super.launch(...args); }
+  },
+  loadThemeFromZip: theme => step('theme', () => { if (theme instanceof Error) throw theme; return theme; }),
+  releaseThemeUrls: theme => releasedThemes.push(theme),
   getSetting: async () => null,
   setSetting: async () => {},
   SoundEngine: class {
@@ -37,14 +49,14 @@ stub('../../lib/unipack/index.ts', { ...real,
     setVolume() {} soundPushToNum() {} soundOn() {} soundOff() {} stopAll() {} destroy() {} resume() {} cancelPendingChainChanges() {}
   },
   MidiConnection: class {
-    async connect() { return false; }
+    async connect() { started.midi++; return false; }
     getStatus() { return { connected: false, requestedProfile: 'auto', resolvedProfile: 'none', inputName: null, outputName: null }; }
     release() {} sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
   },
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-afterEach(() => { held = { parse: [], decode: [] }; cleanup(); });
+afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; });
 const flush = async action => act(async () => { await action?.(); await new Promise(resolve => setTimeout(resolve, 5)); });
 const deferred = () => { let resolve; return { promise: new Promise(r => { resolve = r; }), resolve: () => resolve() }; };
 const hold = kind => {
@@ -98,4 +110,50 @@ test('quitting while a pack loads leaves the player empty', async () => {
   assert.equal(result.current.state.loaded, false);
   assert.equal(result.current.state.loading, false);
   assert.equal(result.current.state.unipack, null);
+});
+
+
+test('leaving the page during decoding never starts lights, a wake lock or MIDI', async () => {
+  const { result, unmount } = renderHook(useUniPadEngine);
+  const data = await pack(true);
+  const decoding = hold('decode');
+  let load;
+  await flush(() => { load = result.current.loadUniPack(data); return decoding.entered.promise; });
+  unmount();
+  await flush(() => { decoding.resolve(); return load; });
+  assert.deepEqual(started, { led: 0, wake: 0, midi: 0 });
+  assert.equal(await load, null);
+});
+
+for (const action of ['quit', 'replace', 'leave']) {
+  test(`a theme finishing after ${action} cannot replace the current theme`, async () => {
+    const { result, unmount } = renderHook(useUniPadEngine);
+    await flush(() => result.current.loadUniPack(awaitablePack));
+    const theme = { images: {}, colors: {}, metadata: { name: 'Old theme' } };
+    const parsing = hold('theme');
+    let loading;
+    await flush(() => { loading = result.current.loadTheme(theme); return parsing.entered.promise; });
+    if (action === 'leave') unmount();
+    else await flush(() => action === 'quit' ? result.current.unload() : result.current.loadUniPack(awaitablePack));
+    const currentTheme = result.current.state.theme;
+    releasedThemes.length = 0;
+    await flush(() => { parsing.resolve(); return loading; });
+    assert.equal(result.current.state.theme, currentTheme);
+    assert.ok(releasedThemes.includes(theme), 'discarded theme releases its object URLs');
+  });
+}
+const awaitablePack = await pack(true);
+
+
+test('an old theme decode failure cannot reset a newer applied theme', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  await flush(() => result.current.loadUniPack(awaitablePack));
+  const reading = hold('theme');
+  let oldTheme;
+  await flush(() => { oldTheme = result.current.loadTheme(new Error('Invalid old skin')); return reading.entered.promise; });
+  await flush(() => result.current.loadUniPack(awaitablePack));
+  const theme = { images: {}, colors: {}, metadata: { name: 'New theme' } };
+  await flush(() => result.current.loadTheme(theme));
+  await flush(() => { reading.resolve(); return oldTheme; });
+  assert.equal(result.current.state.theme, theme);
 });

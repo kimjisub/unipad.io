@@ -299,6 +299,69 @@ test('a missing saved pack fails the pad value check after restoration ends', as
   await expect(page).not.toHaveURL(/pack=/);
 });
 
+test('a delayed earlier storage read cannot replace the last pack selected', async ({ page }, info) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/pack=.+/);
+  const zip = await JSZip.loadAsync(await readFile(pack));
+  zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Earlier Pack'));
+  const bytes = Array.from(await zip.generateAsync({ type: 'uint8array' }));
+  await page.evaluate(async bytes => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('unipad');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction('unipacks', 'readwrite');
+        const store = transaction.objectStore('unipacks');
+        const request = store.getAll();
+        request.onsuccess = () => store.put({ ...request.result[0], id: 'earlier-pack', title: 'Earlier Pack', zipData: new Uint8Array(bytes).buffer });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } finally { db.close(); }
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (query) {
+      const request = get.call(this, query);
+      if (this.name === 'unipacks' && query === 'earlier-pack') {
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          document.documentElement.dataset.heldPackRead = 'true';
+          window.addEventListener('release-earlier-pack', () => request.onsuccess?.call(request, event), { once: true });
+        }, { once: true });
+      }
+      return request;
+    };
+  }, bytes);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await page.getByRole('option', { name: 'Earlier Pack by UniPad Tests', exact: true }).dblclick();
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
+  await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
+  await expectPads(page);
+  await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+  await expect(page).toHaveURL(/pack=.+/);
+  const latestUrl = page.url();
+  // The unit tests hold every await deterministically. This browser observation also keeps a
+  // record of any transient wrong title after releasing the native IndexedDB result.
+  const titles = await page.evaluate(() => new Promise<string[]>(resolve => {
+    const titles = [document.title];
+    const observer = new MutationObserver(() => titles.push(document.title));
+    observer.observe(document.querySelector('title')!, { childList: true, subtree: true, characterData: true });
+    window.dispatchEvent(new Event('release-earlier-pack'));
+    setTimeout(() => { observer.disconnect(); resolve(titles); }, 1000);
+  }));
+  await info.attach('pack-after-delayed-read', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('delayed-read-observation', { body: JSON.stringify({ titles, latestUrl, observedUrl: page.url() }), contentType: 'application/json' });
+  expect(titles.every(title => title === 'Browser Test Pack | UniPad Web Player')).toBe(true);
+  await expect(page).toHaveURL(latestUrl);
+  await page.keyboard.down('q');
+  await expect(pressed(page, '1,0')).toBeVisible();
+  await page.keyboard.up('q');
+  await expect(pressed(page, '1,0')).toHaveCount(0);
+});
+
 test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
   await loadPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);

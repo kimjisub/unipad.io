@@ -1590,14 +1590,21 @@ export function useUniPadEngine() {
     applyChainSelectionVisibility();
   }, [applyChainSelectionVisibility, releaseControllerPads]);
 
-  const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
+  const loadTheme = useCallback(async (zipData: ArrayBuffer, isCurrent: () => boolean = () => true) => {
+    const revision = loadRevisionRef.current;
+    const superseded = () => revision !== loadRevisionRef.current || !isCurrent();
     try {
       const theme = await loadThemeFromZip(zipData);
+      if (superseded()) {
+        releaseThemeUrls(theme);
+        return;
+      }
       setState((prev) => {
         if (prev.theme) releaseThemeUrls(prev.theme);
         return { ...prev, theme };
       });
     } catch (err) {
+      if (superseded()) return;
       console.error('Failed to load theme:', err);
       const defaultTheme = getDefaultTheme();
       setState((prev) => {
@@ -1708,7 +1715,9 @@ export function useUniPadEngine() {
   }, [interruptPlayback, requestScreenWakeLock, syncMidiStateToDevice]);
 
   useEffect(() => {
+    const revisionRef = loadRevisionRef;
     return () => {
+      revisionRef.current++;
       soundEngineRef.current?.destroy();
       ledRunnerRef.current?.stop();
       autoPlayRunnerRef.current?.stop();
