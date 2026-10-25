@@ -9,7 +9,11 @@ for (const [value, expected] of [
   ['https:unipad.io', 'https://unipad.io/'], ['http:unipad.io/x', 'http://unipad.io/x'],
   ['example.com:8080/pack', 'https://example.com:8080/pack'], ['localhost:3000', 'https://localhost:3000/'],
   ['javascript:alert(1)', null], ['data:text/html,test', null], ['file:///tmp/test', null],
-  ['mailto:test@example.com', null], ['https://', null], ['bad host', null], ['', null], [null, null],
+  ['mailto:test@example.com', null], ['tel:911', null], ['mailto:12345', null], ['javascript:0', null],
+  ['javascript:0/alert(1)', null], ['data:1', null], ['file:1', null], ['LOCALHOST:3000', 'https://localhost:3000/'],
+  // An http(s) scheme is always the scheme, never a host named `https` or `http`.
+  ['https:443/x', 'https://0.0.1.187/x'], ['http:8080', 'http://0.0.31.144/'],
+  ['https://', null], ['bad host', null], ['', null], [null, null],
 ] as const) {
   test(`website link ${JSON.stringify(value)} becomes ${JSON.stringify(expected)}`, () => {
     assert.equal(websiteUrl(value), expected);
