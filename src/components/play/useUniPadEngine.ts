@@ -1030,7 +1030,8 @@ export function useUniPadEngine() {
     });
   }, [usageTracker]);
 
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
+  /** Resolves false when the pack could not be opened; the reason is left in `errors`. */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer): Promise<boolean> => {
     unload();
     const playPreferences = readPlayPreferences();
 
@@ -1093,8 +1094,7 @@ export function useUniPadEngine() {
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
       if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
-        return;
+        throw new Error(soundWarnings[0]);
       }
 
       const ledListener: LedRunnerListener = {
@@ -1365,6 +1365,7 @@ export function useUniPadEngine() {
         profile: midiProfileRef.current,
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
+      return true;
     } catch (err) {
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
@@ -1374,6 +1375,7 @@ export function useUniPadEngine() {
         criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
+      return false;
     }
   }, [
     unload,
