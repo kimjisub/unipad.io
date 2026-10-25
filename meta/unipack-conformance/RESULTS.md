@@ -8,9 +8,9 @@ application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`, with the separately
 executor changes described in the [source investigation](investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25),
 records RUN-G616 equal to its unchanged expected checkpoints. Only that obsolete iOS failure
 pin is removed. All 382 inputs, fingerprints, scenarios, expectations and other platform pins
-are unchanged, including the web corrections above the historical entries below.
-The canonical SHA256 advances from `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`
-to `c59df88a0b80596207ad07d64f89b04b28f0ef326a2d6d82880ffdc63de88755`.
+are unchanged, including the merged web corrections and both Android input-owned release pins.
+The canonical SHA256 advances from `708d14a349fa739acce37f1ac5ddefd8c7d68d9c4cef1eb495ea39f3590389de`
+to `2223116e3a1612fcebed1d6c03e5075b3f0dbd1cd4bcffa12ff81b3e86c93d50`.
 
 The retained [fixed-ios.json](investigations/ios-playback-observations/fixed-ios.json) still names
 the original `859e24aa…` corpus. Its raw statuses are 374 pass, 3 fail and 5 unverified; the full
@@ -20,6 +20,67 @@ pass. Neither the raw file nor the earlier nine-case failure is rewritten or giv
 No full iOS rerun on the regenerated corpus, audible output, rendered press indicator or physical
 MIDI output is claimed. Both native copy references remain historical; this change does not update
 `copies.json` or establish remote current-copy verification.
+
+## Native input-owned release observations (2026-10-25)
+
+Both target cases retain their input files, fingerprints, scenarios and corrected expectations.
+The Android observations below use application commit
+[`208afb9e5be3bebef9fd50c5e1b77dcb40e29330`](https://github.com/kimjisub/unipad-android/commit/208afb9e5be3bebef9fd50c5e1b77dcb40e29330),
+after [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304) changed input ownership.
+Sound and pack lights are separate from the pressed indicator:
+
+| Case | Web sound and pack lights | iOS sound and pack lights | Android sound and pack lights | Android pressed indicator |
+| --- | --- | --- | --- | --- |
+| RUN-G617, two fingers | Match | Match | Fails: stops at the fourth checkpoint | Matches |
+| RUN-G618, finger and controller | Match | Match | Fails: stops at the fourth checkpoint | Matches |
+
+The [original Android files and result hashes](investigations/android-input-release-observations/README.md)
+retain their source 382-case corpus SHA256
+`fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8`.
+A local test-only adapter sends distinct fingers through `PadTouchTracker` and controller input
+through `controllerPadTouch`. Both pack outputs have an empty third checkpoint and stop at the
+fourth, while both pressed sequences match `[true, true, true, false]`. Both pack outputs are
+pinned as Android failures. The two selected tests failed by value (exit 1, no errors or skips);
+the command took 202.082 seconds. Pack output and pressed state were collected in separate
+scenario executions with press feedback disabled and enabled. This is not a full-corpus run.
+
+The older observations on Android `777cc4a37a997afb327756dd239f167adf155c50` used input corpus
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`. Before #304, RUN-G617's
+pack output matched and its pressed indicator cleared early; RUN-G618's pack output was delayed.
+Those historical results are preserved as history and do not describe the changed implementation.
+The merged `laterFingerReleaseStillWaitsForTheFirstFinger` test in #304 expects pack output to
+survive the later finger's release, which contradicts the corrected per-input release expectation.
+That implementation and its opposing test expectation require a separate Android fix.
+
+On iOS application commit `e8ac34d11373b3ed071535e365ddc382c1929496`, both target actuals equal
+the corrected expectations. The source `ios.json` SHA256 is
+`c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2`; its corpus hash is the
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` input and it declares `assertions: partial`. Nine selected cases ran: seven
+matched, RUN-G613 and RUN-G616 failed by value, and the command exited 65. The two target cases pass;
+this is not an all-cases pass. The two additional failures retain their original evidence and are
+tracked separately. The subsequently merged investigation classifies RUN-G613 as a stored-loop
+observation limitation rather than a playback defect, and pins the RUN-G616 delayed chain change.
+This two-case update preserves both conclusions and their original evidence.
+
+The web observation on `5e8828502b00c01c297d88f1279ea9742ee3b5d9`
+([unipad.io#179](https://github.com/kimjisub/unipad.io/pull/179)) used corpus SHA256
+`cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364` and both targets match.
+Original platform files keep their original hashes. Comparing these unchanged case expectations
+with those actuals does not create a new aggregate report for another corpus hash.
+
+After the refreshed Android observation, the canonical corpus still has 382 cases, SHA256
+`708d14a349fa739acce37f1ac5ddefd8c7d68d9c4cef1eb495ea39f3590389de`.
+Both target cases list Android as an expected pack-output failure; neither lists iOS or web.
+All 380 non-target cases, including the separate iOS RUN-G616 pin, remain unchanged from the
+reviewed revision. Inputs, fingerprints, scenarios and corrected expectations are unchanged for
+all 382 cases. The previously prepared corpus `fe37e773…69c8` and earlier `b424628b…a795`
+keep their original execution records; they are not relabelled with this new hash.
+`copies.json` still declares the same historical 214-case app copies. Their byte check is separate
+from the refreshed Android application observations and current compatibility. Final copy adoption
+still requires `sync.mjs --check --require-current`.
+
+The observations cover application input paths and engine/light requests. They do not establish
+physical finger or USB delivery, audible output, or the iOS screen indicator's lifetime.
 
 ## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
 
