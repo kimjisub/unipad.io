@@ -1,13 +1,39 @@
 # Results
 
-## Combined input-owned release and trailing-wait corpus (2026-10-25)
+## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
 
-Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) with the input-owned
-release fix below keeps both sets of removed web pins: RUN-G617/RUN-G618 and RUN-P001/RUN-P002.
-The newer RUN-G616 iOS observation is preserved. The combined canonical corpus has 382 cases,
-SHA256 `5f92bb5655e6c298409db4b967b67b097666df6b0175867ed03c25b944da6436`.
-Every input, scenario, fingerprint and expected value stays unchanged. The hashes in the entries
-below belong to their own runs and are not relabelled. Both native copy references stay historical.
+Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) and
+[unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183) with the input-owned release fix
+below keeps every removed web pin: RUN-G617/RUN-G618, RUN-P001/RUN-P002 and the sixteen archive and
+sound lookup observations. The newer RUN-G616 iOS observation is preserved. The combined canonical
+corpus has 382 cases, SHA256 `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`.
+The integration changes no input, scenario, fingerprint or expected value. The hashes in the entries
+below belong to their own runs and are not relabelled; the earlier combination with #178 alone was
+`5f92bb5655e6c298409db4b967b67b097666df6b0175867ed03c25b944da6436`. Both native copy references stay historical.
+
+## Web archive and sound lookup corrections (2026-10-25)
+
+The parser now resolves canonically equivalent sound names, normalizes relative sound paths,
+rejects missing grid dimensions, and reports malformed round-light columns before their range.
+Sixteen web failure observations are retired: INF-G604, INF-G605, KL-G605, KL-G606,
+KS-G601, KS-G602, KS-G603, KS-G604, KS-G612, KS-G613, KS-G614, KS-G615,
+KS-G616, KS-G617, KS-G622 and KS-G625.
+
+The same sixteen inputs fail with the parser from `184c1e4b` and match their unchanged
+expectations with the corrected parser. Sound identity is checked using the selected original
+archive name and a SHA-256 of its actual bytes, including the two canonical-name collisions.
+App regression tests also reverse archive order, preserve distinct entries whose separators
+normalize alike, and reject root files outside the sounds directory.
+
+All 382 case inputs, fingerprints, expected results, scenarios and other platform observations
+are unchanged. Only these sixteen web observations change. The canonical corpus advances
+from SHA256 `5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`
+to `1241d422a26e3249b0b0c1e5ab831f9b6abe606914b890883e68c046c6ae6cf4`. Combined with the
+trailing-wait change below, which removes the RUN-P001 and RUN-P002 web observations, the corpus is
+`5b34f76475ca943313878999e2f1bb69478bffb45c7c98e7bb7699e7e928ee63`; only MAP-P001 to MAP-P005 keep web failures.
+Other remaining failures retain their observations. The historical app copy references are
+unchanged; their integrity checks still warn that both are behind the canonical corpus.
+This is web parser evidence, without a claim about current app copies, real speakers or MIDI hardware.
 
 ## Web input-owned release fix (2026-10-25)
 
@@ -71,6 +97,7 @@ Both still carry historical 214-case G5 copies, SHA256
 The copy comparison verifies those declared bytes and warns that they are behind canonical;
 it does not establish current app compatibility. The native reruns use the corrected corpus as a
 separate test input and must report its exact hash. The stored app copies are not updated here.
+
 
 ## Trailing-wait observations after the web runner fix (2026-10-24)
 

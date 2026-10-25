@@ -20233,30 +20233,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: composed and decomposed sound names resolve to the stored path. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G602",
@@ -20324,30 +20301,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: composed and decomposed sound names resolve to the stored path. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G603",
@@ -20415,30 +20369,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: composed and decomposed sound names resolve to the stored path. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G604",
@@ -20506,30 +20437,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: composed and decomposed sound names resolve to the stored path. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G620",
@@ -20736,42 +20644,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "archiveEntry": "sounds/소리.wav",
-                    "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
-                    "loop": 0,
-                    "wormhole": -1
-                  }
-                ]
-              }
-            ],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Observed with the parser at a6b99791: canonical fallback chooses the composed archive entry and its different contents instead of the first original archive path in UTF-16 order. Original entry and selected content hash are both observed; this remains a failure."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G623",
@@ -20978,42 +20851,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "archiveEntry": "sounds/café.wav",
-                    "sha256": "18f9569dd586b62f518dd58070c1c925154d169ec3b4b3bfd8054b7c0672b2a3",
-                    "loop": 0,
-                    "wormhole": -1
-                  }
-                ]
-              }
-            ],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Observed with the parser at a6b99791: canonical fallback chooses the composed archive entry and its different contents instead of the first original archive path in UTF-16 order. Original entry and selected content hash are both observed; this remains a failure."
-        }
-      }
+      "known": {}
     },
     {
       "id": "INF-G601",
@@ -21944,31 +21782,7 @@
       "expected": {
         "loaded": false
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 0,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "info:missing-field",
-              "keySound:range"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: a missing size key refuses the pack rather than making a grid with no pads. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "INF-G605",
@@ -22017,31 +21831,7 @@
       "expected": {
         "loaded": false
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 0,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "info:missing-field",
-              "keySound:range"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: a missing size key refuses the pack rather than making a grid with no pads. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G612",
@@ -22108,30 +21898,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: normalize a sound path relative to sounds before lookup. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G613",
@@ -22197,30 +21964,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: normalize a sound path relative to sounds before lookup. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G614",
@@ -22286,30 +22030,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: normalize a sound path relative to sounds before lookup. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G615",
@@ -22375,30 +22096,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: normalize a sound path relative to sounds before lookup. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G616",
@@ -22464,30 +22162,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": [
-              "keySound:missing-file"
-            ]
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: normalize a sound path relative to sounds before lookup. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G617",
@@ -22561,41 +22236,7 @@
         "autoPlay": null,
         "errors": []
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "file": "end.wav",
-                    "loop": 0,
-                    "wormhole": -1
-                  }
-                ]
-              }
-            ],
-            "keyLedExist": false,
-            "leds": [],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: case-insensitive candidates use UTF-16 full-path order, not archive order. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KS-G618",
@@ -22916,40 +22557,7 @@
           "keyLed:format"
         ]
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": true,
-            "leds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "loop": 1,
-                    "events": []
-                  }
-                ]
-              }
-            ],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: wrong column count warns before checking round-light range. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "KL-G606",
@@ -23029,40 +22637,7 @@
           "keyLed:format"
         ]
       },
-      "known": {
-        "web": {
-          "status": "fail",
-          "actual": {
-            "loaded": true,
-            "info": {
-              "title": "Conformance",
-              "producerName": "UniPad Conformance",
-              "buttonX": 4,
-              "buttonY": 3,
-              "chain": 2,
-              "squareButton": true
-            },
-            "sounds": [],
-            "keyLedExist": true,
-            "leds": [
-              {
-                "c": 0,
-                "x": 0,
-                "y": 0,
-                "queue": [
-                  {
-                    "loop": 1,
-                    "events": []
-                  }
-                ]
-              }
-            ],
-            "autoPlay": null,
-            "errors": []
-          },
-          "note": "Observed with the parser and play hook at 184c1e4b: wrong column count warns before checking round-light range. The G6 expectation stays unchanged; remove this observation when the app implements it."
-        }
-      }
+      "known": {}
     },
     {
       "id": "RUN-G601",

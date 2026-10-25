@@ -19,109 +19,80 @@ const noop = () => {};
 const translate = key => key;
 stub('next-intl', { useTranslations: () => translate });
 stub('framer-motion', { AnimatePresence: ({ children }) => children, motion: { div: 'div' } });
+let gridProps;
+let panelProps;
 // Keep PlayPage's real effects; replace rendering and external services at their boundaries.
-for (const name of ['PadGrid', 'ChainBar', 'ControlPanel', 'OptionPanel', 'MainScreen', 'StoreModal', 'SkinImage', 'LaunchpadSettingsModal']) {
+for (const name of ['ChainBar', 'ControlPanel', 'MainScreen', 'StoreModal', 'SkinImage', 'LaunchpadSettingsModal']) {
   stub(`./${name}.tsx`, { [name]: () => null, ConfirmDialog: () => null });
 }
+stub('./PadGrid.tsx', { PadGrid: props => { gridProps = props; return null; } });
+stub('./OptionPanel.tsx', { OptionPanel: props => { panelProps = props; return null; } });
 stub('../../lib/store.ts', { subscribeStoreCount: async () => noop });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: noop });
 let storage;
-let pendingReads;
-let failedReads;
 let writes;
 stub('../../lib/unipack/index.ts', {
   listUniPacks: async () => [], listThemes: async () => [],
-  getSetting: async key => {
-    if (failedReads.has(key)) throw new Error('storage unavailable');
-    const value = storage.get(key) ?? null;
-    if (pendingReads && ['volumeLevel', 'feedbackLight', 'watermark'].includes(key)) await pendingReads.promise;
-    return value;
-  },
+  getSetting: async key => storage.get(key) ?? null,
   setSetting: async (key, value) => { writes.push([key, value]); storage.set(key, value); },
 });
 let engine;
 function useTestEngine() {
   const [state, setState] = React.useState({
     loaded: false, loading: false, errors: [], feedbackLight: true, watermark: true, volumeLevel: 7,
+    slideMode: false, traceLog: false, traceLogStyle: 'numbers', chain: 0,
     unipack: null, padStates: [], chainStates: [], traceLogSequence: [], theme: { images: {}, colors: {} },
   });
   const update = React.useCallback((key, value) => setState(prev => ({ ...prev, [key]: value })), []);
-  const setFeedbackLight = React.useCallback(value => update('feedbackLight', value), [update]);
-  const setWatermark = React.useCallback(value => update('watermark', value), [update]);
+  engine = { state, update, open: () => setState(prev => ({ ...prev, loaded: true,
+    unipack: { keyLedExist: true, info: { buttonX: 8, buttonY: 8, chain: 2, title: 'Test pack', squareButton: true } } })) };
   const setVolumeLevel = React.useCallback(value => update('volumeLevel', value), [update]);
-  const toggleFeedbackLight = React.useCallback(() => setState(prev => ({ ...prev, feedbackLight: !prev.feedbackLight })), []);
-  const toggleWatermark = React.useCallback(() => setState(prev => ({ ...prev, watermark: !prev.watermark })), []);
-  engine = { state, update, open: keyLedExist => setState(prev => ({ ...prev, loaded: true,
-    unipack: { keyLedExist, info: { buttonX: 8, buttonY: 8, chain: 1, title: 'Test pack' } }, feedbackLight: !keyLedExist })) };
-  return { state, setFeedbackLight, setWatermark, setVolumeLevel, toggleFeedbackLight, toggleWatermark,
-    setMidiProfile: noop, setMidiUiContext: noop, setKeyboardBlocked: noop };
+  const setWatermark = React.useCallback(value => update('watermark', value), [update]);
+  return { state, setVolumeLevel, setWatermark, setMidiProfile: noop, setMidiUiContext: noop, setKeyboardBlocked: noop };
 }
 stub('./useUniPadEngine.ts', { useUniPadEngine: useTestEngine });
 const { PlayPage } = require('./PlayPage.tsx');
 const flush = async action => act(async () => { action?.(); });
-async function mount(values = {}) {
-  storage = new Map(Object.entries(values)); writes = []; failedReads = new Set(); pendingReads = null;
+async function mount() {
+  storage = new Map([['feedbackLight', 'true'], ['watermark', 'false'], ['volumeLevel', '2']]); writes = [];
+  gridProps = null; panelProps = null;
   const view = render(React.createElement(PlayPage));
   await flush();
   return view;
 }
 afterEach(cleanup);
 
-test('temporary feedback display changes are never saved by the page', async () => {
-  await mount({ feedbackLight: 'true' });
-  await flush(() => engine.open(true));
-  await flush(() => engine.update('feedbackLight', false));
-  assert.equal(storage.get('feedbackLight'), 'true');
-  assert.equal(writes.some(([key]) => key === 'feedbackLight'), false);
-});
-
-test('waits for slow reads before saving watermark and volume', async () => {
-  await mount({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
-  let release;
-  pendingReads = { promise: new Promise(resolve => { release = resolve; }) };
-  await flush(() => engine.open(true));
-  assert.deepEqual(writes, [], 'pack defaults must not overwrite pending saved settings');
-  await flush(release);
-  assert.equal(engine.state.watermark, false);
-  assert.equal(engine.state.volumeLevel, 2);
+test('the page leaves saved playing choices to the player and never writes them', async () => {
+  await mount();
+  await flush(() => engine.open());
+  await flush(() => { engine.update('feedbackLight', false); engine.update('watermark', true); engine.update('volumeLevel', 5); });
+  await flush(() => engine.update('loaded', false));
+  await flush(() => engine.open());
+  const playingKeys = new Set(['feedbackLight', 'watermark', 'volumeLevel', 'slideMode', 'traceLogStyle']);
+  assert.deepEqual(writes.filter(([key]) => playingKeys.has(key)), []);
   assert.deepEqual(Object.fromEntries(storage), { feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
 });
 
-test('reopening packs restores the latest watermark and volume choices instead of pack defaults', async () => {
-  await mount({ feedbackLight: 'false', watermark: 'false', volumeLevel: '2' });
-  await flush(() => engine.open(true));
-  await flush(() => { engine.update('feedbackLight', true); engine.update('watermark', true); engine.update('volumeLevel', 3); });
-  await flush(() => engine.update('loaded', false));
-  await flush(() => engine.open(true));
-  assert.equal(engine.state.watermark, true);
-  assert.equal(engine.state.volumeLevel, 3);
-  assert.deepEqual(Object.fromEntries(storage), { feedbackLight: 'false', watermark: 'true', volumeLevel: '3' });
+test('a stopped trace stays drawn, in the chosen style, for the chain on screen', async () => {
+  await mount();
+  await flush(() => engine.open());
+  const chains = [[{ x: 0, y: 0 }, { x: 0, y: 1 }], [{ x: 3, y: 3 }]];
+  await flush(() => { engine.update('traceLogSequence', chains); engine.update('traceLog', false); });
+  assert.deepEqual(gridProps.traceLogSequence, chains[0]);
+  assert.equal(gridProps.traceLogStyle, 'numbers');
+  await flush(() => { engine.update('chain', 1); engine.update('traceLogStyle', 'lines'); });
+  assert.deepEqual(gridProps.traceLogSequence, chains[1]);
+  assert.equal(gridProps.traceLogStyle, 'lines');
+  await flush(() => engine.update('hideUI', true));
+  assert.deepEqual(gridProps.traceLogSequence, chains[1], 'hiding the controls lays the pads out again with the same trace');
 });
 
-test('failed reads preserve unread settings and do not stop the player', async () => {
-  await mount({ feedbackLight: 'true', watermark: 'false', volumeLevel: '2' });
-  failedReads.add('volumeLevel');
-  await flush(() => engine.open(true));
-  assert.equal(engine.state.loaded, true);
-  assert.equal(engine.state.watermark, false);
-  assert.equal(engine.state.volumeLevel, 7);
-  assert.equal(storage.get('volumeLevel'), '2');
-});
-
-test('an abandoned pack read cannot overwrite the next pack', async () => {
-  const view = await mount({ volumeLevel: '2', watermark: 'false' });
-  let release;
-  pendingReads = { promise: new Promise(resolve => { release = resolve; }) };
-  await flush(() => engine.open(true));
-  await flush(() => engine.update('loaded', false));
-  pendingReads = null;
-  storage.set('volumeLevel', '3');
-  storage.set('watermark', 'true');
-  await flush(() => engine.open(false));
-  await flush(release);
-  assert.equal(engine.state.volumeLevel, 3);
-  assert.equal(engine.state.watermark, true);
-  assert.equal(storage.get('volumeLevel'), '3');
-  assert.equal(storage.get('watermark'), 'true');
-  view.unmount();
+test('the slide setting reaches the pads and the menu', async () => {
+  await mount();
+  await flush(() => engine.open());
+  assert.equal(gridProps.slideMode, false);
+  assert.equal(panelProps.slideMode, false);
+  await flush(() => engine.update('slideMode', true));
+  assert.equal(gridProps.slideMode, true);
+  assert.equal(panelProps.slideMode, true);
 });
