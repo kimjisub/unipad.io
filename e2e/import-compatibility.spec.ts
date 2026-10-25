@@ -91,14 +91,14 @@ for (const [name, edit, reason] of [
   });
 }
 
-for (const website of ['unipad.io', 'javascript:alert(1)']) {
+for (const [website, href] of [['unipad.io', 'https://unipad.io/'], ['https:unipad.io', 'https://unipad.io/'], ['javascript:alert(1)', null]] as const) {
   test(`uses a safe absolute website link for ${website}`, async ({ page }, info) => {
     await importPack(page, await fixture(async zip => { zip.file('info', `${await zip.file('info')!.async('string')}\nwebsite=${website}`); }));
     await expectPads(page);
     await page.getByRole('button', { name: 'Open menu', exact: true }).click();
     await page.getByRole('button', { name: 'Toggle pack info', exact: true }).click();
     const link = page.getByRole('link', { name: 'Website', exact: true });
-    if (website === 'unipad.io') await expect(link).toHaveAttribute('href', 'https://unipad.io');
+    if (href) await expect(link).toHaveAttribute('href', href);
     else await expect(link).toHaveCount(0);
     await capture(page, info, 'website');
   });

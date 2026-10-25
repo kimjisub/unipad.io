@@ -1,14 +1,18 @@
-/** The info value stays as written; only the link opened by the player is normalized. */
+/**
+ * The info value stays as written; only the link opened by the player is normalized.
+ * The parsed absolute form is returned because a browser resolves `https:host` against the current page.
+ */
 export function websiteUrl(value: string | null): string | null {
   const text = value?.trim();
   if (!text) return null;
-  const scheme = /^([a-z][a-z\d+.-]*):/i.exec(text)?.[1];
+  const hostWithPort = /^[^/?#:]+:\d+(?:[/?#]|$)/.test(text);
+  const scheme = hostWithPort ? undefined : /^([a-z][a-z\d+.-]*):/i.exec(text)?.[1];
   if (scheme && !/^https?$/i.test(scheme)) return null;
   const absolute = scheme ? text : `https://${text.replace(/^\/\//, '')}`;
   try {
     const url = new URL(absolute);
     if (!url.hostname || !['http:', 'https:'].includes(url.protocol)) return null;
-    return absolute;
+    return url.href;
   } catch {
     return null;
   }
