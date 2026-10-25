@@ -126,8 +126,8 @@ export class AutoPlayRunner {
     return events;
   }
 
-  private schedule(run: () => void, delayMs = LOOP_INTERVAL_MS): number {
-    return this.ticker?.request(run, delayMs, 0) ?? window.setTimeout(run, delayMs);
+  private schedule(run: () => void): number {
+    return this.ticker?.request(run, LOOP_INTERVAL_MS, 0) ?? window.setTimeout(run, LOOP_INTERVAL_MS);
   }
 
   launch(): void {
@@ -169,9 +169,10 @@ export class AutoPlayRunner {
         const restartMs = this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
         this.clockPending = null;
         const pastDueMs = currTime - this.startTime - restartMs;
-        // The song restarts at this tick, the one that plays the line, so every gap measured from
-        // the first note keeps its written length, however late the tick is.
-        if (pastDueMs > 0) this.shiftClock(pastDueMs);
+        // A normally scheduled first tick already belongs to the requested song clock.
+        // Only a late render restarts it; including the normal timer interval adds a millisecond
+        // to every trailing wait and disagrees with the written song duration.
+        if (pastDueMs > LOOP_INTERVAL_MS) this.shiftClock(pastDueMs);
       }
 
       // Detect practice mode toggle
@@ -337,8 +338,7 @@ export class AutoPlayRunner {
     };
 
     // Timers preserve sub-frame note timing; visibility suspension freezes the song clock.
-    // The first tick waits for nothing but the browser, so on time it is the moment play was pressed.
-    this.rafId = this.schedule(loop, 0);
+    this.rafId = this.schedule(loop);
   }
 
   stop(): void {

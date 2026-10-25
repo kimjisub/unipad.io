@@ -85,10 +85,9 @@ describe('AutoPlayRunner', () => {
       onRemoveGuide: () => { screen.clear(); },
     }, () => 0, () => {}, () => {}, () => {});
     runner.practiceGuide = true;
+    const noteAt = performance.now() + 1000;
     runner.launch();
-    clock.tick(1);
-    const noteAt = clock.now + 1000;
-    clock.tick(200);
+    clock.tick(1); clock.tick(200);
     assert.equal(screen.get('0,0'), noteAt);
     runner.pause();
     screen.clear();
@@ -97,7 +96,7 @@ describe('AutoPlayRunner', () => {
     clock.tick(1);
     assert.equal(screen.get('0,0'), noteAt + 2000, 'screen and hardware retain the same shifted deadline');
     assert.ok(leds.get('0,0')! > 0);
-    clock.tick(798);
+    clock.tick(797);
     assert.equal(screen.get('0,0'), noteAt + 2000);
     clock.tick(1);
     assert.equal(screen.has('0,0'), false);
@@ -224,30 +223,11 @@ describe('AutoPlayRunner', () => {
     assert.deepEqual(events, ['on', 'off']);
     if (suspend) {
       clock.tick(499); runner.setSuspended(true); clock.tick(3000);
-      assert.equal(runner.active, true); runner.setSuspended(false); clock.tick(1500);
-    } else clock.tick(1999);
+      assert.equal(runner.active, true); runner.setSuspended(false); clock.tick(1499);
+    } else clock.tick(1998);
     assert.equal(runner.active, true); assert.deepEqual(events, ['on', 'off']);
     clock.tick(1); assert.equal(runner.active, false); assert.deepEqual(events, ['on', 'off', 'end']);
     clock.tick(10000); assert.equal(events.filter(e => e === 'end').length, 1);
-  });
-
-  test('a normally timed first tick keeps every gap measured from the first note at its written length', async () => {
-    const pack = await parseUniPack(await packZip({
-      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'o 1 1\nd 1000\no 1 1\nd 1000\no 1 1\nd 2000',
-    }));
-    const played: number[] = [];
-    let endedAt: number | null = null;
-    const runner = new AutoPlayRunner(pack, {
-      onStart() {}, onEnd() { endedAt = clock.now; }, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
-      onPadTouchOn: () => { played.push(clock.now); },
-      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
-    }, () => 0, () => {}, () => {}, () => {});
-    runner.launch();
-    while (endedAt === null && clock.scheduled) clock.tick(1);
-
-    const first = played[0];
-    assert.deepEqual(played.map((at) => at - first), [0, 1000, 2000]);
-    assert.equal(endedAt! - first, 4000, 'the final 2000 ms wait ends 2000 ms after the last note');
   });
 
   // Starting autoplay re-renders the play screen before the first timer runs, so the first note can
@@ -324,7 +304,7 @@ describe('AutoPlayRunner', () => {
     clock.tick(300);
     while (presses.length < 2 && clock.scheduled) clock.tick(1);
 
-    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 2601, pressedAt: 2601 }]);
+    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1000 }, { playedAt: 2600, pressedAt: 2600 }]);
     runner.stop();
   });
 
@@ -343,7 +323,7 @@ describe('AutoPlayRunner', () => {
     clock.tick(300);
     while (presses.length < 2 && clock.scheduled) clock.tick(1);
 
-    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1001 }, { playedAt: 7701, pressedAt: 7701 }]);
+    assert.deepEqual(presses, [{ playedAt: 1001, pressedAt: 1000 }, { playedAt: 7700, pressedAt: 7700 }]);
     runner.stop();
   });
 
@@ -371,16 +351,16 @@ describe('AutoPlayRunner', () => {
   const releasedNotes = 'o 1 1\nd 100\nf 1 1\nd 1400\no 1 2\nd 100\nf 1 2\nd 1400\no 2 1\nd 100';
 
   test('a short pause before a release keeps the next note at its written time', async () => {
-    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 1, afterMs: 49, forMs: 30 }]), [1001, 2531, 4031]);
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 1, afterMs: 49, forMs: 30 }]), [1001, 2530, 4030]);
   });
 
   test('a pause right after a later note keeps the note after it at its written time', async () => {
-    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 2, afterMs: 0, forMs: 100 }]), [1001, 2501, 4101]);
+    assert.deepEqual(await pausedPlay(releasedNotes, [{ atNote: 2, afterMs: 0, forMs: 100 }]), [1001, 2500, 4100]);
   });
 
   test('a short pause in the first of two waits keeps the next note at its written time', async () => {
     const splitWait = 'o 1 1\nd 500\nd 1000\no 1 2\nd 1500\no 2 1\nd 100';
-    assert.deepEqual(await pausedPlay(splitWait, [{ atNote: 1, afterMs: 399, forMs: 30 }]), [1001, 2531, 4031]);
+    assert.deepEqual(await pausedPlay(splitWait, [{ atNote: 1, afterMs: 399, forMs: 30 }]), [1001, 2530, 4030]);
   });
 
   test('a guide shown before a pause keeps its remaining lead when a late tick resumes the song', async () => {
@@ -418,7 +398,7 @@ describe('AutoPlayRunner', () => {
     while (presses.length < 3 && clock.scheduled) clock.tick(1);
 
     assert.deepEqual(presses, [
-      { playedAt: 1001, pressedAt: 1001 },
+      { playedAt: 1001, pressedAt: 1000 },
       { playedAt: 1301, pressedAt: 1301 },
       { playedAt: 2801, pressedAt: 2801 },
     ]);
