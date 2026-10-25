@@ -498,7 +498,7 @@ for (const direct of [false, true]) test(`opening another pack resets session op
   await flush(() => { if (!direct) result.current.unload(); });
   await flush(() => result.current.loadUniPack(data));
   for (const key of ['autoPlayEnabled', 'autoPlayPlaying', 'autoPlayControlsVisible', 'practiceMode', 'recording', 'proLightMode', 'traceLog', 'hideUI']) assert.equal(result.current.state[key], false, key);
-  assert.equal(result.current.state.watermark, true);
+  assert.equal(result.current.state.watermark, false, 'the watermark keeps the last choice');
   assert.equal(oldMidi.released, true);
   assert.equal(oldAudio.state, 'closed');
   const count = starts.length;

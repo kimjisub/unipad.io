@@ -77,8 +77,9 @@ export function PlayPage() {
     toggleRecording,
     toggleHideUI,
     toggleWatermark,
-    setWatermark,
+    setSlideMode,
     toggleTraceLog,
+    setTraceLogStyle,
     clearTraceLog,
     toggleProLightMode,
     loadTheme,
@@ -286,47 +287,6 @@ export function PlayPage() {
     }
     prevLoadedRef.current = state.loaded;
   }, [state.loaded, state.errors]);
-
-  // A new pack supplies defaults. Read preferences again before saving any of them.
-  const [restoredSettings, setRestoredSettings] = useState<{
-    packInfo: NonNullable<typeof state.unipack>['info'];
-    volume: boolean;
-    watermark: boolean;
-  } | null>(null);
-  useEffect(() => {
-    if (!state.loaded || !state.unipack) return;
-    let cancelled = false;
-    const packInfo = state.unipack.info;
-    void Promise.allSettled([
-      getSetting('volumeLevel'),
-      getSetting('watermark'),
-    ]).then(([volume, watermark]) => {
-      if (cancelled) return;
-      if (volume.status === 'fulfilled' && volume.value !== null) {
-        const level = Number(volume.value);
-        if (Number.isFinite(level)) setVolumeLevel(level);
-      }
-      if (watermark.status === 'fulfilled' && (watermark.value === 'true' || watermark.value === 'false')) {
-        setWatermark(watermark.value === 'true');
-      }
-      // Unread preferences must stay untouched, even when other reads succeed.
-      setRestoredSettings({
-        packInfo,
-        volume: volume.status === 'fulfilled',
-        watermark: watermark.status === 'fulfilled',
-      });
-    });
-    return () => { cancelled = true; };
-  }, [state.loaded, state.unipack, setVolumeLevel, setWatermark]);
-
-  useEffect(() => {
-    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.volume) return;
-    setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
-  }, [state.loaded, state.unipack, state.volumeLevel, restoredSettings]);
-  useEffect(() => {
-    if (!state.loaded || restoredSettings?.packInfo !== state.unipack?.info || !restoredSettings?.watermark) return;
-    setSetting('watermark', String(state.watermark)).catch(() => {});
-  }, [state.loaded, state.unipack, state.watermark, restoredSettings]);
 
   const handleImportFile = useCallback(
     async (file: File) => {
@@ -1252,7 +1212,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1488,7 +1450,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1576,7 +1540,9 @@ export function PlayPage() {
         recording={state.recording}
         hideUI={state.hideUI}
         watermark={state.watermark}
+        slideMode={state.slideMode}
         traceLog={state.traceLog}
+        traceLogStyle={state.traceLogStyle}
         proLightMode={state.proLightMode}
         midiConnected={state.midiConnected}
         midiConnecting={midiConnecting}
@@ -1590,7 +1556,9 @@ export function PlayPage() {
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}
+        onToggleSlideMode={() => setSlideMode(!state.slideMode)}
         onToggleTraceLog={toggleTraceLog}
+        onTraceLogStyleChange={setTraceLogStyle}
         onClearTraceLog={handleClearTraceLog}
         onToggleProLightMode={toggleProLightMode}
         volumeLevel={state.volumeLevel}

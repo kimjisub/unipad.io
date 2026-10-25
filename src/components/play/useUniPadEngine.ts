@@ -97,7 +97,10 @@ export interface EngineState {
   recording: boolean;
   hideUI: boolean;
   watermark: boolean;
+  /** Off: a finger stays on the pad it went down on. On: it plays each pad it is drawn onto. */
+  slideMode: boolean;
   traceLog: boolean;
+  traceLogStyle: TraceLogStyle;
   traceLogSequence: { x: number; y: number }[][];
   proLightMode: boolean;
   criticalError: boolean;
@@ -108,6 +111,25 @@ export interface EngineState {
 }
 
 export type PlayMode = 'none' | 'autoPlay' | 'guidePlay' | 'stepPractice';
+
+/** How the trace is drawn: the tap order as numbers on each pad, or a line through dots. */
+export type TraceLogStyle = 'numbers' | 'lines';
+
+const MAX_VOLUME_LEVEL = 7;
+
+/** Saved playing choices. Only a choice the player makes is written; a missing one keeps its default. */
+type PlayPreferenceKey = 'volumeLevel' | 'watermark' | 'slideMode' | 'traceLogStyle';
+const PLAY_PREFERENCE_KEYS: readonly PlayPreferenceKey[] = ['volumeLevel', 'watermark', 'slideMode', 'traceLogStyle'];
+
+const clampVolumeLevel = (level: number) => Math.max(0, Math.min(MAX_VOLUME_LEVEL, level));
+const parseBoolean = (value: string | null) => (value === 'true' ? true : value === 'false' ? false : null);
+const parseVolumeLevel = (value: string | null) => {
+  const level = value === null ? NaN : Number(value);
+  return Number.isFinite(level) ? clampVolumeLevel(level) : null;
+};
+const parseTraceLogStyle = (value: string | null): TraceLogStyle | null => (
+  value === 'numbers' || value === 'lines' ? value : null
+);
 
 const LED_RED_DIM = 1;
 const LED_RED = 3;
@@ -154,13 +176,15 @@ export function useUniPadEngine() {
     autoPlayControlsVisible: false,
     autoPlayProgress: 0,
     autoPlayTotal: 0,
-    volumeLevel: 7,
+    volumeLevel: MAX_VOLUME_LEVEL,
     practiceMode: false,
     stepPractice: false,
     recording: false,
     hideUI: false,
     watermark: true,
+    slideMode: false,
     traceLog: false,
+    traceLogStyle: 'numbers',
     traceLogSequence: [],
     proLightMode: false,
     criticalError: false,
@@ -191,9 +215,10 @@ export function useUniPadEngine() {
   const padStatesRef = useRef<PadState[][]>([]);
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
-  // A mode's temporary light is separate from the browser's explicit user preference.
-  const feedbackPreferenceRef = useRef<boolean | null>(null);
-  const feedbackChoiceRevisionRef = useRef(0);
+  const watermarkRef = useRef(true);
+  // Read once per visit. A choice made in this visit is newer than anything the read returns.
+  const playPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const chosenPlayPreferencesRef = useRef(new Set<PlayPreferenceKey>());
   const traceLogRef = useRef(false);
   const traceLogSequenceRef = useRef<{ x: number; y: number }[][]>([]);
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
@@ -220,7 +245,7 @@ export function useUniPadEngine() {
   const midiProfileRef = useRef<LaunchpadProfile>('auto');
   const midiListenerRef = useRef<MidiControllerListener | null>(null);
   const autoPlayListenerRef = useRef<AutoPlayListener | null>(null);
-  const volumeLevelRef = useRef(7);
+  const volumeLevelRef = useRef(MAX_VOLUME_LEVEL);
   const stateRef = useRef(state);
   const midiOptionPanelOpenRef = useRef(false);
   const midiToggleOptionPanelRef = useRef<(() => void) | null>(null);
@@ -425,7 +450,7 @@ export function useUniPadEngine() {
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
     if (cm) {
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
       refreshAllChains();
     }
     syncMidiFunctionLeds();
@@ -465,6 +490,46 @@ export function useUniPadEngine() {
     soundEngineRef.current?.cancelPendingChainChanges();
     setChain(c);
   }, [setChain]);
+
+  const applyVolumeLevel = useCallback((level: number) => {
+    const next = clampVolumeLevel(level);
+    volumeLevelRef.current = next;
+    soundEngineRef.current?.setVolume(next, MAX_VOLUME_LEVEL);
+    setState((prev) => ({ ...prev, volumeLevel: next }));
+  }, []);
+
+  const applyWatermark = useCallback((enabled: boolean) => {
+    watermarkRef.current = enabled;
+    setState((prev) => ({ ...prev, watermark: enabled }));
+  }, []);
+
+  const readPlayPreferences = useCallback(() => {
+    playPreferencesReadRef.current ??= Promise.allSettled(PLAY_PREFERENCE_KEYS.map((key) => getSetting(key)))
+      .then((results) => {
+        const saved = (key: PlayPreferenceKey) => {
+          if (chosenPlayPreferencesRef.current.has(key)) return null;
+          const result = results[PLAY_PREFERENCE_KEYS.indexOf(key)];
+          return result.status === 'fulfilled' ? result.value : null;
+        };
+        const volumeLevel = parseVolumeLevel(saved('volumeLevel'));
+        if (volumeLevel !== null) applyVolumeLevel(volumeLevel);
+        const watermark = parseBoolean(saved('watermark'));
+        if (watermark !== null) applyWatermark(watermark);
+        const slideMode = parseBoolean(saved('slideMode'));
+        const traceLogStyle = parseTraceLogStyle(saved('traceLogStyle'));
+        setState((prev) => ({
+          ...prev,
+          slideMode: slideMode ?? prev.slideMode,
+          traceLogStyle: traceLogStyle ?? prev.traceLogStyle,
+        }));
+      });
+    return playPreferencesReadRef.current;
+  }, [applyVolumeLevel, applyWatermark]);
+
+  const choosePlayPreference = useCallback((key: PlayPreferenceKey, value: string) => {
+    chosenPlayPreferencesRef.current.add(key);
+    setSetting(key, value).catch(() => {});
+  }, []);
 
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
   const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
@@ -784,7 +849,7 @@ export function useUniPadEngine() {
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      const feedback = feedbackPreferenceRef.current ?? !unipack?.keyLedExist;
+      const feedback = !unipack?.keyLedExist;
       feedbackLightRef.current = feedback;
       setState((s) => ({
         ...s,
@@ -952,7 +1017,6 @@ export function useUniPadEngine() {
         autoMappingProgress: 0,
         autoMappingTotal: 0,
         hideUI: false,
-        watermark: true,
         chain: 0,
         loaded: false,
         loading: false,
@@ -972,6 +1036,7 @@ export function useUniPadEngine() {
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     unload();
+    const playPreferences = readPlayPreferences();
 
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
 
@@ -979,6 +1044,8 @@ export function useUniPadEngine() {
       const unipack = await parseUniPack(zipData, (phase) => {
         setState((prev) => ({ ...prev, loadPhase: phase }));
       });
+      // Nothing plays before a lowered volume is known: opening a pack must not raise it.
+      await playPreferences;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1005,7 +1072,7 @@ export function useUniPadEngine() {
       chainRef.current = 0;
       cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
       for (const [c, code] of WATERMARK_LEDS) cm.add(-1, c, Channel.UI_UNIPAD, -1, code);
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
@@ -1025,7 +1092,7 @@ export function useUniPadEngine() {
       );
       soundEngineRef.current = soundEngine;
       const failedSounds = await soundEngine.load();
-      soundEngine.setVolume(volumeLevelRef.current, 7);
+      soundEngine.setVolume(volumeLevelRef.current, MAX_VOLUME_LEVEL);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
@@ -1158,7 +1225,7 @@ export function useUniPadEngine() {
               for (let y = 0; y < unipack.info.buttonY; y++) padTouchOff(x, y, AUTO_PLAY_INPUT);
             }
             autoPlayRemoveGuide();
-            const feedback = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
+            const feedback = !unipack.keyLedExist;
             feedbackLightRef.current = feedback;
             setState((prev) => ({
               ...prev,
@@ -1199,7 +1266,7 @@ export function useUniPadEngine() {
       }
 
       // Android initSetting(): keyLedExist에 따라 초기 상태 설정
-      const initFeedbackLight = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
+      const initFeedbackLight = !unipack.keyLedExist;
       const initLedEnabled = unipack.keyLedExist;
       feedbackLightRef.current = initFeedbackLight;
 
@@ -1314,6 +1381,7 @@ export function useUniPadEngine() {
     }
   }, [
     unload,
+    readPlayPreferences,
     setChain,
     selectChain,
     usageTracker,
@@ -1336,30 +1404,9 @@ export function useUniPadEngine() {
     setState((prev) => ({ ...prev, feedbackLight: enabled }));
   }, [padInit]);
 
-  const setFeedbackLight = useCallback((enabled: boolean) => {
-    feedbackChoiceRevisionRef.current++;
-    feedbackPreferenceRef.current = enabled;
-    applyFeedbackLight(enabled);
-    // Only a direct screen, keyboard or controller choice reaches this write.
-    setSetting('feedbackLight', String(enabled)).catch(() => {});
-  }, [applyFeedbackLight]);
-
-  useEffect(() => {
-    if (!state.loaded || !state.unipack) return;
-    // A choice in this session is newer than any read, including one racing its pending write.
-    if (feedbackChoiceRevisionRef.current > 0) return;
-    let cancelled = false;
-    const revision = feedbackChoiceRevisionRef.current;
-    const pack = state.unipack;
-    void getSetting('feedbackLight').then(value => {
-      if (cancelled || revision !== feedbackChoiceRevisionRef.current) return;
-      const preference = value === 'true' ? true : value === 'false' ? false : null;
-      feedbackPreferenceRef.current = preference;
-      // A read may complete during a mode. Keep its temporary light until exit.
-      if (!autoPlayRunnerRef.current?.active) applyFeedbackLight(preference ?? !pack.keyLedExist);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [state.loaded, state.unipack, applyFeedbackLight]);
+  /** Not saved: each pack opens, and each auto-play ends, with the pack's own rule (light off
+   *  when the pack has its own lights), so a choice lasts until then. */
+  const setFeedbackLight = applyFeedbackLight;
 
   const toggleFeedbackLight = useCallback(() => {
     setFeedbackLight(!feedbackLightRef.current);
@@ -1367,11 +1414,9 @@ export function useUniPadEngine() {
   toggleFeedbackLightRef.current = toggleFeedbackLight;
 
   const setVolumeLevel = useCallback((level: number) => {
-    const next = Math.max(0, Math.min(7, level));
-    volumeLevelRef.current = next;
-    soundEngineRef.current?.setVolume(next, 7);
-    setState((prev) => ({ ...prev, volumeLevel: next }));
-  }, []);
+    applyVolumeLevel(level);
+    choosePlayPreference('volumeLevel', String(volumeLevelRef.current));
+  }, [applyVolumeLevel, choosePlayPreference]);
   setVolumeLevelRef.current = setVolumeLevel;
 
   const toggleLed = useCallback(() => {
@@ -1425,13 +1470,24 @@ export function useUniPadEngine() {
   toggleHideUiRef.current = toggleHideUI;
 
   const setWatermark = useCallback((enabled: boolean) => {
-    setState((prev) => ({ ...prev, watermark: enabled }));
-  }, []);
+    applyWatermark(enabled);
+    choosePlayPreference('watermark', String(enabled));
+  }, [applyWatermark, choosePlayPreference]);
 
   const toggleWatermark = useCallback(() => {
-    setState((prev) => ({ ...prev, watermark: !prev.watermark }));
-  }, []);
+    setWatermark(!watermarkRef.current);
+  }, [setWatermark]);
   toggleWatermarkRef.current = toggleWatermark;
+
+  const setSlideMode = useCallback((enabled: boolean) => {
+    setState((prev) => ({ ...prev, slideMode: enabled }));
+    choosePlayPreference('slideMode', String(enabled));
+  }, [choosePlayPreference]);
+
+  const setTraceLogStyle = useCallback((style: TraceLogStyle) => {
+    setState((prev) => ({ ...prev, traceLogStyle: style }));
+    choosePlayPreference('traceLogStyle', style);
+  }, [choosePlayPreference]);
 
   const toggleProLightMode = useCallback(() => {
     const cm = channelManagerRef.current;
@@ -1663,7 +1719,9 @@ export function useUniPadEngine() {
     toggleHideUI,
     toggleWatermark,
     setWatermark,
+    setSlideMode,
     toggleTraceLog,
+    setTraceLogStyle,
     clearTraceLog,
     toggleProLightMode,
     loadTheme,

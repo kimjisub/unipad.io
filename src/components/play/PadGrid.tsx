@@ -1,9 +1,13 @@
 'use client';
 
 import { memo, useCallback, useRef, useEffect, useMemo, useState } from 'react';
-import type { PadState } from './useUniPadEngine';
-import type { ThemeAssets } from '@/lib/unipack';
+import type { PadState, TraceLogStyle } from './useUniPadEngine';
+import { getDefaultTheme, type ThemeAssets } from '@/lib/unipack';
 import { SkinImage } from './SkinImage';
+
+/** The default skin's tap order numbers: light text with a thin dark edge, readable on an unlit pad. */
+const DEFAULT_TRACE_NUMBER_COLOR = '#E6E9ED';
+const DEFAULT_TRACE_NUMBER_SHADOW = '0 0.5px 1px #161E2B';
 
 interface PadGridProps {
   buttonX: number;
@@ -12,6 +16,10 @@ interface PadGridProps {
   squareButton: boolean;
   theme: ThemeAssets | null;
   traceLogSequence?: { x: number; y: number }[];
+  /** Defaults to numbers. */
+  traceLogStyle?: TraceLogStyle;
+  /** Off (the default): a finger stays on the pad it went down on until it lifts. */
+  slideMode?: boolean;
   /** `input` names the pointer, so two fingers on one pad are two presses. */
   onPadDown: (x: number, y: number, input: string) => void;
   onPadUp: (x: number, y: number, input: string) => void;
@@ -30,13 +38,16 @@ interface PadCellProps {
   isGuide: boolean;
   guideTargetWallTimeMs: number | null;
   guideNowMs: number;
+  /** The 1-based order of every tap on this pad ("1 5"), or null. */
+  traceNumbers: string | null;
+  traceNumberColor: string | null;
 }
 
 // Lights often change only one pad. Keep the other pads' skin and guide layers out of the
 // synchronous light commit, even when an engine snapshot contains new pad objects.
 const PadCell = memo(function PadCell({
   x, y, buttonX, buttonY, squareButton, theme, bgColor, isPressed,
-  pressedIsWinning, isGuide, guideTargetWallTimeMs, guideNowMs,
+  pressedIsWinning, isGuide, guideTargetWallTimeMs, guideNowMs, traceNumbers, traceNumberColor,
 }: PadCellProps) {
   const hasThemeBtn = theme?.btn || theme?.btnPressed;
   const centerX = Math.floor(buttonX / 2) - 1;
@@ -139,9 +150,34 @@ const PadCell = memo(function PadCell({
         );
       })()}
 
+      {traceNumbers && (
+        <span
+          data-trace-numbers
+          className="absolute inset-0 m-auto h-fit text-center text-[10px] leading-tight break-words pointer-events-none z-30 p-0.5"
+          style={{
+            color: traceNumberColor ?? DEFAULT_TRACE_NUMBER_COLOR,
+            textShadow: traceNumberColor ? undefined : DEFAULT_TRACE_NUMBER_SHADOW,
+          }}
+        >
+          {traceNumbers}
+        </span>
+      )}
+
     </div>
   );
 });
+
+/** The 1-based index of every tap, per pad, as the classic trace log shows it. */
+function traceNumbersByPad(sequence: { x: number; y: number }[]) {
+  const orders = new Map<string, number[]>();
+  sequence.forEach(({ x, y }, index) => {
+    const key = `${x},${y}`;
+    const order = orders.get(key);
+    if (order) order.push(index + 1);
+    else orders.set(key, [index + 1]);
+  });
+  return new Map(Array.from(orders, ([key, order]) => [key, order.join(' ')]));
+}
 
 export function PadGrid({
   buttonX,
@@ -150,6 +186,8 @@ export function PadGrid({
   squareButton,
   theme,
   traceLogSequence,
+  traceLogStyle = 'numbers',
+  slideMode = false,
   onPadDown,
   onPadUp,
 }: PadGridProps) {
@@ -198,7 +236,7 @@ export function PadGrid({
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (!pointers.has(e.pointerId)) return;
+      if (!slideMode || !pointers.has(e.pointerId)) return;
       const pad = getPadFromPoint(e.clientX, e.clientY);
       const prevKey = pointers.get(e.pointerId) ?? null;
       const newKey = pad ? `${pad[0]},${pad[1]}` : null;
@@ -227,6 +265,9 @@ export function PadGrid({
       for (const id of Array.from(pointers.keys())) releasePointer(id);
     };
     const handleVisibility = () => { if (document.hidden) releaseAllPointers(); };
+    // A turned screen lays the pads out again under fingers that are still down. They are
+    // released and, since they are no longer tracked, stay released until they lift.
+    const orientation = typeof screen !== 'undefined' ? screen.orientation : undefined;
 
     const handleContextMenu = (e: Event) => e.preventDefault();
 
@@ -237,10 +278,13 @@ export function PadGrid({
     grid.addEventListener('lostpointercapture', handleLostCapture);
     grid.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('blur', releaseAllPointers);
+    window.addEventListener('orientationchange', releaseAllPointers);
+    orientation?.addEventListener('change', releaseAllPointers);
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
-      // The grid unmounts on hideUI toggles; pads still held here would never get their release.
+      // The grid unmounts on hideUI toggles, and a changed slide setting starts over; pads still
+      // held here would never get their release.
       releaseAllPointers();
       grid.removeEventListener('pointerdown', handlePointerDown);
       grid.removeEventListener('pointermove', handlePointerMove);
@@ -249,9 +293,11 @@ export function PadGrid({
       grid.removeEventListener('lostpointercapture', handleLostCapture);
       grid.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('blur', releaseAllPointers);
+      window.removeEventListener('orientationchange', releaseAllPointers);
+      orientation?.removeEventListener('change', releaseAllPointers);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [onPadDown, onPadUp, getPadFromPoint]);
+  }, [onPadDown, onPadUp, getPadFromPoint, slideMode]);
 
   useEffect(() => {
     if (!hasActiveGuideAnimation) return;
@@ -291,8 +337,15 @@ export function PadGrid({
   const padCellHeight = buttonX > 0 ? gridSize.height / buttonX : 0;
   const padCellMin = Math.min(padCellWidth || 0, padCellHeight || 0);
 
+  const traceNumbers = useMemo(
+    () => (traceLogStyle === 'numbers' && traceLogSequence ? traceNumbersByPad(traceLogSequence) : null),
+    [traceLogStyle, traceLogSequence],
+  );
+  // A skin's own trace colour is used as it is; the default skin's numbers get their own colour.
+  const traceNumberColor = theme?.colors && theme.colors !== getDefaultTheme().colors ? theme.colors.traceLog ?? null : null;
+
   const tracePoints = useMemo(() => {
-    if (!traceLogSequence || traceLogSequence.length === 0 || gridSize.width === 0 || gridSize.height === 0) return [];
+    if (traceLogStyle !== 'lines' || !traceLogSequence || traceLogSequence.length === 0 || gridSize.width === 0 || gridSize.height === 0) return [];
     const cellW = gridSize.width / buttonY;
     const cellH = gridSize.height / buttonX;
     const maxOffset = Math.min(cellW, cellH) * 0.3;
@@ -322,7 +375,7 @@ export function PadGrid({
         cy: p.x * cellH + cellH / 2 + oy,
       };
     });
-  }, [traceLogSequence, gridSize, buttonX, buttonY]);
+  }, [traceLogStyle, traceLogSequence, gridSize, buttonX, buttonY]);
 
   const traceLinePath = useMemo(() => {
     if (tracePoints.length < 2) return '';
@@ -356,6 +409,8 @@ export function PadGrid({
               isGuide={pad?.guide || false}
               guideTargetWallTimeMs={pad?.guideTargetWallTimeMs ?? null}
               guideNowMs={pad?.guide ? guideNowMs : 0}
+              traceNumbers={traceNumbers?.get(`${x},${y}`) ?? null}
+              traceNumberColor={traceNumberColor}
             />
           );
         }),
