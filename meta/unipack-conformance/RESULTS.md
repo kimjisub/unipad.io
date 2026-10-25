@@ -1,5 +1,26 @@
 # Results
 
+## Web auto mapping correction (2026-10-25)
+
+Auto mapping now replaces each run of waits before a press with the rounded length of the sound
+pressed last, keeps presses without a wait between them simultaneous, starts the first press after
+1000 ms, drops the waits after the last press and gives every press its release at the same time.
+A wait after a sound whose length is unknown keeps its original length.
+The web failure observations for MAP-P001 to MAP-P005 are removed.
+
+With the mapper from `d2ee45eb`, the five inputs fail: presses lose their releases, a sound length
+is added to the existing waits, and the first press starts without the 1000 ms lead-in. With the
+corrected mapper they match their unchanged expectations. The durations in each case's
+`operation.json` are mapper inputs, not decoded audio.
+
+All 382 case inputs, fingerprints, expected results, scenarios and other platform observations are
+unchanged. Only these five web observations change. The canonical corpus advances from SHA256
+`859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20` to
+`7a1b070a37eb5f408bf81981637478f2df2593cb5f483cb8d12d956ee40d5cba`. The Node web conformance run
+on this corpus records **382 passes and no failures**. The historical app copy references are
+unchanged; their integrity checks still warn that both are behind the canonical corpus. This is web
+mapper evidence, without a claim about current app copies, real speakers or MIDI hardware.
+
 ## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
 
 Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) and

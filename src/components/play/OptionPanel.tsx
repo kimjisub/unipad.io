@@ -38,6 +38,10 @@ interface OptionPanelProps {
   autoMappingActive: boolean;
   autoMappingProgress: number;
   autoMappingTotal: number;
+  /** Swaps the autoPlay with the backup the last auto mapping or restore kept. */
+  onRestoreAutoPlay: () => void;
+  autoPlayRestoring: boolean;
+  autoPlayBackupAvailable: boolean;
   onToggleRecording: () => void;
   onToggleHideUI: () => void;
   onToggleWatermark: () => void;
@@ -81,6 +85,9 @@ export function OptionPanel({
   autoMappingActive,
   autoMappingProgress,
   autoMappingTotal,
+  onRestoreAutoPlay,
+  autoPlayRestoring,
+  autoPlayBackupAvailable,
   onToggleRecording,
   onToggleHideUI,
   onToggleWatermark,
@@ -236,7 +243,7 @@ export function OptionPanel({
               <button
                 className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
                 onClick={onStartAutoMapping}
-                disabled={autoMappingActive}
+                disabled={autoMappingActive || autoPlayRestoring}
               >
                 <span className="text-sm text-white">
                   {autoMappingActive
@@ -255,6 +262,24 @@ export function OptionPanel({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
+              </button>
+              <button
+                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+                onClick={onRestoreAutoPlay}
+                disabled={!autoPlayBackupAvailable || autoMappingActive || autoPlayRestoring}
+                aria-describedby={autoPlayBackupAvailable ? undefined : 'restore-auto-play-no-backup'}
+              >
+                <span className="flex flex-col items-start text-left">
+                  <span className="text-sm text-white">
+                    {autoPlayRestoring ? t('autoPlayRestoring') : t('restoreAutoPlay')}
+                  </span>
+                  {!autoPlayBackupAvailable && (
+                    <span id="restore-auto-play-no-backup" className="text-xs text-white/65">{t('restoreAutoPlayNoBackup')}</span>
+                  )}
+                </span>
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 010 10H9M3 10l4-4M3 10l4 4" />
+                </svg>
               </button>
             </>
           )}

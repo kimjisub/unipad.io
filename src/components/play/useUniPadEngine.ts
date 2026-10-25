@@ -36,6 +36,9 @@ import type {
   LaunchpadProfile,
   MidiConnectionStatus,
   ThemeAssets,
+  AutoPlay,
+  AutoPlayElement,
+  StoredAutoPlay,
 } from '@/lib/unipack';
 
 const CHAIN_INDEX_OFFSET = 8;
@@ -107,9 +110,28 @@ export interface EngineState {
   autoMappingActive: boolean;
   autoMappingProgress: number;
   autoMappingTotal: number;
+  autoPlayRestoring: boolean;
+  /** The pack has an earlier autoPlay that restoring would bring back. */
+  autoPlayBackupAvailable: boolean;
 }
 
 export type PlayMode = 'none' | 'autoPlay' | 'guidePlay' | 'stepPractice';
+
+function playModeOf(s: Pick<EngineState, 'autoPlayEnabled' | 'practiceMode' | 'stepPractice'>): PlayMode {
+  return !s.autoPlayEnabled ? 'none'
+    : !s.practiceMode ? 'autoPlay'
+    : !s.stepPractice ? 'guidePlay'
+    : 'stepPractice';
+}
+
+/** Stores a pack's new autoPlay and its backup; resolves only once both are written. */
+export type PersistAutoPlay = (autoPlay: StoredAutoPlay) => Promise<void>;
+
+/**
+ * `saved`: stored and now playing. `failed`: not stored, the pack keeps the autoPlay it had.
+ * `cancelled`: nothing was done, because the pack was closed or another change was running.
+ */
+export type AutoPlayEditResult = 'saved' | 'failed' | 'cancelled';
 
 /** How the trace is drawn: the tap order as numbers on each pad, or a line through dots. */
 export type TraceLogStyle = 'numbers' | 'lines';
@@ -191,12 +213,11 @@ export function useUniPadEngine() {
     autoMappingActive: false,
     autoMappingProgress: 0,
     autoMappingTotal: 0,
+    autoPlayRestoring: false,
+    autoPlayBackupAvailable: false,
   });
 
-  const playMode: PlayMode = !state.autoPlayEnabled ? 'none'
-    : !state.practiceMode ? 'autoPlay'
-    : !state.stepPractice ? 'guidePlay'
-    : 'stepPractice';
+  const playMode = playModeOf(state);
 
   const soundEngineRef = useRef<SoundEngine | null>(null);
   const playbackTicker = useRef<PlaybackTicker | null>(null);
@@ -211,6 +232,8 @@ export function useUniPadEngine() {
   const wakeLockRequestRef = useRef<Promise<WakeLockSentinel> | null>(null);
   const chainRef = useRef(0);
   const unipackRef = useRef<UniPackData | null>(null);
+  const autoPlayBackupRef = useRef<AutoPlayElement[] | null>(null);
+  const autoPlayEditingRef = useRef(false);
   const padStatesRef = useRef<PadState[][]>([]);
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
@@ -827,10 +850,7 @@ export function useUniPadEngine() {
     const unipack = unipackRef.current;
     const prev = stateRef.current;
 
-    const currentMode: PlayMode = !prev.autoPlayEnabled ? 'none'
-      : !prev.practiceMode ? 'autoPlay'
-      : !prev.stepPractice ? 'guidePlay'
-      : 'stepPractice';
+    const currentMode = playModeOf(prev);
 
     const mode = targetMode === currentMode ? 'none' : targetMode;
     if (mode === 'autoPlay') usageTracker.autoplayStarted();
@@ -894,10 +914,7 @@ export function useUniPadEngine() {
 
   /** none -> autoPlay -> guidePlay -> stepPractice -> none, as Android's cyclePlayMode. */
   const cyclePlayMode = useCallback(() => {
-    const current: PlayMode = !stateRef.current.autoPlayEnabled ? 'none'
-      : !stateRef.current.practiceMode ? 'autoPlay'
-      : !stateRef.current.stepPractice ? 'guidePlay'
-      : 'stepPractice';
+    const current = playModeOf(stateRef.current);
     const next: PlayMode = current === 'none' ? 'autoPlay'
       : current === 'autoPlay' ? 'guidePlay'
       : current === 'guidePlay' ? 'stepPractice'
@@ -991,6 +1008,7 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current = null;
     channelManagerRef.current = null;
     unipackRef.current = null;
+    autoPlayBackupRef.current = null;
     midiRef.current?.release();
     midiRef.current = null;
     midiListenerRef.current = null;
@@ -1012,6 +1030,8 @@ export function useUniPadEngine() {
         autoMappingActive: false,
         autoMappingProgress: 0,
         autoMappingTotal: 0,
+        autoPlayRestoring: false,
+        autoPlayBackupAvailable: false,
         hideUI: false,
         chain: 0,
         loaded: false,
@@ -1030,8 +1050,11 @@ export function useUniPadEngine() {
     });
   }, [usageTracker]);
 
-  /** Resolves false when the pack could not be opened; the reason is left in `errors`. */
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer): Promise<boolean> => {
+  /**
+   * Opens a pack; `savedAutoPlay` is the autoPlay stored for it, played in place of the archive's.
+   * Resolves false when the pack could not be opened; the reason is left in `errors`.
+   */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay): Promise<boolean> => {
     unload();
     const playPreferences = readPlayPreferences();
 
@@ -1043,6 +1066,8 @@ export function useUniPadEngine() {
       });
       // Nothing plays before a lowered volume is known: opening a pack must not raise it.
       await playPreferences;
+      if (savedAutoPlay && unipack.autoPlay) unipack.autoPlay = { elements: savedAutoPlay.current };
+      autoPlayBackupRef.current = savedAutoPlay && unipack.autoPlay ? savedAutoPlay.backup : null;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1139,11 +1164,7 @@ export function useUniPadEngine() {
       if (unipack.autoPlayExist && unipack.autoPlay) {
         const autoPlayListener: AutoPlayListener = {
           onStart: () => {
-            const current = stateRef.current;
-            const startingMode: PlayMode = !current.autoPlayEnabled ? 'none'
-              : !current.practiceMode ? 'autoPlay'
-              : !current.stepPractice ? 'guidePlay'
-              : 'stepPractice';
+            const startingMode = playModeOf(stateRef.current);
 
             if (startingMode === 'stepPractice') {
               autoPlayRunnerRef.current?.pause();
@@ -1274,6 +1295,7 @@ export function useUniPadEngine() {
           loading: false,
           loadPhase: '',
           unipack,
+          autoPlayBackupAvailable: autoPlayBackupRef.current !== null,
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
@@ -1586,55 +1608,88 @@ export function useUniPadEngine() {
     }
   }, []);
 
-  const startAutoMapping = useCallback(() => {
-    const unipack = unipackRef.current;
-    if (!unipack || !unipack.autoPlay) return;
+  /** Plays `autoPlay` from now on, keeping its backup for restoring. */
+  const installAutoPlay = useCallback((unipack: UniPackData, autoPlay: StoredAutoPlay) => {
+    unipack.autoPlay = { elements: autoPlay.current };
+    autoPlayBackupRef.current = autoPlay.backup;
 
-    setState((prev) => ({ ...prev, autoMappingActive: true, autoMappingProgress: 0, autoMappingTotal: 0 }));
+    const runner = autoPlayRunnerRef.current;
+    const listener = autoPlayListenerRef.current;
+    const soundEngine = soundEngineRef.current;
+    if (runner && listener && soundEngine) {
+      runner.stop();
+      const newRunner = new AutoPlayRunner(
+        unipack,
+        listener,
+        () => chainRef.current,
+        setChain,
+        (c, x, y, num) => soundEngine.soundPushToNum(c, x, y, num),
+        (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
+        playbackTicker.current!,
+      );
+      newRunner.setSuspended(document.hidden);
+      autoPlayRunnerRef.current = newRunner;
+    }
 
-    autoPlayMap(unipack.autoPlay, unipack.soundTable, {
-      onStart: () => {},
-      onGetWorkSize: (size) => {
-        setState((prev) => ({ ...prev, autoMappingTotal: size }));
-      },
-      onProgress: (progress) => {
-        setState((prev) => ({ ...prev, autoMappingProgress: progress }));
-      },
-      onDone: (mappedAutoPlay) => {
-        unipack.autoPlay = mappedAutoPlay;
-        unipackRef.current = unipack;
-
-        const runner = autoPlayRunnerRef.current;
-        const listener = autoPlayListenerRef.current;
-        if (runner && listener) {
-          runner.stop();
-          const soundEngine = soundEngineRef.current;
-          if (soundEngine) {
-            const soundPushToNum = (c: number, x: number, y: number, num: number) => {
-              soundEngine.soundPushToNum(c, x, y, num);
-            };
-            const newRunner = new AutoPlayRunner(
-              unipack,
-              listener,
-              () => chainRef.current,
-              setChain,
-              soundPushToNum,
-              (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
-              playbackTicker.current!,
-            );
-            newRunner.setSuspended(document.hidden);
-            autoPlayRunnerRef.current = newRunner;
-          }
-        }
-
-        setState((prev) => ({ ...prev, autoMappingActive: false, unipack }));
-      },
-      onError: (error) => {
-        console.error('Auto mapping failed:', error);
-        setState((prev) => ({ ...prev, autoMappingActive: false }));
-      },
-    });
+    setState((prev) => ({
+      ...prev,
+      unipack,
+      autoPlayTotal: autoPlay.current.length,
+      autoPlayProgress: 0,
+      autoPlayBackupAvailable: true,
+    }));
   }, [setChain]);
+
+  /**
+   * Replaces the open pack's autoPlay with what `next` makes of it. Playback stops first and one
+   * change runs at a time. The new autoPlay is used only after `persist` stored it, so a failed
+   * save leaves the pack playing the autoPlay it had.
+   */
+  const editAutoPlay = useCallback(async (
+    next: (unipack: UniPackData, autoPlay: AutoPlay) => Promise<StoredAutoPlay | null>,
+    persist: PersistAutoPlay,
+    busy: 'autoMappingActive' | 'autoPlayRestoring',
+  ): Promise<AutoPlayEditResult> => {
+    const unipack = unipackRef.current;
+    const autoPlay = unipack?.autoPlay;
+    if (!unipack || !autoPlay || autoPlayEditingRef.current) return 'cancelled';
+    autoPlayEditingRef.current = true;
+    setState((prev) => ({ ...prev, [busy]: true }));
+    try {
+      if (stateRef.current.autoPlayEnabled) await switchPlayMode(playModeOf(stateRef.current));
+      const edited = await next(unipack, autoPlay);
+      if (!edited || unipackRef.current !== unipack) return 'cancelled';
+      await persist(edited);
+      if (unipackRef.current !== unipack) return 'cancelled';
+      installAutoPlay(unipack, edited);
+      return 'saved';
+    } catch (error) {
+      console.error('Saving the autoPlay failed:', error);
+      return 'failed';
+    } finally {
+      autoPlayEditingRef.current = false;
+      setState((prev) => ({ ...prev, [busy]: false }));
+    }
+  }, [switchPlayMode, installAutoPlay]);
+
+  /** Auto mapping: the current autoPlay becomes the backup of the mapped one. */
+  const startAutoMapping = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (unipack, autoPlay) => {
+    setState((prev) => ({ ...prev, autoMappingProgress: 0, autoMappingTotal: 0 }));
+    const mapped = await new Promise<AutoPlay>((resolve, reject) => autoPlayMap(autoPlay, unipack.soundTable, {
+      onStart: () => {},
+      onGetWorkSize: (size) => setState((prev) => ({ ...prev, autoMappingTotal: size })),
+      onProgress: (progress) => setState((prev) => ({ ...prev, autoMappingProgress: progress })),
+      onDone: resolve,
+      onError: reject,
+    }));
+    return { current: mapped.elements, backup: autoPlay.elements };
+  }, persist, 'autoMappingActive'), [editAutoPlay]);
+
+  /** Swaps the current autoPlay with its backup, so restoring again swaps them back. */
+  const restoreAutoPlay = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (_unipack, autoPlay) => {
+    const backup = autoPlayBackupRef.current;
+    return backup ? { current: backup, backup: autoPlay.elements } : null;
+  }, persist, 'autoPlayRestoring'), [editAutoPlay]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1731,5 +1786,6 @@ export function useUniPadEngine() {
     setVolumeLevel,
     resumeAudio: () => soundEngineRef.current?.resume(),
     startAutoMapping,
+    restoreAutoPlay,
   };
 }

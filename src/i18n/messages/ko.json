@@ -310,6 +310,9 @@
       "led": "LED",
       "autoMapping": "자동 매핑",
       "autoMappingActive": "자동 매핑 중... {progress}",
+      "restoreAutoPlay": "이전 자동 연주로 복원",
+      "restoreAutoPlayNoBackup": "저장된 백업이 없습니다",
+      "autoPlayRestoring": "복원 중...",
       "hideUI": "UI 숨기기",
       "watermark": "워터마크",
       "proLightMode": "프로 라이트 모드",
@@ -409,7 +412,13 @@
       "warnings": "경고 {count}개",
       "confirmInstall": "“{title}” 을 설치할까요? unipad.io 에서 받습니다.",
       "confirmInstallByProducer": "{producer} 의 “{title}” 을 설치할까요? unipad.io 에서 받습니다.",
-      "confirmInstallAriaLabel": "설치 확인"
+      "confirmInstallAriaLabel": "설치 확인",
+      "confirmAutoMapping": "자동 연주를 맞출까요? 기다림을 소리 길이로 바꿉니다. 지금의 자동 연주는 백업합니다. 동시에 누른 패드는 함께 둡니다",
+      "confirmAutoMappingAction": "맞추기",
+      "confirmAutoMappingAriaLabel": "자동 매핑 확인",
+      "confirmRestoreAutoPlay": "직전 백업으로 되돌릴까요? 현재 자동 연주와 자리를 바꿉니다. 복원 후에도 다시 되돌릴 수 있어요",
+      "confirmRestoreAutoPlayAction": "복원하기",
+      "confirmRestoreAutoPlayAriaLabel": "자동 연주 복원 확인"
     },
     "toast": {
       "skinFailed": "스킨을 적용하지 못했습니다. 스킨을 초기화합니다.",
@@ -429,7 +438,10 @@
       "sharedPackFailed": "공유된 팩을 불러오지 못했습니다.",
       "downloadingPack": "“{title}” 을 받는 중...",
       "installFailed": "팩을 설치하지 못했습니다.",
-      "installCancelled": "설치를 취소했습니다."
+      "installCancelled": "설치를 취소했습니다.",
+      "autoPlaySaved": "자동 연주를 저장했습니다. 메뉴에서 이전 것으로 복원할 수 있어요",
+      "autoPlayRestored": "이전 자동 연주로 복원했습니다",
+      "autoPlaySaveFailed": "저장하지 못했습니다. 기존 자동 연주는 그대로입니다"
     }
   }
 }

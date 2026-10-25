@@ -1,3 +1,5 @@
+import type { AutoPlayElement } from './types';
+
 const DB_NAME = 'unipad';
 const DB_VERSION = 1;
 const STORE_UNIPACKS = 'unipacks';
@@ -19,8 +21,16 @@ export interface StoredUniPack {
   openCount?: number;
   bookmark?: boolean;
   zipData: ArrayBuffer;
+  /** Auto mapping's result, used in place of the archive's autoPlay; the archive is never rewritten. */
+  autoPlay?: StoredAutoPlay;
   addedAt: number;
   lastOpenedAt: number;
+}
+
+/** The autoPlay a pack plays and the one it replaced, which restoring swaps back. */
+export interface StoredAutoPlay {
+  current: AutoPlayElement[];
+  backup: AutoPlayElement[];
 }
 
 export interface StoredTheme {
@@ -68,6 +78,43 @@ function tx<T>(
         transaction.oncomplete = () => db.close();
       }),
   );
+}
+
+/**
+ * Runs `write` in one readwrite transaction. Resolves only once the transaction has committed and
+ * rejects when it aborts (for example, browser storage is full), in which case nothing it wrote is kept.
+ * `write` calls `fail` to abort with its own reason.
+ */
+async function commit(
+  storeName: string,
+  write: (store: IDBObjectStore, fail: (error: unknown) => void) => void,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    let failure: unknown;
+    const fail = (error: unknown) => {
+      failure ??= error;
+      try {
+        transaction.abort();
+      } catch {
+        // Already aborted; onabort rejects.
+      }
+    };
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? failure ?? new DOMException('The write was aborted.', 'AbortError'));
+    };
+    try {
+      write(transaction.objectStore(storeName), fail);
+    } catch (error) {
+      fail(error);
+    }
+  });
 }
 
 // UniPack operations
@@ -127,30 +174,32 @@ export async function saveStoreUniPack(
     .filter((pack) => pack.storeCode === info.storeCode)
     .map((pack) => pack.id);
   const record = createUniPackRecord(zipData, info);
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_UNIPACKS, 'readwrite');
-    let requestError: unknown;
-    transaction.oncomplete = () => {
-      db.close();
-      resolve(record.id);
-    };
-    transaction.onabort = () => {
-      db.close();
-      reject(transaction.error ?? requestError ?? new DOMException('Saving the pack was aborted.', 'AbortError'));
-    };
-    try {
-      const store = transaction.objectStore(STORE_UNIPACKS);
-      store.put(record);
-      for (const id of previousIds) store.delete(id);
-    } catch (error) {
-      requestError = error;
-      try {
-        transaction.abort();
-      } catch {
-        // Already aborted; onabort rejects.
+  await commit(STORE_UNIPACKS, (store) => {
+    store.put(record);
+    for (const id of previousIds) store.delete(id);
+  });
+  return record.id;
+}
+
+/**
+ * Stores `autoPlay` as the pack's autoPlay and its backup together, in place of the earlier pair.
+ * Only one backup is kept. When the write fails the pack keeps the autoPlay it had.
+ */
+export async function saveUniPackAutoPlay(id: string, autoPlay: StoredAutoPlay): Promise<void> {
+  await commit(STORE_UNIPACKS, (store, fail) => {
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const record = request.result as StoredUniPack | undefined;
+      if (!record) {
+        fail(new DOMException('The pack is no longer stored.', 'NotFoundError'));
+        return;
       }
-    }
+      try {
+        store.put({ ...record, autoPlay });
+      } catch (error) {
+        fail(error);
+      }
+    };
   });
 }
 
@@ -173,6 +222,7 @@ export async function listUniPacks(): Promise<StoredUniPack[]> {
         results.push({
           ...record,
           zipData: null as unknown as ArrayBuffer, // 목록 조회 시 ZIP 데이터 제외
+          autoPlay: undefined,
         });
         cursor.continue();
       } else {
