@@ -13,7 +13,14 @@ type Request = { result?: unknown; error?: DOMException; onsuccess?: () => void;
 
 /** Serializes transactions and clones reads/writes, including rollback on abort. */
 function fakeIndexedDB(initial?: StoredUniPack) {
-  let record = structuredClone(initial);
+  const { zipData: _zipData, ...metadata } = initial ?? {};
+  void _zipData;
+  const records = new Map<string, unknown>([
+    ['unipacks', structuredClone(initial)],
+    ['unipackMetadata', initial ? structuredClone(metadata) : undefined],
+  ]);
+  let archiveReads = 0;
+  let archiveWrites = 0;
   let nextRead: (() => void) | undefined;
   let abortWrite = false;
   let readFailure: DOMException | undefined;
@@ -27,9 +34,10 @@ function fakeIndexedDB(initial?: StoredUniPack) {
   };
   const db = {
     close() {},
-    transaction(_name: string, mode: IDBTransactionMode) {
+    transaction(storeNames: string | string[], mode: IDBTransactionMode) {
+      const names = Array.isArray(storeNames) ? storeNames : [storeNames];
       const operations: (() => void)[] = [];
-      let draft: StoredUniPack | undefined;
+      let draft: Map<string, unknown>;
       let aborted = false;
       let running = false;
       const transaction = {
@@ -37,7 +45,8 @@ function fakeIndexedDB(initial?: StoredUniPack) {
         oncomplete: undefined as (() => void) | undefined,
         onabort: undefined as (() => void) | undefined,
         abort() { explicitAborts++; aborted = true; },
-        objectStore() {
+        objectStore(name: string) {
+          assert.ok(names.includes(name), `Store ${name} is outside the transaction`);
           return {
             get(id: string) {
               const request: Request = {};
@@ -49,7 +58,9 @@ function fakeIndexedDB(initial?: StoredUniPack) {
                   aborted = true;
                   return;
                 }
-                request.result = structuredClone(draft?.id === id ? draft : undefined);
+                if (name === 'unipacks') archiveReads++;
+                const record = draft.get(name) as StoredUniPack | undefined;
+                request.result = structuredClone(record?.id === id ? record : undefined);
                 const hook = nextRead;
                 nextRead = undefined;
                 hook?.();
@@ -59,6 +70,7 @@ function fakeIndexedDB(initial?: StoredUniPack) {
             },
             put(value: StoredUniPack) {
               assert.equal(mode, 'readwrite');
+              if (name === 'unipacks') archiveWrites++;
               if (putFailure) {
                 const error = putFailure;
                 putFailure = undefined;
@@ -67,7 +79,7 @@ function fakeIndexedDB(initial?: StoredUniPack) {
               const copy = structuredClone(value);
               const request: Request = {};
               operations.push(() => {
-                draft = copy;
+                draft.set(name, copy);
                 request.result = copy.id;
                 request.onsuccess?.();
               });
@@ -92,7 +104,7 @@ function fakeIndexedDB(initial?: StoredUniPack) {
           aborted = true;
           setImmediate(step);
         } else {
-          if (mode === 'readwrite') record = draft;
+          if (mode === 'readwrite') for (const [name, record] of draft) records.set(name, record);
           transaction.oncomplete?.();
           startNext();
         }
@@ -101,7 +113,7 @@ function fakeIndexedDB(initial?: StoredUniPack) {
         assert.equal(running, false);
         running = true;
         active = true;
-        draft = structuredClone(record);
+        draft = new Map(names.map(name => [name, structuredClone(records.get(name))]));
         setImmediate(step);
       };
       if (active) pending.push(start);
@@ -121,6 +133,7 @@ function fakeIndexedDB(initial?: StoredUniPack) {
     abortNextWrite() { abortWrite = true; },
     failNextRead() { readFailure = new DOMException('Read failed.', 'UnknownError'); },
     throwOnNextPut() { putFailure = new DOMException('Cannot clone value.', 'DataCloneError'); },
+    archiveAccesses() { return { reads: archiveReads, writes: archiveWrites }; },
     explicitAbortCount() { return explicitAborts; },
   };
 }
@@ -154,8 +167,8 @@ for (const [name, update] of [
       const db = fakeIndexedDB(initial);
       installDB(t, db);
       let saving: Promise<void> | undefined;
-      // Queue the competing write after the metadata read takes its snapshot. A split read/write
-      // lets this save commit before its stale put; one readwrite transaction keeps both changes.
+      // Queue another metadata write while the first readwrite transaction is active;
+      // both updates must survive in the order their transactions commit.
       db.afterNextRead(() => { saving = saveUniPackAutoPlay(original.id, mapped); });
       const startedAt = Date.now();
       const result = await update(original.id);
@@ -233,3 +246,16 @@ test('autoPlay saving rejects a missing pack', async (t) => {
   assert.equal(db.explicitAbortCount(), 1);
   assert.equal(await getUniPack('missing'), undefined);
 });
+
+for (const [name, update] of [
+  ['recent opening', updateUniPackLastOpened],
+  ['bookmark', toggleUniPackBookmark],
+  ['autoPlay', (id: string) => saveUniPackAutoPlay(id, mapped)],
+] as const) {
+  test(`${name} never reads or writes the archive`, async (t) => {
+    const db = fakeIndexedDB(original);
+    installDB(t, db);
+    await update(original.id);
+    assert.deepEqual(db.archiveAccesses(), { reads: 0, writes: 0 });
+  });
+}

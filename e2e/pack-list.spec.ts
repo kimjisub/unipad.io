@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 
 // Newest first: the list sorts by the date a pack was added.
@@ -57,13 +58,15 @@ for (const [method, ascending, titles] of sortCases) {
         request.onerror = () => reject(request.error);
       });
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction('unipacks', 'readwrite');
-        const store = tx.objectStore('unipacks');
+        const tx = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const store = tx.objectStore('unipackMetadata');
+        const archive = tx.objectStore('unipacks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
           const records = request.result;
           const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
           records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
+          tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
           store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
@@ -307,8 +310,9 @@ async function openLongList(page: Page, square: boolean) {
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('unipacks', 'readwrite');
-      const store = transaction.objectStore('unipacks');
+      const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+      const store = transaction.objectStore('unipackMetadata');
+      const archive = transaction.objectStore('unipacks').getAll();
       const request = store.getAll();
       request.onsuccess = () => {
         const template = request.result[0];
@@ -318,6 +322,7 @@ async function openLongList(page: Page, square: boolean) {
           return;
         }
         for (let index = 0; index < 12; index++) {
+          transaction.objectStore('unipacks').put({ ...archive.result[0], id: `local-${index}` });
           store.put({ ...template, id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
         }
       };
@@ -429,35 +434,15 @@ test('a single saved pack keeps detail playback visible in a tall phone viewport
   await expectPads(page);
 });
 
-async function readSavedPackRecords(page: Page) {
-  return page.evaluate(async () => {
-    const request = indexedDB.open('unipad');
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      const read = db.transaction('unipacks').objectStore('unipacks').getAll();
-      const records = await new Promise<import('../src/lib/unipack/storage').StoredUniPack[]>((resolve, reject) => {
-        read.onsuccess = () => resolve(read.result);
-        read.onerror = () => reject(read.error);
-      });
-      return records.map(record => ({ ...record, zipData: Array.from(new Uint8Array(record.zipData)) }));
-    } finally {
-      db.close();
-    }
-  });
-}
-
 for (const action of ['opening', 'bookmarking'] as const) {
   test(`saved pack ${action} handles an aborted metadata write`, async ({ page }, info) => {
     await openList(page, [packs[0][0]]);
-    const before = await readSavedPackRecords(page);
+    const before = await storedPackRecords(page);
     await page.evaluate(() => {
       const put = IDBObjectStore.prototype.put;
       IDBObjectStore.prototype.put = function (...args) {
         const request = put.apply(this, args);
-        if (this.name === 'unipacks') {
+        if (this.name === 'unipackMetadata') {
           request.addEventListener('success', () => {
             // Native rollback after put succeeds, before its transaction commits.
             this.transaction.abort();
@@ -483,7 +468,7 @@ for (const action of ['opening', 'bookmarking'] as const) {
         await expect(page.getByRole('button', { name: 'Remove bookmark', exact: true })).toHaveCount(0);
       }
       await expect(page.locator('html')).toHaveAttribute('data-aborted-pack-write', 'true');
-      const after = await readSavedPackRecords(page);
+      const after = await storedPackRecords(page);
       expect(after).toEqual(before);
     } finally {
       await info.attach('after-aborted-write', { body: await page.screenshot(), contentType: 'image/png' });

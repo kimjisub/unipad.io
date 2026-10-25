@@ -323,3 +323,32 @@ the bottom and right edges play the mapped pad at four screen sizes.
 
 Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
 The default suite includes all these cases; the GitHub workflow is unchanged.
+
+### Saved pack storage
+
+IndexedDB version 2 keeps archive bytes in `unipacks` and the pack's small fields
+(including recent-open history, bookmarks and custom autoPlay) in `unipackMetadata`.
+Listing or updating these fields never reads or rewrites an archive. Saving,
+replacing and deleting a pack changes both stores in one transaction.
+
+The version 1 upgrade reads each legacy record once to copy its metadata. It does
+not rewrite or delete the original archive records. A failed or aborted upgrade
+rolls back all metadata copies and the database version; the next open retries.
+An already upgraded database needs a version 2 reader: reverting to code that
+explicitly opens version 1 will fail with `VersionError`. Keep the version 2
+reader when rolling back other changes.
+
+`e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
+transaction interruption, retry, existing theme/settings preservation and pack
+reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+For an optional large-pack measurement on macOS or Linux, run after building:
+
+```bash
+STORAGE_MEMORY_PROBE=1 pnpm test:e2e e2e/storage-memory.probe.spec.ts --project=chromium
+```
+
+The probe generates a 96 MiB archive containing 32 original PCM sounds, imports
+it normally, then compares opening with recent-history writes enabled or disabled
+three times each. Attachments include sampled CDP backing-store/heap sizes and
+renderer RSS from `ps`; the maximum is a sampled peak, not a memory limit or a
+measurement on a physical phone. The normal suite skips this diagnostic.
