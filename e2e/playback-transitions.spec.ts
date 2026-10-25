@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, stateTimeout } from './browser';
 
 declare global { interface Window { transitionAudio: AudioContext; transitionNativeAudioTime?: () => number } }
 
@@ -112,6 +112,191 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redraws only the next unscanned note`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
+  const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(219);
+  await page.clock.runFor(16);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await expect(guide('0,0')).toHaveCount(1);
+  await page.clock.fastForward(2000);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(199);
+  await page.clock.runFor(20);
+  const path = info.outputPath('resumed-guide.png');
+  await page.screenshot({ path, animations: 'disabled' });
+  await info.attach('resumed-guide', { path, contentType: 'image/png' });
+  const messages = await page.evaluate(() => window.browserProbe.midi.messages);
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
+  await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(1);
+  await page.clock.fastForward(800);
+  await page.clock.runFor(16);
+  await expect(guide('0,1')).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) for (const extraDelay of [0, 1000]) test(`resuming guide via ${resume} after scanning only a chain preserves the guide with ${extraDelay}ms extra wait`, async ({ page }, info) => {
+  await open(page, `d 1000\no 1 1\nf 1 1\nd 1000\nc 2\n${extraDelay ? `d ${extraDelay}\n` : ''}o 1 2\nf 1 2\nd 10000`);
+  const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(1000);
+  await page.clock.fastForward(100);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(200);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(199);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  if (extraDelay) {
+    await page.clock.fastForward(extraDelay);
+    await page.clock.runFor(16);
+  }
+  await info.attach('resumed-after-chain-scan', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(600);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} while awaiting a chain keeps its lead time`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+  const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(1000);
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(200);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await info.attach('resumed-chain-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages: await page.evaluate(() => window.browserProbe.midi.messages) }), contentType: 'application/json' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(700);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} before a step tick keeps the current guide`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 10000');
+  const guide = page.locator('[data-pad="0,0"] .z-\\[25\\]');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(500);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  // The virtual clock stays paused between inputs, so no step scan can run.
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await info.attach('quick-resumed-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(400);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(1);
+  await page.clock.fastForward(100);
+  await page.clock.runFor(16);
+  await expect(guide).toHaveCount(0);
+});
+
+
+for (const resume of ['button', 'mode']) {
+  test(`resuming guide via ${resume} after completing a step retains the next chain pad`, async ({ page }, info) => {
+    await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(1000); await page.clock.fastForward(100);
+    await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(20);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+    await page.keyboard.press('2');
+    await page.clock.runFor(20); await page.clock.fastForward(200);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(0);
+    await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(200);
+    await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+    await page.clock.runFor(20);
+    await info.attach('next-chain-pad', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const guide = page.locator('[data-pad="0,0"] .z-\\[25\\]');
+    await expect(guide).toHaveCount(1);
+    await page.clock.fastForward(700); await page.clock.runFor(16);
+    await expect(guide).toHaveCount(1);
+    await page.clock.fastForward(100); await page.clock.runFor(16);
+    await expect(guide).toHaveCount(0);
+  });
+
+  test(`resuming guide via ${resume} after waiting 1500ms for a chain retains its pad`, async ({ page }, info) => {
+    await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(1000); await page.clock.fastForward(200);
+    await page.clock.fastForward(1500);
+    await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.fastForward(200);
+    await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+    // Rendering may delay the first resumed sequencer tick; the chain gate still holds time.
+    await page.clock.fastForward(1000);
+    await info.attach('chain-prompt-after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const chainGuide = page.getByRole('button', { name: 'Chain 10', exact: true });
+    for (let i = 0; i < 5; i++) {
+      await expect(chainGuide.locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
+      await page.clock.fastForward(500);
+    }
+    await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+    await page.clock.runFor(20);
+    await info.attach('pad-after-long-chain-wait', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');
+    await expect(guide).toHaveCount(1);
+    await page.clock.fastForward(700); await page.clock.runFor(16);
+    await expect(guide).toHaveCount(1);
+    await page.clock.fastForward(100); await page.clock.runFor(16);
+    await expect(guide).toHaveCount(0);
+  });
+}
+
+for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async ({ page }, info) => {
+  await open(page, 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(pauseMs);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.fastForward(500);
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.fastForward(1);
+  await info.attach('autoplay-before-remaining-delay', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1000 - pauseMs - 2);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await info.attach('autoplay-after-remaining-delay', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+});
+
+test('switching autoplay to guide never asks for an earlier chain at the same song time', async ({ page }, info) => {
+  await open(page, 'o 1 1\nc 2\no 1 2\nd 300\no 1 1\nf 1 1\nd 10000');
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(20);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(20);
+  await info.attach('guide-after-mode-change', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+});
+
 test('a chain button choice cancels an earlier sound wormhole', async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1\nf 1 1', true);
   // Key input starts the sound; a direct pointer event selects the chain on the paused clock.
@@ -141,7 +326,7 @@ test('a sound wormhole keeps its remaining delay across a hidden tab', async ({ 
   await info.attach('before-wormhole-deadline', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await expect(first.locator('div.z-10')).toHaveCount(1);
   await page.clock.runFor(17);
-  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
   await info.attach('resumed-wormhole', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
 
@@ -355,4 +540,136 @@ test('clock-controlled transitions keep audio time frozen between timer steps', 
   expect(frozen.audioTime).toBe(before.audioTime);
   expect(advanced.wallTime - before.wallTime).toBe(50);
   expect(advanced.audioTime - before.audioTime).toBeCloseTo(0.05, 9);
+});
+
+test('an expired installation token refreshes through the local service fixture', async ({ page }) => {
+  // Seed the real SDK's expired installation before loading any application scripts.
+  await page.goto('/robots.txt');
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('firebase-installations-store');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('firebase-installations-store', 'readwrite');
+      transaction.objectStore('firebase-installations-store').put({
+        fid: 'cAAAAAAAAAAAAAAAAAAAAA', registrationStatus: 2, refreshToken: 'FAKE_REFRESH_TOKEN',
+        authToken: { token: 'EXPIRED_FAKE_TOKEN', requestStatus: 2, expiresIn: 0, creationTime: 0 },
+      }, '[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      transaction.oncomplete = () => { db.close(); resolve(); };
+      transaction.onerror = () => { db.close(); reject(transaction.error); };
+    };
+  }));
+  const refresh = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/authTokens:generate'));
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await refresh;
+  await expect.poll(() => page.evaluate(() => new Promise<unknown>((resolve, reject) => {
+    const request = indexedDB.open('firebase-installations-database', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction('firebase-installations-store').objectStore('firebase-installations-store')
+        .get('[DEFAULT]!1:000000000000:web:fake-ci-placeholder');
+      read.onsuccess = () => { db.close(); resolve(read.result?.authToken); };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  })), { timeout: stateTimeout }).toMatchObject({
+    token: 'FAKE_INSTALLATION_TOKEN', requestStatus: 2, expiresIn: 604800000,
+  });
+});
+
+
+for (const via of ['mode', 'button']) {
+  test(`playing guide switched to autoplay via ${via}${via === 'button' ? ' before a step tick' : ''} keeps the remaining delay`, async ({ page }, info) => {
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(99);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1);
+    await info.attach('after-mode-switch', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+    await page.clock.fastForward(899);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+    await page.clock.fastForward(1);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  });
+
+  test(`playing autoplay switched to guide via ${via} keeps the next pad deadline`, async ({ page }, info) => {
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(99);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await mode(page, 'Guide').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(100); await page.clock.runFor(20);
+    await info.attach('upcoming-pad-after-mode-switch', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(0);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+    await page.clock.fastForward(779);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+    await page.clock.fastForward(1); await page.clock.runFor(20);
+    await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  });
+}
+
+for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pause} keeps the requested chain visible`, async ({ page }, info) => {
+  await open(page, 'd 1000\nc 2\no 1 2\nf 1 2\nd 10000', false, { led: 'o * 2 a 5\nd 10000' });
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(200); await page.clock.runFor(20);
+  const chain = page.getByRole('button', { name: 'Chain 10', exact: true });
+  await info.attach('chain-before-pause', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  if (pause === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  else await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20); await page.clock.fastForward(2000); await page.clock.runFor(20);
+  await info.attach('chain-while-paused', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(chain.locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
+  await chain.dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(chain.locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
+});
+
+
+test('paused chain redraw does not resurrect a consumed timed pad', async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(500); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  const pad = page.locator('[data-pad="0,0"]');
+  await page.keyboard.press('1');
+  await page.clock.runFor(20);
+  await info.attach('next-chain-after-completed-step', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(139, 195, 74)');
+  await expect(pad.locator('.z-\\[25\\]')).toHaveCount(0);
+});
+
+
+for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autoplay via ${via} keeps all note gaps`, async ({ page }, info) => {
+  await open(page, 'd 1000\nc 2\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1); await page.clock.fastForward(200);
+  await page.clock.fastForward(5000);
+  if (via === 'button') {
+    await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.fastForward(300);
+  }
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await info.attach('autoplay-before-first-note', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(798);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+  await page.clock.fastForward(1);
+  await info.attach('autoplay-at-first-note', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.fastForward(499);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await page.clock.fastForward(499);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await page.clock.fastForward(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(3);
 });

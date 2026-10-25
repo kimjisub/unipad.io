@@ -1,6 +1,6 @@
 # Results
 
-## Web input-owned release fix (2026-10-25, awaiting review)
+## Web input-owned release fix (2026-10-25)
 
 The play hook now forwards each screen pointer, key and MIDI input identity to the sound engine
 and LED runner and handles every release. The pressed overlay still waits for the last input.
@@ -18,8 +18,10 @@ Only those two obsolete web failure pins are removed. The regenerated canonical 
 SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`. All input files,
 fingerprints, scenarios and corrected expectations are unchanged; the other 380 cases are unchanged.
 This is the same hash as the earlier expectations-only input because the fixed app now satisfies it.
+Combined with the separate iOS RUN-G616 pin below, the canonical corpus is SHA256
+`0cecd5e2b5db8838effed8e03eabf76277a007524028fe7c2a0bb3b96f83446c`.
 The Android and iOS historical copy declarations remain explicit and are not current compatibility
-results. The change is awaiting independent review and has not been reported as merged.
+results.
 
 ## Input-owned release expectations (2026-10-25)
 
@@ -60,6 +62,24 @@ Both still carry historical 214-case G5 copies, SHA256
 The copy comparison verifies those declared bytes and warns that they are behind canonical;
 it does not establish current app compatibility. The native reruns use the corrected corpus as a
 separate test input and must report its exact hash. The stored app copies are not updated here.
+
+## Two iOS partial-run observations separated (2026-10-25)
+
+The [retained nine-case run and source investigation](investigations/ios-playback-observations/README.md)
+on iOS `e8ac34d11373b3ed071535e365ddc382c1929496` distinguish an observation
+error in RUN-G613 from a real delayed chain callback in RUN-G616. RUN-G613's
+stored repeat value `-2` is not evidence that the engine repeats differently;
+it is not pinned. RUN-G616's callback after autoPlay stops is pinned as an iOS
+failure. Neither original failure is relabelled as a pass.
+
+Only RUN-G616's `known.ios` record changes. Every case's input, fingerprint,
+scenario, expected value and basis is unchanged, as are the other platform records.
+The canonical corpus remains G6, 382 cases, advancing from SHA256
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6` to
+`5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`.
+The original result and its different corpus hash remain intact; both affected
+cases are identical across those corpus revisions. No iOS run or aggregate
+compatibility result is claimed. The app copy references remain historical.
 
 ## Android minimum-integer storage differences resolved (2026-10-25)
 
