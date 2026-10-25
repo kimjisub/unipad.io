@@ -123,7 +123,7 @@ export function g6Cases() {
       [watch, press(0, 0, first), advance(20), observe, press(0, 0, second), advance(20), observe, release(0, 0, first), advance(20), observe, release(0, 0, second), advance(20), observe],
       [[snd(0, 'a.wav', -1), on], [stop(0), snd(0, 'a.wav', -1), off, on], [], [stop(0), off]], ['android', 'ios', 'web'], { screenInputs: true });
   for (const [id, first, second, failing] of [
-    ['RUN-G617', 'pointer:1', 'pointer:2', []],
+    ['RUN-G617', 'pointer:1', 'pointer:2', ['android']],
     ['RUN-G618', 'pointer:1', 'midi:1', ['android']],
   ])
     run(id, ['RS-05', 'RL-03'], 'releasing the later player input stops the sound and light it started',

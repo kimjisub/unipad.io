@@ -3,28 +3,38 @@
 ## Native input-owned release observations (2026-10-25)
 
 Both target cases retain their input files, fingerprints, scenarios and corrected expectations.
-The following Android observations describe the historical application commit named below, before
-[unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304) changed input ownership.
-They do not establish current Android behavior; both cases require fresh observations on the merged code.
-The native observations distinguish sound and pack lights from the separate pressed indicator:
+The Android observations below use application commit
+[`208afb9e5be3bebef9fd50c5e1b77dcb40e29330`](https://github.com/kimjisub/unipad-android/commit/208afb9e5be3bebef9fd50c5e1b77dcb40e29330),
+after [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304) changed input ownership.
+Sound and pack lights are separate from the pressed indicator:
 
 | Case | Web sound and pack lights | iOS sound and pack lights | Android sound and pack lights | Android pressed indicator |
 | --- | --- | --- | --- | --- |
-| RUN-G617, two fingers | Match | Match | Match | Fails: clears at the third checkpoint |
+| RUN-G617, two fingers | Match | Match | Fails: stops at the fourth checkpoint | Matches |
 | RUN-G618, finger and controller | Match | Match | Fails: stops at the fourth checkpoint | Matches |
 
-Android application commit `777cc4a37a997afb327756dd239f167adf155c50`, with a local test-only native
-input adapter, used the original 382-case input
-SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`.
-The adapter sends distinct fingers through `PadTouchTracker` and controller input through
-`controllerPadTouch`. Both combined app assertions failed by value (exit 1, two tests, no errors or
-skips). Only RUN-G618's sound/pack-light result is pinned as an Android corpus failure. RUN-G617's
-pressed-indicator failure stays a separate app-test finding and is not a pack-output divergence.
+The [original Android files and result hashes](investigations/android-input-release-observations/README.md)
+retain their source 382-case corpus SHA256
+`fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8`.
+A local test-only adapter sends distinct fingers through `PadTouchTracker` and controller input
+through `controllerPadTouch`. Both pack outputs have an empty third checkpoint and stop at the
+fourth, while both pressed sequences match `[true, true, true, false]`. Both pack outputs are
+pinned as Android failures. The two selected tests failed by value (exit 1, no errors or skips);
+the command took 202.082 seconds. Pack output and pressed state were collected in separate
+scenario executions with press feedback disabled and enabled. This is not a full-corpus run.
+
+The older observations on Android `777cc4a37a997afb327756dd239f167adf155c50` used input corpus
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`. Before #304, RUN-G617's
+pack output matched and its pressed indicator cleared early; RUN-G618's pack output was delayed.
+Those historical results are preserved as history and do not describe the changed implementation.
+The merged `laterFingerReleaseStillWaitsForTheFirstFinger` test in #304 expects pack output to
+survive the later finger's release, which contradicts the corrected per-input release expectation.
+That implementation and its opposing test expectation require a separate Android fix.
 
 On iOS application commit `e8ac34d11373b3ed071535e365ddc382c1929496`, both target actuals equal
 the corrected expectations. The source `ios.json` SHA256 is
 `c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2`; its corpus hash is the
-same `7ac226a8…` input above and it declares `assertions: partial`. Nine selected cases ran: seven
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` input and it declares `assertions: partial`. Nine selected cases ran: seven
 matched, RUN-G613 and RUN-G616 failed by value, and the command exited 65. The two target cases pass;
 this is not an all-cases pass. The two additional failures retain their original evidence and are
 tracked separately. The subsequently merged investigation classifies RUN-G613 as a stored-loop
@@ -37,19 +47,16 @@ The web observation on `5e8828502b00c01c297d88f1279ea9742ee3b5d9`
 Original platform files keep their original hashes. Comparing these unchanged case expectations
 with those actuals does not create a new aggregate report for another corpus hash.
 
-After integrating the merged web fix and subsequent corpus corrections, the current canonical
-corpus still has 382 cases, SHA256
-`fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8`. The base `main` corpus was
-`859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`.
-All 380 non-target cases, including the separate iOS RUN-G616 pin, remain identical to that base.
-
-The prepared revision before integrating newer main changes had 382 cases, SHA256
-`b424628bd1c815f373bb18ac290079d0fb2c293aa24af422c9619c03a53ba795`. Only the Android RUN-G618 pin and the two target cases'
-`expectedFailing` annotations change from the web integration: RUN-G617 lists no pack-output failure,
-RUN-G618 lists Android, and neither still lists iOS or web. All other 380 cases are byte-for-byte
-unchanged as JSON values. `copies.json` still declares the same historical 214-case app copies;
-their byte check is separate from current compatibility and final adoption still requires
-`sync.mjs --check --require-current`.
+After the refreshed Android observation, the canonical corpus still has 382 cases, SHA256
+`708d14a349fa739acce37f1ac5ddefd8c7d68d9c4cef1eb495ea39f3590389de`.
+Both target cases list Android as an expected pack-output failure; neither lists iOS or web.
+All 380 non-target cases, including the separate iOS RUN-G616 pin, remain unchanged from the
+reviewed revision. Inputs, fingerprints, scenarios and corrected expectations are unchanged for
+all 382 cases. The previously prepared corpus `fe37e773…69c8` and earlier `b424628b…a795`
+keep their original execution records; they are not relabelled with this new hash.
+`copies.json` still declares the same historical 214-case app copies. Their byte check is separate
+from the refreshed Android application observations and current compatibility. Final copy adoption
+still requires `sync.mjs --check --require-current`.
 
 The observations cover application input paths and engine/light requests. They do not establish
 physical finger or USB delivery, audible output, or the iOS screen indicator's lifetime.
