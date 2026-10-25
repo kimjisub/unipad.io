@@ -22,11 +22,12 @@ stub('../../lib/unipack/index.ts', { ...real,
     constructor() { midiConnections.push(this); this.released = false; this.connected = nextMidiConnected; }
     async connect(listener, options) { midiListener = listener; const gate = midiConnectGate; midiConnectGate = null; if (gate) await gate; options?.onStatusChange?.(this.getStatus()); return this.connected; }
     getStatus() { return { connected: this.connected, requestedProfile: 'auto', resolvedProfile: this.connected ? 'launchpad_x' : 'none', inputName: this.connected ? 'Launchpad X' : null, outputName: this.connected ? 'Launchpad X' : null }; }
-    release() { this.released = true; } sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
+    release() { this.released = true; } sendPadLed(x, y, value) { midiLog.push(['pad', x, y, value]); } sendChainLed() {} sendFunctionKeyLed(index, value) { midiLog.push(['round', index, value]); } clearAllLeds() { midiLog.push(['clear']); }
   },
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
+let midiLog, wakeRequests;
 let now, nextId, timers, starts, hidden, midiListener, audio, audioContexts, sources, midiConnections, nextMidiConnected, midiConnectGate;
 const flush = async action => act(async () => { await action?.(); });
 const tick = async ms => flush(() => {
@@ -40,6 +41,8 @@ const visibility = async value => flush(() => {
   document.dispatchEvent(new window.Event('visibilitychange'));
 });
 beforeEach(() => {
+  midiLog = []; wakeRequests = 0;
+  delete navigator.wakeLock;
   now = 1000; nextId = 0; timers = new Map(); starts = []; hidden = false; audioContexts = []; audio = null; sources = []; midiConnections = []; nextMidiConnected = false; midiConnectGate = null;
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   mock.method(performance, 'now', () => now);
@@ -88,45 +91,6 @@ async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1
 }
 const draw = () => tick(0);
 
-test('hidden autoplay freezes progress, sounds and chains, then resumes without a backlog', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 1000\nc 3\no 1 1\nf 1 1\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(100);
-  assert.equal(starts.length, 1);
-  const progress = result.current.state.autoPlayProgress;
-  await visibility(true);
-  await tick(5000);
-  await visibility(false);
-  await tick(1);
-  assert.equal(starts.length, 1, 'hidden time must not play queued sounds');
-  assert.equal(result.current.state.chain, 0);
-  assert.equal(result.current.state.autoPlayProgress, progress);
-  await tick(998);
-  assert.equal(starts.length, 1);
-  await tick(1);
-  assert.equal(starts.length, 2);
-  assert.equal(result.current.state.chain, 1);
-});
-
-test('a finite light animation freezes while hidden and keeps its remaining delay', async () => {
-  const { result } = await mount();
-  await flush(() => result.current.padTouchOn(0, 0));
-  await tick(100); await draw();
-  const color = result.current.state.padStates[0][0].color;
-  assert.notEqual(color, 'transparent');
-  await visibility(true);
-  await tick(5000);
-  await visibility(false);
-  await tick(1); await draw();
-  assert.equal(result.current.state.padStates[0][0].color, color);
-  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
-  await tick(899); await draw();
-  // The pressed feedback can cover pad 0,0; the second light still waits for its own time.
-  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
-  await tick(1000); await draw();
-  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
-});
-
 test('returning to a paused autoplay does not start it', async () => {
   const { result } = await mount();
   await flush(() => result.current.switchPlayMode('autoPlay'));
@@ -157,6 +121,209 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
   const guides = result.current.state.padStates[0].filter(p => p.guide);
   assert.ok(guides.length > 0, 'the new position needs a guide');
   assert.ok(guides.every(p => p.guideTargetWallTimeMs >= now - 800 && p.guideTargetWallTimeMs <= now + 800), 'the upcoming guide must keep its lead time at the new position');
+});
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} discards the scanned step and guides only upcoming notes`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true, 'the scanned step is offered until resume');
+  const progress = result.current.state.autoPlayProgress;
+  await tick(2000);
+  const resumedAt = now;
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayProgress, progress + 1, 'resume consumes only the next delay, without replaying the scanned note');
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'the scanned note must not reappear');
+  await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true, 'the next unscanned note gets its full guide');
+  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs, resumedAt + 1000);
+  assert.equal(result.current.state.padStates[0][0].guide, false);
+});
+
+for (const resume of ['button', 'mode']) {
+  const resumeGuide = result => flush(() => resume === 'button'
+    ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+
+  test(`resuming guide via ${resume} before a step tick preserves the remaining half-second`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    // The first timer consumes one millisecond of the authored song clock.
+    await tick(1); await tick(499); await draw();
+    const target = result.current.state.padStates[0][0].guideTargetWallTimeMs;
+    assert.equal(target - now, 500);
+    await flush(() => result.current.autoPlayPlayPause());
+    // Both inputs happen before the sequencer can scan a step.
+    await resumeGuide(result);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, true);
+    assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, target);
+    await tick(498); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, false);
+  });
+
+  test(`resuming guide via ${resume} after scanning only a chain keeps the remaining delay`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(999); await tick(100); await draw();
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    assert.equal(result.current.state.chainStates.some(chain => chain.guide), true);
+    await resumeGuide(result);
+    await tick(1); await tick(199);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true, 'finding another chain without scanning a pad must preserve song time');
+    // Of the remaining 900 ms, 200 ms elapse before the chain prompt, then one tick draws the pad.
+    const remainingMs = 699;
+    assert.equal(pad.guideTargetWallTimeMs - now, remainingMs);
+    await tick(remainingMs - 1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+
+  test(`resuming guide via ${resume} after a chain-only scan keeps additional wait lines`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(999); await tick(100); await draw();
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    await resumeGuide(result);
+    await tick(1); await tick(199);
+    await flush(() => result.current.setChain(1));
+    await tick(900); await draw();
+    assert.equal(result.current.state.autoPlayEnabled, true, 'the unconsumed wait must not end the song early');
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true);
+    assert.equal(pad.guideTargetWallTimeMs - now, 800);
+    await tick(799); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+
+  test(`resuming guide via ${resume} while awaiting a chain preserves the next note lead time`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(999); await tick(200); await draw();
+    const progress = result.current.state.autoPlayProgress;
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200); await draw();
+    assert.equal(result.current.state.autoPlayProgress, progress, 'waiting for a chain does not scan a step');
+    await resumeGuide(result);
+    await tick(1);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true);
+    assert.equal(pad.guideTargetWallTimeMs - now, 799);
+    await tick(798); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+}
+
+
+for (const resume of ['button', 'mode']) {
+  const resumeGuide = result => flush(() => resume === 'button'
+    ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+
+  test(`resuming guide via ${resume} after a completed step keeps the delay before another chain`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(1000); await tick(100);
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await flush(() => { result.current.padTouchOn(0, 1); result.current.padTouchOff(0, 1); });
+    await tick(1); await draw();
+    assert.equal(result.current.state.chainStates.some(chain => chain.guide), true);
+    await tick(200);
+    await resumeGuide(result);
+    await tick(1); await tick(200);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][0];
+    assert.equal(pad.guide, true, 'the unread delay must leave time to show the next chain pad');
+    assert.equal(pad.guideTargetWallTimeMs - now, 798);
+    await tick(797); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, false);
+  });
+
+  for (const firstTickMs of [1, 300, 1000]) test(`resuming guide via ${resume} after a long chain wait retains its full guide with a ${firstTickMs}ms first tick`, async () => {
+    const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(1000); await tick(200); await tick(1500);
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(200);
+    await resumeGuide(result);
+    await tick(firstTickMs);
+    await flush(() => result.current.setChain(1));
+    await tick(1); await tick(1); await draw();
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true, 'waiting for a chain must not consume its pad deadline');
+    assert.equal(pad.guideTargetWallTimeMs - now, 798);
+    await tick(797); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  });
+}
+
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} restores the chain prompt until selection`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(1000); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(500); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true, 'paused practice must keep the waiting chain visible');
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+  for (let i = 0; i < 5; i++) {
+    await tick(500); await draw();
+    assert.equal(result.current.state.chainStates[9].guide, true, 'the waiting chain must remain visible until selected');
+  }
+  await flush(() => result.current.setChain(1));
+  await tick(1); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs - now, 798);
+});
+
+for (const pauseMs of [100, 300]) test(`switching paused practice to autoplay keeps the delay after ${pauseMs}ms`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\nc 2\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  // The initial timer is part of authored song time.
+  await tick(1); await tick(pauseMs - 1);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(500);
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1000 - pauseMs - 1);
+  assert.equal(starts.length, 0, 'autoplay must keep the unconsumed delay when step practice scanned no pads');
+  await tick(1);
+  assert.equal(starts.length, 1);
+  assert.equal(result.current.state.chain, 1);
+});
+
+test('switching autoplay to guide skips earlier pads at the same song time', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nc 2\no 1 2\nd 300\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1);
+  assert.equal(result.current.state.chain, 1);
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await draw();
+  assert.equal(result.current.state.chainStates.some(chain => chain.guide), false, 'a consumed pad must never send the user back to an earlier chain');
+  assert.equal(result.current.state.chain, 1);
 });
 
 for (const selected of [0, 2]) test(`a chain choice of ${selected} cancels the pending wormhole`, async () => {
@@ -193,22 +360,6 @@ test('destroy prevents the sound engine from calling its chain observer later', 
   assert.deepEqual(changes, []);
 });
 
-
-test('repeated visibility events preserve a guide target and its remaining lead time', async () => {
-  const { result } = await mount({ autoPlay: 'd 500\no 1 1\nf 1 1\nd 10000' });
-  await flush(() => result.current.switchPlayMode('guidePlay'));
-  await tick(100); await draw();
-  const target = result.current.state.padStates[0][0].guideTargetWallTimeMs;
-  assert.equal(target, 1600);
-  await visibility(true); await tick(1000); await visibility(true); await tick(4000);
-  await visibility(false); await visibility(false); await draw();
-  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, 6600);
-  await tick(499); await draw();
-  assert.equal(result.current.state.padStates[0][0].guide, true);
-  await tick(2); await draw();
-  assert.equal(result.current.state.padStates[0][0].guide, false);
-});
-
 test('a keyboard chain choice cancels the pending wormhole', async () => {
   const { result } = await mount({ wormhole: true });
   await flush(() => result.current.padTouchOn(0, 0));
@@ -226,24 +377,6 @@ test('overlapping wormholes without a user choice keep their original order', as
   await flush(() => result.current.padTouchOn(0, 1));
   await tick(50); assert.equal(result.current.state.chain, 1);
   await tick(50); assert.equal(result.current.state.chain, 2);
-});
-
-test('a pack opened while already hidden waits until it is visible', async () => {
-  hidden = true;
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(5000);
-  assert.equal(starts.length, 0);
-  await visibility(false); await tick(1);
-  assert.equal(starts.length, 1);
-});
-
-test('a light requested while hidden starts at the frozen position on return', async () => {
-  const { result } = await mount();
-  await visibility(true); await tick(1000);
-  await flush(() => result.current.padTouchOn(0, 0));
-  await tick(4000); await visibility(false); await tick(4); await draw();
-  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
 });
 
 test('returning to paused guide practice does not restore its obsolete timed guide', async () => {
@@ -267,36 +400,6 @@ test('a controller chain choice cancels the pending wormhole', async () => {
   assert.equal(result.current.state.chain, 2);
 });
 
-
-test('visibility freezes an active long sound with the remaining autoplay and light delay', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(100); await draw();
-  const soundTime = audio.currentTime;
-  await visibility(true);
-  assert.equal(audio.suspends, 1);
-  await tick(5000);
-  assert.equal(audio.currentTime, soundTime, 'the sample must not advance while its sequencer is frozen');
-  await visibility(false); await tick(999); await draw();
-  assert.equal(starts.length, 1);
-  await tick(1); await draw();
-  assert.equal(starts.length, 2);
-  assert.equal(Math.round((audio.currentTime - soundTime) * 1000), 1000);
-});
-
-test('the sequencer waits for asynchronous audio resume before counting its remaining delay', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
-  await visibility(true); await tick(5000);
-  let finishResume;
-  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
-  await visibility(false); await tick(2000);
-  assert.equal(starts.length, 1, 'a slow resume must not advance the sequencer');
-  await flush(finishResume); await tick(999);
-  assert.equal(starts.length, 1);
-  await tick(1); assert.equal(starts.length, 2);
-});
-
 test('a gesture while hidden does not resume suspended audio', async () => {
   await mount();
   await visibility(true);
@@ -304,34 +407,6 @@ test('a gesture while hidden does not resume suspended audio', async () => {
   await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
   assert.equal(audio.resumes, resumes);
   assert.equal(audio.state, 'suspended');
-});
-
-test('hiding again during a pending audio resume keeps the sequencer frozen', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
-  await visibility(true);
-  let finishResume;
-  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
-  await visibility(false);
-  await visibility(true);
-  await flush(finishResume); await tick(5000);
-  assert.equal(starts.length, 1);
-});
-
-test('a rejected audio resume keeps playback frozen until the next visible gesture', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
-  await visibility(true);
-  const resume = audio.resume.bind(audio);
-  audio.resume = async () => { throw new Error('activation refused'); };
-  await visibility(false); await tick(2000);
-  assert.equal(starts.length, 1);
-  assert.equal(audio.state, 'suspended');
-  audio.resume = resume;
-  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
-  assert.equal(audio.state, 'running');
-  await tick(999); assert.equal(starts.length, 1);
-  await tick(1); assert.equal(starts.length, 2);
 });
 
 
@@ -348,103 +423,6 @@ test('an obsolete resume cannot restart a new pack after unloading', async () =>
   assert.equal(oldAudio.state, 'closed');
   assert.equal(result.current.state.loaded, false);
   assert.equal(starts.length, 1);
-});
-
-test('an audio resume that resolves without running does not restart the sequencer', async () => {
-  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
-  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(100);
-  await visibility(true);
-  const resume = audio.resume.bind(audio);
-  audio.resume = async () => {};
-  await visibility(false); await tick(2000);
-  assert.equal(audio.state, 'suspended');
-  assert.equal(starts.length, 1);
-  audio.resume = resume;
-  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
-  await tick(999); assert.equal(starts.length, 1);
-  await tick(1); assert.equal(starts.length, 2);
-});
-
-
-test('a hidden wormhole keeps its remaining 50 ms instead of changing chain early', async () => {
-  const { result } = await mount({ wormhole: true });
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(50);
-  await visibility(true); await tick(5000);
-  assert.equal(result.current.state.chain, 0);
-  assert.equal(audio.currentTime, 0.05);
-  await visibility(false); await tick(49);
-  assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
-});
-
-test('a hidden wormhole waits for slow audio activation before counting its remaining delay', async () => {
-  const { result } = await mount({ wormhole: true });
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
-  let finishResume;
-  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
-  await visibility(false); await tick(5000);
-  assert.equal(result.current.state.chain, 0);
-  await flush(finishResume); await tick(49);
-  assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
-});
-
-for (const refused of ['rejected', 'not running']) test(`a hidden wormhole waits after ${refused} audio activation until a visible retry`, async () => {
-  const { result } = await mount({ wormhole: true });
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
-  const resume = audio.resume.bind(audio);
-  audio.resume = async () => { if (refused === 'rejected') throw new Error('activation refused'); };
-  await visibility(false); await tick(5000);
-  assert.equal(result.current.state.chain, 0);
-  audio.resume = resume;
-  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
-  await tick(49); assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
-});
-
-test('hiding again during wormhole audio activation preserves the remaining delay', async () => {
-  const { result } = await mount({ wormhole: true });
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
-  let finishResume;
-  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
-  await visibility(false); await tick(1000); await visibility(true);
-  await flush(finishResume); await tick(5000);
-  assert.equal(result.current.state.chain, 0);
-  await visibility(false); await tick(49); assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
-});
-
-for (const action of ['selection', 'unload']) test(`${action} during wormhole suspension follows its chain-change rule`, async () => {
-  const { result } = await mount({ wormhole: true });
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(50); await visibility(true);
-  let finishResume;
-  audio.pendingResume = new Promise(resolve => { finishResume = resolve; });
-  await visibility(false);
-  await flush(() => action === 'selection' ? result.current.setChain(2) : result.current.unload());
-  await flush(finishResume); await tick(5000);
-  assert.equal(result.current.state.chain, action === 'selection' ? 2 : 0);
-});
-
-test('overlapping hidden wormholes resume in order without resetting on repeated hide events', async () => {
-  const { result } = await mount({ wormhole: true });
-  result.current.state.unipack.soundTable[0][0][1][0].wormhole = 2;
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(25);
-  await flush(() => result.current.padTouchOn(0, 1)); await tick(25);
-  await visibility(true); await tick(1000); await visibility(true); await tick(4000);
-  assert.equal(result.current.state.chain, 0);
-  await visibility(false); await tick(49); assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
-  await tick(24); assert.equal(result.current.state.chain, 1);
-  await tick(1); assert.equal(result.current.state.chain, 2);
-});
-
-test('a wormhole requested while hidden waits its full delay after audio resumes', async () => {
-  const { result } = await mount({ wormhole: true });
-  await visibility(true); await tick(1000);
-  await flush(() => result.current.padTouchOn(0, 0)); await tick(4000);
-  assert.equal(result.current.state.chain, 0);
-  await visibility(false); await tick(99); assert.equal(result.current.state.chain, 0);
-  await tick(1); assert.equal(result.current.state.chain, 1);
 });
 
 
@@ -464,7 +442,7 @@ test('pause preserves the unplayed part of a delay', async () => {
   await flush(() => result.current.autoPlayPlayPause());
   await tick(3000);
   await flush(() => result.current.autoPlayPlayPause());
-  await tick(499); assert.equal(starts.length, 1);
+  await tick(498); assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });
 
@@ -610,7 +588,7 @@ test('seeking while paused starts the remaining clock at the new position', asyn
   await tick(2000);
   await flush(() => result.current.autoPlayPlayPause());
   await tick(1);
-  await tick(999); assert.equal(starts.length, 1);
+  await tick(998); assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });
 
@@ -638,53 +616,6 @@ test('a due light commits before React waits for another browser task', async ()
   });
 });
 
-test('resumed notes and lights account for audio rendered while suspension was pending', async () => {
-  const { result } = await mount({
-    autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
-    led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
-  });
-  await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(1);
-  await tick(100);
-  assert.equal(starts.length, 1);
-  let finishSuspending;
-  audio.suspend = async () => {
-    audio.suspends++;
-    await new Promise(resolve => { finishSuspending = resolve; });
-    audio.state = 'suspended';
-  };
-  await visibility(true);
-  await tick(80);
-  await flush(() => finishSuspending());
-  await tick(5000);
-  await visibility(false);
-  await tick(819);
-  assert.equal(starts.length, 1);
-  await tick(1);
-  assert.equal(starts.length, 2, 'the sample already advanced 80 ms before native suspension completed');
-  await tick(3); // The LED runner's next 4 ms tick observes the same boundary.
-  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
-});
-
-test('a light first requested after suspension keeps its full delay on return', async () => {
-  const { result } = await mount({ led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9' });
-  let finishSuspending;
-  audio.suspend = async () => {
-    await new Promise(resolve => { finishSuspending = resolve; });
-    audio.state = 'suspended';
-  };
-  await visibility(true);
-  await tick(80);
-  await flush(() => finishSuspending());
-  await flush(() => result.current.padTouchOn(0, 0));
-  await tick(5000);
-  await visibility(false);
-  await tick(999);
-  assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'a new hidden light has not consumed the older sample’s 80 ms');
-  await tick(4);
-  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
-});
-
 test('pad-only light commits keep an unchanged chain snapshot while real chain changes still publish', async () => {
   const { result } = await mount({ led: 'o 1 2 a 5\nd 1000\nf 1 2' });
   const chains = result.current.state.chainStates;
@@ -696,46 +627,6 @@ test('pad-only light commits keep an unchanged chain snapshot while real chain c
   assert.equal(result.current.state.chain, 1);
   assert.notEqual(result.current.state.chainStates[9].color, chains[9].color);
 });
-
-for (const delayedTransition of ['hide', 'show']) for (const callbackOrder of ['before', 'after']) {
-  test(`notes and finite lights share one visibility boundary with a delay ${callbackOrder} ${delayedTransition} callbacks`, async () => {
-    const { result } = await mount({
-      autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000',
-      led: 'o 1 1 a 5\nd 1000\nf 1 1\no 1 2 a 9',
-    });
-    if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
-    await flush(() => result.current.switchPlayMode('autoPlay'));
-    await tick(1);
-    const firstAudioTime = audio.currentTime;
-    await tick(100);
-    assert.equal(starts.length, 1);
-    const suspend = real.AutoPlayRunner.prototype.setSuspended;
-    mock.method(real.AutoPlayRunner.prototype, 'setSuspended', function (hidden, ...args) {
-      const delayed = hidden === (delayedTransition === 'hide');
-      const delay = () => {
-        // A callback can enter or return later in the same visibility task. The audio device
-        // keeps rendering until native suspension and resumes before the runners are released.
-        now += 80;
-        if (audio.state === 'running') audio.currentTime += 0.08;
-      };
-      if (delayed && callbackOrder === 'before') delay();
-      suspend.call(this, hidden, ...args);
-      if (delayed && callbackOrder === 'after') delay();
-    });
-    await visibility(true);
-    await tick(2000);
-    await visibility(false);
-    const nextNote = now + Math.round((firstAudioTime + 1 - audio.currentTime) * 1000);
-    await tick(nextNote - now - 1);
-    assert.equal(starts.length, 1);
-    assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'the next light must not consume another runner\'s callback delay');
-    await tick(1);
-    assert.equal(starts.length, 2);
-    assert.equal(starts[1], nextNote);
-    await tick(4);
-    assert.notEqual(result.current.state.padStates[0][1].color, 'transparent', 'the due light must not add another runner\'s callback delay');
-  });
-}
 
 
 test('visibility mutes output before a slow sequencer pause callback', async () => {
@@ -765,38 +656,355 @@ test('visibility mutes output before a slow sequencer pause callback', async () 
   assert.equal(value, 0);
 });
 
-
-for (const adoptLightBeforeHide of [false, true]) test(`resumed note and ${adoptLightBeforeHide ? 'running' : 'queued'} light retain the same deadline after native audio advances`, async () => {
-  const { result } = await mount({
-    autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
-    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
-  });
-  if (result.current.state.feedbackLight) await flush(() => result.current.toggleFeedbackLight());
-  let finish;
-  audio.suspend = async () => { await new Promise(resolve => { finish = resolve; }); audio.state = 'suspended'; };
-  if (!adoptLightBeforeHide) {
-    const eventOn = real.LedRunner.prototype.eventOn;
-    mock.method(real.LedRunner.prototype, 'eventOn', function (...args) {
-      eventOn.apply(this, args);
-      if (args[1] === 0 && !hidden) {
-        hidden = true;
-        document.dispatchEvent(new window.Event('visibilitychange'));
-      }
+for (const selected of ['autoPlay', 'guidePlay', 'stepPractice']) {
+ for (const interruption of ['hidden', 'blur', 'dialog', 'audio', 'pagehide']) {
+  for (const hiddenFor of [1000, 10000]) test(`manual interruption ${interruption} preserves ${selected} after ${hiddenFor} ms`, async () => {
+    const { result } = await mount({ autoPlay: 'on 1 1\nd 2000\non 1 2\nd 2000', keySound: '1 1 1 a.wav 0\n1 1 2 a.wav 0' });
+    await flush(() => result.current.switchPlayMode(selected)); await tick(100); await draw();
+    const progress = result.current.state.autoPlayProgress;
+    await flush(() => {
+      if (interruption === 'hidden') { hidden = true; document.dispatchEvent(new window.Event('visibilitychange')); }
+      if (interruption === 'blur' || interruption === 'pagehide') window.dispatchEvent(new window.Event(interruption));
+      if (interruption === 'dialog') result.current.setKeyboardBlocked(true);
+      if (interruption === 'audio') { audio.state = 'interrupted'; audio.onstatechange?.(); }
     });
-  }
-  await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(1);
-  const firstAudioTime = audio.currentTime;
-  if (adoptLightBeforeHide) await tick(4);
-  await visibility(true); await tick(80); await flush(() => finish());
-  await tick(5000); await visibility(false);
-  const due = now + Math.round((firstAudioTime + 1.5 - audio.currentTime) * 1000);
-  await tick(due - now - 1);
+    await tick(hiddenFor);
+    await visibility(false);
+    await flush(() => result.current.setKeyboardBlocked(false)); await draw();
+    assert.equal(result.current.state.autoPlayPlaying, false, 'return waits for explicit play');
+    assert.equal(result.current.playMode, selected, 'selected practice mode survives');
+    assert.equal(result.current.state.autoPlayProgress, progress);
+    assert.ok(sources.every(source => source.stopped), 'interruption stops even finite sources');
+    assert.ok(result.current.state.padStates.flat().every(p => !p.pressed && !p.guide && p.color === 'transparent'));
+    const count = starts.length;
+    await tick(10000); assert.equal(starts.length, count);
+    await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+    await tick(10000); assert.equal(starts.length, count, 'a generic gesture must not resume the song');
+    await flush(() => result.current.autoPlayPlayPause());
+    assert.equal(result.current.playMode, selected);
+    assert.equal(result.current.state.autoPlayProgress, progress, 'resumption never seeks or replays a press');
+  });
+ }
+}
+
+for (const loop of [1, 0]) test(`lighting discard clears loop ${loop} and queued lights while audio proceeds`, async () => {
+  const { result } = await mount({ autoPlay: 'on 1 1\nd 20000\noff 1 1', ledName: `1 1 1 ${loop}` });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(4); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  await flush(() => result.current.toggleLed()); await draw();
+  assert.equal(result.current.state.autoPlayPlaying, true);
+  assert.equal(sources[0].stopped, false);
+  await flush(() => result.current.padTouchOn(0, 0));
+  await tick(10000); await flush(() => result.current.toggleLed()); await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent', 'old delayed light never returns');
+  await flush(() => result.current.padTouchOn(0, 0)); await tick(4); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'new input can light again');
+});
+
+
+for (const refusal of ['reject', 'not running']) test(`manual Play after ${refusal} requires another Play request`, async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000\ntouch 1 2' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await tick(500);
+  const progress = result.current.state.autoPlayProgress;
+  await visibility(true); await tick(1000);
+  const resume = audio.resume.bind(audio);
+  audio.resume = async () => { if (refusal === 'reject') throw new Error('denied'); };
+  await visibility(false);
+  await flush(() => result.current.autoPlayPlayPause()); await tick(10000);
+  assert.equal(result.current.state.autoPlayPlaying, false);
+  assert.equal(result.current.state.autoPlayProgress, progress);
+  audio.resume = resume;
+  await flush(() => { audio.state = 'running'; audio.onstatechange?.(); });
+  await tick(10000); assert.equal(starts.length, 1, 'permission alone must not satisfy the failed request');
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1498); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+test('a pending manual Play cannot survive another interruption or pack replacement', async () => {
+  const { result, data } = await mount({ autoPlay: 'touch 1 1\nd 2000\ntouch 1 2' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1);
+  await visibility(true); await visibility(false);
+  let finish; audio.pendingResume = new Promise(resolve => { finish = resolve; });
+  let pending;
+  await flush(() => { pending = result.current.autoPlayPlayPause(); });
+  await visibility(true); await visibility(false);
+  await flush(() => result.current.loadUniPack(data));
+  await flush(finish); await pending; await tick(10000);
   assert.equal(starts.length, 1);
-  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
-  await tick(1); await tick(4);
-  assert.equal(starts[1], due);
-  assert.notEqual(result.current.state.padStates[0][1].color, 'transparent');
+  assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+test('manual resumption preserves remaining wait, releases all inputs and never repeats past presses', async () => {
+  const { result } = await mount({ autoPlay: 'on 1 1\nd 2000\non 1 2\nd 2000', keySound: '1 1 1 a.wav 0\n1 1 2 a.wav 0' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await tick(500);
+  await flush(() => result.current.padTouchOn(0, 1, 'finger'));
+  await visibility(true); await tick(1000); await visibility(true); await tick(10000); await visibility(false);
+  await flush(() => result.current.autoPlayPlayPause()); await tick(1498);
+  assert.equal(starts.length, 2);
+  await tick(1); assert.equal(starts.length, 3);
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+  assert.equal(result.current.state.padStates[0][1].pressed, true);
+});
+
+test('interruption cancels pending chain moves and rejects hidden input', async () => {
+  const { result } = await mount({ wormhole: true });
+  await flush(() => result.current.padTouchOn(0, 0, 'finger')); await tick(50);
+  await visibility(true);
+  await flush(() => result.current.padTouchOn(0, 0, 'late')); await tick(10000);
+  await visibility(false); await tick(10000);
+  assert.equal(starts.length, 1); assert.equal(result.current.state.chain, 0);
+});
+
+test('opening a menu inside the player does not interrupt autoplay', async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000\ntouch 1 2' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1);
+  await flush(() => result.current.setMidiUiContext({ optionPanelOpen: true }));
+  assert.equal(result.current.state.autoPlayPlaying, true);
+  await tick(2000); assert.equal(starts.length, 2);
+});
+
+
+test('a new manual press restores audio after interruption without starting a song', async () => {
+  const { result } = await mount();
+  await flush(() => result.current.padTouchOn(0, 0, 'finger')); await tick(4);
+  await flush(() => window.dispatchEvent(new window.Event('blur')));
+  await flush(() => { audio.state = 'running'; audio.onstatechange?.(); });
+  await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  await flush(() => result.current.padTouchOn(0, 0, 'new-finger'));
+  assert.ok(audio.outputGain.value > 0);
+  assert.equal(starts.length, 2);
+  assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+
+for (const selected of ['autoPlay', 'guidePlay']) test(`pausing the final wait preserves its remaining time in ${selected}`, async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000' });
+  await flush(() => result.current.switchPlayMode(selected)); await tick(1); await tick(499);
+  await flush(() => result.current.autoPlayPlayPause()); await tick(10000);
+  assert.equal(result.current.state.autoPlayEnabled, true, 'a paused final wait cannot end');
+  await flush(() => result.current.autoPlayPlayPause()); await tick(1499);
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  await tick(1); assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+
+test('a pack opened while already hidden waits until it is visible', async () => {
+  hidden = true;
+  const { result } = await mount();
+  await visibility(false); await tick(1);
+  window.dispatchEvent(new window.Event('focus'));
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await tick(1);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(10); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'pad light must show after returning');
+});
+
+test('a visible pack starts fresh lights', async () => {
+  const { result } = await mount();
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(10); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+});
+
+test('step practice entered by pausing guide play ends after the last step', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 2 1\nf 2 1' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(100);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(5); await draw();
+  const guided = [];
+  for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) if (result.current.state.padStates[x][y].guide) guided.push([x, y]);
+  for (const [x, y] of guided) { await flush(() => result.current.padTouchOn(x, y, 'finger')); await tick(5); await flush(() => result.current.padTouchOff(x, y, 'finger')); }
+  await tick(5000); await draw();
+  assert.deepEqual(guided.length > 0, true, 'a guided pad expected');
+  assert.equal(result.current.state.autoPlayEnabled, false, 'runner must end after the last step');
+});
+
+test('manual play keeps the screen awake after returning to the tab', async () => {
+  Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => { wakeRequests++; return { release: async () => {} }; } } });
+  const { result } = await mount();
+  await tick(1);
+  const before = wakeRequests;
+  await visibility(true); await tick(1000); await visibility(false); await tick(1);
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await tick(5);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(5);
+  assert.ok(wakeRequests > before, `screen wake lock re-requested after return (requests ${before} -> ${wakeRequests})`);
+});
+
+for (const interruption of ['blur', 'dialog']) test(`the current chain light returns after ${interruption}`, async () => {
+  nextMidiConnected = true;
+  const { result } = await mount(); await tick(10);
+  midiLog.length = 0;
+  await flush(() => {
+    if (interruption === 'blur') window.dispatchEvent(new window.Event('blur'));
+    else result.current.setKeyboardBlocked(true);
+  }); await tick(1);
+  await flush(() => {
+    if (interruption === 'blur') window.dispatchEvent(new window.Event('focus'));
+    else result.current.setKeyboardBlocked(false);
+  }); await tick(5);
+  const lastClear = midiLog.findLastIndex(event => event[0] === 'clear');
+  assert.ok(lastClear >= 0, 'interruption clears the device');
+  assert.ok(midiLog.slice(lastClear + 1).some(event => event[0] === 'round' && event[1] === 8 && event[2] > 0), 'the selected chain is sent back to the device');
+  assert.equal(result.current.state.autoPlayEnabled, false);
+});
+
+
+test('one Play resumes autoplay that was paused before interruption', async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 2000\ntouch 1 2' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await tick(499);
+  await flush(() => result.current.autoPlayPlayPause());
+  await visibility(true); await tick(1000); await visibility(false);
+  await flush(() => result.current.autoPlayPlayPause());
+  assert.equal(result.current.state.autoPlayPlaying, true);
+  await tick(1499); assert.equal(starts.length, 1);
+  await tick(1); assert.equal(starts.length, 2);
+});
+
+for (const selected of ['guidePlay', 'stepPractice']) test(`manual resume restores a waiting chain guide in ${selected}`, async () => {
+  nextMidiConnected = true;
+  const { result } = await mount({ autoPlay: 'c 2\ntouch 1 1\nd 2000' });
+  await flush(() => result.current.switchPlayMode(selected)); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => window.dispatchEvent(new window.Event('blur'))); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  await flush(() => window.dispatchEvent(new window.Event('focus'))); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false, 'focus alone does not restore an old guide');
+  midiLog.length = 0;
+  await flush(() => result.current.autoPlayPlayPause()); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  assert.ok(midiLog.some(event => event[0] === 'round' && event[1] === 9 && event[2] > 0));
+});
+
+
+test('a mode request awaiting audio can start after the previous song ends', async () => {
+  const { result } = await mount({ autoPlay: 'touch 1 1\nd 100' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1);
+  let finish; audio.pendingResume = new Promise(resolve => { finish = resolve; }); audio.state = 'suspended';
+  let pending; await flush(() => { pending = result.current.switchPlayMode('guidePlay'); });
+  await tick(99); assert.equal(result.current.state.autoPlayEnabled, false);
+  await flush(finish); await flush(() => pending);
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  assert.equal(result.current.playMode, 'guidePlay');
+});
+
+for (const hiddenFor of [1000, 10000]) test(`manual guide resume restores only the unprocessed note after ${hiddenFor} ms`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 2000' });
+  const startedAt = now;
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(499); await draw();
+  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, startedAt + 1000);
+  await visibility(true); await tick(hiddenFor); await visibility(false); await draw();
+  assert.ok(result.current.state.padStates.flat().every(pad => !pad.guide));
+  await flush(() => result.current.autoPlayPlayPause());
+  const resumedAt = now;
+  await tick(1); await draw();
+  const guides = result.current.state.padStates.flat().filter(pad => pad.guide);
+  assert.equal(guides.length, 1, 'only the next unprocessed note is restored');
+  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, resumedAt + 500);
+  await tick(498); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, false);
+  await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'the completed note must not return');
+  assert.equal(starts.length, 0, 'a guide never replays a past press');
+});
+
+test('manual guide resume after a chain-only step scan preserves every remaining wait', async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\nd 1000\no 1 2\nf 1 2\nd 2000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(999); await tick(100); await draw();
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(200); await draw();
+  assert.equal(result.current.state.chainStates.some(chain => chain.guide), true);
+  await visibility(true); await tick(10000); await visibility(false); await draw();
+  assert.ok(result.current.state.padStates.flat().every(pad => !pad.guide));
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(199);
+  await flush(() => result.current.setChain(1));
+  await tick(900); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  const pad = result.current.state.padStates[0][1];
+  assert.equal(pad.guide, true);
+  assert.equal(pad.guideTargetWallTimeMs - now, 800, 'the unread wait is not skipped when leaving step practice');
+  await tick(799); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, false);
+});
+
+function deferScreenWakeLocks() {
+  const requests = [];
+  Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: () => {
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    const lock = { released: false, async release() { this.released = true; }, addEventListener() {} };
+    requests.push({ lock, resolve: () => resolve(lock) });
+    return promise;
+  } } });
+  return requests;
+}
+
+for (const interruption of ['hidden', 'blur']) for (const playFirst of [true, false]) {
+  test(`screen wake protection survives ${interruption} return when ${playFirst ? 'Play' : 'the lock reply'} arrives first`, async () => {
+    const requests = deferScreenWakeLocks();
+    const { result } = await mount();
+    await flush(() => requests[0].resolve());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    if (interruption === 'hidden') await visibility(true);
+    else await flush(() => window.dispatchEvent(new window.Event('blur')));
+    assert.equal(requests[0].lock.released, true);
+    if (interruption === 'hidden') await visibility(false);
+    else await flush(() => window.dispatchEvent(new window.Event('focus')));
+    assert.equal(requests.length, 2, 'return starts one pending request');
+    if (!playFirst) await flush(() => requests[1].resolve());
+    await flush(() => result.current.autoPlayPlayPause());
+    if (playFirst) await flush(() => requests[1].resolve());
+    assert.equal(result.current.state.autoPlayPlaying, true);
+    assert.equal(requests.filter(request => !request.lock.released).length, 1, 'playing keeps one live screen lock');
+    await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+    assert.equal(requests.length, 2, 'gestures reuse the accepted lock');
+  });
+}
+
+test('quick mode changes reuse the pending screen lock', async () => {
+  const requests = deferScreenWakeLocks();
+  const { result } = await mount();
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await flush(() => requests[0].resolve());
+  assert.equal(result.current.playMode, 'guidePlay');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].lock.released, false);
+});
+
+for (const obsolete of ['hidden', 'dialog', 'unloaded', 'unmounted']) test(`a pending screen lock is released while ${obsolete}`, async () => {
+  const requests = deferScreenWakeLocks();
+  const view = await mount();
+  if (obsolete === 'hidden') await visibility(true);
+  if (obsolete === 'dialog') await flush(() => view.result.current.setKeyboardBlocked(true));
+  if (obsolete === 'unloaded') await flush(() => view.result.current.unload());
+  if (obsolete === 'unmounted') view.unmount();
+  await flush(() => requests[0].resolve());
+  assert.equal(requests[0].lock.released, true);
+});
+
+test('a new pack requests its screen lock without waiting for the previous pack reply', async () => {
+  const requests = deferScreenWakeLocks();
+  const { result, data } = await mount();
+  await flush(() => result.current.loadUniPack(data));
+  assert.equal(requests.length, 2);
+  await flush(() => requests[1].resolve());
+  await flush(() => requests[0].resolve());
+  assert.equal(requests[0].lock.released, true);
+  assert.equal(requests[1].lock.released, false);
 });
 
 for (const resume of [false, true]) test(`an unrelated task cannot separate a due note from its light${resume ? ' after resuming' : ''}`, async () => {
@@ -808,11 +1016,15 @@ for (const resume of [false, true]) test(`an unrelated task cannot separate a du
   });
   const { result } = await mount({
     autoPlay: 'o 1 1\nf 1 1\nd 1500\no 1 2\nf 1 2\nd 10000',
-    led: 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+    led: resume ? 'o 1 2 a 9' : 'o 1 1 a 5\nd 1500\nf 1 1\no 1 2 a 9',
+    ledName: resume ? '1 1 2' : '1 1 1',
   });
   await flush(() => result.current.switchPlayMode('autoPlay'));
   await tick(1); await tick(4);
-  if (resume) { await visibility(true); await tick(5000); await visibility(false); }
+  if (resume) {
+    await visibility(true); await tick(5000); await visibility(false);
+    await flush(() => result.current.autoPlayPlayPause());
+  }
   const due = starts[0] + 1500 + (resume ? 5000 : 0);
   // Dispatch due timers in deadline order. A separate ready task takes 200 ms immediately after
   // the task which plays note two, before any later timer task can begin.
@@ -827,4 +1039,98 @@ for (const resume of [false, true]) test(`an unrelated task cannot separate a du
   assert.equal(starts[1], due, 'the second note is due before the unrelated task');
   assert.equal(writes.length, 1);
   assert.ok(writes[0] - starts[1] < 50, `light was separated from its note by ${writes[0] - starts[1]} ms`);
+});
+
+
+for (const via of ['mode', 'button']) {
+  test(`playing guide switched to autoplay via ${via}${via === 'button' ? ' before a step tick' : ''} keeps the remaining delay`, async () => {
+    const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    const songStartedAt = now;
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(99);
+    if (via === 'button') await flush(() => result.current.autoPlayPlayPause());
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await draw();
+    assert.equal(starts.length, 0, 'the second note must not play immediately after switching modes');
+    // Include the initial timer in the authored 1000 ms delay.
+    await tick(898);
+    assert.equal(starts.length, 0);
+    await tick(1);
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0], songStartedAt + 1000);
+  });
+
+  test(`playing autoplay switched to guide via ${via} keeps the next pad deadline`, async () => {
+    const { result } = await mount({ autoPlay: 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    const songStartedAt = now;
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await tick(99);
+    if (via === 'button') await flush(() => result.current.autoPlayPlayPause());
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(100); await draw();
+    assert.equal(result.current.state.padStates[0][0].guide, false, 'the consumed pad must not be guided again');
+    const pad = result.current.state.padStates[0][1];
+    assert.equal(pad.guide, true, 'the upcoming pad needs its remaining lead time');
+    assert.equal(pad.guideTargetWallTimeMs, songStartedAt + 1000);
+    await tick(798); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, true);
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+    assert.equal(starts.length, 1, 'guide mode must not start another sound');
+  });
+}
+
+for (const pause of ['button', 'mode']) test(`pausing at a chain prompt via ${pause} keeps the requested chain visible`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(200); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await flush(() => pause === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('stepPractice'));
+  await tick(1); await tick(2000); await draw();
+  assert.equal(result.current.state.autoPlayPlaying, false);
+  assert.equal(result.current.state.chainStates[9].guide, true, 'the chain prompt must survive paused step practice');
+  await flush(() => result.current.setChain(1));
+  await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, false);
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+});
+
+test('paused chain redraw does not resurrect a consumed timed pad', async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\nc 2\no 1 2\nf 1 2\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(500); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  await flush(() => { result.current.padTouchOn(0, 0); result.current.padTouchOff(0, 0); });
+  await tick(1); await tick(1); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  assert.equal(result.current.state.padStates[0][0].guide, false, 'a completed step must not reappear alongside the next chain');
+});
+
+
+for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autoplay via ${via} keeps all note gaps`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\nc 2\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 500\no 1 1\nf 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  // Enter the chain gate at song time 200 ms, retaining exactly 800 ms.
+  await tick(1); await tick(199); await draw();
+  assert.equal(result.current.state.chainStates[9].guide, true);
+  await tick(5000);
+  if (via === 'button') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(300); // Let paused step practice scan the chain before choosing another mode.
+  }
+  const switchedAt = now;
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await draw();
+  assert.deepEqual(starts, [], 'waiting for a chain must not create overdue notes');
+  await tick(798);
+  assert.deepEqual(starts, []);
+  await tick(1);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800]);
+  await tick(499);
+  assert.equal(starts.length, 1);
+  await tick(1);
+  await tick(500);
+  assert.deepEqual(starts.map(at => at - switchedAt), [800, 1300, 1800]);
 });

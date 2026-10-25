@@ -10,6 +10,13 @@ declare global {
   interface Window { browserProbe: BrowserProbe }
 }
 
+/** Installation registration wraps authToken; token refresh returns the token directly. */
+export function installationResponse(url: URL) {
+  const authToken = { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' };
+  return url.pathname.endsWith('/authTokens:generate') ? authToken
+    : { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken };
+}
+
 export const test = base.extend<{ checkedPage: void }>({
   checkedPage: [async ({ page, context, baseURL }, use) => {
     const errors: string[] = [];
@@ -19,7 +26,7 @@ export const test = base.extend<{ checkedPage: void }>({
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.hostname === 'firebaseinstallations.googleapis.com') {
-        return route.fulfill({ json: { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken: { token: 'FAKE_INSTALLATION_TOKEN', expiresIn: '604800s' } } });
+        return route.fulfill({ json: installationResponse(url) });
       }
       if (url.hostname === 'firebase.googleapis.com') {
         return route.fulfill({ json: { appId: '1:000000000000:web:fake-ci-placeholder', measurementId: 'G-FAKE-CI' } });

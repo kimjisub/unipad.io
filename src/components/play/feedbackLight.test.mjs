@@ -24,6 +24,8 @@ stub('../../lib/unipack/index.ts', { ...real,
   getSetting: key => read(key),
   setSetting: async (key, value) => { writes.push([key, value]); storage.set(key, value); },
   SoundEngine: class {
+    context = { state: 'running' };
+    async setSuspended(suspended) { this.context.state = suspended ? 'suspended' : 'running'; }
     async load() { return []; }
     setVolume() {} soundPushToNum() {} soundOn() {} soundOff() {} stopAll() {} destroy() {} resume() {}
   },
