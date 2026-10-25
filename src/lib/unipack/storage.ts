@@ -239,20 +239,40 @@ export async function deleteUniPack(id: string): Promise<void> {
 }
 
 export async function updateUniPackLastOpened(id: string): Promise<void> {
-  const record = await getUniPack(id);
-  if (record) {
-    record.lastOpenedAt = Date.now();
-    record.openCount = (record.openCount ?? 0) + 1;
-    await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
-  }
+  await commit(STORE_UNIPACKS, (store, fail) => {
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const record = request.result as StoredUniPack | undefined;
+      if (!record) return;
+      try {
+        store.put({
+          ...record,
+          lastOpenedAt: Date.now(),
+          openCount: (record.openCount ?? 0) + 1,
+        });
+      } catch (error) {
+        fail(error);
+      }
+    };
+  });
 }
 
 export async function toggleUniPackBookmark(id: string): Promise<boolean> {
-  const record = await getUniPack(id);
-  if (!record) return false;
-  record.bookmark = !(record.bookmark ?? false);
-  await tx(STORE_UNIPACKS, 'readwrite', (store) => store.put(record));
-  return record.bookmark;
+  let bookmark = false;
+  await commit(STORE_UNIPACKS, (store, fail) => {
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const record = request.result as StoredUniPack | undefined;
+      if (!record) return;
+      bookmark = !(record.bookmark ?? false);
+      try {
+        store.put({ ...record, bookmark });
+      } catch (error) {
+        fail(error);
+      }
+    };
+  });
+  return bookmark;
 }
 
 // Theme operations
