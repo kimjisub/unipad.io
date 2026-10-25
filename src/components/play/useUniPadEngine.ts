@@ -970,7 +970,8 @@ export function useUniPadEngine() {
     });
   }, [usageTracker]);
 
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
+  /** Resolves false when the pack could not be opened; the reason is left in `errors`. */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer): Promise<boolean> => {
     unload();
 
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
@@ -1301,6 +1302,7 @@ export function useUniPadEngine() {
         profile: midiProfileRef.current,
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
+      return true;
     } catch (err) {
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
@@ -1310,6 +1312,7 @@ export function useUniPadEngine() {
         criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
+      return false;
     }
   }, [
     unload,

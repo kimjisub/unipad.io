@@ -101,6 +101,8 @@ test('a sound that cannot be decoded is silent once and the pad goes on to its n
 test('a pack none of whose sounds decode ends loading with the reason and a way back to the list', async ({ page }, info) => {
   const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
   zip.file('sounds/tone.wav', 'not audio');
+  let loadFailures = 0;
+  page.on('console', (message) => { if (message.text().includes('Failed to load UniPack')) loadFailures += 1; });
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
@@ -112,9 +114,13 @@ test('a pack none of whose sounds decode ends loading with the reason and a way 
   } finally {
     await info.attach('all-sounds-failed', { body: await page.screenshot(), contentType: 'image/png' });
   }
+  // The failed pack is listed, but the address must not point at it: that would open it again.
+  await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(1);
+  expect(new URL(page.url()).searchParams.has('pack')).toBe(false);
   await dialog.getByRole('button', { name: 'Quit', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(1);
+  await expect(page.getByText('Total Plays', { exact: true }).locator('xpath=preceding-sibling::div')).toHaveText('0');
+  expect(loadFailures).toBe(1);
   await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
 });
 

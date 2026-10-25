@@ -333,7 +333,7 @@ export function PlayPage() {
     async (file: File) => {
       await resumeAudio();
       const buffer = await file.arrayBuffer();
-      await loadUniPack(buffer);
+      const opened = await loadUniPack(buffer);
 
       try {
         const parsed = await parseUniPack(buffer.slice(0));
@@ -344,6 +344,10 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
+        if (!opened) {
+          await refreshLists();
+          return;
+        }
         currentPackIdRef.current = id;
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
