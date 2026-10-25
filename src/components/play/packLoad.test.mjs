@@ -74,6 +74,9 @@ test('a load replaced by a later one leaves the later pack playing from the keyb
   await flush(() => { decoding.resolve(); return firstLoad; });
   await flush(() => { reading.resolve(); return secondLoad; });
 
+  // The replaced load tells its caller the player is not its own, so the caller leaves it alone.
+  assert.equal(await firstLoad, null);
+  assert.equal(await secondLoad, true);
   assert.equal(result.current.state.loaded, true);
   assert.equal(result.current.state.unipack.keyLedExist, false);
   await flush(() => key('keydown', 'KeyQ'));
@@ -91,6 +94,7 @@ test('quitting while a pack loads leaves the player empty', async () => {
   await flush(() => { result.current.unload(); decoding.resolve(); });
   await flush(() => load);
 
+  assert.equal(await load, null);
   assert.equal(result.current.state.loaded, false);
   assert.equal(result.current.state.loading, false);
   assert.equal(result.current.state.unipack, null);

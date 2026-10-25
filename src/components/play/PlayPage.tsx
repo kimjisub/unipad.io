@@ -12,6 +12,7 @@ import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { PackErrorDialog } from './PackErrorDialog';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
@@ -292,7 +293,7 @@ export function PlayPage() {
     async (file: File) => {
       await resumeAudio();
       const buffer = await file.arrayBuffer();
-      await loadUniPack(buffer);
+      const opened = await loadUniPack(buffer);
 
       try {
         const parsed = await parseUniPack(buffer.slice(0));
@@ -303,6 +304,16 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
+        if (!opened) {
+          // Opening it closed whatever was playing, so nothing is current any more. A later open
+          // that replaced this one has made its own pack current.
+          if (opened === false) {
+            currentPackIdRef.current = null;
+            syncPackUrl(null);
+          }
+          await refreshLists();
+          return;
+        }
         currentPackIdRef.current = id;
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
@@ -364,10 +375,16 @@ export function PlayPage() {
         if (!pack) return false;
         currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
+        await updateUniPackLastOpened(id);
+        // The address and the last pack name only packs that opened: either would open a failed one again.
+        const opened = await loadUniPack(pack.zipData);
+        if (opened === null) return null;
+        if (!opened) {
+          currentPackIdRef.current = null;
+          return false;
+        }
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
-        await updateUniPackLastOpened(id);
-        await loadUniPack(pack.zipData);
 
         const lastThemeId = await getSetting('lastThemeId');
         if (lastThemeId) {
@@ -397,16 +414,19 @@ export function PlayPage() {
     return new URLSearchParams(window.location.search).get(CODE_QUERY_KEY)?.trim() || null;
   }, []);
 
-  // Restore from ?pack=<localId> URL parameter
+  // Restore from ?pack=<localId> URL parameter, decided once when the page opens. Later addresses come
+  // from this page itself and must not reopen a pack that closed or failed.
+  const decidedUrlPackRestoreRef = useRef(false);
   useEffect(() => {
-    if (restoringFromStorage || state.loaded || state.loading) return;
-    if (triedUrlPackRestoreRef.current) return;
+    if (restoringFromStorage || decidedUrlPackRestoreRef.current) return;
+    decidedUrlPackRestoreRef.current = true;
+    if (state.loaded || state.loading || triedUrlPackRestoreRef.current) return;
     const packId = getPackIdFromUrl();
     if (!packId) return;
 
     triedUrlPackRestoreRef.current = true;
     handlePlay(packId).then((ok) => {
-      if (!ok) syncPackUrl(null);
+      if (ok === false) syncPackUrl(null);
     }).catch(() => {
       syncPackUrl(null);
     });
@@ -516,7 +536,7 @@ export function PlayPage() {
 
   const handleQuit = useCallback(() => {
     setOptionPanelOpen(false);
-    setLastPlayedPackId(currentPackIdRef.current);
+    if (currentPackIdRef.current) setLastPlayedPackId(currentPackIdRef.current);
     setLoadingPackTitle(null);
     unload();
     currentPackIdRef.current = null;
@@ -939,41 +959,14 @@ export function PlayPage() {
 
   // The same error dialog is needed when an import fails before the player is mounted.
   const errorDialog = errorDialogShown && state.errors.length > 0 && (
-    <>
-      <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
-        if (!state.criticalError) setErrorDialogShown(false);
-      }} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
-        <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-              {state.criticalError ? t('error') : t('warning')}
-            </h2>
-            <span className="text-[10px] text-white/40">
-              {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
-            </span>
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-            {state.errors.map((err, i) => (
-              <ErrorMessageItem key={i} message={err} />
-            ))}
-          </div>
-          <button
-            className={`w-full py-2 rounded-lg text-sm font-medium ${
-              state.criticalError
-                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-            onClick={() => {
-              setErrorDialogShown(false);
-              if (state.criticalError) handleQuit();
-            }}
-          >
-            {state.criticalError ? t('quit') : t('ok')}
-          </button>
-        </div>
-      </div>
-    </>
+    <PackErrorDialog
+      errors={state.errors}
+      critical={state.criticalError}
+      onClose={() => {
+        setErrorDialogShown(false);
+        if (state.criticalError) handleQuit();
+      }}
+    />
   );
 
   // Loading spinner
@@ -1662,36 +1655,6 @@ export function PlayPage() {
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
-    </div>
-  );
-}
-
-const ERROR_MSG_TRUNCATE = 120;
-
-function ErrorMessageItem({ message }: { message: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = message.length > ERROR_MSG_TRUNCATE;
-  const label = message.split(':')[0] || 'Error';
-  const detail = message.includes(':') ? message.slice(message.indexOf(':') + 1).trim() : message;
-
-  return (
-    <div className="rounded-md bg-white/5 px-3 py-2">
-      <div className="text-[11px] font-medium text-white/80 mb-0.5">{label}</div>
-      <div
-        className={`text-[10px] text-white/50 font-mono break-all leading-relaxed ${
-          !expanded && isLong ? 'line-clamp-3' : ''
-        }`}
-      >
-        {detail}
-      </div>
-      {isLong && (
-        <button
-          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
     </div>
   );
 }

@@ -1037,7 +1037,11 @@ export function useUniPadEngine() {
     });
   }, [usageTracker]);
 
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
+  /**
+   * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
+   * when a later load or a quit replaced this one: the player belongs to that, so leave it alone.
+   */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer): Promise<boolean | null> => {
     unload();
     // A later load or a quit unloads this one, and that unload already destroyed the sound engine
     // this load made. Going on would set up a second pack whose keyboard and timers nobody owns.
@@ -1053,7 +1057,7 @@ export function useUniPadEngine() {
       });
       // Nothing plays before a lowered volume is known: opening a pack must not raise it.
       await playPreferences;
-      if (superseded()) return;
+      if (superseded()) return null;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1101,14 +1105,13 @@ export function useUniPadEngine() {
       );
       soundEngineRef.current = soundEngine;
       const failedSounds = await soundEngine.load();
-      if (superseded()) return;
+      if (superseded()) return null;
       soundEngine.setVolume(volumeLevelRef.current, MAX_VOLUME_LEVEL);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
       if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
-        return;
+        throw new Error(soundWarnings[0]);
       }
 
       const ledListener: LedRunnerListener = {
@@ -1379,8 +1382,9 @@ export function useUniPadEngine() {
         profile: midiProfileRef.current,
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
+      return true;
     } catch (err) {
-      if (superseded()) return;
+      if (superseded()) return null;
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
       setState((prev) => ({
@@ -1389,6 +1393,7 @@ export function useUniPadEngine() {
         criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
+      return false;
     }
   }, [
     unload,
