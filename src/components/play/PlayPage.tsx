@@ -340,10 +340,9 @@ export function PlayPage() {
     async (file: File) => {
       const isCurrent = beginPackOpen();
       await resumeAudio();
-      if (!isCurrent()) return;
       const buffer = await file.arrayBuffer();
-      if (!isCurrent()) return;
-      const opened = await loadUniPack(buffer);
+      // Cancel opening the player, not importing the file into the library.
+      const opened = isCurrent() ? await loadUniPack(buffer) : null;
       if (isCurrent() && opened === false) {
         // Failed imports clear their own address; a replaced import owns no player state.
         currentPackIdRef.current = null;
@@ -360,17 +359,12 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
-        if (!isCurrent()) return;
-        if (opened !== true) {
-          await refreshLists();
-          return;
-        }
+        await refreshLists();
+        if (!isCurrent() || opened !== true) return;
         currentPackIdRef.current = id;
         await rememberPack(id, isCurrent);
         if (!isCurrent()) return;
         syncPackUrl(id);
-        await refreshLists();
-        if (!isCurrent()) return;
         await applyLastTheme(isCurrent);
       } catch {
         /* storage error */

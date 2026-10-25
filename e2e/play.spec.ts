@@ -6,6 +6,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
+import { savedRecords } from './saved-packs';
 import { configureMidiPorts, midiPortMessages } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
@@ -363,6 +364,44 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
   await expect(pressed(page, '1,0')).toBeVisible();
   await page.keyboard.up('q');
   await expect(pressed(page, '1,0')).toHaveCount(0);
+});
+
+test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/pack=.+/);
+  const savedUrl = page.url();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.getByRole('listbox', { name: 'UniPack list' })).toBeVisible();
+  const zip = await JSZip.loadAsync(await readFile(pack));
+  zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Imported Later'));
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = async function () {
+      const buffer = await read.call(this);
+      if (this.name === 'delayed-import.uni') {
+        document.documentElement.dataset.heldImportRead = 'true';
+        await new Promise<void>(resolve => window.addEventListener('release-import-read', () => resolve(), { once: true }));
+      }
+      return buffer;
+    };
+  });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+    name: 'delayed-import.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
+  });
+  await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
+  await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
+  await expectPads(page);
+  await expect(page).toHaveURL(savedUrl);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
+  await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
+  await info.attach('import-kept-after-replacement', { body: JSON.stringify({ saved: await savedRecords(page), observedUrl: page.url(), title: await page.title() }), contentType: 'application/json' });
+  await expect(page).toHaveURL(savedUrl);
+  await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Imported Later by UniPad Tests', exact: true })).toBeVisible();
+  await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
 test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {

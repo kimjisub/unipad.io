@@ -26,7 +26,7 @@ let main;
 stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: () => null });
 stub('../../lib/store.ts', { subscribeStoreCount: async () => noop });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: noop });
-let held = {}, storage, loads, themes, engine, nextResult;
+let held = {}, storage, loads, themes, engine, nextResult, library;
 const deferred = () => { let resolve, reject; return { promise: new Promise((r, j) => { resolve = r; reject = j; }), resolve, reject }; };
 const hold = kind => {
   const waiting = { ...deferred(), entered: deferred() };
@@ -40,14 +40,14 @@ const step = async (kind, run) => {
 };
 const pack = id => ({ id, title: id, zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
 stub('../../lib/unipack/index.ts', {
-  listUniPacks: async () => [pack('A'), pack('B')], listThemes: async () => [],
+  listUniPacks: () => step('list', () => [...library.values()]), listThemes: async () => [],
   getUniPack: id => step('read', () => pack(id)),
   updateUniPackLastOpened: () => step('recent', noop),
   getTheme: () => step('themeRead', () => ({ zipData: 'saved-theme' })),
   getSetting: key => step(key === 'lastThemeId' ? 'themeSetting' : 'setting', () => storage.get(key) ?? null),
   setSetting: (key, value) => step(key === 'lastUniPackId' ? 'lastWrite' : 'write', () => storage.set(key, value)),
   parseUniPack: async data => pack(data),
-  saveUniPack: async () => 'Imported',
+  saveUniPack: () => step('save', () => { library.set('Imported', pack('Imported')); return 'Imported'; }),
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -85,6 +85,7 @@ stub('./useUniPadEngine.ts', { useUniPadEngine: useTestEngine });
 const { PlayPage } = require('./PlayPage.tsx');
 const flush = async action => act(async () => { await action?.(); });
 async function mount(url = '/play', prepare = noop) {
+  library = new Map([['A', pack('A')], ['B', pack('B')]]);
   held = {}; storage = new Map(); loads = []; themes = []; nextResult = true; engine = null; main = null;
   prepare();
   window.history.replaceState(null, '', url);
@@ -255,6 +256,45 @@ for (const result of [null, false]) {
         }));
       }
       assert.equal(currentUrlPack(), result === false ? null : 'Replacement');
+    });
+  }
+}
+
+
+for (const phase of ['resume', 'file', 'load', 'save']) {
+  for (const action of ['quit', 'replace', 'leave']) {
+    test(`an import interrupted during ${phase} by ${action} still reaches the saved list`, async () => {
+      const view = await mount();
+      const waiting = hold(phase);
+      const file = { arrayBuffer: () => step('file', () => new ArrayBuffer(0)) };
+      await flush(() => {
+        fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [file] } });
+        return waiting.entered.promise;
+      });
+      await flush(() => {
+        if (action === 'leave') view.unmount();
+        else if (action === 'quit') engine.onQuit();
+        else return main.onPlay('B');
+      });
+      const previousLoads = [...loads];
+      const previousWrites = new Map(storage);
+      const previousThemes = [...themes];
+      const previousUrl = window.location.href;
+      await flush(() => { waiting.resolve(); });
+      assert.ok(library.has('Imported'), 'the readable file is saved even when opening it was canceled');
+      assert.deepEqual(loads, previousLoads, 'the canceled import starts no new player load');
+      assert.deepEqual(storage, previousWrites, 'it does not replace the last pack or theme preferences');
+      assert.deepEqual(themes, previousThemes);
+      assert.equal(window.location.href, previousUrl);
+      if (action === 'replace') {
+        assert.equal(engine.state.unipack.id, 'B');
+        // Reveal the page's already-refreshed list without running handleQuit's own list refresh.
+        await flush(() => engine.unload());
+      } else if (action === 'leave') {
+        render(React.createElement(PlayPage));
+        await flush();
+      }
+      assert.ok(main.savedPacks.some(pack => pack.id === 'Imported'), 'the saved file appears without another list refresh');
     });
   }
 }
