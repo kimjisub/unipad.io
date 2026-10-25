@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type BrowserContext, type Page } from '@playwright/test';
+import { undecodablePack } from './basic-pack';
 import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 
@@ -148,6 +149,40 @@ test('a connected shared link still asks before installing and plays the downloa
   await expect(page.locator('[data-pad]')).toHaveCount(0);
   await confirmation.getByRole('button', { name: 'Install', exact: true }).click();
   await expectPads(page);
+});
+
+test('a shared pack that cannot open leaves the link out of the address', async ({ page, context }, testInfo) => {
+  await connectStore(context);
+  const pack = await undecodablePack();
+  await context.route('**/api/store/download?*', route => route.fulfill({ body: pack.buffer, contentType: 'application/octet-stream' }));
+  let failures = 0;
+  page.on('console', message => { if (message.text().includes('Failed to load UniPack')) failures += 1; });
+  const error = page.getByRole('alertdialog', { name: 'Error', exact: true });
+  const packs = page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option');
+  // Left in the address, the link would open the pack again and count another play on every reload.
+  const expectNoReopen = async (opened: number) => {
+    await expect(page).not.toHaveURL(/[?&](code|pack)=/);
+    await page.reload();
+    await expect(packs).toHaveCount(1);
+    // Give a link restore time to open the pack.
+    await page.waitForTimeout(1000);
+    await expect(error).toHaveCount(0);
+    expect(failures).toBe(opened);
+  };
+
+  await page.goto('/play?code=browser-pack');
+  await page.getByRole('alertdialog', { name: 'Confirm install', exact: true }).getByRole('button', { name: 'Install', exact: true }).click();
+  try {
+    await expect(error).toContainText('1 audio file(s) failed to decode');
+  } finally {
+    await testInfo.attach('shared-pack-failed', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  await expectNoReopen(1);
+
+  // The same link again finds the pack already downloaded and opens it without asking.
+  await page.goto('/play?code=browser-pack');
+  await expect(error).toContainText('1 audio file(s) failed to decode');
+  await expectNoReopen(2);
 });
 
 test('Enter on the shared link confirmation\'s Cancel button installs nothing', async ({ page, context }) => {
