@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
 import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
+import { websiteUrl } from '@/lib/unipack/websiteUrl';
 
 interface OptionPanelProps {
   visible: boolean;
@@ -97,6 +98,7 @@ export function OptionPanel({
 }: OptionPanelProps) {
   const t = useTranslations('play.menu');
   const tCommon = useTranslations('play.common');
+  const website = useMemo(() => websiteUrl(unipackInfo.website), [unipackInfo.website]);
   const [mounted, setMounted] = useState(false);
   const closing = !visible;
   if (visible && !mounted) setMounted(true);
@@ -187,9 +189,9 @@ export function OptionPanel({
                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
                   </svg>
                 </a>
-                {unipackInfo.website && (
+                {website && (
                   <a
-                    href={unipackInfo.website}
+                    href={website}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"

@@ -1,5 +1,29 @@
 # Results
 
+## Web archive and sound lookup corrections (2026-10-25)
+
+The parser now resolves canonically equivalent sound names, normalizes relative sound paths,
+rejects missing grid dimensions, and reports malformed round-light columns before their range.
+Sixteen web failure observations are retired: INF-G604, INF-G605, KL-G605, KL-G606,
+KS-G601, KS-G602, KS-G603, KS-G604, KS-G612, KS-G613, KS-G614, KS-G615,
+KS-G616, KS-G617, KS-G622 and KS-G625.
+
+The same sixteen inputs fail with the parser from `184c1e4b` and match their unchanged
+expectations with the corrected parser. Sound identity is checked using the selected original
+archive name and a SHA-256 of its actual bytes, including the two canonical-name collisions.
+App regression tests also reverse archive order, preserve distinct entries whose separators
+normalize alike, and reject root files outside the sounds directory.
+
+All 382 case inputs, fingerprints, expected results, scenarios and other platform observations
+are unchanged. Only these sixteen web observations change. The canonical corpus advances
+from SHA256 `5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`
+to `1241d422a26e3249b0b0c1e5ab831f9b6abe606914b890883e68c046c6ae6cf4`. Combined with the
+trailing-wait change below, which removes the RUN-P001 and RUN-P002 web observations, the corpus is
+`5b34f76475ca943313878999e2f1bb69478bffb45c7c98e7bb7699e7e928ee63`; only MAP-P001 to MAP-P005 keep web failures.
+Other remaining failures retain their observations. The historical app copy references are
+unchanged; their integrity checks still warn that both are behind the canonical corpus.
+This is web parser evidence, without a claim about current app copies, real speakers or MIDI hardware.
+
 ## Trailing-wait observations after the web runner fix (2026-10-24)
 
 The prepared canonical corpus advances from `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`
@@ -55,6 +79,31 @@ The combined corpus is SHA256
 Every input, scenario, fingerprint and expected value stays unchanged. The historical
 web measurements above retain their own hashes; this paragraph does not relabel
 those runs or claim a new native measurement. Both native copy references stay historical.
+
+## Web trailing-wait fix merged (2026-10-25)
+
+[unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) was merged as
+`d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`. Its reviewed head was
+`0a132513c431fe0dcf76e0cea1cc7a47ed2a88e8`, whose tree is identical to the merge commit.
+In the Node conformance run, that head passes 414 assertions without skips and records
+**361 passes and 21 unchanged pinned web failures** across all 382 cases.
+The merged corpus has SHA256
+`9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6` (grammar G6, 114 items).
+It preserves the newer RUN-G616 iOS failure observation. RUN-P001 and RUN-P002 use their existing
+inputs, fingerprints, scenarios and expected results; only their web failure pins were removed.
+The earlier runs above retain their original commits and hashes.
+
+These results include virtual-clock observations. A separate runner-unit measurement at the reviewed
+head found an initial-timer edge. The initial delay is not compensated when it is at most 1 ms,
+so the first interval can be shortened by up to 1 ms. In the retained measurement with the first
+callback exactly 1 ms after play starts, the first 1000 ms note interval measures 999 ms, and a
+2000 ms trailing wait measures 1999 ms from the first note. This accepted timing limitation is
+retained separately from the Node corpus result;
+no expected value was changed to remove the two pins. Raw measurements are retained outside this repository.
+
+Both native copy declarations still select historical 214-case snapshots. Their explicit integrity
+check keeps two outdated-copy warnings, and strict current-copy verification rejects those snapshots.
+This merge does not establish current native compatibility or a new complete browser run.
 
 ## Two iOS partial-run observations separated (2026-10-25)
 
