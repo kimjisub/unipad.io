@@ -165,8 +165,8 @@ platform's own fix removes it.
   The play hook preserves each input identity and handles each release while keeping the press
   overlay until the final input. Both cases match the corrected expectations on application commit
   `1dbf0f464611041a3da6db02ce6b2175b41e4dbf` with unchanged test input SHA256 `7ac226a8…`.
-  The two web pins are removed in regenerated corpus `cbb87354…` (`0cecd5e2…` together with the
-  iOS RUN-G616 pin); the earlier failure observations
+  The two web pins are removed in regenerated corpus `cbb87354…` (`5f92bb56…` together with the
+  iOS RUN-G616 pin and the resolved RUN-P001/RUN-P002 web pins); the earlier failure observations
   keep their original commit and hash. No native or physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
