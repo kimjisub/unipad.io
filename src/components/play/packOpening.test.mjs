@@ -297,6 +297,7 @@ for (const phase of ['resume', 'file', 'load', 'save']) {
       if (action === 'replace') {
         assert.equal(engine.state.unipack.id, 'B');
         // Reveal the page's already-refreshed list without running handleQuit's own list refresh.
+        await flush(() => engine.unload());
         assert.ok(main.savedPacks.some(pack => pack.id === 'Imported'));
         await flush(() => engine.onQuit());
         assert.equal(main.lastPlayedPackId, 'B', 'the canceled import preserves the current pack used for saving autoPlay');
