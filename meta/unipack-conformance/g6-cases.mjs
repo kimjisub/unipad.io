@@ -122,11 +122,14 @@ export function g6Cases() {
       pack({ keySound: '1 1 1 a.wav 0', keyLed: { '1 1 1 0': endless } }),
       [watch, press(0, 0, first), advance(20), observe, press(0, 0, second), advance(20), observe, release(0, 0, first), advance(20), observe, release(0, 0, second), advance(20), observe],
       [[snd(0, 'a.wav', -1), on], [stop(0), snd(0, 'a.wav', -1), off, on], [], [stop(0), off]], ['android', 'ios', 'web'], { screenInputs: true });
-  for (const [id, first, second] of [['RUN-G617', 'pointer:1', 'pointer:2'], ['RUN-G618', 'pointer:1', 'midi:1']])
+  for (const [id, first, second, failing] of [
+    ['RUN-G617', 'pointer:1', 'pointer:2', []],
+    ['RUN-G618', 'pointer:1', 'midi:1', ['android']],
+  ])
     run(id, ['RS-05', 'RL-03'], 'releasing the later player input stops the sound and light it started',
       pack({ keySound: '1 1 1 a.wav 0', keyLed: { '1 1 1 0': endless } }),
       [watch, press(0, 0, first), advance(20), observe, press(0, 0, second), advance(20), observe, release(0, 0, second), advance(20), observe, release(0, 0, first), advance(20), observe],
-      [[snd(0, 'a.wav', -1), on], [stop(0), snd(0, 'a.wav', -1), off, on], [stop(0), off], []], id === 'RUN-G618' ? ['android'] : [], { screenInputs: true });
+      [[snd(0, 'a.wav', -1), on], [stop(0), snd(0, 'a.wav', -1), off, on], [stop(0), off], []], failing, { screenInputs: true });
   run('RUN-G609', ['RS-05', 'RL-03', 'RA-02'], 'a manual release does not end the sound and light now owned by autoPlay',
     pack({ keySound: '1 1 1 a.wav 0', keyLed: { '1 1 1 0': endless }, autoPlay: 'd 300\non 1 1\nd 700\noff 1 1\nd 1000' }),
     [watch, press(), advance(20), observe, { do: 'autoplay', toPads: true }, advance(320), observe, release(), advance(20), observe, advance(700), observe],

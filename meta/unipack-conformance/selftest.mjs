@@ -1079,6 +1079,8 @@ test('native release observations distinguish pack output from press feedback fa
     ['soundStop', 0, 0, 0, 'a.wav'], ['ledOff', 0, 0],
   ]);
   assert.equal(classify(controller, controller.known.android.actual, 'android'), 'fail');
+  assert.equal(classify(controller, controller.expected, 'android'), 'unverified',
+    'a fixed output must retire its Android failure pin before counting as a pass');
   for (const c of [fingers, controller]) {
     assert.equal(classify(c, c.expected, 'ios'), 'pass');
     assert.equal(classify(c, c.expected, 'web'), 'pass');

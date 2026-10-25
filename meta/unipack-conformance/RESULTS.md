@@ -3,6 +3,9 @@
 ## Native input-owned release observations (2026-10-25)
 
 Both target cases retain their input files, fingerprints, scenarios and corrected expectations.
+The following Android observations describe the historical application commit named below, before
+[unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304) changed input ownership.
+They do not establish current Android behavior; both cases require fresh observations on the merged code.
 The native observations distinguish sound and pack lights from the separate pressed indicator:
 
 | Case | Web sound and pack lights | iOS sound and pack lights | Android sound and pack lights | Android pressed indicator |
@@ -10,8 +13,8 @@ The native observations distinguish sound and pack lights from the separate pres
 | RUN-G617, two fingers | Match | Match | Match | Fails: clears at the third checkpoint |
 | RUN-G618, finger and controller | Match | Match | Fails: stops at the fourth checkpoint | Matches |
 
-Android application commit `777cc4a37a997afb327756dd239f167adf155c50`, with a test-only native
-input adapter at `0ebf2df80b71010f2b1afc0be0de433b16118974`, used the original 382-case input
+Android application commit `777cc4a37a997afb327756dd239f167adf155c50`, with a local test-only native
+input adapter, used the original 382-case input
 SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`.
 The adapter sends distinct fingers through `PadTouchTracker` and controller input through
 `controllerPadTouch`. Both combined app assertions failed by value (exit 1, two tests, no errors or
