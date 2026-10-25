@@ -207,6 +207,8 @@ export function useUniPadEngine() {
   const keyboardBlockedRef = useRef(false);
   const interruptedRef = useRef(false);
   const interruptionRevisionRef = useRef(0);
+  // Each unload ends the pack load in progress; see loadUniPack.
+  const loadRevisionRef = useRef(0);
   const interruptPlaybackRef = useRef<() => void>(() => {});
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
   const toggleAutoPlayRef = useRef<() => void>(() => {});
@@ -908,6 +910,7 @@ export function useUniPadEngine() {
 
   const unload = useCallback(() => {
     usageTracker.unloaded();
+    loadRevisionRef.current++;
     interruptionRevisionRef.current++;
     interruptedRef.current = false;
     soundEngineRef.current?.destroy();
@@ -972,13 +975,18 @@ export function useUniPadEngine() {
 
   const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
     unload();
+    // A later load or a quit unloads this one, and that unload already destroyed the sound engine
+    // this load made. Going on would set up a second pack whose keyboard and timers nobody owns.
+    const revision = loadRevisionRef.current;
+    const superseded = () => revision !== loadRevisionRef.current;
 
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
 
     try {
       const unipack = await parseUniPack(zipData, (phase) => {
-        setState((prev) => ({ ...prev, loadPhase: phase }));
+        if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
       });
+      if (superseded()) return;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1016,6 +1024,7 @@ export function useUniPadEngine() {
         () => chainRef.current,
         setChain,
         (loaded, total) => {
+          if (superseded()) return;
           setState((prev) => ({
             ...prev,
             loadProgress: Math.round((loaded / total) * 100),
@@ -1025,6 +1034,7 @@ export function useUniPadEngine() {
       );
       soundEngineRef.current = soundEngine;
       const failedSounds = await soundEngine.load();
+      if (superseded()) return;
       soundEngine.setVolume(volumeLevelRef.current, 7);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
@@ -1303,6 +1313,7 @@ export function useUniPadEngine() {
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
     } catch (err) {
+      if (superseded()) return;
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
       setState((prev) => ({

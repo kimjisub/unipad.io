@@ -395,6 +395,9 @@ export function PlayPage() {
 
   const handlePlay = useCallback(
     async (id: string) => {
+      // The address names a pack only for the page's first open. This open writes its own pack
+      // there, and a render before loading starts must not restore it as a second load.
+      triedUrlPackRestoreRef.current = true;
       try {
         await resumeAudio();
         const pack = await getUniPack(id);
