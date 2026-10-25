@@ -98,7 +98,7 @@ async function mount(url = '/play', prepare = noop) {
 afterEach(cleanup);
 const currentUrlPack = () => new URL(window.location.href).searchParams.get('pack');
 
-for (const phase of ['resume', 'read', 'recent']) {
+for (const phase of ['resume', 'read']) {
   for (const leave of ['quit', 'unmount']) {
     test(`${leave} during ${phase} prevents a later engine load`, async () => {
       const view = await mount();
@@ -113,6 +113,27 @@ for (const phase of ['resume', 'read', 'recent']) {
       assert.equal(storage.has('lastUniPackId'), false);
     });
   }
+}
+
+for (const leave of ['quit', 'unmount']) {
+  test(`${leave} cancels decoding even while best-effort history is pending`, async () => {
+    const view = await mount();
+    const history = hold('recent');
+    const decoding = hold('load');
+    let opening;
+    await flush(() => { opening = main.onPlay('A'); return history.entered.promise; });
+    assert.deepEqual(loads, ['A'], 'history must not delay the player load');
+    await flush(() => leave === 'quit' ? engine.onQuit() : view.unmount());
+    await flush(() => {
+      if (leave === 'quit') history.resolve();
+      else history.reject(new Error('History write failed'));
+      decoding.resolve();
+      return opening;
+    });
+    assert.equal(await opening, null);
+    assert.equal(currentUrlPack(), null);
+    assert.equal(storage.has('lastUniPackId'), false);
+  });
 }
 
 test('a saved open passes its stored autoPlay to the player', async () => {
