@@ -164,7 +164,8 @@ platform's own fix removes it.
   the newer RUN-G616 iOS failure observation. Both native references still select historical
   214-case snapshots: their two warnings remain, and strict current-copy verification is incomplete.
   See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
-  for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms and other
+  for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms (since
+  [removed](unipack-conformance/RESULTS.md#initial-timer-edge-removed-2026-10-25)) and other
   verification limits.
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
