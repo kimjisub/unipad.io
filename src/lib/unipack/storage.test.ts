@@ -9,13 +9,16 @@ import {
   type StoredUniPack,
 } from './storage';
 
-type Request = { result?: unknown; onsuccess?: () => void };
+type Request = { result?: unknown; error?: DOMException; onsuccess?: () => void; onerror?: () => void };
 
 /** Serializes transactions and clones reads/writes, including rollback on abort. */
 function fakeIndexedDB(initial?: StoredUniPack) {
   let record = structuredClone(initial);
   let nextRead: (() => void) | undefined;
   let abortWrite = false;
+  let readFailure: DOMException | undefined;
+  let putFailure: DOMException | undefined;
+  let explicitAborts = 0;
   const pending: (() => void)[] = [];
   let active = false;
   const startNext = () => {
@@ -33,12 +36,19 @@ function fakeIndexedDB(initial?: StoredUniPack) {
         error: null as DOMException | null,
         oncomplete: undefined as (() => void) | undefined,
         onabort: undefined as (() => void) | undefined,
-        abort() { aborted = true; },
+        abort() { explicitAborts++; aborted = true; },
         objectStore() {
           return {
             get(id: string) {
               const request: Request = {};
               operations.push(() => {
+                if (readFailure) {
+                  request.error = transaction.error = readFailure;
+                  readFailure = undefined;
+                  request.onerror?.();
+                  aborted = true;
+                  return;
+                }
                 request.result = structuredClone(draft?.id === id ? draft : undefined);
                 const hook = nextRead;
                 nextRead = undefined;
@@ -49,6 +59,11 @@ function fakeIndexedDB(initial?: StoredUniPack) {
             },
             put(value: StoredUniPack) {
               assert.equal(mode, 'readwrite');
+              if (putFailure) {
+                const error = putFailure;
+                putFailure = undefined;
+                throw error;
+              }
               const copy = structuredClone(value);
               const request: Request = {};
               operations.push(() => {
@@ -104,6 +119,9 @@ function fakeIndexedDB(initial?: StoredUniPack) {
     } as unknown as IDBFactory,
     afterNextRead(hook: () => void) { nextRead = hook; },
     abortNextWrite() { abortWrite = true; },
+    failNextRead() { readFailure = new DOMException('Read failed.', 'UnknownError'); },
+    throwOnNextPut() { putFailure = new DOMException('Cannot clone value.', 'DataCloneError'); },
+    explicitAbortCount() { return explicitAborts; },
   };
 }
 
@@ -139,7 +157,9 @@ for (const [name, update] of [
       // Queue the competing write after the metadata read takes its snapshot. A split read/write
       // lets this save commit before its stale put; one readwrite transaction keeps both changes.
       db.afterNextRead(() => { saving = saveUniPackAutoPlay(original.id, mapped); });
+      const startedAt = Date.now();
       const result = await update(original.id);
+      const completedAt = Date.now();
       await saving;
       const saved = await getUniPack(original.id);
       assert.deepEqual(saved?.autoPlay, mapped);
@@ -151,7 +171,10 @@ for (const [name, update] of [
           : { openCount: 4, lastOpenedAt: saved?.lastOpenedAt }),
       });
       if (name === 'bookmark') assert.equal(result, true);
-      else assert.ok(saved!.lastOpenedAt > original.lastOpenedAt);
+      else {
+        assert.ok(saved!.lastOpenedAt >= startedAt);
+        assert.ok(saved!.lastOpenedAt <= completedAt);
+      }
     });
   }
 
@@ -181,4 +204,32 @@ test('opening initializes a missing count and bookmarking can be toggled off', a
   assert.equal(saved?.openCount, 1);
   assert.equal(saved?.bookmark, false);
   assert.deepEqual(saved?.autoPlay, mapped);
+});
+
+for (const [name, update] of [
+  ['recent opening', updateUniPackLastOpened],
+  ['bookmark', toggleUniPackBookmark],
+  ['autoPlay', (id: string) => saveUniPackAutoPlay(id, mapped)],
+] as const) {
+  for (const failure of ['read error', 'put exception'] as const) {
+    test(`${name} rolls back a ${failure} and reports the cause`, async (t) => {
+      const db = fakeIndexedDB(original);
+      installDB(t, db);
+      if (failure === 'read error') db.failNextRead();
+      else db.throwOnNextPut();
+      await assert.rejects(update(original.id), {
+        name: failure === 'read error' ? 'UnknownError' : 'DataCloneError',
+      });
+      assert.equal(db.explicitAbortCount(), failure === 'put exception' ? 1 : 0);
+      assert.deepEqual(await getUniPack(original.id), original);
+    });
+  }
+}
+
+test('autoPlay saving rejects a missing pack', async (t) => {
+  const db = fakeIndexedDB();
+  installDB(t, db);
+  await assert.rejects(saveUniPackAutoPlay('missing', mapped), { name: 'NotFoundError' });
+  assert.equal(db.explicitAbortCount(), 1);
+  assert.equal(await getUniPack('missing'), undefined);
 });

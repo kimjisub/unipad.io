@@ -428,3 +428,65 @@ test('a single saved pack keeps detail playback visible in a tall phone viewport
   await play.click();
   await expectPads(page);
 });
+
+async function readSavedPackRecords(page: Page) {
+  return page.evaluate(async () => {
+    const request = indexedDB.open('unipad');
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const read = db.transaction('unipacks').objectStore('unipacks').getAll();
+      const records = await new Promise<import('../src/lib/unipack/storage').StoredUniPack[]>((resolve, reject) => {
+        read.onsuccess = () => resolve(read.result);
+        read.onerror = () => reject(read.error);
+      });
+      return records.map(record => ({ ...record, zipData: Array.from(new Uint8Array(record.zipData)) }));
+    } finally {
+      db.close();
+    }
+  });
+}
+
+for (const action of ['opening', 'bookmarking'] as const) {
+  test(`saved pack ${action} handles an aborted metadata write`, async ({ page }, info) => {
+    await openList(page, [packs[0][0]]);
+    const before = await readSavedPackRecords(page);
+    await page.evaluate(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (...args) {
+        const request = put.apply(this, args);
+        if (this.name === 'unipacks') {
+          request.addEventListener('success', () => {
+            // Native rollback after put succeeds, before its transaction commits.
+            this.transaction.abort();
+            document.documentElement.dataset.abortedPackWrite = 'true';
+          }, { once: true });
+        }
+        return request;
+      };
+    });
+    await info.attach('before-aborted-write', { body: await page.screenshot(), contentType: 'image/png' });
+    try {
+      if (action === 'opening') {
+        await page.getByRole('button', { name: 'Play', exact: true }).click();
+        await expectPads(page);
+        await expect(page).toHaveURL(/\/play\?pack=.+/);
+        const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+        await page.locator('[data-pad="0,0"]').click();
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
+      } else {
+        const bookmark = page.getByRole('button', { name: 'Add bookmark', exact: true });
+        await bookmark.click();
+        await expect(bookmark).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Remove bookmark', exact: true })).toHaveCount(0);
+      }
+      await expect(page.locator('html')).toHaveAttribute('data-aborted-pack-write', 'true');
+      const after = await readSavedPackRecords(page);
+      expect(after).toEqual(before);
+    } finally {
+      await info.attach('after-aborted-write', { body: await page.screenshot(), contentType: 'image/png' });
+    }
+  });
+}

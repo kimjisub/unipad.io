@@ -117,6 +117,32 @@ async function commit(
   });
 }
 
+/** Updates only the requested fields from the latest record, within one transaction. */
+async function updateStoredUniPack(
+  id: string,
+  change: (record: StoredUniPack) => Partial<StoredUniPack>,
+  onMissing: () => void = () => {},
+): Promise<StoredUniPack | undefined> {
+  let updated: StoredUniPack | undefined;
+  await commit(STORE_UNIPACKS, (store, fail) => {
+    const request = store.get(id);
+    request.onsuccess = () => {
+      try {
+        const record = request.result as StoredUniPack | undefined;
+        if (!record) {
+          onMissing();
+          return;
+        }
+        updated = { ...record, ...change(record) };
+        store.put(updated);
+      } catch (error) {
+        fail(error);
+      }
+    };
+  });
+  return updated;
+}
+
 // UniPack operations
 
 export interface UniPackInfo {
@@ -186,20 +212,8 @@ export async function saveStoreUniPack(
  * Only one backup is kept. When the write fails the pack keeps the autoPlay it had.
  */
 export async function saveUniPackAutoPlay(id: string, autoPlay: StoredAutoPlay): Promise<void> {
-  await commit(STORE_UNIPACKS, (store, fail) => {
-    const request = store.get(id);
-    request.onsuccess = () => {
-      const record = request.result as StoredUniPack | undefined;
-      if (!record) {
-        fail(new DOMException('The pack is no longer stored.', 'NotFoundError'));
-        return;
-      }
-      try {
-        store.put({ ...record, autoPlay });
-      } catch (error) {
-        fail(error);
-      }
-    };
+  await updateStoredUniPack(id, () => ({ autoPlay }), () => {
+    throw new DOMException('The pack is no longer stored.', 'NotFoundError');
   });
 }
 
@@ -239,40 +253,17 @@ export async function deleteUniPack(id: string): Promise<void> {
 }
 
 export async function updateUniPackLastOpened(id: string): Promise<void> {
-  await commit(STORE_UNIPACKS, (store, fail) => {
-    const request = store.get(id);
-    request.onsuccess = () => {
-      const record = request.result as StoredUniPack | undefined;
-      if (!record) return;
-      try {
-        store.put({
-          ...record,
-          lastOpenedAt: Date.now(),
-          openCount: (record.openCount ?? 0) + 1,
-        });
-      } catch (error) {
-        fail(error);
-      }
-    };
-  });
+  await updateStoredUniPack(id, (record) => ({
+    lastOpenedAt: Date.now(),
+    openCount: (record.openCount ?? 0) + 1,
+  }));
 }
 
 export async function toggleUniPackBookmark(id: string): Promise<boolean> {
-  let bookmark = false;
-  await commit(STORE_UNIPACKS, (store, fail) => {
-    const request = store.get(id);
-    request.onsuccess = () => {
-      const record = request.result as StoredUniPack | undefined;
-      if (!record) return;
-      bookmark = !(record.bookmark ?? false);
-      try {
-        store.put({ ...record, bookmark });
-      } catch (error) {
-        fail(error);
-      }
-    };
-  });
-  return bookmark;
+  const updated = await updateStoredUniPack(id, (record) => ({
+    bookmark: !(record.bookmark ?? false),
+  }));
+  return updated?.bookmark ?? false;
 }
 
 // Theme operations

@@ -384,7 +384,8 @@ export function PlayPage() {
         if (!pack) return false;
         currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
-        await updateUniPackLastOpened(id);
+        // Recent-open history is best effort; a slow or failed write must not prevent playback.
+        void updateUniPackLastOpened(id).catch(() => {});
         // The address and the last pack name only packs that opened: either would open a failed one again.
         const opened = await loadUniPack(pack.zipData, pack.autoPlay);
         if (opened === null) return null;
@@ -501,7 +502,8 @@ export function PlayPage() {
 
   const handleToggleBookmark = useCallback(
     async (id: string) => {
-      await toggleUniPackBookmark(id);
+      // Keep the displayed state in sync with storage even if the bookmark write is rolled back.
+      await toggleUniPackBookmark(id).catch(() => {});
       await refreshLists();
     },
     [refreshLists],
