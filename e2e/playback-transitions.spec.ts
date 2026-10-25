@@ -392,7 +392,7 @@ test('compatibility: step practice leaves the final group available until played
   await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(0);
 });
 
-for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts wait for the last release (later first ${laterFirst})`, async ({ page }, info) => {
+for (const laterFirst of [false, true]) test(`compatibility: same-pad feedback waits for the last release while each contact releases its effects (later first ${laterFirst})`, async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1', false, { endless: true, led: 'o 1 2 a 5\nd 1000', keySound: '1 1 1 tone.wav 0' });
   await page.getByRole('button', { name: 'Feedback', exact: true }).dispatchEvent('click');
   const target = page.locator('[data-pad="0,0"]');
@@ -404,8 +404,8 @@ for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts w
   await pointer('pointerdown', 101); await pointer('pointerdown', 102);
   await pointer('pointerup', laterFirst ? 102 : 101);
   await snapshot(page, info, 'one-contact-still-held');
-  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
-  await expect(packLight(page)).toHaveCount(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual(laterFirst ? [1, 2] : [1]);
+  await expect(packLight(page)).toHaveCount(laterFirst ? 0 : 1);
   await expect(target.locator('img[src="/theme/btn_.png"]')).toHaveCount(1);
   await pointer('pointerup', laterFirst ? 101 : 102);
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);

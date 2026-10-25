@@ -1,5 +1,16 @@
 # Results
 
+## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
+
+Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) and
+[unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183) with the input-owned release fix
+below keeps every removed web pin: RUN-G617/RUN-G618, RUN-P001/RUN-P002 and the sixteen archive and
+sound lookup observations. The newer RUN-G616 iOS observation is preserved. The combined canonical
+corpus has 382 cases, SHA256 `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`.
+The integration changes no input, scenario, fingerprint or expected value. The hashes in the entries
+below belong to their own runs and are not relabelled; the earlier combination with #178 alone was
+`5f92bb5655e6c298409db4b967b67b097666df6b0175867ed03c25b944da6436`. Both native copy references stay historical.
+
 ## Web archive and sound lookup corrections (2026-10-25)
 
 The parser now resolves canonically equivalent sound names, normalizes relative sound paths,
@@ -23,6 +34,70 @@ trailing-wait change below, which removes the RUN-P001 and RUN-P002 web observat
 Other remaining failures retain their observations. The historical app copy references are
 unchanged; their integrity checks still warn that both are behind the canonical corpus.
 This is web parser evidence, without a claim about current app copies, real speakers or MIDI hardware.
+
+## Web input-owned release fix (2026-10-25)
+
+The play hook now forwards each screen pointer, key and MIDI input identity to the sound engine
+and LED runner and handles every release. The pressed overlay still waits for the last input.
+App regression tests cover both release orders for screen, keyboard and MIDI inputs; browser tests
+also cover the same coordinate and contacts on different chains.
+
+On application commit `1dbf0f464611041a3da6db02ce6b2175b41e4dbf`, the unmodified 382-case test input
+with SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` was used through
+the actual play hook. RUN-G617 and RUN-G618 match their corrected expectations: the third checkpoint
+stops the replacement sound and light and the fourth is empty. This is a two-case assertion, not a
+full conformance pass or a physical-device or audible-output observation. The earlier results below
+retain their original commit and corpus hash.
+
+Only those two obsolete web failure pins are removed. The regenerated canonical corpus has 382 cases,
+SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`. All input files,
+fingerprints, scenarios and corrected expectations are unchanged; the other 380 cases are unchanged.
+This is the same hash as the earlier expectations-only input because the fixed app now satisfies it.
+Combined with the separate iOS RUN-G616 pin below, the canonical corpus is SHA256
+`0cecd5e2b5db8838effed8e03eabf76277a007524028fe7c2a0bb3b96f83446c`.
+The Android and iOS historical copy declarations remain explicit and are not current compatibility
+results.
+
+## Input-owned release expectations (2026-10-25)
+
+RUN-G617 and RUN-G618 now expect the later input's release to stop the replacement endless sound
+and light that input started. Their third checkpoint contains `soundStop` and `ledOff`; the fourth
+checkpoint is empty because the earlier input no longer owns either output. Only the pressed
+indicator waits for the final input. The two case descriptions and their expectation notes follow
+that rule. Every input file, fingerprint and scenario is unchanged; the other 380 cases are unchanged.
+
+The canonical corpus still has 382 cases. Its SHA256 advances from
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6` to
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`.
+This includes two new pinned web failures. Before pinning, the corrected expectations alone produced
+SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`;
+the first asserting web run failed precisely these two comparisons (969 tests, two failures).
+That initial run is retained separately from the subsequent asserting run with failure pins.
+A regression test fails against the old expectations and passes against the corrected expectations.
+The subsequent asserting `pnpm test:unipack` run passed all 969 test assertions, while its 382
+compatibility results remain 357 pass and 25 fail, including these two pinned failures.
+
+The web play-hook adapter on `b995a86f4f9c7c69fd9da65827e142828d6bc799` still records an empty third
+checkpoint and stops both outputs at the fourth. Both observations were pinned in `divergences.json` at that revision.
+They were compatibility failures even though their known-difference assertions passed. The older
+"Web playback observations retired with G6" entry below describes the earlier expectations and is
+superseded for these two cases; it is preserved as historical evidence.
+
+New native results are pending. iOS must be rerun on
+`e8ac34d11373b3ed071535e365ddc382c1929496` or a descendant
+([unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213)); its earlier results used the old
+corpus hash and are not new results. Android's current common adapter does not read the scenario's
+`input` identity, so its lower-level output cannot establish two-finger or finger/MIDI behavior.
+A native input-path observation is required before either Android case can be counted or pinned.
+No native pass or failure is claimed here, and no new three-platform aggregate is reported.
+
+`copies.json` selects Android `777cc4a37a997afb327756dd239f167adf155c50` and the iOS merge above.
+Both still carry historical 214-case G5 copies, SHA256
+`18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
+The copy comparison verifies those declared bytes and warns that they are behind canonical;
+it does not establish current app compatibility. The native reruns use the corrected corpus as a
+separate test input and must report its exact hash. The stored app copies are not updated here.
+
 
 ## Trailing-wait observations after the web runner fix (2026-10-24)
 

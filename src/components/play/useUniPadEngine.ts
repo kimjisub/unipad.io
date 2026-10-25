@@ -45,7 +45,6 @@ const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
 // What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
 // auto play uses AUTO_PLAY_INPUT).
 const MIDI_INPUT = 'midi';
-const PLAYER_INPUT = 'player';
 const keyInput = (code: string) => `key-${code}`;
 
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
@@ -542,11 +541,10 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    // Player contacts share the latest press until their last release; autoplay owns its press separately.
-    const owner = input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
-    se?.soundOn(x, y, owner);
-    lr?.eventOn(x, y, eventAt, owner);
+    // Each contact owns its sound and pack lights; only the pressed overlay shares holds.
+    if (input === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
+    se?.soundOn(x, y, input);
+    lr?.eventOn(x, y, eventAt, input);
     recorderRef.current.recordOn(x, y);
 
     if (traceLogRef.current) {
@@ -595,10 +593,9 @@ export function useUniPadEngine() {
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    const owner = input === undefined ? undefined : input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT || owner === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
-    se?.soundOff(x, y, owner);
-    lr?.eventOff(x, y, eventAt, owner);
+    if (input === AUTO_PLAY_INPUT || input === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
+    se?.soundOff(x, y, input);
+    lr?.eventOff(x, y, eventAt, input);
     recorderRef.current.recordOff(x, y);
 
     if (playerHoldsRef.current.isHeld(x, y) || autoPlayPadsRef.current.has(`${x},${y}`)) return;
@@ -620,7 +617,6 @@ export function useUniPadEngine() {
   /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
   const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
     const releasesAutoPlay = playerHoldsRef.current.release(x, y);
-    if (playerHoldsRef.current.isHeld(x, y)) return;
     padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
 
@@ -1034,7 +1030,8 @@ export function useUniPadEngine() {
     });
   }, [usageTracker]);
 
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
+  /** Resolves false when the pack could not be opened; the reason is left in `errors`. */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer): Promise<boolean> => {
     unload();
     const playPreferences = readPlayPreferences();
 
@@ -1097,8 +1094,7 @@ export function useUniPadEngine() {
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
       if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
-        return;
+        throw new Error(soundWarnings[0]);
       }
 
       const ledListener: LedRunnerListener = {
@@ -1369,6 +1365,7 @@ export function useUniPadEngine() {
         profile: midiProfileRef.current,
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
+      return true;
     } catch (err) {
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
@@ -1378,6 +1375,7 @@ export function useUniPadEngine() {
         criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
+      return false;
     }
   }, [
     unload,
