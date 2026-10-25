@@ -1,5 +1,26 @@
 # Results
 
+## iOS delayed chain callback corrected (2026-10-25)
+
+The app correction in [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217)
+cancels pending sound wormholes when autoPlay is turned off. An asserting iOS observation on
+application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`, with the separately retained
+executor changes described in the [source investigation](investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25),
+records RUN-G616 equal to its unchanged expected checkpoints. Only that obsolete iOS failure
+pin is removed. All 382 inputs, fingerprints, scenarios, expectations and other platform pins
+are unchanged, including the web corrections above the historical entries below.
+The canonical SHA256 advances from `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`
+to `c59df88a0b80596207ad07d64f89b04b28f0ef326a2d6d82880ffdc63de88755`.
+
+The retained [fixed-ios.json](investigations/ios-playback-observations/fixed-ios.json) still names
+the original `859e24aa…` corpus. Its raw statuses are 374 pass, 3 fail and 5 unverified; the full
+xcodebuild command exited 65. RUN-G616's status is pass but its detail rejects the obsolete pin.
+With that pinned corpus the report classifies this case as unverified, not a current compatibility
+pass. Neither the raw file nor the earlier nine-case failure is rewritten or given the new hash.
+No full iOS rerun on the regenerated corpus, audible output, rendered press indicator or physical
+MIDI output is claimed. Both native copy references remain historical; this change does not update
+`copies.json` or establish remote current-copy verification.
+
 ## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
 
 Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) and

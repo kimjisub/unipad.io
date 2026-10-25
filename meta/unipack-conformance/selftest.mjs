@@ -1053,14 +1053,26 @@ test('iOS playback observations distinguish stored repeats from a delayed chain 
   assert.equal(observed.get(negative.id).actual.checkpoints[0][0][5], -2);
   assert.equal(negative.known?.ios, undefined, 'a stored loop is not an observed playback defect');
   assert.deepEqual(delayed.expected.checkpoints[1], []);
-  assert.deepEqual(delayed.known?.ios?.actual, observed.get(delayed.id).actual);
-  assert.equal(delayed.known.ios.status, 'fail');
-  const pinned = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: observed.get(delayed.id) }));
-  assert.equal(pinned.get(delayed.id).status, 'fail');
-  const changed = judge(canonical, 'ios', fullResults('ios', {
-    [delayed.id]: { status: 'pass', actual: delayed.expected },
-  }));
-  assert.equal(changed.get(delayed.id).status, 'unverified', 'a fix must retire its failure pin before counting as a pass');
+  assert.equal(delayed.known?.ios, undefined, 'the corrected callback must not retain a failure pin');
+  const historical = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: observed.get(delayed.id) }));
+  assert.equal(historical.get(delayed.id).status, 'fail', 'the old callback remains a failure');
+  const fixedBytes = readFileSync(join(here, 'investigations/ios-playback-observations/fixed-ios.json'));
+  assert.equal(sha256(fixedBytes), 'ef20299f39072a0cc1f7e44994941203ed43bc74345618779316639c9019ee30');
+  const fixed = JSON.parse(fixedBytes);
+  assert.equal(fixed.platform, 'ios');
+  assert.equal(fixed.assertions, 'checked');
+  assert.equal(fixed.corpusSource, 'bundle');
+  assert.equal(fixed.corpusSha256, '859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20');
+  assert.equal(fixed.cases.length, 382);
+  const corrected = fixed.cases.find(c => c.id === delayed.id);
+  assert.equal(corrected.fingerprint, delayed.fingerprint);
+  assert.deepEqual(corrected.actual, delayed.expected);
+  assert.equal(classify(delayed, corrected.actual, 'ios'), 'pass');
+  // A synthetic current-corpus envelope checks classification, not an iOS rerun.
+  const changed = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: corrected }));
+  assert.equal(changed.get(delayed.id).status, 'pass');
+  assert.equal(judge(canonical, 'ios', fixed).get(delayed.id).status, 'unverified',
+    'the retained fixed observation must not be relabelled with the regenerated corpus hash');
   assert.notEqual(original.corpusSha256, canonical.sha256);
   assert.equal(judge(canonical, 'ios', original).get(delayed.id).status, 'unverified',
     'the historical partial run must not be relabelled as a run on the current corpus');
