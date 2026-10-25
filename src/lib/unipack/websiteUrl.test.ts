@@ -27,3 +27,12 @@ test('website link is absolute when resolved against a page of the site', () => 
     assert.equal(new URL(href, 'https://unipad.io/play').href, href);
   }
 });
+
+test('a long website value is checked in linear time', () => {
+  for (const value of ['.'.repeat(50_000), 'a.'.repeat(50_000), `${'a.'.repeat(50_000)}com:8080`]) {
+    const started = performance.now();
+    websiteUrl(value);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 200, `${value.length} characters took ${elapsed.toFixed(1)} ms`);
+  }
+});

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
@@ -89,7 +89,7 @@ export function OptionPanel({
 }: OptionPanelProps) {
   const t = useTranslations('play.menu');
   const tCommon = useTranslations('play.common');
-  const website = websiteUrl(unipackInfo.website);
+  const website = useMemo(() => websiteUrl(unipackInfo.website), [unipackInfo.website]);
   const [mounted, setMounted] = useState(false);
   const closing = !visible;
   if (visible && !mounted) setMounted(true);

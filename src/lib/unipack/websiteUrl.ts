@@ -6,7 +6,7 @@ export function websiteUrl(value: string | null): string | null {
   const text = value?.trim();
   if (!text) return null;
   // `host:port` without a scheme only when the host looks like one, so `tel:911` stays a scheme.
-  const hostWithPort = /^(?:localhost|[^/?#:]*\.[^/?#:]*):\d+(?:[/?#]|$)/i.test(text);
+  const hostWithPort = /^(?:localhost|[^/?#:.]*\.[^/?#:]*):\d+(?:[/?#]|$)/i.test(text);
   const scheme = hostWithPort ? undefined : /^([a-z][a-z\d+.-]*):/i.exec(text)?.[1];
   if (scheme && !/^https?$/i.test(scheme)) return null;
   const absolute = scheme ? text : `https://${text.replace(/^\/\//, '')}`;
