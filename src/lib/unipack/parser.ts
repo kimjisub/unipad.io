@@ -11,6 +11,7 @@ import {
 } from './types';
 import { LAUNCHPAD_ARGB } from './colors';
 import { LOGO_FUNCTION_KEY, ROUND_BUTTON_COUNT } from './MidiConnection';
+import { repairArchiveNameFlags } from './archiveNames';
 
 const ROUND_TOKENS = new Set(['*', 'mc']);
 const LOGO_TOKEN = 'l';
@@ -45,19 +46,22 @@ export async function parseUniPack(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  // A name the archive marks as UTF-8 is read as UTF-8 by JSZip itself; an unmarked name that is not
-  // valid UTF-8 comes from a Korean Windows archiver and is CP949. JSZip hands over a Uint8Array
-  // wherever typed arrays exist.
-  const zip = await JSZip.loadAsync(zipData, {
+  // Valid UTF-8 names keep their marks. Invalid ones, including incorrectly marked names from
+  // older Korean Windows archivers, reach the CP949 fallback. JSZip supplies a Uint8Array.
+  const zip = await JSZip.loadAsync(repairArchiveNameFlags(zipData), {
     decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
   });
+  // Keep original keys and bytes when different archive names share a normalized path.
+  for (const file of Object.values(zip.files)) {
+    if (file.name.replace(/\\/g, '/').endsWith('/')) file.dir = true;
+  }
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
 
   onPhase?.('Loading info...');
   const info = await parseInfo(zip, rootPrefix, errors);
-  if (!info) throw new Error('Invalid UniPack: missing info file');
+  if (!info) throw new Error(`Invalid UniPack: ${getFile(zip, rootPrefix, 'info') ? errors.join('; ') : 'missing info file'}`);
 
   onPhase?.('Loading sounds...');
   const { soundTable, soundFiles } = await parseKeySound(
@@ -111,33 +115,25 @@ export async function parseUniPack(
   };
 }
 
+/** Older Windows ZIP writers used backslashes for directory separators. */
+function archiveEntries(zip: JSZip): [string, JSZip.JSZipObject][] {
+  return Object.entries(zip.files).map(([path, file]) => [path.replace(/\\/g, '/'), file]);
+}
+
 function findRootPrefix(zip: JSZip): string {
-  const paths = Object.keys(zip.files);
-
-  for (const p of paths) {
-    const lower = p.toLowerCase();
-    if (lower === 'info' || lower.endsWith('/info')) {
-      const idx = p.lastIndexOf('/');
-      if (idx === -1) return '';
-      return p.substring(0, idx + 1);
-    }
+  const infos = archiveEntries(zip).filter(([path, file]) => !file.dir
+    && path.split('/').at(-1)?.toLowerCase() === 'info'
+    && !path.split('/').some(part => part.startsWith('.') || part === '__MACOSX'));
+  let prefix = '';
+  for (;;) {
+    // Prefer the pack at the current root to any backup nested inside it.
+    if (getFile(zip, prefix, 'info')) return prefix;
+    const children = new Set(infos.filter(([path]) => path.startsWith(prefix))
+      .map(([path]) => path.slice(prefix.length).split('/')[0]));
+    if (children.size > 1) throw new Error('Invalid UniPack: archive contains multiple packs');
+    if (!children.size) return prefix;
+    prefix += `${children.values().next().value}/`;
   }
-
-  const dirs = new Set<string>();
-  for (const p of paths) {
-    const firstSlash = p.indexOf('/');
-    if (firstSlash !== -1) {
-      dirs.add(p.substring(0, firstSlash + 1));
-    }
-  }
-  if (dirs.size === 1) {
-    const prefix = Array.from(dirs)[0];
-    if (zip.files[prefix + 'info'] || zip.files[prefix + 'Info']) {
-      return prefix;
-    }
-  }
-
-  return '';
 }
 
 function getFile(zip: JSZip, prefix: string, name: string): JSZip.JSZipObject | null {
@@ -151,7 +147,7 @@ function getFile(zip: JSZip, prefix: string, name: string): JSZip.JSZipObject | 
   }
   // case-insensitive fallback
   const target = (prefix + name).toLowerCase();
-  for (const [path, file] of Object.entries(zip.files)) {
+  for (const [path, file] of archiveEntries(zip)) {
     if (path.toLowerCase() === target && !file.dir) return file;
   }
   return null;
@@ -168,7 +164,7 @@ function getDir(zip: JSZip, prefix: string, name: string): string | null {
   }
   // case-insensitive fallback
   const target = (prefix + name + '/').toLowerCase();
-  for (const path of Object.keys(zip.files)) {
+  for (const [path] of archiveEntries(zip)) {
     if (path.toLowerCase().startsWith(target)) {
       const dirEnd = path.indexOf('/', prefix.length);
       if (dirEnd !== -1) return path.substring(0, dirEnd + 1);
@@ -198,6 +194,7 @@ async function parseInfo(
     squareButton: true,
     website: null,
   };
+  const keys = new Set<string>();
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -205,6 +202,7 @@ async function parseInfo(
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx === -1) continue;
     const key = trimmed.substring(0, eqIdx).trim();
+    keys.add(key);
     const value = trimmed.substring(eqIdx + 1).trim();
     switch (key) {
       case 'title': info.title = value; break;
@@ -222,6 +220,7 @@ async function parseInfo(
   if (!info.buttonX) errors.push('info: buttonX was missing');
   if (!info.buttonY) errors.push('info: buttonY was missing');
   if (!info.chain) errors.push('info: chain was missing');
+  if (!keys.has('buttonX') || !keys.has('buttonY')) return null;
   // NaN passes every `<`/`>` comparison, so a chain of "abc" used to reach the table allocation.
   if (!Number.isInteger(info.chain) || info.chain < 1 || info.chain > 24) {
     errors.push('info: chain out of range');
@@ -273,6 +272,7 @@ async function parseKeySoundFromFile(
   errors: string[],
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const text = await readText(file);
+  const findSoundFile = soundFileFinder(zip, prefix);
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -317,7 +317,7 @@ async function parseKeySoundFromFile(
     }
 
     // Find sound file in zip
-    const soundPath = findSoundFile(zip, prefix, soundURL);
+    const soundPath = findSoundFile(soundURL);
     if (!soundPath) {
       errors.push(`keySound: [${trimmed}] sound was not found`);
       continue;
@@ -394,24 +394,34 @@ function strictHex(token: string | undefined): number {
   return parseInt(token, 16);
 }
 
-function findSoundFile(zip: JSZip, prefix: string, soundURL: string): string | null {
-  const candidates = [
-    `${prefix}sounds/${soundURL}`,
-    `${prefix}Sounds/${soundURL}`,
-    `${prefix}sounds/${soundURL.toLowerCase()}`,
-  ];
-  for (const c of candidates) {
-    if (zip.files[c] && !zip.files[c].dir) return c;
+function soundFileFinder(zip: JSZip, prefix: string): (name: string) => string | null {
+  const exact = new Map<string, string>();
+  const canonical = new Map<string, string>();
+  const folded = new Map<string, string>();
+  // Build once per pack. Fallbacks retain the first full path in UTF-16 code-unit order.
+  for (const path of Object.keys(zip.files).sort()) {
+    const normalizedPath = path.replace(/\\/g, '/');
+    if (zip.files[path].dir || !normalizedPath.startsWith(prefix)) continue;
+    const relative = normalizedPath.slice(prefix.length);
+    const slash = relative.indexOf('/');
+    if (slash < 0 || relative.slice(0, slash).toLowerCase() !== 'sounds') continue;
+    const name = relative.slice(slash + 1);
+    const nfc = name.normalize('NFC');
+    if (!exact.has(name)) exact.set(name, path);
+    if (!canonical.has(nfc)) canonical.set(nfc, path);
+    if (!folded.has(nfc.toLowerCase())) folded.set(nfc.toLowerCase(), path);
   }
-  // Case-insensitive match of the whole candidate path. The old `endsWith` fallback also matched
-  // "a.wav" against "sounds/beta.wav" and any nested folder, so a pack that played here had
-  // missing or wrong sounds on Android.
-  const wanted = candidates.map((c) => c.toLowerCase());
-  for (const [path, file] of Object.entries(zip.files)) {
-    if (file.dir) continue;
-    if (wanted.includes(path.toLowerCase())) return path;
-  }
-  return null;
+  return (name) => {
+    const parts: string[] = [];
+    for (const part of name.replace(/\\/g, '/').split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') { if (!parts.length) return null; parts.pop(); }
+      else parts.push(part);
+    }
+    const normalized = parts.join('/');
+    const nfc = normalized.normalize('NFC');
+    return exact.get(normalized) ?? canonical.get(nfc) ?? folded.get(nfc.toLowerCase()) ?? null;
+  };
 }
 
 async function parseKeyLed(
@@ -429,7 +439,7 @@ async function parseKeyLed(
     ),
   );
 
-  const ledFiles = Object.entries(zip.files)
+  const ledFiles = archiveEntries(zip)
     // Direct children only. Compare NFC names in lower-case UTF-16 order so composed and
     // decomposed spellings give the same queue; keep the original paths for reading the files.
     .filter(([path, file]) => {
@@ -494,6 +504,10 @@ async function parseKeyLed(
           let colorTokens: string[];
 
           if (ROUND_TOKENS.has(xToken)) {
+            if (split.length !== 4 && split.length !== 5) {
+              errors.push(`keyLed: [${fileName}].[${trimmed}] format is incorrect`);
+              continue;
+            }
             ledX = -1;
             const index = roundLedIndex(split[2]);
             if (index === null) continue;

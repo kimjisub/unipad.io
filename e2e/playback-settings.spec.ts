@@ -85,28 +85,30 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await playMode(page, 'Step').click();
     await expectFeedback(page, !leds, saved);
     await playMode(page, 'Step').click();
-    await expectFeedback(page, saved === null ? !leds : saved === 'true', saved);
+    await expectFeedback(page, !leds, saved);
     await info.attach('exit-screen', { body: await page.screenshot(), contentType: 'image/png' });
   });
-  test(`direct feedback choice survives pause restart exit and reload: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
+  test(`direct feedback choice lasts until the mode ends and is not saved: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
     await openFeedbackModePack(page, leds, saved);
     await playMode(page, 'Auto').click();
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Feedback', exact: true }).click();
-    await expectFeedback(page, leds, String(leds));
+    await expectFeedback(page, leds, saved);
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
-    await expectFeedback(page, leds, String(leds));
+    await expectFeedback(page, leds, saved);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
-    await expectFeedback(page, !leds, String(leds));
+    await expectFeedback(page, !leds, saved);
     await playMode(page, 'Auto').click();
-    await expectFeedback(page, leds, String(leds));
+    await expectFeedback(page, !leds, saved);
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await expectFeedback(page, leds, saved);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expectPads(page);
-    await expectFeedback(page, leds, String(leds));
+    await expectFeedback(page, !leds, saved);
     await info.attach('choice-screen', { body: await page.screenshot(), contentType: 'image/png' });
     await info.attach('choice-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
   });
-  test(`natural mode end restores feedback: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
+  test(`natural mode end returns feedback to the pack rule: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
     await openFeedbackModePack(page, leds, saved, true);
     // Observe the active song before advancing it: a short song can finish while a host
     // round trip is delayed, so checking a transient state on wall time misses the start.
@@ -119,7 +121,7 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await page.clock.runFor(1);
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
     await page.clock.resume();
-    await expectFeedback(page, saved === null ? !leds : saved === 'true', saved);
+    await expectFeedback(page, !leds, saved);
     await info.attach('natural-end-screen', { body: await page.screenshot(), contentType: 'image/png' });
     await info.attach('natural-end-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
   });
@@ -281,13 +283,13 @@ function restartProfileTest(traceStartup = false) {
 for (const keyLedExist of [true, false]) {
   for (const saved of [null, 'true', 'false']) {
     for (const lifecycle of ['direct', 'reload', 'reopen', 'changed'] as const) {
-      test(`saved feedback ${saved ?? 'default'} survives ${lifecycle} with pack LEDs ${keyLedExist}`, async ({ page }, info) => {
+      test(`saved feedback ${saved ?? 'default'} gives way to the pack rule after ${lifecycle} with pack LEDs ${keyLedExist}`, async ({ page }, info) => {
         await page.goto('/play', { waitUntil: 'domcontentloaded' });
         const input = page.locator('input[type=file][accept=".zip,.uni"]');
         await input.waitFor({ state: 'attached' });
         await playbackSettings(page, { feedbackLight: saved, watermark: 'false', volumeLevel: '2' });
         const url = await importPlaybackPack(page, keyLedExist);
-        const initial = saved === null ? !keyLedExist : saved === 'true';
+        const initial = !keyLedExist;
         await expectPlaybackSettings(page, initial, saved);
 
         if (lifecycle === 'direct') {
@@ -301,10 +303,10 @@ for (const keyLedExist of [true, false]) {
           await page.getByRole('option', { name: keyLedExist ? 'Browser Test Pack by UniPad Tests' : 'Multi Touch Test Pack by UniPad Tests', exact: true }).dblclick();
         } else {
           await page.getByRole('button', { name: 'Feedback', exact: true }).click();
-          await expect.poll(() => playbackSettings(page)).toEqual({ feedbackLight: String(!initial), watermark: 'false', volumeLevel: '2' });
+          await expectFeedback(page, !initial, saved);
           await page.reload({ waitUntil: 'domcontentloaded' });
         }
-        await expectPlaybackSettings(page, lifecycle === 'changed' ? !initial : initial, lifecycle === 'changed' ? String(!initial) : saved);
+        await expectPlaybackSettings(page, initial, saved);
         await info.attach(`${lifecycle}-screen`, { body: await page.screenshot(), contentType: 'image/png' });
         await info.attach(`${lifecycle}-storage`, { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
       });
@@ -316,7 +318,7 @@ for (const keyLedExist of [true, false]) {
   for (const enabled of [null, 'true', 'false']) {
     // Importing a pack and restoring an existing profile are separate operations.
     // Each keeps the normal test deadline, without creating an unused page/context.
-    restartTest.describe.serial(`browser restart preserves feedback ${enabled} with pack LEDs ${keyLedExist}`, () => {
+    restartTest.describe.serial(`browser restart keeps watermark and volume, and feedback ${enabled} follows pack LEDs ${keyLedExist}`, () => {
       let url: string;
       const prepare = async (context: BrowserContext, baseURL: string) => {
         await context.route('**/*', route => {
@@ -342,16 +344,16 @@ for (const keyLedExist of [true, false]) {
         await current.page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
         await playbackSettings(current.page, { feedbackLight: enabled, watermark: 'false', volumeLevel: '2' });
         url = await importPlaybackPack(current.page, keyLedExist);
-        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await expectPlaybackSettings(current.page, !keyLedExist, enabled);
         await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
         await current.page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
-        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await expectPlaybackSettings(current.page, !keyLedExist, enabled);
         await info.attach('before-restart-storage', { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
         expect(current.errors).toEqual([]);
       });
       profileTest('restores the profile after the browser process exits', async ({ current }, info) => {
         await current.page.goto(url, { waitUntil: 'domcontentloaded' });
-        await expectPlaybackSettings(current.page, enabled === null ? !keyLedExist : enabled === 'true', enabled);
+        await expectPlaybackSettings(current.page, !keyLedExist, enabled);
         await info.attach(`restart-${enabled}-screen`, { body: await current.page.screenshot(), contentType: 'image/png' });
         await info.attach(`restart-${enabled}-storage`, { body: JSON.stringify(await playbackSettings(current.page)), contentType: 'application/json' });
         expect(current.errors).toEqual([]);

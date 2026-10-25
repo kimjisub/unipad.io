@@ -87,7 +87,7 @@ describe('parseUniPack', () => {
           keySound: KEYSOUND_1_1_1,
           'sounds/a.wav': SILENT_WAV,
         })),
-        { message: 'Invalid UniPack: missing info file' },
+        /Invalid UniPack: info: chain was missing; info: chain out of range/,
       );
     });
 
