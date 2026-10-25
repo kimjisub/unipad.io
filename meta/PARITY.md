@@ -155,6 +155,16 @@ platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **RUN-P001, RUN-P002: web playback keeps the authored trailing wait.**
+  [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178), merged as
+  `d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`, resolves the two web observations without
+  changing inputs, fingerprints, scenarios or expected results. Only their web failure pins were
+  removed. The reviewed 382-case corpus records 361 web passes and 21 remaining pinned failures;
+  its SHA256 is `9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`, including
+  the newer RUN-G616 iOS failure observation. Both native references still select historical
+  214-case snapshots: their two warnings remain, and strict current-copy verification is incomplete.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
+  for the reviewed commit, observation counts and verification limits.
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.
