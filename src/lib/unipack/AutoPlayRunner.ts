@@ -85,7 +85,8 @@ export class AutoPlayRunner {
 
   // Step mode state
   private stepPendingPads = new Set<number>();
-  private pressedKeysQueue: number[] = [];
+  private skippedStepLines = new Set<number>();
+  private pressedKeysQueue: { key: number; chain: number }[] = [];
   private stepScanned = false;
   private stepConsumedInput = false;
   private stepStartProgress = 0;
@@ -133,6 +134,7 @@ export class AutoPlayRunner {
     if (this.active) return;
     this.active = true;
     this.setProgress(0);
+    this.skippedStepLines.clear();
     this.listener.onStart();
 
     const autoPlay = this.unipack.autoPlay;
@@ -256,6 +258,10 @@ export class AutoPlayRunner {
             this.delayAccum <= currTime - this.startTime &&
             this.progress < autoPlay.elements.length
           ) {
+            if (this.skippedStepLines.delete(this.progress)) {
+              this.setProgress(this.progress + 1);
+              continue;
+            }
             const element = autoPlay.elements[this.progress];
             switch (element.type) {
               case 'on':
@@ -320,6 +326,9 @@ export class AutoPlayRunner {
           }
 
           if (needsScan) {
+            // Lines skipped for an earlier switch to autoplay belong to that pass; practice guides
+            // every pad from here again.
+            this.skippedStepLines.clear();
             this.listener.onRemoveGuide();
             this.stepScanOrigin ??= this.progress;
             this.stepStartProgress = this.progress;
@@ -355,6 +364,7 @@ export class AutoPlayRunner {
       this.rafId = null;
     }
     this.activeGuides.clear();
+    this.skippedStepLines.clear();
     this.resetStepState();
   }
 
@@ -387,13 +397,13 @@ export class AutoPlayRunner {
     }
   }
 
-  /** Song time of the first note at or after the current position: the lines before it only release
-   *  pads, change chains or wait. */
+  /** Song time of the first note at or after the current position that autoplay will sound: the lines
+   *  before it only release pads, change chains, wait or belong to pads pressed in step practice. */
   private nextNoteTimeMs(autoPlay: AutoPlay): number {
     let timeMs = this.delayAccum;
     for (let i = this.progress; i < autoPlay.elements.length; i++) {
       const element = autoPlay.elements[i];
-      if (element.type === 'on') break;
+      if (element.type === 'on' && !this.skippedStepLines.has(i)) break;
       if (element.type === 'delay') timeMs += element.delay;
     }
     return timeMs;
@@ -479,6 +489,7 @@ export class AutoPlayRunner {
   progressOffset(offset: number): void {
     const autoPlay = this.unipack.autoPlay;
     const max = autoPlay ? autoPlay.elements.length : 0;
+    this.skippedStepLines.clear();
     const target = this.progress + offset;
     this.setProgress(Math.max(0, Math.min(max, target)));
     this.resyncToProgress();
@@ -511,11 +522,30 @@ export class AutoPlayRunner {
     return false;
   }
 
-  /** Restore the last scan's delays if it reached a chain without consuming a pad,
-   *  even when earlier step groups were consumed. Those pads keep their advanced position. */
+  /** Autoplay owes the unpressed members of the last shown group. Earlier completed
+   *  groups and pressed members stay consumed. Guide playback keeps its existing position;
+   *  a chain-only scan restores its delays without replaying earlier groups. */
   leaveStepPractice(): boolean {
+    this.drainPressedKeys();
     const scannedPads = this.hasScannedStepPads;
-    if (this.stepScanOrigin !== null) {
+    const skippedLines = new Set<number>();
+    let pendingStart: number | null = null;
+    const elements = this.unipack.autoPlay?.elements;
+    if (!this.practiceGuide && this.stepPendingPads.size > 0 && elements) {
+      for (let i = this.stepStartProgress; i < this.progress; i++) {
+        const element = elements[i];
+        if (element.type !== 'on' && element.type !== 'off') continue;
+        if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
+          if (element.type === 'on') pendingStart ??= i;
+        } else if (pendingStart !== null) {
+          skippedLines.add(i);
+        }
+      }
+    }
+    if (pendingStart !== null) {
+      this.skippedStepLines = skippedLines;
+      this.setProgress(pendingStart);
+    } else if (this.stepScanOrigin !== null) {
       const lastScanHasPads = this.stepRangeHasPads(this.stepStartProgress);
       if (!scannedPads) this.setProgress(this.stepScanOrigin);
       else if (!lastScanHasPads) this.setProgress(this.stepStartProgress);
@@ -541,14 +571,14 @@ export class AutoPlayRunner {
   }
 
   stepPadPressed(x: number, y: number): void {
-    this.pressedKeysQueue.push(this.guideKey(x, y));
+    this.pressedKeysQueue.push({ key: this.guideKey(x, y), chain: this.chainValue() });
   }
 
   private drainPressedKeys(): void {
     const keys = this.pressedKeysQueue.splice(0);
     const removedKeys: number[] = [];
-    for (const key of keys) {
-      if (this.stepPendingPads.delete(key)) {
+    for (const { key, chain } of keys) {
+      if (chain === this.stepChainValue && this.stepPendingPads.delete(key)) {
         removedKeys.push(key);
       }
     }

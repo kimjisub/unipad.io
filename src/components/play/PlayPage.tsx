@@ -280,13 +280,13 @@ export function PlayPage() {
     };
   }, [downloadingStoreCode]);
 
-  // 로딩 완료 후 에러가 있으면 다이얼로그 표시
+  // A refused pack never becomes loaded, but its critical error still needs a visible reason.
   useEffect(() => {
-    if (state.loaded && !prevLoadedRef.current && state.errors.length > 0) {
+    if ((state.criticalError || (state.loaded && !prevLoadedRef.current)) && state.errors.length > 0) {
       setErrorDialogShown(true);
     }
     prevLoadedRef.current = state.loaded;
-  }, [state.loaded, state.errors]);
+  }, [state.loaded, state.criticalError, state.errors]);
 
   // A new pack supplies defaults. Read preferences again before saving any of them.
   const [restoredSettings, setRestoredSettings] = useState<{
@@ -989,6 +989,18 @@ export function PlayPage() {
     />
   );
 
+  // The same error dialog is needed when an import fails before the player is mounted.
+  const errorDialog = errorDialogShown && state.errors.length > 0 && (
+    <PackErrorDialog
+      errors={state.errors}
+      critical={state.criticalError}
+      onClose={() => {
+        setErrorDialogShown(false);
+        if (state.criticalError) handleQuit();
+      }}
+    />
+  );
+
   // Loading spinner
   if (restoringFromStorage) {
     return (
@@ -1001,8 +1013,6 @@ export function PlayPage() {
 
   // Main Screen (UniPack list)
   if (!state.loaded && !state.loading) {
-    // A pack that could not open returns here; its reason stays until Quit clears it.
-    const loadFailed = state.criticalError && state.errors.length > 0;
     return (
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1014,7 +1024,7 @@ export function PlayPage() {
           savedThemes={savedThemes}
           activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
-          keyboardDisabled={storeOpen || loadFailed}
+          keyboardDisabled={storeOpen || dialogOpen}
           onPlay={handlePlay}
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
@@ -1054,9 +1064,8 @@ export function PlayPage() {
           onYoutube={handleStoreYoutube}
         />
 
-        {loadFailed && <PackErrorDialog errors={state.errors} critical onClose={handleQuit} />}
-
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
+        {errorDialog}
 
         <AnimatePresence>
           {toast && (
@@ -1641,16 +1650,7 @@ export function PlayPage() {
         </div>
       )}
 
-      {errorDialogShown && state.errors.length > 0 && (
-        <PackErrorDialog
-          errors={state.errors}
-          critical={state.criticalError}
-          onClose={() => {
-            setErrorDialogShown(false);
-            if (state.criticalError) handleQuit();
-          }}
-        />
-      )}
+      {errorDialog}
 
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
