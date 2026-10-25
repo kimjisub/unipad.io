@@ -7,6 +7,10 @@ import { lit, pad, point, slideAcrossPads, touch, touchScreens, type Contact } f
 // covered by the CR tests in chain-release.spec.ts, which run on the same two screens.
 // Every pad of the pack loops until released, so a held finger is a started-not-stopped sound.
 
+// Playwright exposes native multi-contact injection through Chromium CDP only.
+// Keep these cases in every engine's report without replacing native input with DOM events.
+test.skip(({ browserName }) => browserName !== 'chromium',
+  'Native multi-contact touch injection requires Chromium CDP; WebKit and Firefox do not expose it in Playwright.');
 test.use({ hasTouch: true });
 
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);

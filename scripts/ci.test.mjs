@@ -97,3 +97,17 @@ test('lint skips the browser failure evidence that a local browser test run leav
     assert.ok(await eslint.isPathIgnored(`${folder}trace/assets/index.js`), `pnpm lint must skip ${folder}`);
   }
 });
+
+
+test('Windows and portable engines retain multi-touch and layout coverage', async () => {
+  const files = ['play.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'home.spec.ts'];
+  const windows = read('.github/workflows/playback-windows.yml');
+  const command = windows.split('\n').find(line => line.includes('run: pnpm exec playwright test'));
+  for (const file of files) assert.ok(command.includes(`e2e/${file}`), `Windows must run ${file}`);
+  const { default: config, windowsPlaybackTests } = await import('../playwright.config.ts');
+  assert.deepEqual(windowsPlaybackTests, files);
+  for (const engine of ['webkit', 'firefox']) {
+    const project = config.projects.find(project => project.name === engine);
+    for (const file of files) assert.ok(project.testMatch.includes(file), `${engine} must report ${file}`);
+  }
+});
