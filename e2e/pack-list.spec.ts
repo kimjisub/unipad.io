@@ -330,6 +330,14 @@ async function openLongList(page: Page, square: boolean) {
   await expect(list(page).getByRole('option')).toHaveCount(13);
 }
 
+// A resized page lays out at once but reaches the screen later; WebKit can drop a wheel sent before
+// the new layout is drawn. Wait until the page has the new size, then for two drawn frames.
+async function resize(page: Page, viewport: { width: number; height: number }) {
+  await page.setViewportSize(viewport);
+  await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
   const scroll = await target.evaluate(element => {
@@ -377,8 +385,9 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   ).length)).toBe(0);
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
-  await page.setViewportSize(viewport);
+  // The list is back before the resize, so the drawn frames below include its new layout.
   await expect(list(page).getByRole('option')).toHaveCount(13);
+  await resize(page, viewport);
 }
 
 for (const square of [true, false]) {
@@ -387,7 +396,7 @@ for (const square of [true, false]) {
       test.setTimeout(60_000);
       await openLongList(page, square);
       const viewport = { width, height };
-      await page.setViewportSize(viewport);
+      await resize(page, viewport);
       await info.attach('list-before-scroll', { body: await page.screenshot(), contentType: 'image/png' });
       const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
