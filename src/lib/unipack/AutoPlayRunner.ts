@@ -65,7 +65,8 @@ export class AutoPlayRunner {
   private rafId: number | null = null;
   active = false;
 
-  private readonly guideTimeline: GuideEvent[];
+  private guideTimelineSource: AutoPlay | null | undefined;
+  private guideTimelineCache: GuideEvent[] = [];
   private guideIndex = 0;
   private waitingForChain = -1;
   // Step scans have no song clock to freeze; only timed guides start a wait clock.
@@ -107,7 +108,16 @@ export class AutoPlayRunner {
     this.chainValue = chainValue;
     this.soundPushToNum = soundPushToNum;
     this.ledPushToNum = ledPushToNum;
-    this.guideTimeline = unipack.autoPlay ? this.buildGuideTimeline(unipack.autoPlay) : [];
+  }
+
+  /** Timed guides of the current script. Auto-mapping replaces the pack's script in place. */
+  private get guideTimeline(): GuideEvent[] {
+    const autoPlay = this.unipack.autoPlay;
+    if (autoPlay !== this.guideTimelineSource) {
+      this.guideTimelineSource = autoPlay;
+      this.guideTimelineCache = autoPlay ? this.buildGuideTimeline(autoPlay) : [];
+    }
+    return this.guideTimelineCache;
   }
 
   private guideKey(x: number, y: number): number {
