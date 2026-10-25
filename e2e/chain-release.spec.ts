@@ -60,7 +60,7 @@ for (const screen of touchScreens) {
       expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
     });
 
-    for (const releaseFirst of ['original', 'later']) test(`same-pad contacts across chains wait for the last release (${releaseFirst} first)`, async ({ page, context }, info) => {
+    for (const releaseFirst of ['original', 'later']) test(`same-pad contacts across chains release only their own sound (${releaseFirst} first)`, async ({ page, context }, info) => {
       await load(page);
       const session = await context.newCDPSession(page);
       const a = await point(page, '0,0', 1);
@@ -70,12 +70,12 @@ for (const screen of touchScreens) {
       await touch(session, 'touchStart', [a, b]);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
       await touch(session, 'touchEnd', [releaseFirst === 'original' ? a : b]);
-      // A pad remains held until its last player contact ends, including contacts on an earlier chain.
-      expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([]);
+      // Each contact releases its own chain's sound; feedback stays until the last contact ends.
+      expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([releaseFirst === 'original' ? 1 : 2]);
       await expect(pressed(page, '0,0')).toBeVisible();
       await evidence(page, info, 'one-contact-still-held');
       await touch(session, 'touchEnd', []);
-      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual(releaseFirst === 'original' ? [1, 2] : [2, 1]);
       await expect(pressed(page, '0,0')).toHaveCount(0);
       await evidence(page, info, 'final-contact-released');
     });
