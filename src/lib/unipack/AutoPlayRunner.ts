@@ -65,7 +65,8 @@ export class AutoPlayRunner {
   private rafId: number | null = null;
   active = false;
 
-  private guideTimeline: GuideEvent[] = [];
+  private guideTimelineSource: AutoPlay | null | undefined;
+  private guideTimelineCache: GuideEvent[] = [];
   private guideIndex = 0;
   private waitingForChain = -1;
   // Step scans have no song clock to freeze; only timed guides start a wait clock.
@@ -109,6 +110,16 @@ export class AutoPlayRunner {
     this.ledPushToNum = ledPushToNum;
   }
 
+  /** Timed guides of the current script. Auto-mapping replaces the pack's script in place. */
+  private get guideTimeline(): GuideEvent[] {
+    const autoPlay = this.unipack.autoPlay;
+    if (autoPlay !== this.guideTimelineSource) {
+      this.guideTimelineSource = autoPlay;
+      this.guideTimelineCache = autoPlay ? this.buildGuideTimeline(autoPlay) : [];
+    }
+    return this.guideTimelineCache;
+  }
+
   private guideKey(x: number, y: number): number {
     return x * 256 + y;
   }
@@ -144,7 +155,6 @@ export class AutoPlayRunner {
     }
 
     if (this.practiceGuide) {
-      this.guideTimeline = this.buildGuideTimeline(autoPlay);
       this.guideIndex = 0;
       this.clearChainWait();
       this.activeGuides.clear();
@@ -180,13 +190,10 @@ export class AutoPlayRunner {
       // Detect practice mode toggle
       if (this.practiceGuide !== prevPracticeGuide) {
         if (this.practiceGuide) {
-          this.restartGuideAtProgress(autoPlay);
+          this.clearChainWait();
+          this.restartGuideAtProgress();
         } else {
-          this.activeGuides.forEach((_val, key) => {
-            this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
-          });
-          this.activeGuides.clear();
-          this.guideTimeline = [];
+          this.turnOffActiveGuides();
           this.clearChainWait(currTime);
           this.listener.onRemoveGuide();
         }
@@ -210,10 +217,7 @@ export class AutoPlayRunner {
                 if (event.chain !== this.chainValue()) {
                   this.waitingForChain = event.chain;
                   this.waitStartTime = currTime;
-                  this.activeGuides.forEach((_val, key) => {
-                    this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
-                  });
-                  this.activeGuides.clear();
+                  this.turnOffActiveGuides();
                   this.listener.onRemoveGuide();
                   this.listener.onGuideChainOn(event.chain);
                   break;
@@ -371,7 +375,7 @@ export class AutoPlayRunner {
   /** Remove old guide output while preserving the next unprocessed command and practice group. */
   clearGuideOutput(): void {
     this.activeGuides.clear();
-    this.guideIndex = this.unipack.autoPlay?.elements.slice(0, this.progress).filter(e => e.type === 'on').length ?? 0;
+    this.guideIndex = this.guideIndexAtProgress();
     this.listener.onRemoveGuide();
   }
 
@@ -409,7 +413,8 @@ export class AutoPlayRunner {
     return timeMs;
   }
 
-  /** Moves the song and every wall-clock time derived from it later, shown guides included. */
+  /** Moves the song and every wall-clock time derived from it later, shown guides included. A pending
+   *  play or pause redraw clears the screen and draws every shown guide at its moved time itself. */
   private shiftClock(ms: number): void {
     this.startTime += ms;
     if (this.waitStartTime !== null) this.waitStartTime += ms;
@@ -417,7 +422,7 @@ export class AutoPlayRunner {
     this.activeGuides.forEach((targetMs, key) => {
       const target = targetMs + ms;
       this.activeGuides.set(key, target);
-      if (this.playmode && this.practiceGuide) {
+      if (this.playmode && this.practiceGuide && !this.beforeStartPlaying) {
         this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, target);
       }
     });
@@ -471,19 +476,26 @@ export class AutoPlayRunner {
     this.delayAccum = songTimeMs;
     this.clockPending = 'nextLine';
 
-    if (this.practiceGuide) this.restartGuideAtProgress(autoPlay);
+    if (this.practiceGuide) this.restartGuideAtProgress();
   }
 
-  private restartGuideAtProgress(autoPlay: AutoPlay): void {
-    this.guideTimeline = this.buildGuideTimeline(autoPlay);
+  /** Timed guides continue from the first note at or after the current position. */
+  private guideIndexAtProgress(): number {
     const idx = this.guideTimeline.findIndex((e) => e.index >= this.progress);
-    this.guideIndex = idx < 0 ? this.guideTimeline.length : idx;
-    this.clearChainWait();
+    return idx < 0 ? this.guideTimeline.length : idx;
+  }
+
+  private restartGuideAtProgress(): void {
+    this.guideIndex = this.guideIndexAtProgress();
+    this.turnOffActiveGuides();
+    this.listener.onRemoveGuide();
+  }
+
+  private turnOffActiveGuides(): void {
     this.activeGuides.forEach((_val, key) => {
       this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
     });
     this.activeGuides.clear();
-    this.listener.onRemoveGuide();
   }
 
   progressOffset(offset: number): void {
@@ -555,11 +567,17 @@ export class AutoPlayRunner {
     // need a fresh guide and clock at their restored position.
     const preserveTimedChain = this.practiceGuide && this.stepScanOrigin === null;
     this.stepMode = false;
-    this.resetStepState(preserveTimedChain);
+    this.clearStepScan();
+    if (!preserveTimedChain) this.clearChainWait();
     return scannedPads;
   }
 
-  resetStepState(preserveTimedChain = false): void {
+  resetStepState(): void {
+    this.clearStepScan();
+    this.clearChainWait();
+  }
+
+  private clearStepScan(): void {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();
     this.stepScanned = false;
@@ -567,7 +585,6 @@ export class AutoPlayRunner {
     this.stepStartProgress = 0;
     this.stepScanOrigin = null;
     this.stepChainValue = -1;
-    if (!preserveTimedChain) this.clearChainWait();
   }
 
   stepPadPressed(x: number, y: number): void {
