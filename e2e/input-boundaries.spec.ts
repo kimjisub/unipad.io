@@ -44,6 +44,13 @@ for (const square of [true, false]) {
     await stopped(page, []);
     const [down] = (await events(page)).filter(event => event.type === 'pointerdown');
     expect(down).toMatchObject({ pointerType: 'mouse', trusted: true, target: '4,4', buttons: 1 });
+    // Chromium and Firefox take the capture the grid asked for only at the next pointer event, and
+    // forget it unsent when the grid is removed first: then neither got- nor lostpointercapture fires.
+    // A nudge inside the pad makes the capture current before quitting. WebKit sends it with buttons 0.
+    await page.mouse.move(position.x + 1, position.y);
+    await expect.poll(async () => (await events(page)).filter(event => event.type === 'gotpointercapture'), { timeout: stateTimeout })
+      .toEqual([expect.objectContaining({ type: 'gotpointercapture', pointerType: 'mouse', pointerId: down.pointerId, trusted: true, target: null })]);
+    await held(page, ['4,4'], ['4,4']);
 
     await page.keyboard.press('Escape');
     const quit = page.getByRole('button', { name: 'Quit', exact: true });
@@ -66,9 +73,9 @@ for (const square of [true, false]) {
     await stopped(page, record.starts.map(start => start.id));
     // Unmounting the captured pad also sends a document-targeted capture release.
     // Its buttons reflect when the browser delivers it: before or during mouse.up().
-    expect(await events(page)).toContainEqual(expect.objectContaining({
+    expect((await events(page)).filter(event => event.type === 'lostpointercapture')).toEqual([expect.objectContaining({
       type: 'lostpointercapture', pointerType: 'mouse', pointerId: down.pointerId, trusted: true, target: null,
-    }));
+    })]);
     expect((await events(page)).filter(event => event.type === 'pointerup')).toEqual([
       { type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null },
     ]);
