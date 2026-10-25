@@ -134,6 +134,7 @@ export class AutoPlayRunner {
     if (this.active) return;
     this.active = true;
     this.setProgress(0);
+    this.skippedStepLines.clear();
     this.listener.onStart();
 
     const autoPlay = this.unipack.autoPlay;
@@ -325,6 +326,9 @@ export class AutoPlayRunner {
           }
 
           if (needsScan) {
+            // Lines skipped for an earlier switch to autoplay belong to that pass; practice guides
+            // every pad from here again.
+            this.skippedStepLines.clear();
             this.listener.onRemoveGuide();
             this.stepScanOrigin ??= this.progress;
             this.stepStartProgress = this.progress;
@@ -393,13 +397,13 @@ export class AutoPlayRunner {
     }
   }
 
-  /** Song time of the first note at or after the current position: the lines before it only release
-   *  pads, change chains or wait. */
+  /** Song time of the first note at or after the current position that autoplay will sound: the lines
+   *  before it only release pads, change chains, wait or belong to pads pressed in step practice. */
   private nextNoteTimeMs(autoPlay: AutoPlay): number {
     let timeMs = this.delayAccum;
     for (let i = this.progress; i < autoPlay.elements.length; i++) {
       const element = autoPlay.elements[i];
-      if (element.type === 'on') break;
+      if (element.type === 'on' && !this.skippedStepLines.has(i)) break;
       if (element.type === 'delay') timeMs += element.delay;
     }
     return timeMs;
@@ -533,13 +537,13 @@ export class AutoPlayRunner {
         if (element.type !== 'on' && element.type !== 'off') continue;
         if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
           if (element.type === 'on') pendingStart ??= i;
-        } else {
+        } else if (pendingStart !== null) {
           skippedLines.add(i);
         }
       }
     }
     if (pendingStart !== null) {
-      this.skippedStepLines = new Set([...skippedLines].filter(i => i >= pendingStart));
+      this.skippedStepLines = skippedLines;
       this.setProgress(pendingStart);
     } else if (this.stepScanOrigin !== null) {
       const lastScanHasPads = this.stepRangeHasPads(this.stepStartProgress);

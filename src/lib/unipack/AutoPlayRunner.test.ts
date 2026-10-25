@@ -220,10 +220,11 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  const partialGroup = 'o 1 1\nf 1 1\nd 10\no 1 2\nf 1 2\nd 20\no 2 1\nf 2 1\nd 500\no 2 2\nf 2 2';
+
   test('partial step replay retains short written gaps and skips a pressed middle pad', async () => {
     const pack = await parseUniPack(await packZip({
-      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
-      autoPlay: 'o 1 1\nf 1 1\nd 10\no 1 2\nf 1 2\nd 20\no 2 1\nf 2 1\nd 500\no 2 2\nf 2 2',
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
     }));
     const notes: [number, number, number][] = [];
     const runner = new AutoPlayRunner(pack, {
@@ -241,6 +242,62 @@ describe('AutoPlayRunner', () => {
     clock.tick(1); assert.deepEqual(notes.at(-1), [1, 0, firstAt + 130]);
     clock.tick(499); assert.equal(notes.length, 2);
     clock.tick(1); assert.deepEqual(notes.at(-1), [1, 1, firstAt + 630]);
+    runner.stop();
+  });
+
+  test('returning to step practice right after a partial replay keeps every note for the next playthrough', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
+    }));
+    const notes: string[] = [];
+    const guides: [number, number][] = [];
+    let ended = 0;
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onEnd: () => { ended++; },
+      onPadTouchOn: (x, y) => { notes.push(`${x},${y}`); },
+      onGuidePadOn: (x, y) => { guides.push([x, y]); },
+      onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    runner.play(false); clock.tick(1); clock.tick(2);
+    // Back to step practice inside the 10 ms gap, before autoplay reaches the pressed pad's lines.
+    runner.pause(); runner.practiceGuide = true; runner.stepMode = true;
+    for (let i = 0; i < 40 && ended === 0; i++) {
+      clock.tick(5);
+      for (const [x, y] of guides.splice(0)) runner.stepPadPressed(x, y);
+    }
+    assert.equal(ended, 1);
+
+    notes.length = 0;
+    runner.practiceGuide = false; runner.stepMode = false; runner.playmode = true; runner.launch();
+    clock.tick(1); clock.tick(2000);
+    assert.deepEqual(notes, ['0,0', '0,1', '1,0', '1,1'], 'a pad pressed in an earlier playthrough sounds again');
+    runner.stop();
+  });
+
+  test('a late resume before a pressed pad keeps the next sounding note at its written time', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
+    }));
+    const notes: [number, number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y, at) => { notes.push([x, y, at]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    const firstAt = clock.now;
+    runner.play(false); clock.tick(1); clock.tick(2);
+    runner.pause(); clock.tick(100);
+    const resumedAt = clock.now;
+    runner.play(false); clock.tick(300);
+    while (notes.length < 3 && clock.scheduled) clock.tick(1);
+    // Song time froze 3 ms in; the pressed pad at 10 ms is skipped, so the late tick waits for (1,0)
+    // at 30 ms like a pack without that pad, which the late tick has already passed.
+    assert.deepEqual(notes, [[0, 0, firstAt], [1, 0, resumedAt + 300], [1, 1, resumedAt + 800]]);
     runner.stop();
   });
 
