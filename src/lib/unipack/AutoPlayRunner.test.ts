@@ -162,11 +162,11 @@ describe('AutoPlayRunner', () => {
         if (gap) clock.tick(gap);
         const resumedAt = clock.now;
         runner.play(false); clock.tick(1);
-        const firstAt = gap ? resumedAt + 1 : 2001;
+        const firstAt = gap ? resumedAt : 2000;
         if (!gap) clock.tick(firstAt - clock.now);
         assert.deepEqual(notes, [[0, firstAt]], 'the shown unpressed note plays immediately; an unshown note keeps its delay');
         if (!finalGroup) {
-          clock.tick(499); assert.equal(notes.length, 1);
+          clock.tick(firstAt + 499 - clock.now); assert.equal(notes.length, 1);
           clock.tick(1); assert.deepEqual(notes, [[0, firstAt], [1, firstAt + 500]]);
         } else assert.equal(runner.active, false, 'the last group sounds before ending');
         runner.stop();
@@ -233,11 +233,11 @@ describe('AutoPlayRunner', () => {
     }, () => 0, () => {}, () => {}, () => {});
     runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
     clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
-    runner.play(false); clock.tick(1);
     const firstAt = clock.now;
+    runner.play(false); clock.tick(1);
     assert.deepEqual(notes, [[0, 0, firstAt]]);
     clock.tick(5); runner.pause(); clock.tick(100); runner.play(false); clock.tick(0);
-    clock.tick(24); assert.equal(notes.length, 1);
+    clock.tick(firstAt + 129 - clock.now); assert.equal(notes.length, 1);
     clock.tick(1); assert.deepEqual(notes.at(-1), [1, 0, firstAt + 130]);
     clock.tick(499); assert.equal(notes.length, 2);
     clock.tick(1); assert.deepEqual(notes.at(-1), [1, 1, firstAt + 630]);
