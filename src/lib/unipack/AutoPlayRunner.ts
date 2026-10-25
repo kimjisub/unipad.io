@@ -87,6 +87,7 @@ export class AutoPlayRunner {
   private stepPendingPads = new Set<number>();
   private pressedKeysQueue: number[] = [];
   private stepScanned = false;
+  private stepConsumedInput = false;
   private stepStartProgress = 0;
   private stepScanOrigin: number | null = null;
   private stepChainValue = -1;
@@ -168,7 +169,10 @@ export class AutoPlayRunner {
         const restartMs = this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
         this.clockPending = null;
         const pastDueMs = currTime - this.startTime - restartMs;
-        if (pastDueMs > 0) this.shiftClock(pastDueMs);
+        // A normally scheduled first tick already belongs to the requested song clock.
+        // Only a late render restarts it; including the normal timer interval adds a millisecond
+        // to every trailing wait and disagrees with the written song duration.
+        if (pastDueMs > LOOP_INTERVAL_MS) this.shiftClock(pastDueMs);
       }
 
       // Detect practice mode toggle
@@ -247,6 +251,7 @@ export class AutoPlayRunner {
           }
 
           while (
+            this.suspendedAt === null &&
             this.waitingForChain < 0 &&
             this.delayAccum <= currTime - this.startTime &&
             this.progress < autoPlay.elements.length
@@ -327,7 +332,9 @@ export class AutoPlayRunner {
 
       const awaitsLastStep = this.stepMode && this.practiceGuide && !this.playmode &&
         (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
-      if (this.progress < autoPlay.elements.length || awaitsLastStep) {
+      const stepping = this.stepMode && this.practiceGuide && !this.playmode;
+      const awaitsFinalDelay = !(stepping && this.stepConsumedInput) && this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
+      if (this.suspendedAt !== null || this.progress < autoPlay.elements.length || awaitsLastStep || awaitsFinalDelay) {
         this.rafId = this.schedule(loop);
       } else {
         this.active = false;
@@ -349,6 +356,22 @@ export class AutoPlayRunner {
     }
     this.activeGuides.clear();
     this.resetStepState();
+  }
+
+  /** Remove old guide output while preserving the next unprocessed command and practice group. */
+  clearGuideOutput(): void {
+    this.activeGuides.clear();
+    this.guideIndex = this.unipack.autoPlay?.elements.slice(0, this.progress).filter(e => e.type === 'on').length ?? 0;
+    this.listener.onRemoveGuide();
+  }
+
+  restoreGuideOutput(): void {
+    if (this.waitingForChain >= 0) this.listener.onGuideChainOn(this.waitingForChain);
+    if (!this.stepMode) return;
+    for (const key of this.stepPendingPads) {
+      this.listener.onGuidePadOn(Math.floor(key / 256), key % 256, 0);
+      this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
+    }
   }
 
   /** Visibility is independent of playmode. Include samples rendered during native suspension
@@ -510,6 +533,7 @@ export class AutoPlayRunner {
     this.pressedKeysQueue.length = 0;
     this.stepPendingPads.clear();
     this.stepScanned = false;
+    this.stepConsumedInput = false;
     this.stepStartProgress = 0;
     this.stepScanOrigin = null;
     this.stepChainValue = -1;
@@ -528,6 +552,7 @@ export class AutoPlayRunner {
         removedKeys.push(key);
       }
     }
+    if (removedKeys.length > 0) this.stepConsumedInput = true;
     for (const key of removedKeys) {
       this.listener.onGuideLedUpdate(Math.floor(key / 256), key % 256, 0);
       this.listener.onGuidePadOff(Math.floor(key / 256), key % 256);

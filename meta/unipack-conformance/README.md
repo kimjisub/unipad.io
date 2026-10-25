@@ -553,8 +553,11 @@ revision changes the input fingerprint and preserves earlier held-input observat
 original hash.
 
 The first web observation of these 113 cases was 106 passes and seven failures (all five mapper cases
-and both trailing waits). The failures are pinned with status fail. An assertion process that verifies
-those pins does not make them compatibility passes. The first expected mapper queue indices for two
+and both trailing waits). The five mapper failures remain pinned with status fail. The two trailing-wait
+pins were retired on 2026-10-24 after the corrected web runner matched their unchanged expectations;
+see [RESULTS.md](RESULTS.md#trailing-wait-observations-after-the-web-runner-fix-2026-10-24).
+An assertion process that verifies a remaining pin does not make it a compatibility pass.
+The first expected mapper queue indices for two
 repeated presses were corrected from 0 to 1 to preserve the original parser indices; the first raw
 record is retained separately. Native behavior must be observed before corrections and already-equal
 behavior recorded as equal, without manufacturing a failure.

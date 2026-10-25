@@ -217,7 +217,7 @@ async function prepare(page: Page, holdSuspension = false) {
   });
 }
 
-test('a long sample, the next note and finite lights share the paused audio timeline', async ({ page }, info) => {
+test('interruption stops a long sample and old lights until the next explicit Play', async ({ page }, info) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   const hidden = await page.evaluate(() => window.audioTimeline.hidden!);
@@ -247,13 +247,17 @@ test('a long sample, the next note and finite lights share the paused audio time
     Object.defineProperty(document, 'hidden', { configurable: true, value: false });
     document.dispatchEvent(new Event('visibilitychange'));
   });
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => window.audioTimeline.starts.length)).toBe(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.outputRms())).toBe(0);
+  await info.attach('returned-before-play', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.getByTitle('Play', { exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.audioTimeline.starts.length), { timeout: stateTimeout }).toBe(2);
-  await expect.poll(() => page.evaluate(() => window.audioTimeline.lightTimes.length), { timeout: stateTimeout }).toBe(1);
+  expect(await page.evaluate(() => window.audioTimeline.lightTimes.length)).toBe(0);
   const resumed = await page.evaluate(() => ({ starts: window.audioTimeline.starts, lights: window.audioTimeline.lightTimes, events: window.audioTimeline.events, frames: window.audioTimeline.frames }));
   await info.attach('resumed-timeline', { body: JSON.stringify(resumed, null, 2), contentType: 'application/json' });
   await info.attach('returned-with-long-sample', { body: await page.screenshot(), contentType: 'image/png' });
-  expect(Math.abs(resumed.starts[1].soundTime - resumed.starts[0].soundTime - 1.5)).toBeLessThan(0.15);
-  expect(Math.abs(resumed.lights[0] - resumed.starts[0].soundTime - 1.5)).toBeLessThan(0.15);
+  expect(resumed.lights).toHaveLength(0); // Old finite animations were discarded, not resumed.
   expect(resumed.starts[1].wallTime - resumed.starts[0].wallTime).toBeGreaterThan(3400);
   expect(hidden.gain).toBe(0);
   const request = frozen.events.find(event => event.type === 'output-muted-return');
@@ -296,5 +300,7 @@ test('hidden output is silent before native suspension completes', async ({ page
     Object.defineProperty(document, 'hidden', { configurable: true, value: false });
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputRms()), { timeout: stateTimeout }).toBeGreaterThan(0.01);
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => window.browserProbe.audio.outputRms())).toBe(0);
+  expect(await page.evaluate(() => window.audioTimeline.starts.length)).toBe(1);
 });
