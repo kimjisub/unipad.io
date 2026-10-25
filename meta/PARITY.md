@@ -154,18 +154,22 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
   [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
   and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
 
-- **RUN-G616: iOS can change chain after autoPlay is turned off.** The retained
-  partial run records a real delayed sound-wormhole callback after the stop.
-  Its unchanged expected final checkpoint is empty; the observation is pinned
-  as a failure. RUN-G613 from the same run is excluded from app playback pins:
-  the harness writes a stored negative loop value even though the engine schedules
-  one playback. See the [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md)
-  for provenance, source references and the checks still needed on iOS.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
+
+- **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
+  [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
+  mode-off path. A new asserting observation at application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`
+  with separately retained executor changes matches the unchanged expected final checkpoint `[]`.
+  Only the iOS pin is retired, producing the 382-case corpus `2223116e3a1612fcebed1d6c03e5075b3f0dbd1cd4bcffa12ff81b3e86c93d50`.
+  The original partial failure and the newer full run keep their own hashes and statuses. The full
+  run still failed (raw 374 pass, 3 fail, 5 unverified, exit 65), and is not a run on this regenerated
+  corpus. RUN-G613 remains an unpinned repeat-count observation error. See the
+  [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25)
+  and [result limits](unipack-conformance/RESULTS.md#ios-delayed-chain-callback-corrected-2026-10-25).
 
 - **RUN-G617, RUN-G618: the web play hook releases the later input's sound and lights immediately.**
   The play hook preserves each input identity and handles each release while keeping the press

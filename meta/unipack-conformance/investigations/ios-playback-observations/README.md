@@ -55,8 +55,8 @@ chain observer records the real `ChainObserver` callbacks. The
 stops the runner but does not cancel pending sound wormholes. The
 [delayed engine task](https://github.com/kimjisub/unipad-ios/blob/e8ac34d11373b3ed071535e365ddc382c1929496/unipad/Services/Audio/SoundEngine.swift#L721-L738)
 can consequently call `chain.setValue` afterward. This is a real callback
-difference, and only this case receives an iOS failure pin. It still counts
-as a compatibility failure. The pin must be retired after the app is fixed
+difference, and only this case received an iOS failure pin. That original observation remains
+a compatibility failure. The pin must be retired after the app is fixed
 and a new run demonstrates the unchanged expected checkpoints.
 
 ## Existing test coverage and limits
@@ -70,6 +70,46 @@ These existing tests do not establish a pass for either disputed observation.
 No simulator, audio rendering or iOS test was rerun for this investigation.
 
 The tooling regression verifies the original file hash and fingerprints,
-excludes RUN-G613 from playback pins, retains RUN-G616 as a failure and rejects
-the historical partial run as current-corpus evidence. It also checks that a
-result equal to the expectation cannot count as a pass while a stale pin remains.
+excludes RUN-G613 from playback pins, retains the old RUN-G616 actual as a failure and rejects
+the historical partial run as current-corpus evidence. The corrected-observation check below requires the obsolete pin to be absent before
+counting its matching actual as a pass.
+
+## Corrected callback observation (2026-10-25)
+
+[unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217), merged as
+`c87cb492297d8a3e107c4890dfcb2334a993bec1`, adds `soundEngine?.cancelPendingWormholes()` to the
+[real mode-off branch](https://github.com/kimjisub/unipad-ios/blob/2827087ecbf1449ab8d5c55df22cd09610cc7e27/unipad/ViewModels/PlayViewModel.swift#L882-L896).
+The new run uses application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`, plus
+executor changes retained separately with the run. That base alone does not identify the complete
+executed test source. The retained executor patch SHA256 is
+`e2f6b08770f6be7819cbfcd933440079f54c792f0166a067c3fd824406ce24d1`; its manifest and
+source files were checked byte for byte. The executed `ConformanceHarness.swift` has SHA256
+`f751b89cf3b7dec67b6fa612904b5044df3029be30cf7acd311ed292dda8b9f8`.
+
+The adapter still selects a `PlayViewModel` for `screenInputs` and `autoplayOff`, installs its real
+chain observer, attaches the real `SoundEngine`, and calls `switchPlayMode(.none)` through the
+default `turnOffAutoPlay` dependency. Its checkpoint drains real callback events after the same
+20 ms / stop / 150 ms scenario. The added product-observation dispatch returns nil for RUN-G616,
+which has no operation fixture or observation override; it continues through the runner adapter.
+The patch adds observation support for other cases and autoPlay end-state steps, without replacing
+this case's stop, sound, chain or checkpoint paths. The test entry uses default dependencies.
+Thus the empty final checkpoint follows the app cancellation change, rather than a substituted
+expected result. Input files, scenario, fingerprint and expected result match the earlier corpus.
+
+The retained [`fixed-ios.json`](fixed-ios.json), SHA256
+`ef20299f39072a0cc1f7e44994941203ed43bc74345618779316639c9019ee30`, was generated at
+`2026-10-25T08:43:50Z` on iPhone 17 Pro / iOS 27.0 with assertions checked and corpus source bundle.
+Its corpus SHA256 is `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`.
+The raw statuses total 374 pass, 3 fail and 5 unverified. The enclosing xcodebuild test-without-building
+run exited 65 after 135.52 seconds; this is a failed full run. RUN-G616 alone records the unchanged
+expected checkpoints, with detail `a pinned difference no longer occurs; update divergences.json`.
+The report correctly refuses to count that as a pass while the old pin remains.
+
+Only RUN-G616's obsolete iOS pin is removed. The tooling regression fails before removal and passes
+afterward, checks both immutable observation hashes, keeps the old callback actual a failure and
+checks the new actual against the unchanged expectation. A synthetic current-corpus envelope tests
+classification only; it is not an iOS rerun. Both retained actual runs are rejected as current-corpus
+evidence after regeneration. Neither their statuses nor their corpus hashes are changed. A fresh
+native run and public copy references remain with the existing native verification work; this
+record does not add a dependency to that work. Audible output, rendered input feedback and physical
+MIDI remain unverified here.
