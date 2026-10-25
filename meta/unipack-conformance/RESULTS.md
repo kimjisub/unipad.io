@@ -1,18 +1,5 @@
 # Results
 
-## Initial-timer edge removed (2026-10-25)
-
-The initial-timer edge recorded under
-[Web trailing-wait fix merged](#web-trailing-wait-fix-merged-2026-10-25) no longer applies.
-The web runner schedules its first tick without a delay and restarts the song clock at whichever
-tick plays the line, so autoplay timing is measured from the first note. In the same runner-unit
-measurement, with the first callback 1 ms after play starts, the two 1000 ms note intervals now
-measure 1000 ms each and a 2000 ms trailing wait ends 2000 ms after the first note.
-The corpus is unchanged (SHA256 `9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`):
-the Node conformance run still passes 414 assertions without skips and records
-**361 passes and 21 unchanged pinned web failures**. RUN-P001 and RUN-P002 pass their original
-expectations. No native application was rerun.
-
 ## Trailing-wait observations after the web runner fix (2026-10-24)
 
 The prepared canonical corpus advances from `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`
