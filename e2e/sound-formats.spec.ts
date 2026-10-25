@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { BASIC_PACK, basicTone, openBasicWith } from './basic-pack';
 import { test, expect } from './browser';
+import { savedRecords } from './saved-packs';
 import { pad } from './touch';
 import { formatAudio, observeFormatBuffers } from './sound-format-probe';
 
@@ -98,18 +99,35 @@ test('a sound that cannot be decoded is silent once and the pad goes on to its n
   await expect.poll(async () => (await audio(page)).starts.length).toBe(1);
 });
 
-test('a pack none of whose sounds decode ends loading with the reason and a way back to the list', async ({ page }, info) => {
+/** basic.uni with its only sound replaced by bytes no browser decodes. */
+async function undecodablePack() {
   const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
   zip.file('sounds/tone.wav', 'not audio');
-  let loadFailures = 0;
-  page.on('console', (message) => { if (message.text().includes('Failed to load UniPack')) loadFailures += 1; });
+  return { name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
+}
+
+/** Counts the pack opens that failed from now on. */
+function countLoadFailures(page: Page) {
+  const count = { failures: 0 };
+  page.on('console', (message) => { if (message.text().includes('Failed to load UniPack')) count.failures += 1; });
+  return count;
+}
+
+const loadError = (page: Page) => page.getByRole('alertdialog', { name: 'Error', exact: true });
+const totalPlays = (page: Page) => page.getByText('Total Plays', { exact: true }).locator('xpath=preceding-sibling::div');
+
+/** Leaves the error over the list and waits for the list to show again. */
+async function quitLoadError(page: Page) {
+  await loadError(page).getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(loadError(page)).toHaveCount(0);
+}
+
+test('a pack none of whose sounds decode ends loading with the reason and a way back to the list', async ({ page }, info) => {
+  const count = countLoadFailures(page);
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
-    name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
-  });
-  const dialog = page.getByRole('alertdialog', { name: 'Error', exact: true });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   try {
-    await expect(dialog).toContainText('1 audio file(s) failed to decode');
+    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
     await expect(page.getByText(/Loading audio/)).toHaveCount(0);
   } finally {
     await info.attach('all-sounds-failed', { body: await page.screenshot(), contentType: 'image/png' });
@@ -117,11 +135,67 @@ test('a pack none of whose sounds decode ends loading with the reason and a way 
   // The failed pack is listed, but the address must not point at it: that would open it again.
   await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(1);
   expect(new URL(page.url()).searchParams.has('pack')).toBe(false);
-  await dialog.getByRole('button', { name: 'Quit', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByText('Total Plays', { exact: true }).locator('xpath=preceding-sibling::div')).toHaveText('0');
-  expect(loadFailures).toBe(1);
+  await quitLoadError(page);
+  await expect(totalPlays(page)).toHaveText('0');
+  expect(count.failures).toBe(1);
   await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('a saved pack none of whose sounds decode opens once from the list and counts one play', async ({ page }, info) => {
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await quitLoadError(page);
+  await page.goto('/play');
+  const count = countLoadFailures(page);
+  const option = page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option');
+  await option.click();
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Enter');
+  try {
+    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  } finally {
+    await info.attach('opened-from-list', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  // An address naming the failed pack would open it a second time as soon as loading ends.
+  expect(new URL(page.url()).searchParams.has('pack')).toBe(false);
+  await quitLoadError(page);
+  await expect(totalPlays(page)).toHaveText('1');
+  expect(count.failures).toBe(1);
+  await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('an address naming a saved pack none of whose sounds decode opens it once and drops the pack', async ({ page }, info) => {
+  await page.goto('/play');
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await quitLoadError(page);
+  const [{ id }] = await savedRecords(page);
+  const count = countLoadFailures(page);
+  await page.goto(`/play?pack=${encodeURIComponent(id)}`);
+  try {
+    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  } finally {
+    await info.attach('opened-from-address', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  // Left in the address, the pack would open again on every reload.
+  await expect(page).not.toHaveURL(/[?&]pack=/);
+  await quitLoadError(page);
+  await expect(totalPlays(page)).toHaveText('1');
+  expect(count.failures).toBe(1);
+});
+
+test('a pack none of whose sounds decode, dropped over a playing pack, keeps its reason and leaves the address', async ({ page }, info) => {
+  await loadPack(page, {});
+  await expect(page).toHaveURL(/[?&]pack=/);
+  const count = countLoadFailures(page);
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  // The playing pack closed when the new one began to open; its address would open it over the reason.
+  await expect(page).not.toHaveURL(/[?&]pack=/);
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  await expect(loadError(page)).toBeVisible();
+  await info.attach('dropped-over-playing', { body: await page.screenshot(), contentType: 'image/png' });
+  await quitLoadError(page);
+  expect(count.failures).toBe(1);
 });
 
 // touch is on + off in one line: the wormhole of the touched pad's sound moves the lines after it to

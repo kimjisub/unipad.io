@@ -345,6 +345,9 @@ export function PlayPage() {
           ledCount: parsed.ledCount,
         });
         if (!opened) {
+          // Opening it closed whatever was playing, so nothing is current any more.
+          currentPackIdRef.current = null;
+          syncPackUrl(null);
           await refreshLists();
           return;
         }
@@ -406,10 +409,14 @@ export function PlayPage() {
         if (!pack) return false;
         currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
+        await updateUniPackLastOpened(id);
+        // The address and the last pack name only packs that opened: either would open a failed one again.
+        if (!(await loadUniPack(pack.zipData))) {
+          currentPackIdRef.current = null;
+          return false;
+        }
         await setSetting('lastUniPackId', id);
         syncPackUrl(id);
-        await updateUniPackLastOpened(id);
-        await loadUniPack(pack.zipData);
 
         const lastThemeId = await getSetting('lastThemeId');
         if (lastThemeId) {
@@ -439,10 +446,13 @@ export function PlayPage() {
     return new URLSearchParams(window.location.search).get(CODE_QUERY_KEY)?.trim() || null;
   }, []);
 
-  // Restore from ?pack=<localId> URL parameter
+  // Restore from ?pack=<localId> URL parameter, decided once when the page opens. Later addresses come
+  // from this page itself and must not reopen a pack that closed or failed.
+  const decidedUrlPackRestoreRef = useRef(false);
   useEffect(() => {
-    if (restoringFromStorage || state.loaded || state.loading) return;
-    if (triedUrlPackRestoreRef.current) return;
+    if (restoringFromStorage || decidedUrlPackRestoreRef.current) return;
+    decidedUrlPackRestoreRef.current = true;
+    if (state.loaded || state.loading || triedUrlPackRestoreRef.current) return;
     const packId = getPackIdFromUrl();
     if (!packId) return;
 
@@ -558,7 +568,7 @@ export function PlayPage() {
 
   const handleQuit = useCallback(() => {
     setOptionPanelOpen(false);
-    setLastPlayedPackId(currentPackIdRef.current);
+    if (currentPackIdRef.current) setLastPlayedPackId(currentPackIdRef.current);
     setLoadingPackTitle(null);
     unload();
     currentPackIdRef.current = null;
