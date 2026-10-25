@@ -23,6 +23,7 @@ import {
   listUniPacks,
   deleteUniPack,
   updateUniPackLastOpened,
+  saveUniPackAutoPlay,
   toggleUniPackBookmark,
   saveTheme,
   getTheme,
@@ -41,7 +42,7 @@ import {
   subscribeStoreItems,
   type StoreItem,
 } from '@/lib/store';
-import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
+import type { StoredUniPack, StoredTheme, StoredAutoPlay } from '@/lib/unipack';
 import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
@@ -92,6 +93,7 @@ export function PlayPage() {
     setVolumeLevel,
     resumeAudio,
     startAutoMapping,
+    restoreAutoPlay,
   } = useUniPadEngine();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +116,8 @@ export function PlayPage() {
   const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
   const storeVisitedRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
+  /** The autoPlay change waiting for the user to confirm it. */
+  const [pendingAutoPlayEdit, setPendingAutoPlayEdit] = useState<'map' | 'restore' | null>(null);
 
   /**
    * The store item a `?code=` link wants to install, held while the user decides.
@@ -295,6 +299,8 @@ export function PlayPage() {
     async (file: File) => {
       await resumeAudio();
       const buffer = await file.arrayBuffer();
+      // Until this import is saved, an auto mapping has no stored pack to go to.
+      currentPackIdRef.current = null;
       const opened = await loadUniPack(buffer);
       if (opened === false) {
         // Opening it closed whatever was playing, so nothing is current any more. A later open
@@ -380,7 +386,7 @@ export function PlayPage() {
         setLoadingPackTitle(pack.title);
         await updateUniPackLastOpened(id);
         // The address and the last pack name only packs that opened: either would open a failed one again.
-        const opened = await loadUniPack(pack.zipData);
+        const opened = await loadUniPack(pack.zipData, pack.autoPlay);
         if (opened === null) return null;
         if (!opened) {
           currentPackIdRef.current = null;
@@ -572,7 +578,8 @@ export function PlayPage() {
   }, [state.loaded, state.recording, state.unipack, showToast, tToast]);
 
   // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
-  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null;
+  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null
+    || pendingAutoPlayEdit !== null;
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
@@ -935,6 +942,32 @@ export function PlayPage() {
       setChain(circleIdx - CHAIN_INDEX_OFFSET);
     }
   }, [setChain, actualChainCount]);
+
+  // The archive the pack was opened from is never rewritten; the autoPlay is stored beside it.
+  const persistAutoPlay = useCallback((autoPlay: StoredAutoPlay) => {
+    const id = currentPackIdRef.current;
+    return id ? saveUniPackAutoPlay(id, autoPlay) : Promise.reject(new Error('The pack is not saved in this browser.'));
+  }, []);
+
+  const confirmAutoPlayEdit = useCallback(async () => {
+    const edit = pendingAutoPlayEdit;
+    setPendingAutoPlayEdit(null);
+    if (!edit) return;
+    const result = await (edit === 'map' ? startAutoMapping : restoreAutoPlay)(persistAutoPlay);
+    if (result === 'saved') showToast(tToast(edit === 'map' ? 'autoPlaySaved' : 'autoPlayRestored'));
+    else if (result === 'failed') showToast(tToast('autoPlaySaveFailed'));
+  }, [pendingAutoPlayEdit, startAutoMapping, restoreAutoPlay, persistAutoPlay, showToast, tToast]);
+
+  const autoPlayEditDialog = pendingAutoPlayEdit && (
+    <ConfirmDialog
+      label={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMappingAriaLabel' : 'confirmRestoreAutoPlayAriaLabel')}
+      message={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMapping' : 'confirmRestoreAutoPlay')}
+      confirmText={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMappingAction' : 'confirmRestoreAutoPlayAction')}
+      tone="primary"
+      onConfirm={() => void confirmAutoPlayEdit()}
+      onCancel={() => setPendingAutoPlayEdit(null)}
+    />
+  );
 
   const shareInstallDialog = pendingShareItem && (
     <ConfirmDialog
@@ -1589,10 +1622,13 @@ export function PlayPage() {
         onToggleFeedbackLight={toggleFeedbackLight}
         onToggleLed={toggleLed}
         onSwitchPlayMode={switchPlayMode}
-        onStartAutoMapping={startAutoMapping}
+        onStartAutoMapping={() => setPendingAutoPlayEdit('map')}
         autoMappingActive={state.autoMappingActive}
         autoMappingProgress={state.autoMappingProgress}
         autoMappingTotal={state.autoMappingTotal}
+        onRestoreAutoPlay={() => setPendingAutoPlayEdit('restore')}
+        autoPlayRestoring={state.autoPlayRestoring}
+        autoPlayBackupAvailable={state.autoPlayBackupAvailable}
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}
@@ -1632,6 +1668,7 @@ export function PlayPage() {
 
       {errorDialog}
 
+      <AnimatePresence>{autoPlayEditDialog}</AnimatePresence>
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
       {/* Toast */}
