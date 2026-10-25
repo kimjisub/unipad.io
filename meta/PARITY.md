@@ -142,11 +142,17 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **Native input-owned release validation remains separate from the web fix.**
-  RUN-G617 and RUN-G618 require each input to release only the sound and pack lights it started;
-  only the pressed indicator waits for the last input. New Android and iOS observations must name
-  their own corpus hash and input path. Historical stored corpus copies do not establish this rule.
-  See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
+- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
+  Native input-path observations on application commit `208afb9e`, after
+  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
+  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
+  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
+  remain on until the last input releases. The older `777cc4a3` observations predate that input change
+  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
+  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
+  stored historical app copies remain separate from these observations. See the
+  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
+  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
 
 - **RUN-G616: iOS can change chain after autoPlay is turned off.** The retained
   partial run records a real delayed sound-wormhole callback after the stop.
