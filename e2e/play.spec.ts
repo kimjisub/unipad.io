@@ -322,9 +322,11 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
       });
     } finally { db.close(); }
     const get = IDBObjectStore.prototype.get;
+    let held = false;
     IDBObjectStore.prototype.get = function (query) {
       const request = get.call(this, query);
-      if (this.name === 'unipacks' && query === 'earlier-pack') {
+      if (this.name === 'unipacks' && query === 'earlier-pack' && !held) {
+        held = true;
         request.addEventListener('success', event => {
           event.stopImmediatePropagation();
           document.documentElement.dataset.heldPackRead = 'true';
@@ -356,6 +358,7 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
   await info.attach('delayed-read-observation', { body: JSON.stringify({ titles, latestUrl, observedUrl: page.url() }), contentType: 'application/json' });
   expect(titles.every(title => title === 'Browser Test Pack | UniPad Web Player')).toBe(true);
   await expect(page).toHaveURL(latestUrl);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
   await page.keyboard.down('q');
   await expect(pressed(page, '1,0')).toBeVisible();
   await page.keyboard.up('q');
