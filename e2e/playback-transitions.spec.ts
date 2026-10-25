@@ -838,7 +838,8 @@ for (const via of ['mode', 'button']) for (const gap of [0, 1, 300, 5000]) {
     expect(await count()).toBe(shown ? 2 : 1);
     if (!shown) await page.clock.fastForward(899);
     expect(await count()).toBe(2);
-    await page.clock.fastForward(499); expect(await count()).toBe(2);
+    // The clock is now 1 ms past the second note, so the third one is due 499 ms later.
+    await page.clock.fastForward(498); expect(await count()).toBe(2);
     await page.clock.runFor(1); expect(await count()).toBe(3);
     await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
   });
