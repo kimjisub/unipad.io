@@ -46,6 +46,10 @@ import type { StoredUniPack, StoredTheme, StoredAutoPlay } from '@/lib/unipack';
 import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
+// A previous page can still have an IndexedDB write in flight after navigation. Keep successful
+// pack records in order across page instances as well as across opens on the same page.
+let lastPackWrite: Promise<void> = Promise.resolve();
+
 const PACK_QUERY_KEY = 'pack';
 const CODE_QUERY_KEY = 'code';
 const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
@@ -164,6 +168,19 @@ export function PlayPage() {
   const toastTimerRef = useRef<number | null>(null);
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
   const triedUrlPackRestoreRef = useRef(false);
+  const packOpenRevisionRef = useRef(0);
+  useEffect(() => {
+    const revisionRef = packOpenRevisionRef;
+    return () => { revisionRef.current++; };
+  }, []);
+
+  const rememberPack = useCallback(async (id: string, isCurrent: () => boolean) => {
+    const writing = lastPackWrite.catch(() => {}).then(async () => {
+      if (isCurrent()) await setSetting('lastUniPackId', id);
+    });
+    lastPackWrite = writing;
+    await writing;
+  }, []);
 
   // With no pack open the address names none, not even the shared link that opened one: either would open it again.
   const syncPackUrl = useCallback((packId: string | null) => {
@@ -177,6 +194,17 @@ export function PlayPage() {
     }
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
+
+  const beginPackOpen = useCallback(() => {
+    const revision = ++packOpenRevisionRef.current;
+    triedUrlPackRestoreRef.current = true;
+    // Invalidate a decode already in the engine before waiting for storage or file reads.
+    unload();
+    currentPackIdRef.current = null;
+    setLoadingPackTitle(null);
+    syncPackUrl(null);
+    return () => revision === packOpenRevisionRef.current;
+  }, [unload, syncPackUrl]);
 
   const getPackIdFromUrl = useCallback((): string | null => {
     if (typeof window === 'undefined') return null;
@@ -295,22 +323,40 @@ export function PlayPage() {
     prevLoadedRef.current = state.loaded;
   }, [state.loaded, state.criticalError, state.errors]);
 
+  const applyLastTheme = useCallback(async (isCurrent: () => boolean) => {
+    const lastThemeId = await getSetting('lastThemeId');
+    if (!isCurrent() || !lastThemeId) return;
+    const theme = await getTheme(lastThemeId);
+    if (!isCurrent() || !theme) return;
+    currentThemeIdRef.current = lastThemeId;
+    try {
+      // Decoding the theme also waits; the engine must check before applying its result.
+      await loadTheme(theme.zipData, isCurrent);
+    } catch {
+      if (!isCurrent()) return;
+      showToast(tToast('skinFailed'));
+      currentThemeIdRef.current = null;
+      await setSetting('lastThemeId', '');
+    }
+  }, [loadTheme, showToast, tToast]);
+
   const handleImportFile = useCallback(
     async (file: File) => {
+      const isCurrent = beginPackOpen();
       await resumeAudio();
       const buffer = await file.arrayBuffer();
       // Until this import is saved, an auto mapping has no stored pack to go to.
-      currentPackIdRef.current = null;
-      const opened = await loadUniPack(buffer);
-      if (opened === false) {
-        // Opening it closed whatever was playing, so nothing is current any more. A later open
-        // that replaced this one (null) has made its own pack current.
+      if (isCurrent()) currentPackIdRef.current = null;
+      // Cancel opening the player, not importing the file into the library.
+      const opened = isCurrent() ? await loadUniPack(buffer) : null;
+      if (isCurrent() && opened === false) {
+        // Failed imports clear their own address; a replaced import owns no player state.
         currentPackIdRef.current = null;
         syncPackUrl(null);
       }
 
       try {
-        // An archive that cannot be read fails here as well as in the open above, and is not saved.
+        // Keep a readable imported archive in the library even if another open replaced it.
         const parsed = await parseUniPack(buffer.slice(0));
         const id = await saveUniPack(buffer, {
           ...parsed.info,
@@ -319,35 +365,18 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
-        if (!opened) {
-          await refreshLists();
-          return;
-        }
-        currentPackIdRef.current = id;
-        await setSetting('lastUniPackId', id);
-        syncPackUrl(id);
         await refreshLists();
-
-        // 마지막 테마도 적용
-        const lastThemeId = await getSetting('lastThemeId');
-        if (lastThemeId) {
-          const theme = await getTheme(lastThemeId);
-          if (theme) {
-            currentThemeIdRef.current = lastThemeId;
-            try {
-              await loadTheme(theme.zipData);
-            } catch {
-              showToast(tToast('skinFailed'));
-              currentThemeIdRef.current = null;
-              await setSetting('lastThemeId', '');
-            }
-          }
-        }
+        if (!isCurrent() || opened !== true) return;
+        currentPackIdRef.current = id;
+        await rememberPack(id, isCurrent);
+        if (!isCurrent()) return;
+        syncPackUrl(id);
+        await applyLastTheme(isCurrent);
       } catch {
         /* storage error */
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl, showToast, tToast],
+    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const handleImportThemeFile = useCallback(
@@ -374,50 +403,35 @@ export function PlayPage() {
   );
 
   const handlePlay = useCallback(
-    async (id: string) => {
-      // The address names a pack only for the page's first open. This open writes its own pack
-      // there, and a render before loading starts must not restore it as a second load.
-      triedUrlPackRestoreRef.current = true;
+    async (id: string): Promise<boolean | null> => {
+      const isCurrent = beginPackOpen();
       try {
         await resumeAudio();
+        if (!isCurrent()) return null;
         const pack = await getUniPack(id);
+        if (!isCurrent()) return null;
         if (!pack) return false;
-        currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
         // Recent-open history is best effort; a slow or failed write must not prevent playback.
         void updateUniPackLastOpened(id).catch(() => {});
-        // The address and the last pack name only packs that opened: either would open a failed one again.
         const opened = await loadUniPack(pack.zipData, pack.autoPlay);
-        if (opened === null) return null;
-        if (!opened) {
+        if (!isCurrent() || opened === null) return null;
+        if (opened === false) {
           currentPackIdRef.current = null;
           syncPackUrl(null);
           return false;
         }
-        await setSetting('lastUniPackId', id);
+        currentPackIdRef.current = id;
+        await rememberPack(id, isCurrent);
+        if (!isCurrent()) return null;
         syncPackUrl(id);
-
-        const lastThemeId = await getSetting('lastThemeId');
-        if (lastThemeId) {
-          const theme = await getTheme(lastThemeId);
-          if (theme) {
-            currentThemeIdRef.current = lastThemeId;
-            try {
-              await loadTheme(theme.zipData);
-            } catch {
-              showToast(tToast('skinFailed'));
-              currentThemeIdRef.current = null;
-              await setSetting('lastThemeId', '');
-            }
-          }
-        }
-        return true;
+        await applyLastTheme(isCurrent);
+        return isCurrent() ? true : null;
       } catch {
-        /* error */
-        return false;
+        return isCurrent() ? false : null;
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, syncPackUrl, showToast, tToast],
+    [beginPackOpen, loadUniPack, resumeAudio, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const getCodeFromUrl = useCallback((): string | null => {
@@ -547,6 +561,7 @@ export function PlayPage() {
   }, [optionPanelOpen]);
 
   const handleQuit = useCallback(() => {
+    packOpenRevisionRef.current++;
     setOptionPanelOpen(false);
     if (currentPackIdRef.current) setLastPlayedPackId(currentPackIdRef.current);
     setLoadingPackTitle(null);
