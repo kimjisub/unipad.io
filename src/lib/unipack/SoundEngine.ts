@@ -50,6 +50,9 @@ export class SoundEngine {
   private visibilitySuspended = false;
   private outputMuted = false;
   private volume = 1;
+  onInterrupted: (() => void) | null = null;
+  private pendingSuspensions = 0;
+  private pendingResumptions = 0;
   private gestureResume: (() => void) | null = null;
 
   constructor(
@@ -68,6 +71,11 @@ export class SoundEngine {
       latencyHint: 'interactive',
       sampleRate: 44100,
     });
+    this.audioContext.onstatechange = () => {
+      if (!this.visibilitySuspended && this.pendingSuspensions === 0 && this.pendingResumptions === 0 && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
+        this.onInterrupted?.();
+      }
+    };
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
 
@@ -168,6 +176,9 @@ export class SoundEngine {
 
   /** Freeze existing sources and scheduled sample ends on the audio device's own clock. */
   async setSuspended(suspended: boolean): Promise<void> {
+    // A ready connection needs no native permission round trip. Keep pending or muted transitions
+    // on the acknowledged path below, including a resume requested before suspension completes.
+    if (!suspended && !this.visibilitySuspended && !this.outputMuted && this.audioContext.state === 'running') return;
     this.visibilitySuspended = suspended;
     const revision = ++this.suspensionRevision;
     if (this.audioContext.state === 'closed') return;
@@ -184,10 +195,14 @@ export class SoundEngine {
           change.remaining = Math.max(0, change.dueAt - now);
         }
       }
-      await this.audioContext.suspend();
+      this.pendingSuspensions++;
+      try { await this.audioContext.suspend(); }
+      finally { this.pendingSuspensions--; }
     } else {
       // Always enqueue resume, even if an earlier suspend has not changed state yet.
-      await this.audioContext.resume();
+      this.pendingResumptions++;
+      try { await this.audioContext.resume(); }
+      finally { this.pendingResumptions--; }
       if (revision !== this.suspensionRevision || this.audioContext.state !== 'running') return;
       this.outputMuted = false;
       this.applyOutputVolume();
@@ -325,8 +340,20 @@ export class SoundEngine {
     this.pendingChainChanges.clear();
   }
 
+  /** An interruption ends every source, including finite sounds that a pad release leaves playing. */
+  stopAll(): void {
+    this.cancelPendingChainChanges();
+    this.activeNodes.forEach(node => {
+      try { node.stop(); } catch { /* already stopped */ }
+    });
+    this.activeNodes.clear();
+    this.heldPresses.clear();
+  }
+
   destroy(): void {
     this.suspensionRevision++;
+    this.onInterrupted = null;
+    this.audioContext.onstatechange = null;
     this.cancelPendingChainChanges();
     this.removeGestureResume();
     this.activeNodes.forEach((node) => {
