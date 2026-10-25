@@ -234,8 +234,6 @@ export function useUniPadEngine() {
   const unipackRef = useRef<UniPackData | null>(null);
   const autoPlayBackupRef = useRef<AutoPlayElement[] | null>(null);
   const autoPlayEditingRef = useRef(false);
-  // Counts pack opens, so a failed one can tell whether a later open owns the engine now.
-  const packLoadRef = useRef(0);
   const padStatesRef = useRef<PadState[][]>([]);
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
@@ -256,6 +254,8 @@ export function useUniPadEngine() {
   const keyboardBlockedRef = useRef(false);
   const interruptedRef = useRef(false);
   const interruptionRevisionRef = useRef(0);
+  // Each unload ends the pack load in progress; see loadUniPack.
+  const loadRevisionRef = useRef(0);
   const interruptPlaybackRef = useRef<() => void>(() => {});
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
   const toggleAutoPlayRef = useRef<() => void>(() => {});
@@ -1018,6 +1018,7 @@ export function useUniPadEngine() {
 
   const unload = useCallback(() => {
     usageTracker.unloaded();
+    loadRevisionRef.current++;
     releasePack();
     setState((prev) => {
       if (prev.theme) releaseThemeUrls(prev.theme);
@@ -1059,21 +1060,26 @@ export function useUniPadEngine() {
 
   /**
    * Opens a pack; `savedAutoPlay` is the autoPlay stored for it, played in place of the archive's.
-   * Resolves false when the pack could not be opened; the reason is left in `errors`.
+   * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
+   * when a later load or a quit replaced this one: the player belongs to that, so leave it alone.
    */
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay): Promise<boolean> => {
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay): Promise<boolean | null> => {
     unload();
-    const load = ++packLoadRef.current;
+    // A later load or a quit unloads this one, and that unload already destroyed the sound engine
+    // this load made. Going on would set up a second pack whose keyboard and timers nobody owns.
+    const revision = loadRevisionRef.current;
+    const superseded = () => revision !== loadRevisionRef.current;
     const playPreferences = readPlayPreferences();
 
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
 
     try {
       const unipack = await parseUniPack(zipData, (phase) => {
-        setState((prev) => ({ ...prev, loadPhase: phase }));
+        if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
       });
       // Nothing plays before a lowered volume is known: opening a pack must not raise it.
       await playPreferences;
+      if (superseded()) return null;
       if (savedAutoPlay && unipack.autoPlay) unipack.autoPlay = { elements: savedAutoPlay.current };
       autoPlayBackupRef.current = savedAutoPlay && unipack.autoPlay ? savedAutoPlay.backup : null;
       unipackRef.current = unipack;
@@ -1113,6 +1119,7 @@ export function useUniPadEngine() {
         () => chainRef.current,
         setChain,
         (loaded, total) => {
+          if (superseded()) return;
           setState((prev) => ({
             ...prev,
             loadProgress: Math.round((loaded / total) * 100),
@@ -1122,6 +1129,7 @@ export function useUniPadEngine() {
       );
       soundEngineRef.current = soundEngine;
       const failedSounds = await soundEngine.load();
+      if (superseded()) return null;
       soundEngine.setVolume(volumeLevelRef.current, MAX_VOLUME_LEVEL);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
@@ -1397,10 +1405,11 @@ export function useUniPadEngine() {
       });
       return true;
     } catch (err) {
+      if (superseded()) return null;
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
       // A pack that did not open must not keep its audio or count as open for the screen lock.
-      if (load === packLoadRef.current) releasePack();
+      releasePack();
       setState((prev) => ({
         ...prev,
         loading: false,

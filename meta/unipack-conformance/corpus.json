@@ -23610,9 +23610,7 @@
         }
       ],
       "expectedFailing": [
-        "android",
-        "ios",
-        "web"
+        "android"
       ],
       "scenario": [
         {
@@ -23764,6 +23762,77 @@
           ],
           []
         ]
+      },
+      "known": {
+        "android": {
+          "status": "fail",
+          "actual": {
+            "checkpoints": [
+              [
+                [
+                  "sound",
+                  0,
+                  0,
+                  0,
+                  "a.wav",
+                  -1
+                ],
+                [
+                  "ledOn",
+                  0,
+                  0,
+                  "ffff0000",
+                  4
+                ]
+              ],
+              [
+                [
+                  "soundStop",
+                  0,
+                  0,
+                  0,
+                  "a.wav"
+                ],
+                [
+                  "sound",
+                  0,
+                  0,
+                  0,
+                  "a.wav",
+                  -1
+                ],
+                [
+                  "ledOff",
+                  0,
+                  0
+                ],
+                [
+                  "ledOn",
+                  0,
+                  0,
+                  "ffff0000",
+                  4
+                ]
+              ],
+              [],
+              [
+                [
+                  "soundStop",
+                  0,
+                  0,
+                  0,
+                  "a.wav"
+                ],
+                [
+                  "ledOff",
+                  0,
+                  0
+                ]
+              ]
+            ]
+          },
+          "note": "Observed at application commit 208afb9e5be3bebef9fd50c5e1b77dcb40e29330 after unipad-android#304, using a local test-only adapter through PadTouchTracker and controllerPadTouch. Source corpus SHA256 fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8; original RUN-G617.json SHA256 90aa9083125a706bba3da30cc62d48c01090256cd6b05fad84fd70d12f09a330 (investigations/android-input-release-observations/). Releasing the later input leaves its sound and pack light running until the last finger releases. The separately observed pressed indicator follows the last-input rule. This JVM observation does not measure USB transport, screen rendering or audible output."
+        }
       }
     },
     {
@@ -23783,9 +23852,7 @@
         }
       ],
       "expectedFailing": [
-        "android",
-        "ios",
-        "web"
+        "android"
       ],
       "scenario": [
         {
@@ -23937,6 +24004,77 @@
           ],
           []
         ]
+      },
+      "known": {
+        "android": {
+          "status": "fail",
+          "actual": {
+            "checkpoints": [
+              [
+                [
+                  "sound",
+                  0,
+                  0,
+                  0,
+                  "a.wav",
+                  -1
+                ],
+                [
+                  "ledOn",
+                  0,
+                  0,
+                  "ffff0000",
+                  4
+                ]
+              ],
+              [
+                [
+                  "soundStop",
+                  0,
+                  0,
+                  0,
+                  "a.wav"
+                ],
+                [
+                  "sound",
+                  0,
+                  0,
+                  0,
+                  "a.wav",
+                  -1
+                ],
+                [
+                  "ledOff",
+                  0,
+                  0
+                ],
+                [
+                  "ledOn",
+                  0,
+                  0,
+                  "ffff0000",
+                  4
+                ]
+              ],
+              [],
+              [
+                [
+                  "soundStop",
+                  0,
+                  0,
+                  0,
+                  "a.wav"
+                ],
+                [
+                  "ledOff",
+                  0,
+                  0
+                ]
+              ]
+            ]
+          },
+          "note": "Observed at application commit 208afb9e5be3bebef9fd50c5e1b77dcb40e29330 after unipad-android#304, using a local test-only adapter through PadTouchTracker and controllerPadTouch. Source corpus SHA256 fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8; original RUN-G618.json SHA256 5866b8aa01d14c230421c6a94dd322705378ac404a19d0dbe246a34ca2b2dde0 (investigations/android-input-release-observations/). Releasing the later input leaves its sound and pack light running until the last finger releases. The separately observed pressed indicator follows the last-input rule. This JVM observation does not measure USB transport, screen rendering or audible output."
+        }
       }
     },
     {
@@ -24818,41 +24956,7 @@
           []
         ]
       },
-      "known": {
-        "ios": {
-          "status": "fail",
-          "actual": {
-            "checkpoints": [
-              [
-                [
-                  "autoOn",
-                  0,
-                  0
-                ],
-                [
-                  "sound",
-                  0,
-                  0,
-                  0,
-                  "a.wav",
-                  0
-                ],
-                [
-                  "autoChain",
-                  1
-                ]
-              ],
-              [
-                [
-                  "chain",
-                  1
-                ]
-              ]
-            ]
-          },
-          "note": "Observed on unipad-ios e8ac34d11373b3ed071535e365ddc382c1929496 with the 9-case partial G6 run (corpus 7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180, result SHA256 c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2). Turning autoPlay off leaves its delayed sound wormhole pending; the real chain observer records chain 1 afterward. The case input, fingerprint and expectation are unchanged. This is a request-level difference, not an audible-output or screen-press observation. See investigations/ios-playback-observations/README.md."
-        }
-      }
+      "known": {}
     },
     {
       "id": "SAFE-C001",

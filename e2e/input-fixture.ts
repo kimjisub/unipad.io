@@ -44,7 +44,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     observedPages.add(page);
     await page.addInitScript(() => {
       window.inputBoundaryEvents = [];
-      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
         document.addEventListener(type, event => {
           const e = event as PointerEvent;
           const target = e.target instanceof Element ? e.target.closest('[data-pad], button') : null;

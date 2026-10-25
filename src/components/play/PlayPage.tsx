@@ -302,8 +302,9 @@ export function PlayPage() {
       // Until this import is saved, an auto mapping has no stored pack to go to.
       currentPackIdRef.current = null;
       const opened = await loadUniPack(buffer);
-      if (!opened) {
-        // Opening it closed whatever was playing, so nothing is current any more.
+      if (opened === false) {
+        // Opening it closed whatever was playing, so nothing is current any more. A later open
+        // that replaced this one (null) has made its own pack current.
         currentPackIdRef.current = null;
         syncPackUrl(null);
       }
@@ -374,6 +375,9 @@ export function PlayPage() {
 
   const handlePlay = useCallback(
     async (id: string) => {
+      // The address names a pack only for the page's first open. This open writes its own pack
+      // there, and a render before loading starts must not restore it as a second load.
+      triedUrlPackRestoreRef.current = true;
       try {
         await resumeAudio();
         const pack = await getUniPack(id);
@@ -382,7 +386,9 @@ export function PlayPage() {
         setLoadingPackTitle(pack.title);
         await updateUniPackLastOpened(id);
         // The address and the last pack name only packs that opened: either would open a failed one again.
-        if (!(await loadUniPack(pack.zipData, pack.autoPlay))) {
+        const opened = await loadUniPack(pack.zipData, pack.autoPlay);
+        if (opened === null) return null;
+        if (!opened) {
           currentPackIdRef.current = null;
           syncPackUrl(null);
           return false;
@@ -430,7 +436,7 @@ export function PlayPage() {
 
     triedUrlPackRestoreRef.current = true;
     handlePlay(packId).then((ok) => {
-      if (!ok) syncPackUrl(null);
+      if (ok === false) syncPackUrl(null);
     }).catch(() => {
       syncPackUrl(null);
     });
