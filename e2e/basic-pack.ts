@@ -23,6 +23,13 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
   await expectPads(page);
 }
 
+/** basic.uni with its only sound replaced by bytes no browser decodes, as a file to choose. */
+export async function undecodablePack() {
+  const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
+  zip.file('sounds/tone.wav', 'not audio');
+  return { name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
+}
+
 /** Presses basic.uni's first pad once and releases it. Requires a fresh page with no earlier audio starts. */
 export async function playFirstPad(page: Page) {
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
