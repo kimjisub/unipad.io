@@ -8,7 +8,7 @@ import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
 import { savedRecords } from './saved-packs';
-import { configureMidiPorts, midiPortMessages } from './midi';
+import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
 const pack = resolve('e2e/fixtures/basic.uni');
@@ -591,6 +591,27 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
 });
 
+for (const invalidBeforeMode of [false, true]) {
+  test(`MIDI profile capture excludes earlier work and retains ${invalidBeforeMode ? 'invalid' : 'valid'} change commands`, async ({ page }) => {
+    await page.setContent('<select><option value="auto">Auto</option><option value="mini">Mini</option></select>');
+    const oldFrame = [0xb0, 95, 61];
+    const mode = [0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7];
+    const change = [...(invalidBeforeMode ? [[0x90, 82, 5]] : []), [0x90, 81, 0], mode, [0x90, 81, 3]];
+    await page.evaluate(({ oldFrame, change }) => {
+      Object.defineProperty(window, 'browserProbe', { configurable: true, value: { midi: { messages: [] } } });
+      // selectOption sends input before change. Model the old controller's last redraw there.
+      document.querySelector('select')!.addEventListener('input', () => window.browserProbe.midi.messages.push(oldFrame));
+      // Like React's delegated handler, process the profile change after element capture listeners.
+      document.addEventListener('change', () => window.browserProbe.midi.messages.push(...change));
+    }, { oldFrame, change });
+    await selectMidiProfile(page.locator('select'), 'mini');
+    const recorded = await midiMessages(page);
+    expect(recorded).toEqual(change);
+    const firstMode = recorded.findIndex(message => message[0] === 0xf0);
+    expect(recorded.slice(0, firstMode).every(message => message[2] === 0)).toBe(!invalidBeforeMode);
+  });
+}
+
 for (const delayedInspection of [false, true]) {
   test(`Web MIDI discovers devices, receives notes, emits LED bytes and disconnects${delayedInspection ? ' after delayed inspection' : ''}`, async ({ page }, testInfo) => {
     await skipWithoutWebMidi(page);
@@ -605,8 +626,7 @@ for (const delayedInspection of [false, true]) {
     await expect(dialog).toContainText('Resolved Type: launchpad_x');
     // The hint promises what the model picker does: a connected device is re-initialised at once.
     await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
-    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-    await dialog.locator('select').selectOption('launchpad_mini_mk3');
+    await selectMidiProfile(dialog.locator('select'), 'launchpad_mini_mk3');
     await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
     await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
@@ -618,8 +638,7 @@ for (const delayedInspection of [false, true]) {
     const redrawn = modelChange.slice(firstSysEx + 2);
     expect(redrawn.filter(m => m[0] === 0xf0), 'one mode switch only').toEqual([]);
     expect(new Set(redrawn.filter(m => (m[0] & 0xe0) === 0x80).map(m => m[1])).size, 'every pad redrawn').toBeGreaterThanOrEqual(64);
-    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-    await dialog.locator('select').selectOption('auto');
+    await selectMidiProfile(dialog.locator('select'), 'auto');
     await expect(dialog).toContainText('Resolved Type: launchpad_x');
     await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);

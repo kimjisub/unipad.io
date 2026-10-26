@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 interface MidiPortOptions {
   inputs?: string[];
@@ -61,3 +61,12 @@ export async function configureMidiPorts(page: Page, options: MidiPortOptions) {
 }
 
 export const midiPortMessages = (page: Page) => page.evaluate(() => window.midiPortProbe.messages);
+
+
+/** Exclude old redraws while selectOption waits; keep every command from React's change handler. */
+export async function selectMidiProfile(select: Locator, profile: string) {
+  await select.evaluate(element => {
+    element.addEventListener('change', () => { window.browserProbe.midi.messages.length = 0; }, { capture: true, once: true });
+  });
+  await select.selectOption(profile);
+}
