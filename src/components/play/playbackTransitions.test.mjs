@@ -1180,6 +1180,8 @@ for (const [via, pausedMs] of [['mode', 0], ['button', 0], ['button', 3000]]) {
     await tick(1000);
     if (via === 'button') {
       await flush(() => result.current.autoPlayPlayPause());
+      assert.equal(result.current.state.autoPlayPlaying, false, 'the play button pauses autoplay');
+      assert.equal(result.current.playMode, 'autoPlay');
       await tick(pausedMs);
     }
     await flush(() => result.current.switchPlayMode('guidePlay'));
@@ -1217,11 +1219,23 @@ for (const resume of ['button', 'mode']) test(`pausing guide right after a repla
   assert.deepEqual(row().map(pad => pad.guide), [false, false, true], 'the paused practice offers the third note, not the sounded second');
   await tick(3000); await draw();
   assert.deepEqual(row().map(pad => pad.guide), [false, false, true]);
+  // Resuming treats the offered third note as passed, so the song only waits out its 5000 ms gap.
+  const resumedAt = now;
   await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
-  while (result.current.state.autoPlayEnabled) {
-    await tick(100); await draw();
+  // The first timer consumes one millisecond of the song clock; a later first timer would shift it.
+  await tick(1); await draw();
+  assert.equal(result.current.playMode, 'guidePlay');
+  assert.equal(result.current.state.autoPlayPlaying, true, 'guide play resumes');
+  for (let elapsed = 1; elapsed < 4999; elapsed += 100) {
+    await tick(Math.min(100, resumedAt + 4999 - now)); await draw();
+    assert.equal(result.current.state.autoPlayEnabled, true, `guide still plays ${now - resumedAt} ms after resuming`);
     assert.equal(row()[1].guide, false, 'the sounded second note is never guided again');
+    assert.equal(row()[2].guide, false, 'the passed third note is not guided again');
   }
+  assert.equal(now - resumedAt, 4999);
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false, 'the song ends 5000 ms after resuming');
+  assert.ok(row().every(pad => !pad.guide));
   assert.equal(starts.length, 2, 'guide mode never sounds a note');
 });
 

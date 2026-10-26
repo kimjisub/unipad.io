@@ -891,6 +891,8 @@ for (const [via, pausedMs] of [['mode', 0], ['button', 0], ['button', 3000]] as 
     await page.clock.fastForward(1000);
     if (via === 'button') {
       await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+      await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+      await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
       if (pausedMs) await page.clock.fastForward(pausedMs);
     }
     await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(20);
