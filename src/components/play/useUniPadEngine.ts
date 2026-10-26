@@ -50,6 +50,16 @@ const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
 const MIDI_INPUT = 'midi';
 const keyInput = (code: string) => `key-${code}`;
 
+/** Runs `run` in a later task. Unlike timers, port messages are not throttled on hidden pages. */
+function inNextTask(run: () => void): void {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => {
+    channel.port1.close();
+    run();
+  };
+  channel.port2.postMessage(null);
+}
+
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
  *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
 function roundLedCode(cm: ChannelManager, index: number): number {
@@ -445,6 +455,8 @@ export function useUniPadEngine() {
   }, []);
 
   const visualFlushRef = useRef<object | null>(null);
+  /** The light and controller cleanup an interruption leaves for the next task. */
+  const pendingInterruptionClearRef = useRef<(() => void) | null>(null);
   const scheduleFlush = useCallback(() => {
     if (visualFlushRef.current !== null) return;
     const pending = {};
@@ -454,6 +466,8 @@ export function useUniPadEngine() {
     queueMicrotask(() => {
       if (visualFlushRef.current !== pending) return;
       visualFlushRef.current = null;
+      // Lights released later in an interrupted task (held pads, keys) are drawn by its cleanup.
+      if (pendingInterruptionClearRef.current) return;
       flushSync(flushVisualState);
     });
   }, [flushVisualState]);
@@ -665,6 +679,13 @@ export function useUniPadEngine() {
     applyMidiStatus(status);
   }, [releaseControllerPads, applyMidiStatus]);
 
+  /** Runs the cleanup an interruption left for a later task now, before playback is restored. */
+  const settleInterruption = useCallback(() => {
+    const clear = pendingInterruptionClearRef.current;
+    pendingInterruptionClearRef.current = null;
+    clear?.();
+  }, []);
+
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
    *  opens are released, since their keyup may land in the dialog. */
@@ -672,11 +693,12 @@ export function useUniPadEngine() {
     keyboardBlockedRef.current = blocked;
     if (blocked) interruptPlaybackRef.current();
     else if (!document.hidden) {
+      settleInterruption();
       void soundEngineRef.current?.setSuspended(false).catch(() => {});
       requestScreenWakeLock();
       syncMidiStateToDevice();
     }
-  }, [requestScreenWakeLock, syncMidiStateToDevice]);
+  }, [settleInterruption, requestScreenWakeLock, syncMidiStateToDevice]);
 
   // Keyboard input handler
   useEffect(() => {
@@ -796,15 +818,8 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, refreshChain, scheduleFlush]);
 
-  const interruptPlayback = useCallback(() => {
-    const interruptedAt = performance.now();
-    interruptedRef.current = true;
-    interruptionRevisionRef.current++;
-    const sound = soundEngineRef.current;
-    // Mute first, before callbacks or rendering can delay the request.
-    void sound?.setSuspended(true).catch(() => {});
-    sound?.stopAll();
-    autoPlayRunnerRef.current?.setSuspended(true, 0, interruptedAt);
+  /** Clears what an interruption left on the screen and the controller. */
+  const clearInterruptedOutput = useCallback(() => {
     autoPlayRunnerRef.current?.clearGuideOutput();
     ledRunnerRef.current?.stop();
     playerHoldsRef.current.clear();
@@ -818,12 +833,29 @@ export function useUniPadEngine() {
     autoPlayRemoveGuide();
     setState(prev => ({ ...prev, autoPlayPlaying: false }));
     midiRef.current?.clearAllLeds();
+  }, [padTouchOff, ledInit, autoPlayRemoveGuide]);
+
+  const interruptPlayback = useCallback(() => {
+    const interruptedAt = performance.now();
+    interruptedRef.current = true;
+    interruptionRevisionRef.current++;
+    const sound = soundEngineRef.current;
+    // Mute first, before callbacks or rendering can delay the request.
+    void sound?.setSuspended(true).catch(() => {});
+    sound?.stopAll();
+    autoPlayRunnerRef.current?.setSuspended(true, 0, interruptedAt);
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
-  }, [padTouchOff, ledInit, autoPlayRemoveGuide]);
+    // Firefox passes audio changes to its audio thread only when the current task ends, so this task
+    // stops at the mute and the lights are cleared in the next one. Autoplay is frozen meanwhile.
+    if (pendingInterruptionClearRef.current) return;
+    pendingInterruptionClearRef.current = clearInterruptedOutput;
+    inNextTask(settleInterruption);
+  }, [clearInterruptedOutput, settleInterruption]);
   interruptPlaybackRef.current = interruptPlayback;
 
   const activatePlaybackAudio = useCallback(async () => {
+    settleInterruption();
     if (document.hidden || keyboardBlockedRef.current) return false;
     const revision = ++interruptionRevisionRef.current;
     const sound = soundEngineRef.current;
@@ -833,7 +865,7 @@ export function useUniPadEngine() {
       !document.hidden && !keyboardBlockedRef.current && sound.context.state === 'running';
     if (ready) requestScreenWakeLock();
     return ready;
-  }, [requestScreenWakeLock]);
+  }, [settleInterruption, requestScreenWakeLock]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay' || targetMode === 'guidePlay') {
@@ -988,6 +1020,7 @@ export function useUniPadEngine() {
 
   /** Lets go of the open pack's audio, runners, controller and screen lock; the state is the caller's. */
   const releasePack = useCallback(() => {
+    pendingInterruptionClearRef.current = null;
     interruptionRevisionRef.current++;
     interruptedRef.current = false;
     soundEngineRef.current?.destroy();
@@ -1722,6 +1755,7 @@ export function useUniPadEngine() {
     const handleVisibilityChange = () => {
       if (document.hidden) interruptPlayback();
       else {
+        settleInterruption();
         ledRunnerRef.current?.setSuspended(false);
         requestScreenWakeLock();
         // Restoring an audio connection never releases the sequencer or restores old sources.
@@ -1730,8 +1764,14 @@ export function useUniPadEngine() {
       }
     };
     const handleBlur = () => interruptPlayback();
+    // A page being left runs no later task, so its lights and the controller are cleared at once.
+    const handlePageHide = () => {
+      interruptPlayback();
+      settleInterruption();
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     const restoreVisibleAudio = () => {
+      settleInterruption();
       if (document.hidden || keyboardBlockedRef.current || !interruptedRef.current) return;
       const sound = soundEngineRef.current;
       const revision = interruptionRevisionRef.current;
@@ -1753,9 +1793,10 @@ export function useUniPadEngine() {
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
-    window.addEventListener('pagehide', handleBlur);
+    window.addEventListener('pagehide', handlePageHide);
     const revisionRef = interruptionRevisionRef;
     return () => {
+      settleInterruption();
       revisionRef.current++;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
@@ -1763,9 +1804,9 @@ export function useUniPadEngine() {
       }
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('pagehide', handleBlur);
+      window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [interruptPlayback, requestScreenWakeLock, syncMidiStateToDevice]);
+  }, [interruptPlayback, settleInterruption, requestScreenWakeLock, syncMidiStateToDevice]);
 
   useEffect(() => {
     const revisionRef = loadRevisionRef;

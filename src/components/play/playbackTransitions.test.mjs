@@ -4,6 +4,7 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import JSZip from 'jszip';
 
+const { MessageChannel } = globalThis;
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
 for (const name of ['window', 'document', 'HTMLElement']) globalThis[name] = dom.window[name];
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
@@ -52,6 +53,11 @@ beforeEach(() => {
     mock.method(target, 'clearTimeout', id => timers.delete(id));
   }
   window.requestAnimationFrame = globalThis.requestAnimationFrame = run => later(run, 0);
+  // A port message is a later browser task, so it runs on the next tick like a due timer.
+  globalThis.MessageChannel = class {
+    port1 = { onmessage: null, close() {} };
+    port2 = { postMessage: data => later(() => this.port1.onmessage?.({ data }), 0), close() {} };
+  };
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame = id => timers.delete(id);
   globalThis.AudioContext = class {
     state = 'running'; destination = {}; currentTime = 0;
@@ -73,7 +79,7 @@ beforeEach(() => {
     close() { this.state = 'closed'; }
   };
 });
-afterEach(() => { cleanup(); mock.restoreAll(); delete globalThis.AudioContext; });
+afterEach(() => { cleanup(); mock.restoreAll(); delete globalThis.AudioContext; globalThis.MessageChannel = MessageChannel; });
 
 async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1000\nf 1 1\nd 1000\no 1 2 a 9', wormhole = false, ledName = '1 1 1', keySound, buttonY = 2, leds = { [ledName]: led } } = {}) {
   const zip = new JSZip();
@@ -658,6 +664,73 @@ test('visibility mutes output before a slow sequencer pause callback', async () 
   assert.notEqual(mutedAt, null);
   assert.ok(mutedAt - hiddenAt < 50, 'a slow runner must not hold up the output mute request');
   assert.equal(value, 0);
+});
+
+test('hiding ends its task once output is muted and clears the lights in the next task', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  assert.ok(audio.outputGain.value > 0);
+  // Firefox applies the mute only after the hide task, React commits included, has finished.
+  await visibility(true);
+  assert.equal(audio.outputGain.value, 0);
+  assert.ok(sources.every(source => source.stopped));
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'the hide task must not redraw the pads');
+  await draw();
+  assert.ok(result.current.state.padStates.flat().every(p => !p.pressed && !p.guide && p.color === 'transparent'));
+  assert.equal(result.current.state.autoPlayPlaying, false);
+});
+
+test('a return before the cleanup task clears the old lights before restoring playback', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  await visibility(true); await visibility(false);
+  assert.ok(result.current.state.padStates.flat().every(p => p.color === 'transparent'));
+  assert.equal(result.current.state.autoPlayPlaying, false);
+  const lit = starts.length;
+  await draw(); await tick(10000);
+  assert.equal(starts.length, lit, 'the pending cleanup must not run twice or restart the song');
+});
+
+test('leaving the page clears the controller lights in the hide task', async () => {
+  nextMidiConnected = true;
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  midiLog.length = 0;
+  // Navigation sends both in one task, and the page runs no task after it.
+  await flush(() => {
+    hidden = true;
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    window.dispatchEvent(new window.Event('pagehide'));
+  });
+  assert.ok(midiLog.some(event => event[0] === 'clear'), 'the controller is cleared before the page goes away');
+});
+
+test('a key held while hiding is released without a redraw in the hide task', async () => {
+  const { result } = await mount();
+  await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1' }))); await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+  await visibility(true);
+  assert.equal(audio.outputGain.value, 0);
+  assert.equal(result.current.state.padStates[0][0].pressed, true, 'the hide task must not redraw the released key');
+  await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+});
+
+for (const restore of ['dialog', 'gesture', 'play']) test(`a ${restore} before the cleanup task clears the old lights first`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  await flush(() => restore === 'dialog' ? result.current.setKeyboardBlocked(true) : window.dispatchEvent(new window.Event('blur')));
+  if (restore === 'dialog') await flush(() => result.current.setKeyboardBlocked(false));
+  if (restore === 'gesture') await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  if (restore === 'play') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await draw();
+    assert.equal(result.current.state.autoPlayPlaying, true, 'the old cleanup must not stop the new Play');
+    return;
+  }
+  assert.ok(result.current.state.padStates.flat().every(p => p.color === 'transparent'));
 });
 
 for (const selected of ['autoPlay', 'guidePlay', 'stepPractice']) {
