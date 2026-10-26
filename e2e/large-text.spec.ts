@@ -314,10 +314,12 @@ test.describe('the scroll-to-top button', () => {
             if (!button) return null;
             // offset* leave out the button's own scale-in.
             const box = { left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth, bottom: button.offsetTop + button.offsetHeight };
+            // Touching counts as covering: text in another font can widen a link by a fraction of
+            // a pixel, and a press on the shared edge could reach either control.
             const covered = [...document.querySelectorAll<HTMLElement>('#cta a, footer a, footer button')]
               .filter(target => {
                 const other = target.getBoundingClientRect();
-                return other.width > 0 && box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom;
+                return other.width > 0 && box.left <= other.right && other.left <= box.right && box.top <= other.bottom && other.top <= box.bottom;
               })
               .map(target => target.innerText);
             return { scrollY, top: box.top, barBottom: document.getElementById('navigation')!.offsetHeight, covered };
