@@ -1,7 +1,7 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test as restartTest, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
-import { test, expect, expectPads, installBrowserProbe, installationResponse } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, installBrowserProbe, installationResponse } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
 
@@ -68,6 +68,7 @@ async function openFeedbackModePack(page: Page, leds: boolean, saved: string | n
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'feedback.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page).toHaveURL(/pack=/);
+  await expectAudioOutputRunning(page);
 }
 const playMode = (page: Page, label: string) => page.getByRole('button', { name: `Play mode: ${label}`, exact: true });
 

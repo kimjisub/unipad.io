@@ -702,6 +702,12 @@ const analyticsEvents = (page: Page) => page.evaluate(() =>
     .filter(([command]) => command === 'event')
     .map(([, name, params]) => ({ name, inputSource: (params as Record<string, unknown> | undefined)?.input_source })));
 
+// The page view logged on load shows analytics is on; a build without the README's Firebase
+// configuration turns it off in every browser, and the pad press checks would only see no events.
+const expectAnalyticsOn = (page: Page) => expect.poll(() => analyticsEvents(page).then(events => events.length), {
+  message: 'No analytics event was queued. Rebuild with the Firebase configuration in the README.',
+}).toBeGreaterThan(0);
+
 const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<void>> = {
   screen: async page => { await pad(page, '0,0').hover(); await page.mouse.down(); await page.mouse.up(); },
   keyboard: async page => { await page.keyboard.down('q'); await page.keyboard.up('q'); },
@@ -713,6 +719,7 @@ for (const [source, press] of Object.entries(padInputs)) {
     await loadPack(page);
     const midi = await hasWebMidi(page);
     test.skip(source === 'midi' && !midi, noWebMidi);
+    await expectAnalyticsOn(page);
     await press(page);
     for (const [other, otherPress] of Object.entries(padInputs)) if (other !== 'midi' || midi) await otherPress(page);
     await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
@@ -723,6 +730,7 @@ for (const [source, press] of Object.entries(padInputs)) {
 
 test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
   await loadPack(page);
+  await expectAnalyticsOn(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   await expect.poll(() => starts(page)).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();

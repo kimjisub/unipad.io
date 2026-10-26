@@ -1,7 +1,7 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
 export interface BrowserProbe {
-  audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null };
+  audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null; outputState: () => string | null };
   /** `messages` reach the launchpad output, `synthMessages` the synthesizer Windows always lists. */
   midi: { supported: boolean; requests: MIDIOptions[]; messages: number[][]; synthMessages: number[][]; emit: (data: number[]) => void; unplug: () => void; plugAnother: () => void };
 }
@@ -50,6 +50,14 @@ export const stateTimeout = 15_000;
 export const expectPads = (page: Page, count = 64) =>
   expect(page.locator('[data-pad]')).toHaveCount(count, { timeout: stateTimeout });
 
+/**
+ * Playback starts only once the browser runs the audio output. When the device never opens, a mode
+ * button stays off; this names the device instead of the app state.
+ */
+export const expectAudioOutputRunning = (page: Page) =>
+  expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputState()),
+    { message: 'the browser did not start the audio output of the opened pack' }).toBe('running');
+
 export async function installBrowserProbe(page: Page) {
     await page.addInitScript(() => {
       const outputs: { analyser: AnalyserNode; samples: Float32Array<ArrayBuffer> }[] = [];
@@ -63,6 +71,7 @@ export async function installBrowserProbe(page: Page) {
             return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
           }));
         },
+        outputState: () => outputs.at(-1)?.analyser.context.state ?? null,
       };
       const midi: BrowserProbe['midi'] = { supported: typeof navigator.requestMIDIAccess === 'function', requests: [], messages: [], synthMessages: [], emit: () => {}, unplug: () => {}, plugAnother: () => {} };
       window.browserProbe = { audio, midi };
