@@ -6,7 +6,9 @@ import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const LARGE_BUTTON_BASE_CLASS =
 	'inline-flex min-h-[3.25rem] items-center rounded-xl py-2 text-[1.0625rem] font-semibold leading-tight transition-colors';
-const CENTERED_CONTENT_CLASS = 'justify-center gap-2';
+// 이름이 아이콘 옆에 안 들어가면 아이콘을 윗줄에 두고 이름을 아랫줄에 놓는다. 한국어는 단어 중간에서
+// 줄을 바꾸지 않아, 좁은 화면의 큰 글씨에서 아이콘 옆에 남는 폭보다 긴 단어가 버튼 여백으로 넘친다.
+const CENTERED_CONTENT_CLASS = 'flex-wrap justify-center gap-2 text-center';
 
 /** 소개 페이지의 큰 버튼 공통 모양(내용 가운데 정렬). 좌우 여백과 색은 쓰는 쪽에서 붙인다. */
 export const LARGE_BUTTON_CLASS = `${LARGE_BUTTON_BASE_CLASS} ${CENTERED_CONTENT_CLASS}`;
@@ -31,10 +33,9 @@ const variantClass = {
 } as const;
 
 // 정렬·간격·좌우 여백은 배치마다 여기서 한 가지씩만 정한다.
-// plain은 좁은 상자 안에서도 쓰여, 큰 글씨에서 여백이 글자 자리를 먹지 않도록 기본 크기 이상 늘리지 않고
-// 이름이 아이콘 옆에 안 들어가면 아이콘 아래로 내린다.
+// plain은 좁은 상자 안에서도 쓰여, 큰 글씨에서 여백이 글자 자리를 먹지 않도록 기본 크기 이상 늘리지 않는다.
 const layoutClass = {
-	plain: `${CENTERED_CONTENT_CLASS} flex-wrap px-[min(1.25rem,20px)] text-center sm:min-w-[9rem]`,
+	plain: `${CENTERED_CONTENT_CLASS} px-[min(1.25rem,20px)] sm:min-w-[9rem]`,
 	labeled: 'justify-start gap-3 px-3.5 sm:min-w-[10rem]',
 } as const;
 
