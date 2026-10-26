@@ -70,11 +70,13 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, and `e2e/sound-formats.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
+`e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`, `e2e/rectangular-pad-layout.spec.ts`,
+`e2e/large-text.spec.ts`, and `e2e/home.spec.ts` in Chromium on Linux; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
-on Windows 2025 with Chromium and the installed Chrome and Edge channels;
+on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
 failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
@@ -223,11 +225,19 @@ rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
 a held native storage response covers that transition. A deliberately delayed native
 decode checks that opening still works beyond the former five-second assertion.
-Native multi-touch CDP tests remain Chromium-only.
+Native multi-touch CDP tests remain Chromium-only. Windows Firefox reports the
+same explicit skips as local Firefox for CDP touch input and default font size
+changes; skipped tests are not evidence of those capabilities.
+On Linux, reproduce the browser job with:
+
+```bash
+pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts
+```
+
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
 node scripts/playback-summary.mjs
 ```
 

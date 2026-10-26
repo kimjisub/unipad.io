@@ -49,7 +49,7 @@ test('the aggregate test command includes all existing test formats and tooling 
   }
 });
 
-test('CI runs the playback and offline saved-pack browser tests in Chromium, apart from Web checks', () => {
+test('Linux runs playback, offline, sound, multi-touch and layout tests in Chromium, apart from Web checks', () => {
   const workflow = read('.github/workflows/ci.yml');
   const readme = read('README.md');
   const browser = job(workflow, 'browser-playback');
@@ -70,7 +70,12 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   }
   assert.match(browser, /if: failure\(\)\n\s+uses: actions\/upload-artifact@/);
   for (const folder of ['playwright-report/', 'test-results/']) assert.ok(browser.includes(folder), `${folder} must be uploaded`);
-  for (const spec of ['e2e/play.spec.ts', 'e2e/offline-play.spec.ts']) assert.ok(read(spec), `${spec} must exist`);
+  const command = browser.split('\n').find(line => line.includes('run: pnpm test:e2e'));
+  assert.ok(command, 'Linux browser test command must exist');
+  for (const file of [...playbackFiles, 'offline-play.spec.ts', 'sound-formats.spec.ts']) {
+    assert.ok(command.includes(`e2e/${file}`), `Linux must run ${file}`);
+    assert.ok(read(`e2e/${file}`), `${file} must exist`);
+  }
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 
@@ -78,6 +83,8 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   const windows = read('.github/workflows/playback-windows.yml');
   assert.match(windows, /runs-on: windows-2025/);
   assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
+  assert.match(windows, /project: \[chromium, chrome, msedge, firefox\]/);
+  assert.match(windows, /name: Install Firefox\n\s+if: matrix\.project == 'firefox'\n\s+run: pnpm exec playwright install firefox/);
   assert.doesNotMatch(windows, /pnpm install/);
   const command = windows.split('\n').find(line => line.includes('run: pnpm exec playwright test'));
   assert.ok(command, 'Windows playback test command must exist');
