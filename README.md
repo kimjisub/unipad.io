@@ -231,6 +231,11 @@ pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layou
 node scripts/playback-summary.mjs
 ```
 
+The machine needs an audio output device. GitHub's hosted Windows runners have none,
+so the workflow installs the Scream virtual sound card and starts Windows Audio first.
+Without an output, Firefox never starts Web Audio: the output-signal and auto-play
+tests then fail on "the browser did not start the audio output of the opened pack".
+
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,
 and fails on incomplete execution. Windows uploads them, signal attachments and failure traces for 14 days,

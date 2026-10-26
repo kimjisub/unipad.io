@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
@@ -492,6 +492,8 @@ for (const screen of [{ name: 'desktop', viewport: { width: 1280, height: 800 } 
 
     test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
       await loadPack(page);
+      // A stopped output also reads as silence; the idle check below means nothing until it runs.
+      await expectAudioOutputRunning(page);
       const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
       await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
       await pad(page, '0,0').hover();
@@ -565,6 +567,7 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
     });
   });
   await loadPack(page);
+  await expectAudioOutputRunning(page);
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   await auto.click();
@@ -749,6 +752,7 @@ for (const [source, press] of Object.entries(padInputs)) {
 
 test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
   await loadPack(page);
+  await expectAudioOutputRunning(page);
   await expectAnalyticsOn(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   await expect.poll(() => starts(page)).toBeGreaterThan(0);
