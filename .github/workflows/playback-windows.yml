@@ -42,6 +42,34 @@ jobs:
       - name: Install Chromium
         if: matrix.project == 'chromium'
         run: pnpm exec playwright install chromium
+      # Hosted Windows runners have no sound card and leave the Windows Audio service stopped.
+      # Chromium then plays into a fake output, but Firefox never starts Web Audio, so a pad stays
+      # silent and Auto never starts. The open-source Scream virtual sound card is the output here.
+      - name: Add a virtual audio output
+        timeout-minutes: 5
+        run: |
+          Get-Service audiosrv | Format-Table -AutoSize Name, Status, StartType
+          Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue | Format-Table -AutoSize FriendlyName, Status
+          $zip = "$env:RUNNER_TEMP\Scream.zip"
+          Invoke-WebRequest https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'FA33E25F9A46C61E4E0CD83362C51C3D2A45C6FE4091AAD7507E240E40F1A520') { throw 'Scream4.0.zip does not match its recorded SHA-256' }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\Scream"
+          $driver = "$env:RUNNER_TEMP\Scream\Install\driver\x64"
+          # The release's catalog signature has expired; re-sign it with a certificate only this runner trusts.
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Playback test audio output' -CertStoreLocation Cert:\LocalMachine\My
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\scream.cer" | Out-Null
+          foreach ($store in 'Root', 'TrustedPublisher') { Import-Certificate -FilePath "$env:RUNNER_TEMP\scream.cer" -CertStoreLocation "Cert:\LocalMachine\$store" | Out-Null }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          & $signtool.FullName sign /fd SHA256 /sm /sha1 $cert.Thumbprint "$driver\scream.cat"
+          if ($LASTEXITCODE) { throw "signtool failed with $LASTEXITCODE" }
+          & "$env:RUNNER_TEMP\Scream\Install\helpers\devcon-x64.exe" install "$driver\Scream.inf" '*Scream'
+          if ($LASTEXITCODE) { throw "devcon failed with $LASTEXITCODE" }
+          Start-Service audiosrv
+          # Windows registers the speaker endpoint a moment after the driver install returns.
+          $deadline = (Get-Date).AddSeconds(60)
+          while (-not ($endpoints = Get-PnpDevice -Class AudioEndpoint -Status OK -PresentOnly -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (-not $endpoints) { throw 'No audio output device is available' }
+          $endpoints | Format-Table -AutoSize FriendlyName, Status
       # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
       - name: Check playback, multi-touch and layout
         id: playback
