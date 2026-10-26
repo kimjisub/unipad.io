@@ -68,8 +68,11 @@ jobs:
           & "$env:RUNNER_TEMP\Scream\Install\helpers\devcon-x64.exe" install "$driver\Scream.inf" '*Scream'
           if ($LASTEXITCODE) { throw "devcon failed with $LASTEXITCODE" }
           Start-Service audiosrv
-          Get-PnpDevice -Class AudioEndpoint -PresentOnly | Format-Table -AutoSize FriendlyName, Status
-          if (-not (Get-PnpDevice -Class AudioEndpoint -Status OK -PresentOnly -ErrorAction SilentlyContinue)) { throw 'No audio output device is available' }
+          # Windows registers the speaker endpoint a moment after the driver install returns.
+          $deadline = (Get-Date).AddSeconds(60)
+          while (-not ($endpoints = Get-PnpDevice -Class AudioEndpoint -Status OK -PresentOnly -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (-not $endpoints) { throw 'No audio output device is available' }
+          $endpoints | Format-Table -AutoSize FriendlyName, Status
       # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
       - name: Check playback, multi-touch and layout
         id: playback
