@@ -87,6 +87,17 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);
 });
 
+test('Windows gives the browsers a verified audio output before the playback tests', () => {
+  const windows = read('.github/workflows/playback-windows.yml');
+  const audio = windows.indexOf('name: Add a virtual audio output');
+  assert.ok(audio >= 0, 'Windows must add an audio output: hosted runners have none and Firefox then never starts Web Audio');
+  assert.ok(audio < windows.indexOf('run: pnpm exec playwright test'), 'the audio output must exist before the tests start');
+  const step = windows.slice(audio, windows.indexOf('\n      - ', audio));
+  assert.match(step, /Get-FileHash .* -Algorithm SHA256\)\.Hash -ne '[0-9A-F]{64}'/, 'the downloaded driver must match a recorded SHA-256');
+  assert.match(step, /Start-Service audiosrv/);
+  assert.match(step, /throw 'No audio output device is available'/);
+});
+
 test('WebKit and Firefox include the shared playback tests', async () => {
   const { default: config } = await import('../playwright.config.ts');
   for (const engine of ['webkit', 'firefox']) {
