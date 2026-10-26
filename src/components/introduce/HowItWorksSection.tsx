@@ -2,7 +2,7 @@ import { ArrowRight, FolderOpen, Music, Share2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { SectionContainer, SectionHeader } from '@/components/introduce/SectionHeader';
-import { LARGE_BUTTON_CLASS } from '@/components/introduce/StoreButtons';
+import { LARGE_BUTTON_CLASS, LARGE_BUTTON_PADDING_X_CLASS } from '@/components/introduce/StoreButtons';
 import { Link } from '@/i18n/navigation';
 import { GET_STARTED_PATH } from '@/lib/constants';
 
@@ -35,13 +35,13 @@ export const HowItWorksSection = () => {
 			</ol>
 
 			<div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-				<Link href="/play" className={`${LARGE_BUTTON_CLASS} bg-foreground px-6 text-background hover:bg-foreground/90`}>
+				<Link href="/play" className={`${LARGE_BUTTON_CLASS} ${LARGE_BUTTON_PADDING_X_CLASS} bg-foreground text-background hover:bg-foreground/90`}>
 					{t('startNow')}
 					<ArrowRight className="h-5 w-5 shrink-0" aria-hidden />
 				</Link>
 				<Link
 					href={GET_STARTED_PATH}
-					className={`${LARGE_BUTTON_CLASS} border border-muted px-6 text-foreground hover:bg-muted/40`}
+					className={`${LARGE_BUTTON_CLASS} ${LARGE_BUTTON_PADDING_X_CLASS} border border-muted text-foreground hover:bg-muted/40`}
 				>
 					{t('readGuide')}
 				</Link>

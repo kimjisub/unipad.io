@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
-import { pad, point, touch, touchScreens, type Contact } from './touch';
+import { test, expect, expectPads } from './browser';
+import { lit, pad, point, slideAcrossPads, touch, touchScreens, type Contact } from './touch';
 
 // Multi-touch items A-I. Item H (a loop held while another finger changes chain) is
 // covered by the CR tests in chain-release.spec.ts, which run on the same two screens.
@@ -12,14 +12,11 @@ test.use({ hasTouch: true });
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 const stops = (page: Page) => page.evaluate(() => window.browserProbe.audio.stops);
 const sortedStops = async (page: Page) => (await stops(page)).sort((a, b) => a - b);
-/** Every pad showing the press light, in position order. */
-const lit = (page: Page) => page.locator('[data-pad]:has(img[src="/theme/btn_.png"])')
-  .evaluateAll(pads => pads.map(p => (p as HTMLElement).dataset.pad!).sort());
 
 async function load(page: Page) {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(1);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 }
@@ -94,8 +91,9 @@ for (const screen of touchScreens) {
       expect(await stops(page)).toEqual([2, 3, 4, 1]);
     });
 
-    test('D dragging onto the next pad turns the old pad off and sounds the new one', async ({ page }) => {
+    test('D with slide on, dragging onto the next pad turns the old pad off and sounds the new one', async ({ page }) => {
       await load(page);
+      await slideAcrossPads(page);
       const input = await session(page);
       const [finger] = await contacts(page, ['4,2']);
       await touch(input, 'touchStart', [finger]);
@@ -114,8 +112,9 @@ for (const screen of touchScreens) {
       expect(await stops(page)).toEqual([1, 2, 3]);
     });
 
-    test('E two fingers dragged at once are each followed', async ({ page }) => {
+    test('E with slide on, two fingers dragged at once are each followed', async ({ page }) => {
       await load(page);
+      await slideAcrossPads(page);
       const input = await session(page);
       const [a, b] = await contacts(page, ['1,1', '6,6']);
       await touch(input, 'touchStart', [a, b]);
@@ -131,6 +130,44 @@ for (const screen of touchScreens) {
       await touch(input, 'touchEnd', []);
       await expectHeld(page, [], 5);
       expect(await sortedStops(page)).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    test('D with slide off, a finger drawn over other pads, a gap and off the pads stays on its first pad', async ({ page }) => {
+      await load(page);
+      const input = await session(page);
+      const [finger] = await contacts(page, ['4,2']);
+      await touch(input, 'touchStart', [finger]);
+      await expectHeld(page, ['4,2'], 1);
+      const box = (await pad(page, '4,2').boundingBox())!;
+      for (const step of [
+        { ...finger, x: box.x + box.width * 1.02 },
+        await moved(page, finger, '4,3'),
+        await moved(page, finger, '5,3'),
+        { ...finger, x: 2, y: 2 },
+      ]) {
+        await touch(input, 'touchMove', [step]);
+        await expectHeld(page, ['4,2'], 1);
+      }
+      expect(await stops(page)).toEqual([]);
+      await touch(input, 'touchEnd', []);
+      await expectHeld(page, [], 1);
+      expect(await stops(page)).toEqual([1]);
+    });
+
+    test('E with slide off, two dragged fingers each keep their own pad', async ({ page }) => {
+      await load(page);
+      const input = await session(page);
+      const [a, b] = await contacts(page, ['1,1', '6,6']);
+      await touch(input, 'touchStart', [a, b]);
+      await expectHeld(page, ['1,1', '6,6'], 2);
+      await touch(input, 'touchMove', [await moved(page, a, '1,2'), await moved(page, b, '6,5')]);
+      await expectHeld(page, ['1,1', '6,6'], 2);
+      await touch(input, 'touchEnd', [b]);
+      await expectHeld(page, ['1,1'], 2);
+      expect(await stops(page)).toEqual([2]);
+      await touch(input, 'touchEnd', []);
+      await expectHeld(page, [], 2);
+      expect(await sortedStops(page)).toEqual([1, 2]);
     });
 
     test('F lifting one of two held fingers turns off only its pad', async ({ page }) => {

@@ -133,26 +133,108 @@ apps keep those switches in the option panel and reset them per session.
 
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Run of 2026-10-02 (Korea time), 124 cases: 76 pass on all three
-platforms; the rest are the differences below, 21 cases whose expected result no doc decides (observed
-only) and 4 cases the iOS harness cannot observe. This is a result for those cases, not a statement
+covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
+(Korea time), on corpus `aae2cc72…`, 172 cases: Android passes 170 with two pinned storage differences;
+iOS and the web pass all 172. None is undetermined or unverified
+([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
 that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
 are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
 
 ### Open differences found by the corpus
 
-Three, all Android, from three of the cases where the platforms gave different results and the
-expected result was then decided (README there, "Decided behaviour"). Each is pinned until the
-platform's own fix removes it.
+- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
+  Native input-path observations on application commit `208afb9e`, after
+  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
+  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
+  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
+  remain on until the last input releases. The older `777cc4a3` observations predate that input change
+  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
+  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
+  stored historical app copies remain separate from these observations. See the
+  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
+  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
 
-- **INF-007, Android:** an `info` line without `=` records a format warning. `info.mdx` now says
-  the line is ignored without a warning; iOS and the web already do so.
-- **INF-010 and INF-016, Android:** `buttonX=abc` or `buttonY=abc` is read as 0 and the pack opens without
-  a pad column or row (three warnings). `info.mdx` now says loading is aborted; iOS and the web refuse the
-  pack.
+
+A new difference found by the corpus is pinned in `divergences.json` and listed here until the
+platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
+  [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
+  mode-off path. A new asserting observation at application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`
+  with separately retained executor changes matches the unchanged expected final checkpoint `[]`.
+  Only the iOS pin is retired, producing the 382-case corpus `2223116e3a1612fcebed1d6c03e5075b3f0dbd1cd4bcffa12ff81b3e86c93d50`.
+  The original partial failure and the newer full run keep their own hashes and statuses. The full
+  run still failed (raw 374 pass, 3 fail, 5 unverified, exit 65), and is not a run on this regenerated
+  corpus. RUN-G613 remains an unpinned repeat-count observation error. See the
+  [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25)
+  and [result limits](unipack-conformance/RESULTS.md#ios-delayed-chain-callback-corrected-2026-10-25).
+
+- **RUN-G617, RUN-G618: the web play hook releases the later input's sound and lights immediately.**
+  The play hook preserves each input identity and handles each release while keeping the press
+  overlay until the final input. Both cases match the corrected expectations on application commit
+  `1dbf0f464611041a3da6db02ce6b2175b41e4dbf` with unchanged test input SHA256 `7ac226a8…`.
+  The two web pins are removed in regenerated corpus `cbb87354…` (`859e24aa…` together with the
+  iOS RUN-G616 pin, the resolved RUN-P001/RUN-P002 web pins and the sixteen web sound lookup pins
+  retired by [unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183)); the earlier failure observations
+  keep their original commit and hash. No native or physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
+- **RUN-P001, RUN-P002: web trailing-wait observations match their existing expectations.**
+  [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178), merged as
+  `d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`, resolves the two web observations without
+  changing inputs, fingerprints, scenarios or expected results. Only their web failure pins were
+  removed. The reviewed 382-case corpus records 361 web passes and 21 remaining pinned failures;
+  its SHA256 is `9bf7e8ef0676fc1370976f32c77c4fa9c96752b5d551021496e2610d2580c5b6`, including
+  the newer RUN-G616 iOS failure observation. Both native references still select historical
+  214-case snapshots: their two warnings remain, and strict current-copy verification is incomplete.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
+  for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms and other
+  verification limits.
+- **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
+  [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
+  and LED coordinate/chain storage differences. G6 already removed both old Android pins.
+  The app copy references now select that Android merge and iOS merge `e8ac34d…`
+  ([unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213)): identical 214-case snapshots,
+  SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
+  The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
+  app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
+- **Twelve G6 web playback differences matched their expectations at that revision.**
+  RUN-G617 and RUN-G618 have since received corrected input-owned release expectations and are
+  failed again before the input-owned release fix above. The following observation retains its original hash.
+  [unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173) fixes RUN-G601..605,
+  RUN-G607..610 and RUN-G616..618. Their web failure pins were already retired in
+  [unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165). A rerun on the merged G6 main
+  confirms all twelve with unchanged inputs and expectations: 382 cases, 359 pass and 23 remaining
+  pinned web failures. RUN-G606 follows a separate revised rule and is not part of this removal.
+  The corpus SHA256 remains `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`;
+  the app pins still describe historical copies, not current compatibility results.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#web-playback-observations-retired-with-g6-2026-10-24)
+  for the exact tested commit, copy hashes and verification limits.
+- **RUN-A-003: Android no longer reports a chain change twice when an autoPlay chain command is
+  followed by a press.** [unipad-android#283](https://github.com/kimjisub/unipad-android/pull/283)
+  fixes the command order so the recorded events match the existing expected result. Only this Android
+  observation-order pin was removed; case inputs, fingerprints, scenarios, expected results and bases
+  are unchanged. The previous corpus SHA256 was
+  `e233029559c3a251ad8c2103905135a08a7d4b0207715ea0e8633f228c7bb358`; the regenerated SHA256 is
+  `37096f03b811ae4813ed3a5b68dffbb6da70d741cf67bae4a5c52559e4a8eabf`.
+  See [RESULTS.md](unipack-conformance/RESULTS.md#changes-after-the-android-autoplay-chain-order-fix-2026-10-21)
+  for the matching app-copy commits and the limits of the retained aggregate report.
+- **KS-B01..08, KL-BN01..08, KL-BE01..10, AP-B01..08: a number in a pack is a 32-bit integer on all
+  three.** Android always
+  read pack numbers as 32-bit integers, so `2147483648` was a format error and
+  only its line or file was skipped. iOS read numbers up to 64 bits and the web any number, so the same
+  value was a range error there; the web also rounded numbers past 2^53 and dropped a round LED line with
+  a 400-digit number without a warning. iOS and the web now read a number that does not fit in 32 bits as
+  a format error and range-check one that does, as Android does. The 34 cases were added to the corpus (a
+  keyLED file name holds the 400-digit number cut to 240 digits, so the name stays within the 255-byte limit of a file name); the
+  previous corpus SHA256 was `844fa232eafac305f068fafad1cf4ada2e343f423a802b128242812711943c95`.
+- **INF-007, INF-010, INF-016: Android reads `info` as the docs say.** Android skips an `info` line
+  without `=` without a warning and refuses a pack whose `buttonX` or `buttonY` is not an integer
+  (`info : buttonX is not a number`) instead of opening it with no pads. Its three pins were removed; the
+  input fingerprints are unchanged. The corpus SHA256 after that fix was
+  `844fa232eafac305f068fafad1cf4ada2e343f423a802b128242812711943c95`; the previous one was
+  `4a67dbe1e91930816e58816490ae1522c4b7ed300a2b8a5f028bb0a281d61381`. See
+  [RESULTS.md](unipack-conformance/RESULTS.md).
 - **KS-019, KS-020, KS-021, RUN-S-006: a `keySound` name that differs from its file only in case
   plays that file on all three.** Official store packs list `End.wav` for a file stored as `END.wav`.
   The web already used the file whose whole path under `sounds/` differs only in case; iOS left those

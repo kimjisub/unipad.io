@@ -1,6 +1,6 @@
 // Changing the Launchpad model while connected, in the order Android's MidiConnection.driver setter
 // and iOS's MidiManager.driver didSet use: lights off in the old model's layout, the new model's mode
-// switch, then the status listener (which redraws the board and shows the model).
+// switch. Status changes immediately; only the light redraw waits for the new mode.
 //
 // Compiled by tsc before running, like the other unipack *.test.ts.
 import { test } from 'node:test';
@@ -60,6 +60,7 @@ async function connect(
     onPadTouch: (x, y, pressed) => { if (pressed) pads.push([x, y]); },
     onChainTouch: () => {},
     onFunctionKey: () => {},
+    onResync: () => { log.push(`redraw:${midi.getStatus().resolvedProfile}`); },
   };
   const midi = new MidiConnection();
   await midi.connect(listener, {
@@ -72,21 +73,22 @@ async function connect(
   return { midi, log, pads, press, flush: timers.flush };
 }
 
-test('a model change turns the old lights off, switches the mode, then reports the new model', async (t) => {
+test('a model change reports at once but redraws only after the new mode settles', async (t) => {
   const { midi, log, flush } = await connect(t);
 
   midi.setProfile('launchpad_mini_mk3');
   assert.ok(log.length > 0, 'the old lights are turned off at once');
   assert.ok(!log.some(isSysEx), 'the mode switch waits its turn');
-  assert.ok(!log.some((entry) => entry.startsWith('status:')), 'nothing is redrawn before the mode switch');
-  // Note off for the X's top-left pad and CC 0 for its first round button and logo.
-  assert.ok(log.includes('80 51 00'));
+  assert.equal(log.at(-1), 'status:launchpad_mini_mk3', 'the model and old holds change immediately');
+  assert.ok(!log.some((entry) => entry.startsWith('redraw:')), 'lights wait for the mode switch');
+  // Note-on velocity zero for the X's top-left pad and CC 0 for its first round button and logo.
+  assert.ok(log.includes('90 51 00'));
   assert.ok(log.includes('b0 5b 00'));
   assert.ok(log.includes('b0 63 00'));
 
   const cleared = log.length;
   flush();
-  assert.deepEqual(log.slice(cleared), [...MINI_MK3_INIT, 'status:launchpad_mini_mk3']);
+  assert.deepEqual(log.slice(cleared), [...MINI_MK3_INIT, 'redraw:launchpad_mini_mk3']);
   assert.equal(midi.getStatus().resolvedProfile, 'launchpad_mini_mk3');
 });
 
@@ -98,7 +100,8 @@ test('changing the model again before the mode switch is sent sends only the las
   flush();
 
   assert.deepEqual(log.filter(isSysEx), X_INIT);
-  assert.deepEqual(log.filter((entry) => entry.startsWith('status:')), ['status:launchpad_x']);
+  assert.deepEqual(log.filter((entry) => entry.startsWith('status:')), ['status:launchpad_mini_mk3', 'status:launchpad_x']);
+  assert.deepEqual(log.filter((entry) => entry.startsWith('redraw:')), ['redraw:launchpad_x']);
 });
 
 test('disconnecting cancels a mode switch still waiting to be sent', async (t) => {
@@ -111,15 +114,15 @@ test('disconnecting cancels a mode switch still waiting to be sent', async (t) =
   assert.ok(!log.some(isSysEx));
 });
 
-test('a connection with no output goes back to the Auto layout when Auto is chosen again', async (t) => {
+test('a connection with no output detects its input layout when Auto is chosen again', async (t) => {
   const { midi, log, pads, press } = await connect(t, { profile: 'launchpad_x', withOutput: false });
 
   midi.setProfile('auto');
   assert.deepEqual(log, ['status:none']);
-  // Note 11 is the bottom-left pad of the X layout but the top-left pad of the Auto layout with no
-  // output, as after connecting on Auto.
+  // As Android's per-device driver, Auto recognises the input even without an output.
+  // The displayed output profile stays none, but note 11 is the X's bottom-left pad.
   press(11);
-  assert.deepEqual(pads, [[0, 0]]);
+  assert.deepEqual(pads, [[7, 0]]);
 });
 
 test('choosing a model after disconnecting reports nothing and leaves no model in use', async (t) => {

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
 import { savedRecords, type SavedRecord } from './saved-packs';
 
@@ -28,7 +28,7 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
   await page.goto('/play');
   await database.publish(1);
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(async () => (await savedRecords(page)).length).toBe(1);
   await page.goto('/play');
   await expect(page.getByRole('option', { name: PACK_NAME, exact: true })).toBeVisible();
@@ -36,8 +36,8 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
     const open = indexedDB.open('unipad');
     open.onsuccess = () => {
       const db = open.result;
-      const transaction = db.transaction('unipacks', 'readwrite');
-      const store = transaction.objectStore('unipacks');
+      const transaction = db.transaction('unipackMetadata', 'readwrite');
+      const store = transaction.objectStore('unipackMetadata');
       const request = store.getAll();
       request.onsuccess = () => request.result.forEach(record => store.put({ ...record, storeCode }));
       transaction.oncomplete = () => { db.close(); resolve(); };
@@ -71,7 +71,7 @@ test('keeps the downloaded copy when saving the store pack again fails', async (
 
   await page.goto('/play');
   await page.getByRole('option', { name: PACK_NAME, exact: true }).press('Enter');
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
 });
 
 test('keeps a single copy after downloading the store pack again', async ({ page }, testInfo) => {

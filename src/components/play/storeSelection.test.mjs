@@ -28,7 +28,7 @@ mock.method(console, 'error', (...args) => rendererErrors.push(args.join(' ')));
 mock.method(console, 'warn', (...args) => rendererWarnings.push(args.join(' ')));
 
 const React = await import('react');
-const { render, cleanup, fireEvent, act } = await import('@testing-library/react');
+const { render, cleanup, fireEvent, act, within } = await import('@testing-library/react');
 // TSX components use the CommonJS entry; share its translation context.
 const { NextIntlClientProvider } = createRequire(import.meta.url)('next-intl');
 const { MotionGlobalConfig } = createRequire(import.meta.url)('framer-motion');
@@ -63,7 +63,7 @@ const storeProps = {
   downloadedCodes: new Set(), downloadedPackIdByCode: new Map(),
   downloadingCode: null, failedCode: null, downloadProgress: 0,
   onClose: noop, onReload: noop, onDownload: noop, onRetryFailed: noop,
-  onPlayDownloaded: noop, onCancelDownload: noop, onYoutube: noop, onWebsite: noop,
+  onPlayDownloaded: noop, onCancelDownload: noop, onYoutube: noop,
 };
 
 
@@ -122,4 +122,58 @@ test('manual selection, search, filters, sorting, keyboard and reopen stay usabl
   await delay(50);
   view.rerender(wrapped(StoreModal, props));
   assert.equal(selected(view), 'second');
+});
+
+
+test('store initial focus does not take focus back from a chosen button', async () => {
+  const view = render(wrapped(StoreModal, { ...storeProps, visible: true }));
+  const led = view.getByRole('button', { name: 'LED', exact: true });
+  led.focus();
+  assert.equal(document.activeElement === led, true, 'the chosen LED button keeps focus');
+  // Real timers: the old pending focus runs before this later timer resolves.
+  await delay(100);
+  assert.equal(document.activeElement === led, true, 'the chosen LED button keeps focus');
+});
+
+test('store initial focus reaches search when loading finishes later', async () => {
+  const props = { ...storeProps, visible: true };
+  const view = render(wrapped(StoreModal, { ...props, loading: true }));
+  await delay(100);
+  view.rerender(wrapped(StoreModal, props));
+  assert.equal(document.activeElement === view.getByRole('textbox'), true, 'search receives focus when the result view first appears');
+});
+
+test('store initial focus preserves a button selected while loading', async () => {
+  const props = { ...storeProps, visible: true };
+  const view = render(wrapped(StoreModal, { ...props, loading: true }));
+  const close = view.getByRole('button', { name: 'Close', exact: true });
+  close.focus();
+  view.rerender(wrapped(StoreModal, props));
+  await delay(100);
+  assert.equal(document.activeElement === close, true, 'the chosen Close button keeps focus');
+});
+
+test('a selected pack offers YouTube, download and play, and never links to its download file', () => {
+  const calls = [];
+  const record = (kind) => (item) => calls.push(`${kind}:${item.code}`);
+  const packs = items.map((item) => ({ ...item, url: `https://unipack.unipad.io/store/${item.code}.zip` }));
+  const view = render(wrapped(StoreModal, {
+    ...storeProps, visible: true, items: packs,
+    downloadedCodes: new Set(['second']), downloadedPackIdByCode: new Map([['second', 'pack-second']]),
+    onYoutube: record('youtube'), onDownload: record('download'), onPlayDownloaded: record('play'),
+  }));
+  const option = (code) => view.container.querySelector(`[data-store-code="${code}"]`);
+
+  for (const code of ['first', 'second']) {
+    fireEvent.click(option(code));
+    assert.equal(selected(view), code);
+    assert.ok(!view.queryByRole('button', { name: /website/i }), `${code} shows a Website button`);
+    assert.ok(!view.container.querySelector('[href*=".zip"]'), `${code} links to its download file`);
+  }
+  fireEvent.click(view.getByRole('button', { name: 'Play Downloaded Pack' }));
+  fireEvent.click(option('first'));
+  fireEvent.click(view.getByRole('button', { name: 'YouTube' }));
+  fireEvent.click(within(option('first')).getByRole('button', { name: 'Download' }));
+  fireEvent.click(within(option('second')).getByRole('button', { name: 'Play' }));
+  assert.deepEqual(calls, ['play:second', 'youtube:first', 'download:first', 'play:second']);
 });

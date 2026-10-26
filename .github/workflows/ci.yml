@@ -15,7 +15,7 @@ on:
         description: Full unipad-ios commit whose corpus copy to compare (empty uses copies.json)
         required: false
         default: ''
-  # Weekly, the latest default branches of all three repositories, so a copy changed only in an app is noticed.
+  # Weekly, the latest default branches of all three repositories, so a copy changed only in an app is noticed; historical pins apply only to their exact commit.
   schedule:
     - cron: '23 4 * * 1'
 
@@ -104,8 +104,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Build
         run: pnpm build
-      - name: Test playback and offline saved packs
-        run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts
+      - name: Test playback, offline saved packs and sound formats
+        run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts
       - name: Upload Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -124,8 +124,8 @@ jobs:
           fi
 
   # The UniPack conformance corpus is copied byte for byte into unipad-android and unipad-ios. Each app's
-  # own check catches a copy that does not match the corpus.sha256 beside it, but not an older corpus.json
-  # copied together with its own older hash; only this comparison with the canonical directory does.
+  # own check catches a copy that does not match the corpus.sha256 beside it. This comparison also checks
+  # the declared historical hash, or requires byte equality with the current corpus for a plain commit pin.
   unipack-copies:
     name: UniPack corpus copies
     runs-on: ubuntu-24.04
@@ -176,8 +176,8 @@ jobs:
         run: node --test meta/unipack-conformance/selftest.mjs
       - name: Check the corpus is what its sources build
         run: node meta/unipack-conformance/build-corpus.mjs --check
-      - name: Compare the app copies with the corpus
-        run: node meta/unipack-conformance/sync.mjs --check --android copies/android --ios copies/ios
+      - name: Verify the declared app copy bytes and report outdated copies
+        run: node meta/unipack-conformance/sync.mjs --check --android copies/android --ios copies/ios --android-commit "${{ steps.commits.outputs.android }}" --ios-commit "${{ steps.commits.outputs.ios }}"
       - name: Record the compared commits
         if: always() && steps.commits.outcome == 'success'
         env:
@@ -185,4 +185,4 @@ jobs:
           IOS_COMMIT: ${{ steps.commits.outputs.ios }}
           OUTCOME: ${{ job.status }}
         run: |
-          echo "Corpus copies at unipad-android \`$ANDROID_COMMIT\` and unipad-ios \`$IOS_COMMIT\`, compared with \`$(sha256sum meta/unipack-conformance/corpus.json | cut -d' ' -f1)\`: $OUTCOME." >> "$GITHUB_STEP_SUMMARY"
+          echo "Declared corpus copy bytes (not app compatibility results) at unipad-android \`$ANDROID_COMMIT\` and unipad-ios \`$IOS_COMMIT\`, compared with \`$(sha256sum meta/unipack-conformance/corpus.json | cut -d' ' -f1)\`: $OUTCOME." >> "$GITHUB_STEP_SUMMARY"

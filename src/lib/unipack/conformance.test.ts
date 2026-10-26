@@ -11,9 +11,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { LedRunner } from './LedRunner';
+import { AutoPlayRunner } from './AutoPlayRunner';
 import { AUTO_PLAY_INPUT, SoundEngine } from './SoundEngine';
 import {
-  actualFor, capturedCase, classify, corpusPath, CorpusCase, CorpusFile, Deps, fingerprintOf, Json, loadCorpus, observe, PLATFORM, REAL,
+  actualFor, capturedCase, caseFingerprint, classify, corpusPath, CorpusCase, CorpusFile, Deps, Json, loadCorpus, normalizeError, observe, PLATFORM, REAL,
   resultFor, verifyCorpusDigest, verifyFingerprint, warningCaptureFile,
 } from './conformanceHarness';
 
@@ -48,11 +49,31 @@ describe('corpus integrity', () => {
   });
 });
 
+// Screen cases exercise the hook in an isolated DOM process, so chain selection and input ownership
+// are measured where the app actually handles them, rather than recreated by this runner adapter.
+const screenActuals = new Map<string, Json>();
+if (corpus.cases.some((c) => c.screenInputs)) {
+  const run = spawnSync(process.execPath, ['--import', 'tsx', 'meta/unipack-conformance/web-screen.mjs'], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(run.status, 0, `screen adapter failed: ${run.stdout}\n${run.stderr}`);
+  const line = run.stdout.split('\n').find((l) => l.startsWith('UNIPACK-SCREEN-RESULT '));
+  assert.ok(line, 'screen adapter must report its actual results');
+  const result = JSON.parse(line.slice('UNIPACK-SCREEN-RESULT '.length));
+  assert.equal(result.corpusSha256, sha256, 'screen adapter must run the same corpus');
+  for (const entry of result.cases) {
+    assert.equal(screenActuals.has(entry.id), false, `duplicate screen case ${entry.id}`);
+    screenActuals.set(entry.id, entry.actual);
+  }
+}
+
 describe('cases', () => {
   for (const c of corpus.cases) {
     test(`${c.id} ${c.title}`, async () => {
       verifyFingerprint(c, corpus);
-      const { actual, capture, outcome } = await resultFor(c, corpus);
+      const observed = c.screenInputs ? screenActuals.get(c.id) : undefined;
+      if (c.screenInputs) assert.notEqual(observed, undefined, `${c.id}: screen adapter did not execute this case`);
+      const { actual, capture, outcome } = c.screenInputs
+        ? { actual: observed!, capture: null, outcome: classify(c, observed!) }
+        : await resultFor(c, corpus);
       results.push({ id: c.id, fingerprint: c.fingerprint, status: outcome.status, detail: outcome.detail, actual });
       if (capture) captured.push(capturedCase(c, corpus, capture));
       if (RECORD_ONLY) return;
@@ -61,8 +82,39 @@ describe('cases', () => {
   }
 });
 
+test('trailing-wait fixtures leave no held input for completion cleanup', async () => {
+  class CompletionCheckedRunner extends AutoPlayRunner {
+    constructor(...args: ConstructorParameters<typeof AutoPlayRunner>) {
+      const [pack, listener, ...rest] = args;
+      const held = new Set<string>();
+      super(pack, {
+        ...listener,
+        onPadTouchOn(x, y, at) { held.add(`${x},${y}`); listener.onPadTouchOn(x, y, at); },
+        onPadTouchOff(x, y, at) { held.delete(`${x},${y}`); listener.onPadTouchOff(x, y, at); },
+        onEnd() { assert.equal(held.size, 0, 'fixture leaves a held input at completion'); listener.onEnd(); },
+      }, ...rest);
+    }
+  }
+  for (const id of ['RUN-P001', 'RUN-P002']) {
+    const c = byId(id);
+    await actualFor(c, corpus, { ...REAL, AutoPlayRunner: CompletionCheckedRunner });
+    const unpaired = { ...c, files: c.files.map(f => f.path === 'autoPlay' ? { ...f, text: f.text!.replace('touch', 'on') } : f) };
+    await assert.rejects(actualFor(unpaired, corpus, { ...REAL, AutoPlayRunner: CompletionCheckedRunner }), /fixture leaves a held input/);
+  }
+});
+
 // A check that cannot fail proves nothing: each of these breaks one thing the cases above rely on and
 // requires the comparison to notice.
+test('screen input cases cannot pass through the lower-level runner adapter', async () => {
+  for (const c of corpus.cases.filter((c) => c.screenInputs)) {
+    const result = await resultFor(c, corpus);
+    assert.equal(result.actual, null, c.id);
+    assert.equal(result.outcome.status, 'unverified', c.id);
+    assert.match(result.outcome.detail, /play-screen adapter/, c.id);
+    await assert.rejects(observe(c, corpus), /play-screen adapter/, c.id);
+  }
+});
+
 describe('the checks can fail', () => {
   test('a copy of corpus.json that does not hash to its corpus.sha256, or has none, is refused', () => {
     const bytes = readFileSync(corpusPath());
@@ -78,7 +130,7 @@ describe('the checks can fail', () => {
   test('a changed input file no longer matches the case fingerprint', () => {
     const c = byId('KS-001');
     const altered: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'keySound' ? { ...f, text: `${f.text}\n1 2 2 c.wav` } : f)) };
-    assert.notEqual(fingerprintOf(altered.files, corpus), c.fingerprint);
+    assert.notEqual(caseFingerprint(altered.files, corpus), c.fingerprint);
     assert.throws(() => verifyFingerprint(altered, corpus), /hash to/);
   });
 
@@ -120,6 +172,46 @@ describe('the checks can fail', () => {
     assert.equal(classify(c, await actualFor(notForwarded, corpus)).status, 'fail');
   });
 
+  test('leaving out what the play screen does on a chain change fails a queue reset case', async () => {
+    const c = byId('RUN-S-012');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const clampOnly: Deps = { ...REAL, changeChain: (pack, next) => (Number.isInteger(next) ? Math.max(0, Math.min(next, pack.info.chain - 1)) : null) };
+    assert.equal(classify(c, await actualFor(c, corpus, clampOnly)).status, 'fail');
+  });
+
+  test('the decoder stand-in fails a sound that is not audio and nothing else', async () => {
+    const c = byId('RUN-S-001');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    assert.equal(classify(byId('RUN-RP-002'), await actualFor(byId('RUN-RP-002'), corpus)).status, 'pass');
+    const notAudio: CorpusCase = { ...c, files: c.files.map((f) => (f.path === 'sounds/a.wav' ? { ...f, asset: 'not-audio' } : f)) };
+    // A silent queue entry still advances to the next playable sound.
+    assert.deepEqual(await actualFor(notAudio, corpus), { checkpoints: [[['sound', 0, 0, 0, 'b.wav', 0]]] });
+  });
+
+  test('a sound stop is reported only in a scenario that watches stops', async () => {
+    const c = byId('RUN-S-010');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    const unwatched: CorpusCase = { ...c, scenario: c.scenario!.filter((s) => s.do !== 'watchStops') };
+    assert.equal(classify(c, await actualFor(unwatched, corpus)).status, 'fail');
+  });
+
+  test('RUN-RP-005 fails when endless sounds ignore release', async () => {
+    const c = byId('RUN-RP-005');
+    assert.equal(classify(c, await actualFor(c, corpus)).status, 'pass');
+    class UnreleasedSoundEngine extends SoundEngine {
+      soundOff(): void {}
+    }
+    assert.equal(classify(c, await actualFor(c, corpus, { ...REAL, SoundEngine: UnreleasedSoundEngine })).status, 'fail');
+  });
+
+  test('RUN-RP-005 fails when autoPlay continues after it is turned off', async () => {
+    const c = byId('RUN-RP-005');
+    class UnstoppedAutoPlayRunner extends AutoPlayRunner {
+      stop(): void {}
+    }
+    assert.equal(classify(c, await actualFor(c, corpus, { ...REAL, AutoPlayRunner: UnstoppedAutoPlayRunner })).status, 'fail');
+  });
+
   test('autoPlay and the player hold pads under different inputs, as on the play screen', async () => {
     const c = byId('RUN-RP-003');
     const withPlayer: CorpusCase = { ...c, scenario: [{ do: 'press', x: 1, y: 1 }, { do: 'release', x: 1, y: 1 }, ...c.scenario!] };
@@ -134,6 +226,31 @@ describe('the checks can fail', () => {
     assert.equal(typeof playerOn[1], 'string');
     assert.notEqual(playerOn[1], AUTO_PLAY_INPUT);
     assert.deepEqual([playerOff, autoOn, autoOff], [['off', playerOn[1]], ['on', AUTO_PLAY_INPUT], ['off', AUTO_PLAY_INPUT]]);
+  });
+
+  test('a failure preparing a scenario restores the clock and audio context', async () => {
+    const before = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout, now: performance.now,
+      window: (globalThis as { window?: unknown }).window, hadWindow: 'window' in globalThis,
+      audio: (globalThis as { AudioContext?: unknown }).AudioContext };
+    class BrokenSoundEngine extends SoundEngine {
+      async load(): Promise<string[]> { throw new Error('scenario preparation failed'); }
+    }
+    try {
+      await assert.rejects(actualFor(byId('RUN-S-001'), corpus, { ...REAL, SoundEngine: BrokenSoundEngine }), /scenario preparation failed/);
+      assert.equal(globalThis.setTimeout, before.setTimeout);
+      assert.equal(globalThis.clearTimeout, before.clearTimeout);
+      assert.equal((globalThis as { AudioContext?: unknown }).AudioContext, before.audio);
+      assert.equal('window' in globalThis, before.hadWindow);
+      assert.equal((globalThis as { window?: unknown }).window, before.window);
+      assert.equal(classify(byId('RUN-S-008'), await actualFor(byId('RUN-S-008'), corpus)).status, 'pass');
+    } finally {
+      globalThis.setTimeout = before.setTimeout;
+      globalThis.clearTimeout = before.clearTimeout;
+      performance.now = before.now;
+      (globalThis as { AudioContext?: unknown }).AudioContext = before.audio;
+      if (before.hadWindow) (globalThis as { window?: unknown }).window = before.window;
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
   });
 
   test('a pinned difference that no longer happens, or changed, is reported as unexpected', () => {
@@ -294,4 +411,12 @@ after(() => {
   if (RECORD_ONLY) console.log(`UNIPACK-CONFORMANCE-RECORD-ONLY ${RECORD_ONLY_NOTICE}`);
   for (const r of report.cases) console.log(`UNIPACK-CONFORMANCE ${JSON.stringify({ platform: PLATFORM, id: r.id, fingerprint: r.fingerprint, status: r.status })}`);
   console.log(`UNIPACK-CONFORMANCE-CORPUS ${JSON.stringify({ platform: PLATFORM, corpusSha256: sha256, cases: report.cases.length })}`);
+});
+
+describe('chain move warning normalization', () => {
+  for (const section of ['keySound:', 'keySound :']) {
+    test(`classifies ${section} wormhole warnings as range errors`, () => {
+      assert.equal(normalizeError(`${section} [1 1 1 a.wav 1 40] wormhole is incorrect`), 'keySound:range');
+    });
+  }
 });

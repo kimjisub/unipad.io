@@ -112,7 +112,10 @@ function connectedTo(profile: LaunchpadProfile): { midi: MidiConnection; sent: s
   const midi = new MidiConnection();
   midi.setProfile(profile);
   const port = { send: (message: number[]) => { sent.push(message.map((b) => b.toString(16).padStart(2, '0')).join(' ')); } };
-  (midi as unknown as { outputs: unknown[] }).outputs = [port];
+  // A model picked by hand encodes the selected controller's lighting port.
+  const ports = midi as unknown as { outputs: unknown[]; lightOutputs: unknown[] };
+  ports.outputs = [port];
+  ports.lightOutputs = [{ output: port, profile, ready: true }];
   return { midi, sent };
 }
 
@@ -189,7 +192,7 @@ async function playOnLaunchpad(keyLed: string, proLightMode = true, profile: Lau
 
   runner.launch();
   runner.eventOn(0, 0);
-  // The first tick only takes the press in; the second plays it.
+  // The first tick takes in the press and plays the steps due since then.
   tick(4);
   tick(4);
   return { runner, midi, sent, tick };
@@ -214,14 +217,14 @@ test('invalid pad coordinates neither light nor clear pads, round LEDs or the lo
   t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
   const { runner, sent, tick } = await playOnLaunchpad([
     'o 1b 1 FF0000',
-    'on 0 1 a 7',
+    'on -1 1 a 7',
     'o 9 1 a 7',
     'o 1 1 a 3',
     'o mc 1 a 9',
     'o l a 5',
     'f 1b 1',
-    'off 0 1',
-    'f 0 33',
+    'off -1 1',
+    'f 0 37',
     'd 100',
     'f 1 1',
     'f mc 1',
@@ -230,7 +233,7 @@ test('invalid pad coordinates neither light nor clear pads, round LEDs or the lo
 
   assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05']);
   tick(100);
-  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05', '80 51 00', 'b0 5b 00', 'b0 63 00']);
+  assert.deepEqual(sent, ['90 51 03', 'b0 5b 09', 'b0 63 05', '90 51 00', 'b0 5b 00', 'b0 63 00']);
   runner.stop();
 });
 
@@ -240,9 +243,9 @@ test('round LED 33 does not light the logo', async (t) => {
   assert.deepEqual(sent, []);
 });
 
-test('stopping the LEDs turns a lit logo off', async (t) => {
+test('stopping a running animation turns its lit logo off', async (t) => {
   t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
-  const { runner, sent } = await playOnLaunchpad('o l a 5');
+  const { runner, sent } = await playOnLaunchpad('o l a 5\nd 1000\nf l');
   sent.length = 0;
 
   runner.stop();
@@ -310,4 +313,14 @@ test('leaving on a Launchpad without a logo clears its pads without error', asyn
 
     assert.deepEqual(sent, sentFor(profile, (m) => m.clearAllLeds()), profile);
   }
+});
+
+
+test('numeric zero columns send the same round and logo MIDI lights as the apps', async (t) => {
+  t.after(() => { test.mock.restoreAll(); Reflect.deleteProperty(globalThis, 'window'); });
+  const { runner, sent, tick } = await playOnLaunchpad('on 0 1 a 7\no 0 33 a 5\nd 100\noff 0 1\nf 0 33');
+  assert.deepEqual(sent, ['b0 5b 07', 'b0 63 05']);
+  tick(100);
+  assert.deepEqual(sent, ['b0 5b 07', 'b0 63 05', 'b0 5b 00', 'b0 63 00']);
+  runner.stop();
 });

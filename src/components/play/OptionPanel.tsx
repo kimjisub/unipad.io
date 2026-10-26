@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
 import type { ThemeAssets } from '@/lib/unipack';
-import type { PlayMode } from './useUniPadEngine';
+import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
+import { websiteUrl } from '@/lib/unipack/websiteUrl';
 
 interface OptionPanelProps {
   visible: boolean;
@@ -21,7 +22,9 @@ interface OptionPanelProps {
   recording: boolean;
   hideUI: boolean;
   watermark: boolean;
+  slideMode: boolean;
   traceLog: boolean;
+  traceLogStyle: TraceLogStyle;
   proLightMode: boolean;
   midiConnected: boolean;
   midiConnecting?: boolean;
@@ -35,10 +38,17 @@ interface OptionPanelProps {
   autoMappingActive: boolean;
   autoMappingProgress: number;
   autoMappingTotal: number;
+  /** Swaps the autoPlay with the backup the last auto mapping or restore kept. */
+  onRestoreAutoPlay: () => void;
+  autoPlayRestoring: boolean;
+  autoPlayBackupAvailable: boolean;
   onToggleRecording: () => void;
   onToggleHideUI: () => void;
   onToggleWatermark: () => void;
+  onToggleSlideMode: () => void;
   onToggleTraceLog: () => void;
+  onTraceLogStyleChange: (style: TraceLogStyle) => void;
+  /** Clears the trace of every chain; long-pressing the trace switch does the same. */
   onClearTraceLog: () => void;
   onToggleProLightMode: () => void;
   volumeLevel: number;
@@ -62,7 +72,9 @@ export function OptionPanel({
   recording,
   hideUI,
   watermark,
+  slideMode,
   traceLog,
+  traceLogStyle,
   proLightMode,
   midiConnected,
   midiConnecting = false,
@@ -73,10 +85,15 @@ export function OptionPanel({
   autoMappingActive,
   autoMappingProgress,
   autoMappingTotal,
+  onRestoreAutoPlay,
+  autoPlayRestoring,
+  autoPlayBackupAvailable,
   onToggleRecording,
   onToggleHideUI,
   onToggleWatermark,
+  onToggleSlideMode,
   onToggleTraceLog,
+  onTraceLogStyleChange,
   onClearTraceLog,
   onToggleProLightMode,
   volumeLevel,
@@ -88,6 +105,7 @@ export function OptionPanel({
 }: OptionPanelProps) {
   const t = useTranslations('play.menu');
   const tCommon = useTranslations('play.common');
+  const website = useMemo(() => websiteUrl(unipackInfo.website), [unipackInfo.website]);
   const [mounted, setMounted] = useState(false);
   const closing = !visible;
   if (visible && !mounted) setMounted(true);
@@ -178,9 +196,9 @@ export function OptionPanel({
                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
                   </svg>
                 </a>
-                {unipackInfo.website && (
+                {website && (
                   <a
-                    href={unipackInfo.website}
+                    href={website}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"
@@ -205,6 +223,7 @@ export function OptionPanel({
           {showFeedback && (
             <OptionSwitch label={t('feedbackLight')} checked={feedbackLight} color={accentColor} onChange={onToggleFeedbackLight} />
           )}
+          <OptionSwitch label={t('slideMode')} checked={slideMode} color={accentColor} onChange={onToggleSlideMode} />
           {showLed && (
             <OptionSwitch label={t('led')} checked={ledEnabled} color={accentColor} onChange={onToggleLed} />
           )}
@@ -224,7 +243,7 @@ export function OptionPanel({
               <button
                 className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
                 onClick={onStartAutoMapping}
-                disabled={autoMappingActive}
+                disabled={autoMappingActive || autoPlayRestoring}
               >
                 <span className="text-sm text-white">
                   {autoMappingActive
@@ -243,6 +262,24 @@ export function OptionPanel({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
+              </button>
+              <button
+                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+                onClick={onRestoreAutoPlay}
+                disabled={!autoPlayBackupAvailable || autoMappingActive || autoPlayRestoring}
+                aria-describedby={autoPlayBackupAvailable ? undefined : 'restore-auto-play-no-backup'}
+              >
+                <span className="flex flex-col items-start text-left">
+                  <span className="text-sm text-white">
+                    {autoPlayRestoring ? t('autoPlayRestoring') : t('restoreAutoPlay')}
+                  </span>
+                  {!autoPlayBackupAvailable && (
+                    <span id="restore-auto-play-no-backup" className="text-xs text-white/65">{t('restoreAutoPlayNoBackup')}</span>
+                  )}
+                </span>
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 010 10H9M3 10l4-4M3 10l4 4" />
+                </svg>
               </button>
             </>
           )}
@@ -277,7 +314,24 @@ export function OptionPanel({
         {/* Tools Section */}
         <Section title={t('sectionTools')}>
           {showTrace && (
-            <OptionSwitch label={t('traceLog')} checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
+            <>
+              <OptionSwitch label={t('traceLog')} checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
+              <div className="px-6 pt-1 text-xs text-white/65">{t('traceLogStyle')}</div>
+              <SegmentedChoice
+                options={TRACE_LOG_STYLES.map(({ style, labelKey }) => ({ value: style, label: t(labelKey) }))}
+                value={traceLogStyle}
+                color={accentColor}
+                ariaLabel={(label) => t('traceLogStyleAriaLabel', { style: label })}
+                onChange={onTraceLogStyleChange}
+              />
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
+                onClick={onClearTraceLog}
+              >
+                <span className="text-sm text-white">{t('clearTraceLog')}</span>
+              </button>
+            </>
           )}
           {showRecord && (
             <OptionSwitch label={t('record')} checked={recording} color="#ef4444" onChange={onToggleRecording} />
@@ -346,6 +400,11 @@ const PANEL_PLAY_MODES: { mode: PlayMode; labelKey: 'auto' | 'guide' | 'step' }[
   { mode: 'stepPractice', labelKey: 'step' },
 ];
 
+const TRACE_LOG_STYLES: { style: TraceLogStyle; labelKey: 'traceLogNumbers' | 'traceLogLines' }[] = [
+  { style: 'numbers', labelKey: 'traceLogNumbers' },
+  { style: 'lines', labelKey: 'traceLogLines' },
+];
+
 /** Segmented control rendered inside the option panel, replacing the previous
  *  separate AutoPlay toggle and Practice Mode button. Visually communicates
  *  the radio relationship between the three play modes. */
@@ -361,27 +420,51 @@ function PlayModeSegmented({
   const t = useTranslations('play.playMode');
 
   return (
+    <SegmentedChoice
+      options={PANEL_PLAY_MODES.map(({ mode, labelKey }) => ({ value: mode, label: t(labelKey) }))}
+      value={playMode}
+      color={color}
+      ariaLabel={(label) => t('ariaLabel', { mode: label })}
+      onChange={onSwitch}
+    />
+  );
+}
+
+/** Mutually exclusive choices shown side by side. */
+function SegmentedChoice<T extends string>({
+  options,
+  value,
+  color,
+  ariaLabel,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  color: string;
+  ariaLabel: (label: string) => string;
+  onChange: (value: T) => void;
+}) {
+  return (
     <div
       className="mx-6 my-1 flex items-stretch gap-0.5 rounded-md p-0.5"
       style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
     >
-      {PANEL_PLAY_MODES.map(({ mode, labelKey }) => {
-        const active = playMode === mode;
-        const label = t(labelKey);
+      {options.map((option) => {
+        const active = value === option.value;
         return (
           <button
-            key={mode}
+            key={option.value}
             type="button"
             className="flex-1 px-2 py-2 rounded text-xs font-semibold transition-colors select-none"
             style={{
               backgroundColor: active ? color : 'transparent',
               color: active ? '#000000' : 'rgba(255,255,255,0.7)',
             }}
-            onClick={() => onSwitch(mode)}
+            onClick={() => onChange(option.value)}
             aria-pressed={active}
-            aria-label={t('ariaLabel', { mode: label })}
+            aria-label={ariaLabel(option.label)}
           >
-            {label}
+            {option.label}
           </button>
         );
       })}

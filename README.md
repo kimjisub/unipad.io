@@ -100,8 +100,29 @@ pnpm build
 
 ### Browser playback checks
 
-`pnpm test:e2e` starts the production build on `localhost:3184`, runs the
-headless browser tests, then stops its server. Use the fake Firebase configuration
+In a Git checkout, `pnpm build` records the commit and a content fingerprint of tracked and
+untracked, non-ignored files in `.next/build-source.json` after a successful build.
+The browser launcher checks both before opening a port. A missing, invalid or stale
+record stops the tests, prints the built and current commits, and asks you to run
+`pnpm build` first. This also catches another edit to an already modified file.
+Source changes during a build fail that build instead of recording mixed inputs.
+Ignored files (including local environment files) and shell environment values are
+outside this fingerprint; rebuild after changing those. Use `pnpm build` rather
+than calling `next build` directly to create the record. Source archives without
+Git metadata still build, but do not receive a browser-test record. Browser tests
+require rebuilding in a Git checkout. There is no bypass flag.
+
+`pnpm test:e2e` starts the production build on a free `localhost` port between
+20000 and 32767 (below the operating systems' ephemeral port ranges; a taken port
+is retried with another, up to 10 times), reads the address from that server's own
+output, runs the headless browser tests against it, then stops only that server.
+Before reporting ready, the launcher binds the other localhost loopback address
+and forwards its TCP connections to Next, so both IPv4 and IPv6 reach this run's
+server. A conflict on either address retries the port (or fails a pinned port);
+an unavailable address family is logged and skipped. The relay and its connections
+close along with the server.
+Several runs can share one machine; set `E2E_PORT=<port>` to pin the port instead
+(the run fails at start if the port is taken). Use the fake Firebase configuration
 above, with a syntactically valid, unused database hostname for these tests:
 
 ```bash
@@ -117,9 +138,17 @@ external requests and reopening the saved list. A build with the CI-only
 pointing to the browser-build command above; it cannot silently pass as offline.
 The offline tests abort every external HTTP request and
 WebSocket, open a saved pack within five seconds, and check real audio start/stop
-calls. Separate tests supply realtime database messages to check the cached
-store badge is refreshed, and that the first delayed count does not announce
-old items after a store visit while a later increase still does.
+calls. Three more tests open a saved pack, play its first pad and quit back to
+the saved list with the default external-service blocking (including the database),
+with the database working while analytics requests are blocked, and with external
+HTTP requests held and WebSockets connected but silent. The last condition still
+receives the inert installation token so the SDK reaches the held Remote Config
+request. Each condition starts observing requests after leaving the import page
+for `about:blank`, so only the reopened saved-list page supplies network evidence.
+Separate tests
+supply realtime database messages to check the cached store badge is refreshed,
+and that the first delayed count does not announce old items after a store visit
+while a later increase still does.
 The suite supplies inert responses for Firebase analytics configuration and
 installation, blocks all other non-local HTTP requests and WebSocket
 connections, and never needs the store or analytics servers.
@@ -152,6 +181,17 @@ Store lookup returns cached items or a connection message within five seconds;
 downloads stop after five seconds without incoming data, so longer transfers can
 continue while chunks arrive. Unit tests cover stalled headers, bodies and direct
 fallbacks, progress across that idle limit, and cancellation.
+Store loading, connection errors and completed results replace one another immediately;
+these network states do not wait for an exit animation. A regression test holds
+real database replies until the loading view is shown, pauses only its native
+exit animation, then requires the completed list within the same 6.5-second
+limit. The clocks remain real. Transition attachments record both clocks and
+native animation creation, finish and cancellation for the reconnect tests.
+The cached and uncached store-list reconnect tests wait for an actual stalled SDK
+request, then wait on the real clock for the five-second request deadline and
+require fresh server data. Reload readiness and the completed list are checked
+concurrently within one 6.5-second limit. The shared-link retry test also uses
+the real clock.
 
 No test-only application hooks are added.
 The browser probes observe native decoding and start/stop calls, and insert a
@@ -174,8 +214,14 @@ changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
 WebKit also runs the existing portable page/layout tests. Firefox is scoped to
 playback; exploratory page failures are investigated separately. Firefox allows
-90 seconds overall for page setup and playback; individual assertion timeouts
-stay unchanged. Native multi-touch CDP tests remain Chromium-only.
+90 seconds overall for page setup and playback. Pack-open assertions use the
+shared 15-second state limit from `expectPads`, including import and reload.
+A missing saved pack fails the pad-count assertion with the observed value,
+rather than waiting for a successful screen until the entire test times out.
+Restoration can briefly show the pack list while a local pack URL is still pending;
+a held native storage response covers that transition. A deliberately delayed native
+decode checks that opening still works beyond the former five-second assertion.
+Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
@@ -234,3 +280,75 @@ the shared touch helpers. Headless Chromium never hides the tab or blurs the
 window by itself, so test G sends the `visibilitychange` and `blur` events a
 browser sends when the notification shade or another app takes over. These are
 synthetic-input results; real fingers on a physical device are not certified.
+
+### Held resize and input boundary checks
+
+`e2e/input-boundaries.spec.ts` runs in the default local `pnpm test:e2e`
+suite. `input-fixture.ts` builds a two-chain looping pack automatically from
+`multi-touch.uni`'s original PCM tone. Every pad and chain has a different
+buffer duration, so an unexpected playback request identifies the wrong mapping.
+The unchanged press overlay distinguishes held and released pads.
+
+The resize tests first prove a pad is sounding and lit at the laptop size, keep
+the input down from there through phone portrait (390×844), phone landscape
+(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
+landscape, then release in that different layout and play another pad.
+The existing grid remains mounted beneath the portrait overlay. These are
+viewport changes, not a physical device rotation test. Mouse dragging and chain
+clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
+touch resizing and both mouse/touch hold orders: both inputs must succeed and
+remain active together, and releasing the second must preserve the first.
+
+WebKit's public Playwright touchscreen API only supports `tap()`; creating a
+CDP session fails because CDP is Chromium-only. Held touch resizing and mixed
+input in WebKit are explicitly skipped as unverified, not counted as passes.
+Screenshots and playback request records are attached during held and released
+states. No engine methods or app test hooks are used to inject these inputs.
+Physical fingers, physical rotation, speaker quality and latency remain outside
+these automated checks.
+
+The margin tests keep a browser-native background touch down while another
+finger selects chain 2 exactly once, then verify the new chain's pad mapping
+and complete cleanup. The background finger must produce one trusted touch
+`pointerdown` outside every pad and control, and no `pointerup`,
+`pointercancel` or `lostpointercapture` for that finger until the last
+`touchEnd`. They run at the existing phone and tablet sizes in Chromium;
+WebKit's two-contact margin case remains unverified for the same API
+limitation. Pointer records observe browser events, including their trusted
+flag and input type; they do not call input handlers.
+
+`squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
+the bottom and right edges play the mapped pad at four screen sizes.
+
+Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
+The default suite includes all these cases; the GitHub workflow is unchanged.
+
+### Saved pack storage
+
+IndexedDB version 2 keeps archive bytes in `unipacks` and the pack's small fields
+(including recent-open history, bookmarks and custom autoPlay) in `unipackMetadata`.
+Listing or updating these fields never reads or rewrites an archive. Saving,
+replacing and deleting a pack changes both stores in one transaction.
+
+The version 1 upgrade reads each legacy record once to copy its metadata. It does
+not rewrite or delete the original archive records. A failed or aborted upgrade
+rolls back all metadata copies and the database version; the next open retries.
+An already upgraded database needs a version 2 reader: reverting to code that
+explicitly opens version 1 will fail with `VersionError`. Keep the version 2
+reader when rolling back other changes.
+
+`e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
+transaction interruption, retry, existing theme/settings preservation and pack
+reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+For an optional large-pack measurement on macOS or Linux, run after building:
+
+```bash
+STORAGE_MEMORY_PROBE=1 pnpm test:e2e e2e/storage-memory.probe.spec.ts --project=chromium
+```
+
+The probe generates a 96 MiB archive containing 32 original PCM sounds, imports
+it normally, then compares opening with recent-history writes enabled or disabled
+three times each. Attachments include sampled CDP backing-store/heap sizes and
+renderer RSS from `ps`; the maximum is a sampled peak, not a memory limit or a
+measurement on a physical phone. The normal suite skips this diagnostic.

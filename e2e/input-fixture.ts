@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
-import { expect } from './browser';
+import { expect, expectPads, stateTimeout } from './browser';
 
 export interface InputEventRecord { type: string; pointerType: string; pointerId: number; buttons: number; trusted: boolean; target: string | null }
 declare global { interface Window { inputBoundaryEvents: InputEventRecord[] } }
@@ -12,10 +12,6 @@ export const duration = (rows: number, cols: number, position: string, chain = 1
   const [row, col] = position.split(',').map(Number);
   return (100 + (chain - 1) * rows * cols + row * cols + col) / 1000;
 };
-
-// Waits here and in the edge tests check state, not speed: a busy shared machine has stalled one browser
-// round trip for 5-10 s, past the 5 s default.
-export const stateTimeout = 15_000;
 
 const observedPages = new WeakSet<Page>();
 
@@ -48,10 +44,10 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     observedPages.add(page);
     await page.addInitScript(() => {
       window.inputBoundaryEvents = [];
-      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
         document.addEventListener(type, event => {
           const e = event as PointerEvent;
-          const target = (e.target as Element).closest('[data-pad], button');
+          const target = e.target instanceof Element ? e.target.closest('[data-pad], button') : null;
           window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
             buttons: e.buttons, trusted: e.isTrusted,
             target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });
@@ -64,7 +60,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     name: 'input-boundaries.uni', mimeType: 'application/zip',
     buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
   });
-  await expect(page.locator('[data-pad]')).toHaveCount(rows * cols, { timeout: stateTimeout });
+  await expectPads(page, rows * cols);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length), { timeout: stateTimeout }).toBe(rows * cols * 2);
   await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: stateTimeout });
 }

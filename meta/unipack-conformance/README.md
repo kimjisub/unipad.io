@@ -12,8 +12,11 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 
 | File | Role |
 |---|---|
-| `cases.mjs` | The case list: input files, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
-| `lib.mjs` | Sound asset generator, input fingerprint, expected-result builders. |
+| `GRAMMAR.md` | The UniPack grammar, edition G6: 114 numbered items, what each rule is, whether it is read (`parse`) or played and lit (`output`), and where it comes from. |
+| `grammar.mjs` | Reads `GRAMMAR.md`, lists the items a platform's harness cannot observe at all (`HARNESS_LIMITS`), and the app tests that confirm an item in their place (`NATIVE_TESTS`). |
+| `native.mjs` | Reads the result files of the apps' own tests (Android `results.json`, iOS `ios-native.json`, web `items.json`) for `report.mjs`, and refuses one that cannot count. |
+| `cases.mjs` | The case list: input files, the grammar items each case checks, expected result, basis, and which platform cannot observe a case. Edit this, then rebuild. |
+| `lib.mjs` | Sound asset generator, input fingerprint (formula in `src/lib/unipack/fingerprint.mts`, shared with the web harness), expected-result builders. |
 | `assets/tone-440.mp3` | The one sound kept as bytes: `tone-440` encoded as MP3 (see [Sounds](#case-format)). |
 | `palette.json` | The 128 colours an `auto` velocity resolves to (reference copy, see PAL-001). |
 | `divergences.json` | Differences observed on a platform today, pinned so a change in either direction is noticed. |
@@ -22,7 +25,7 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 | `build-corpus.mjs` | `node meta/unipack-conformance/build-corpus.mjs` writes both, `--check` verifies both are current. |
 | `sync.mjs` | Copies `corpus.json` and `corpus.sha256` into the app checkouts, or `--check`s that the copies are identical. |
 | `copies.json`, `copies.mjs` | The app commits whose copies CI compares (see [The comparison in CI](#the-comparison-in-ci)). |
-| `report.mjs` | Joins the three platforms' result files into one table, one row per case. |
+| `report.mjs` | Joins the three platforms' result files into one table, one row per case, and says per grammar item whether it is confirmed on each platform. |
 | `materialize.mjs` | Writes one case's pack to a folder or `.zip` so it can be opened by hand on a device (`materialize.mjs KS-001 --out /tmp/x --zip`). |
 | `selftest.mjs` | Tests of the tooling itself: `corpus.json` and `corpus.sha256` are what the sources build, what `report.mjs` may and may not count, and which copies `sync.mjs --check` refuses. `pnpm test:unipack` runs it. |
 | `diagnostics/` | The web parser's warnings as written, and a separate tool that explains its number warnings as format or range. It never changes a result or a status. See its README. |
@@ -35,14 +38,14 @@ This directory is the single source. The apps carry a byte-identical copy of `co
 pnpm test:unipack
 
 # Android (repo root of unipad-android): writes app/build/unipack-conformance/android.json
-./gradlew :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'
+./gradlew --no-watch-fs :app:testDebugUnitTest --rerun --no-build-cache --tests 'com.kimjisub.launchpad.unipack.conformance.*'
 
 # iOS (repo root of unipad-ios): prints UNIPACK-CONFORMANCE lines and writes ios.json
 TEST_RUNNER_UNIPACK_CONFORMANCE_OUT=/tmp/unipack-conformance \
   xcodebuild test -project unipad.xcodeproj -scheme unipad -only-testing:unipadTests/UniPackConformanceTests \
   -destination 'platform=iOS Simulator,name=<a simulator>'
 
-# the copies in the app checkouts are the canonical file
+# local copies must match the current canonical file (no commit arguments)
 node meta/unipack-conformance/sync.mjs --android <unipad-android checkout> --ios <unipad-ios checkout> --check
 
 # then, from unipad.io
@@ -50,11 +53,20 @@ node meta/unipack-conformance/report.mjs --web .next/cache/unipack-conformance/w
   --android <android.json> --ios <ios.json>
 ```
 
+A local `sync.mjs --check` without commit arguments always requires the current canonical bytes,
+even while `copies.json` declares historical snapshots. To verify a historical checkout, pass its
+full immutable commit explicitly with `--android-commit <commit>` or `--ios-commit <commit>`.
+Only the exact declared commit can use its historical hash; other commits require current bytes.
+`--require-current` rejects historical bytes even with an explicit historical commit. CI passes the
+selected commits explicitly, so a local sync followed by a check cannot inherit an unrelated old pin.
+
 **Android: `--rerun --no-build-cache` is part of the command.** Gradle stores a passing test task and
 answers the next run with `UP-TO-DATE` or `FROM-CACHE` without running anything; `android.json` is not an
 output Gradle knows about, so it is then not written again and an older one stays where it was. The two
 options make the task run. They are not set in the build files because those are outside this work's
-scope.
+scope. `--no-watch-fs` makes Gradle look at the copy `sync.mjs` just wrote: right after a sync, a
+Gradle daemon that watches the file system has been seen to test with the previous copy (its
+`corpusSha256` in `android.json` was the previous one, so `report.mjs` marked every case unverified).
 
 **iOS: environment variables need the `TEST_RUNNER_` prefix.** xcodebuild hands a variable to the test
 process only when it is given as `TEST_RUNNER_<NAME>`; the test reads `<NAME>`. Without
@@ -77,6 +89,60 @@ cross-checked. A case is **unverified, never a pass,** when
 The table starts with when each result file was written (`generatedAt`) and whether that run asserted,
 so an old file or a record-only one is visible.
 
+**Grammar items.** Every case names the items of [GRAMMAR.md](GRAMMAR.md) it checks (`items`);
+`build-corpus.mjs` refuses a case without them or with a number the grammar does not list. `report.mjs`
+then reports each of the 114 items per platform (`grammar.rows` in `--json`). An item is **confirmed**
+on a platform when
+
+- at least one case checks it;
+- every case that checks it is a `pass` on that platform;
+- for an `output` item, at least one of those cases is a `run` or `palette` case (a parse result does not
+  show what is played or lit);
+- the platform's harness can observe the item at all (`HARNESS_LIMITS` in `grammar.mjs`): the Android
+  and web common cases do not decode sounds, so those cases alone cannot confirm A-01 to A-05;
+  no common harness imports an archive
+  (F-05, F-06); and where the pack is written to a disk that does not tell `INFO` from `info`, a parser
+  that opens only the exact name passes F-01 too, so Android and iOS confirm F-01 only when their result
+  file says `"caseSensitiveFileSystem": true`.
+
+The four numbers it prints: confirmed items per platform of 114, items confirmed on all three platforms
+of 114, and items any case checks of 114 (`grammar.confirmed`, `grammar.confirmedOnAllThree`,
+`grammar.withCases`). Five items have no case, because these cases cannot reach them: importing an
+archive (F-05, F-06) and decoding OGG, M4A and a sound whose name does not match its content (A-03 to
+A-05) are for each platform's own tests.
+
+**App test results.** Those tests count when their result file is given:
+`--android-native <results.json>`, `--ios-native <ios-native.json>`, `--web-native <items.json>`.
+`NATIVE_TESTS` in `grammar.mjs` lists, per platform and item, the app tests that must each have run
+exactly once and passed; the list is reviewed and fixed there, never taken from what a result file
+names, and an `output` item lists only tests that measure the sound played. A test missing, failed,
+skipped or run more than once (a retry included) does not count, nor does an item the file does not
+mark passed. On the web, `WEB_RUNS` in `grammar.mjs` fixes which run each item comes from (`parser` for
+F-05 and F-06, `browser` for A-01 to A-05) and the browser its records must name (Chromium for the
+sound items, none for the parser): an item the file reports from another run, or from none, does not
+count, and a record of another browser, or naming none, is not counted. Then, for one item on one
+platform:
+
+- no case checks it (F-05, F-06, A-03 to A-05): confirmed only by the listed app tests;
+- the harness cannot observe it (`HARNESS_LIMITS`, F-01 without `caseSensitiveFileSystem`): confirmed
+  only when its cases pass **and** the listed app tests pass; neither covers the other;
+- otherwise: by its cases alone, as before. The app tests are not looked at.
+
+When app tests are required, an item no test is listed for stays unconfirmed whatever the file says.
+Android A-01 to A-05 now list emulator output tests; A-05 requires both the tagged and untagged MP3
+output tests. With app test results given, `--json` gives each confirmed cell a `basis` (`common`,
+`app tests`, or `common and app tests`) and `native` the SHA-256 of each file and the commit its tests
+ran on; the text marks the cells `ok`, `ok app` and `ok both` and prints that commit under the time the
+platform's common results were written. Running the common cases and the app tests on the same commit is
+the job of whoever runs them: the common result files do not record a commit. Without app test results
+the output is the same as before.
+
+The command ends with an error, and no table, when a file cannot count: it is another platform's; its
+grammar edition is not the one in `GRAMMAR.md` or its revision not the SHA-256 of that file; its
+checkout had uncommitted changes; its commit is not a full 40-character hash; an iOS run was not for
+`verification`; it names an item the grammar does not list, or one item twice. A file whose items failed
+or are unverified is read as it is.
+
 **Record-only runs.** `UNIPACK_CONFORMANCE_DUMP=1`, exactly that value, writes every result without
 asserting any case, to look at what a platform does before a difference is pinned. `0`, `false`, an
 empty value and no variable are ordinary asserting runs. A record-only run says so
@@ -98,6 +164,10 @@ Each case is reported per platform as exactly one of:
 | `intended-difference` | The platforms are meant to differ and the docs or PARITY.md say so. Pinned with the reason. None yet. |
 | `unverified` | No result to compare: the platform did not run, ran another corpus, cannot observe the case (`unobserved`) and recorded no result for it, or the case is `undetermined` (below). Never counted as a pass. |
 
+**T-09 storage.** Every platform stores minus one exactly, including -2147483649 for the
+smallest input integer. Saturating that result at -2147483648 fails KS-B08 / KL-BE10;
+there is no pinned difference or report-only exception.
+
 A case is `determined` when a format doc (`content/docs/en/unipack`) or an intent stated in a
 platform's own commit history or tests names the expected result. Otherwise it is `undetermined`: the
 platforms still run it, the observed results are printed side by side, and it is `unverified` on every
@@ -105,6 +175,8 @@ platform until someone decides. `basis[].type` says which: `doc` (checked to exi
 `intent` (a commit or test that states it), `reference` (the Android implementation, for the palette),
 `agreed` and `decision` (below). No case is undetermined today; the harnesses' own checks make one from a
 determined case to show that it is never a pass.
+`decision` also stands for an item the grammar decides (`G1 decision` or `G2 decision` in GRAMMAR.md); its `ref` names the
+item.
 
 **Agreed behaviour.** When an undetermined case gives the same result on Android, iOS and the web, that
 result is held as the expected one with an `agreed` basis, whose `ref` names the runs it was observed in
@@ -122,7 +194,8 @@ other: INF-007 (an `info` line without `=` is ignored, without a warning), INF-0
 `buttonX` or a `buttonY` that is not an integer refuses the pack), INF-015 (`info.json` is no `info` file) and KS-018 (a UTF-16
 keySound with a byte order mark is read). Otherwise it rests on a `decision` basis, whose `ref` names
 who decided and when and whose `note` the reason: KL-024 (an LED event outside the pad grid is kept as
-written and skipped when lit). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
+written and skipped when lit), the 32-bit number cases (T-09), and the cases of the items GRAMMAR.md decides (S-12, T-03, T-04, A-06,
+RS-09, RS-10, RL-12). Decided cases are marked `[decision]` in the table and counted on their own line (`decided` in
 `--json`). Each platform that does not give the decided result yet is pinned in `divergences.json`, so
 its suite stays green until its own fix removes the pin.
 
@@ -130,15 +203,69 @@ A case can also name a platform whose harness cannot observe it (`unobserved`, w
 that platform records no result for the case, the case is `unverified` there with that reason; the
 others are judged as usual. A result the platform does record is judged like any other, so a harness
 that has come to observe the case is not hidden behind the old reason: equal to the expected result is a
-pass, anything else a fail. No case is marked unobserved today. RUN-A-001, RUN-A-002, RUN-RP-003,
-RUN-RP-004 (the autoPlay runner read the wall clock) and RUN-L-006, RUN-L-007 (leaving the play screen)
-were, on iOS, until its harness came to record results for them (see `stop` and autoPlay below).
+pass, anything else a fail. Marked today: the cases that watch sound stops (RUN-S-008 to RUN-S-010) on
+iOS, and the queue reset on a chain change (RUN-S-012, RUN-S-013) on iOS (see "What each
+harness measures"). RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the autoPlay runner read the wall
+clock) and RUN-L-006, RUN-L-007 (leaving the play screen) were marked on iOS until its harness came to
+record results for them (see `stop` and autoPlay below).
+
+## G6 cases and current app corrections
+
+`g6-cases.mjs` adds 55 cases (49 initial cases and six archive-identity collision cases). Each declares `expectedFailing`: the apps expected to need a
+correction, based on the code comparison. This field never changes classification or expected output.
+Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
+KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
+
+`screenInputs: true` routes a web case through `web-screen.mjs`, which loads the real play hook
+in a DOM process and supplies distinct pointer/MIDI input identities, manual chain selection and
+mode changes. The sound engine and runners stay real; only audio, MIDI transport, storage and the
+clock are replaced. The adapter records calls, not audible output or a real controller.
+A case cannot silently fall back to the lower-level runner when its screen result is missing.
+
+KS-G617..619 require distinct case-sensitive stored paths. The web ZIP can hold these; a host disk
+that cannot must leave them unverified. App adapters must measure filesystem support before overriding
+that limitation. A result recorded on a merged case-insensitive directory is not evidence for them.
+
+The initial baseline web run on production code 184c1e4b observed 27 G6 failures and 22 G6 passes.
+The 2026-10-23 RS-09 revision makes a later explicit player chain selection take precedence over
+a pending manual wormhole. RUN-G606 now expects cancellation and names Android as needing correction.
+Its former web failure pin is removed because the rule changed, not because an app result was waived.
+With that revision the web has 26 G6 failures and 23 G6 passes; earlier observations keep their original
+corpus hash. The remaining failures stay failures in reports while pins keep the ordinary suite usable.
+Android and iOS observations are recorded separately when their updated adapters run this corpus.
+
+## Archive sound identity
+
+For `soundIdentity: true` parse cases (KS-G601..604 and KS-G620..625), each sound queue entry is
+`{ "archiveEntry": "sounds/<original name>", "sha256": "<64 lowercase hex>", "loop": 0, "wormhole": -1 }`.
+`archiveEntry` is the original full ZIP entry name, including `sounds/`, compared by exact code points.
+`sha256` hashes the bytes actually selected for decoding, not the expected asset or merely the name's
+original archive bytes. A later import overwrite must therefore change the observed hash and fail.
+The harness must track provenance from import to the selected file. It must not infer the entry from
+the expected result, normalize the reported archive spelling, or choose a candidate by matching a hash
+alone. If provenance cannot be observed, leave the case unverified.
+
+Native disk paths may use another canonical spelling. Record those paths and original-to-stored
+mappings as diagnostics outside `actual`; they do not decide the result. On web, the parser's selected
+ZIP path and its `soundFiles` bytes supply the identity directly. These parser cases prove which file
+reaches the sound queue; decoded/audible output remains a separate native playback check.
+
+KS-G620/621 and KS-G623/624 require each exact NFC/NFD entry to win even with a different-content
+canonical equivalent present. KS-G622/625 have no exact spelling and require the first original entry
+in UTF-16 order. Archive orders vary, so neither last-write-wins nor first-entry-wins implements all
+six expectations. An importer on a filesystem that merges canonical spellings must detect the collision
+and retain the intended identity and bytes. It must not silently overwrite one entry with another.
+
+The first web run of the identity revision observes 27 G6 passes and 28 failures; KS-G622 and KS-G625
+are the two additional failures and remain failures in reports. Native observations of these six new
+cases are pending; earlier four-case unverified records retain their original corpus hash.
 
 ## Case format
 
 ```jsonc
 {
   "id": "KS-001",            // stable; the same id on every platform
+  "items": ["S-01"],         // the GRAMMAR.md items it checks, at least one
   "layer": "parse",          // parse | run | palette
   "area": "keySound",
   "title": "...",
@@ -175,7 +302,9 @@ asked to choose another).
 
 ## Normalized result
 
-Coordinates are 0-based in every result and step (files are 1-based, as authors write them).
+Coordinates are 0-based in every result and step (files are 1-based, as authors write them). File
+names are reported composed (Unicode NFC), as the corpus writes them; a disk that hands them back
+decomposed does not change a result.
 
 `parse` layer: the platform's real parser reads the pack (Android and iOS from a folder written from
 `files`, the web from a zip of them) and reports
@@ -205,7 +334,7 @@ first `:` (`info`, `keySound`, `keyLed`, `autoPlay`) and kind one of
 | kind | messages |
 |---|---|
 | `format` | `format is incorrect`, `format is not found` |
-| `range` | `chain\|x\|y\|loop\|coordinate is incorrect`, `out of range` |
+| `range` | `chain\|x\|y\|loop\|wormhole\|coordinate is incorrect`, `out of range` |
 | `missing-file` | `sound was not found`, `sounds directory not found`, `doesn't exist` |
 | `missing-field` | `title\|producerName\|buttonX\|buttonY\|chain was missing` |
 | anything else | `other(<message>)`, so a new message shows up as a difference |
@@ -216,12 +345,19 @@ per `observe` step holding what happened since the previous one, in the order it
 `press`/`release` (x, y: the sound engine and the LED runner, as the play screen calls them), `chain`
 (c: the user picks a chain), `advance` (ms of virtual time, runners ticking at 4 ms, autoPlay at 1 ms),
 `observe`, `autoplay` (start the autoPlay runner; with `"toPads": true` each of its presses and releases
-also goes to the sound engine and the LED runner, as the play screens forward them), `stop` (leave the
-play screen). Events:
-`["sound", chain, x, y, file, loop]` (loop as stored: -1 endless, 0 once, N repeats),
+also goes to the sound engine and the LED runner, as the play screens forward them), `autoplayOff` (the
+user turns autoPlay off and stays on the play screen: the runner stops, and every pad it still holds
+that the user does not also hold through `press` is released to the sound engine and the LED runner;
+no `autoOff` event is recorded for it), `looping` (record one `looping` event per endless sound still
+playing), `stop` (leave the play screen), `watchStops` (from here on also report the voices the sound engine stops). Events:
+`["sound", chain, x, y, file, loop]` (effective playback repeats: -1 endless, 0 once, positive N additional repeats; stored values below -1 play once and are reported as 0),
+`["soundStop", chain, x, y, file]` (only after `watchStops`: the engine stopped a voice that a press
+started, the first time; chain, x, y and file are those of its `sound` event; a stop scheduled when a
+repeated sound starts is not one),
 `["ledOn", x, y, "aarrggbb", velocity]`, `["ledOff", x, y]`, `["chain", c]` (a keyLed `c` line or a
 wormhole switched the chain; the harness's chain follows), `["autoOn", x, y]`, `["autoOff", x, y]`,
-`["autoChain", c]`.
+`["autoChain", c]`, `["looping", x, y]` (an endless sound started by a press of that pad is still
+playing; one per sound, ordered by x, then y).
 
 Cases leave 20 ms or more between an event that a `delay` schedules and the `observe` that expects it,
 because such an event can be two ticks (8 ms) late. RUN-L-003 observes 12 ms after a release on purpose:
@@ -237,13 +373,18 @@ this seam":
 | Lights | what the play screen would draw: `PlayActivityViewModel` with a `ChannelManager`, read at `UiCallback` | `LedRunner.Listener` batches, the runner alone | `LedRunnerListener` calls, the runner alone |
 | Round and logo lights | measured with **Pro light mode on**. The play screen starts with it off, where the LED channel's round and logo lights are hidden (`PlayActivityViewModel.proLightMode`); that default is not measured | no such setting in the runner | no such setting in the runner |
 | `stop` | the play screen's `onStop`: `screenVisible = false`, `ledInit()` | `AutoPlayRunner.stop()`, `LedRunner.stop()`, `SoundEngine.destroy()`, then the main screen's step that takes the MIDI controller back (`MainViewModel.setupMidiController` → `MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver; the clear call is observed, not what a physical Launchpad receives | `LedRunner.stop()`, `SoundEngine.destroy()`, `AutoPlayRunner.stop()` |
+| `autoplayOff` | `PlayActivityViewModel.switchPlayMode(PlayMode.None)`, including the screen's own autoPlay-end listener; the recording engine reports the endless voices it has not stopped | `PlayViewModel.switchPlayMode(.none)` on the real play view model; the real sound engine's `activePlayIDs` identifies endless sounds still active | `AutoPlayRunner.stop()`, then `PlayerHolds.releaseOthers`, which the play screen's `padInit` calls, releases every pad the user does not hold |
 | autoPlay | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to `PlayActivityViewModel.padTouch` on the main thread, as its own listener posts `padEvent` there | `AutoPlayRunner` on the virtual clock (its clock and sleep are passed in by the harness) | `AutoPlayRunner` on the virtual clock; with `toPads` a press goes to the same sound and LED calls as a pad press, as `useUniPadEngine` forwards it to `padTouchOn` |
-| MP3 | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for any bytes |
+| Decoding | not decoded: the recording engine stands in for the decoder too, so a sound event says the runner asked for the file. It fails to decode bytes that do not start like a WAV (`RIFF…WAVE`) or an MP3 (`ID3` or a frame), as the native decoder would | decoded by `AVAudioFile` in the real engine | not decoded: the Web Audio stand-in returns a buffer for bytes that start like a WAV or an MP3 and fails to decode others |
+| Sound stops (`watchStops`) | a `stopVoice` call of the runner for a voice the recording engine started | not observed: the real engine keeps no record a test can read of the voices it stops | `stop()` without a time on a started source of the Web Audio stand-in |
+| Chain change | the view model's `ChainObserver` (clamps into the pack) and the queue reset it registers in `initPlayback`, as the play screen sets it up | the runner's `ChainObserver` (clamps into the pack); no `PlayViewModel`, so no queue reset | `changeChain` (`chainChange.ts`), the clamp and queue reset `useUniPadEngine` runs for every chain change |
 
-The reset of every pad's queue position when the chain changes is done by the play screens (Android
-`PlayActivityViewModel`, iOS `PlayViewModel`, web `useUniPadEngine`), not by the runners, and no harness
-attaches it. No case depends on it today; a case that presses a pad again after its chain changed would
-need it.
+The reset of every pad's queue position when the chain changes (RS-10) is done by the play screens
+(Android `PlayActivityViewModel`, iOS `PlayViewModel`, web `useUniPadEngine`), not by the runners. The
+web harness runs the same function the play screen does (`changeChain`) and the Android harness sets the
+view model up as the play screen does; the iOS harness does not attach `PlayViewModel`, so RUN-S-012 and
+RUN-S-013 are `unobserved` there. The other cases are written so that
+they do not depend on it.
 
 The iOS harness waits 300 ms before it destroys the sound engine to let the short corpus sounds finish
 and avoid a reproduced deadlock when a repeated sound is stopped while cycling. This wait hides the
@@ -260,12 +401,16 @@ A comparison that cannot fail would prove nothing, so each platform's suite also
 break one thing on purpose and require the comparison to notice: a changed input file no longer matches
 its fingerprint; a changed expected coordinate turns a pass into a fail; a changed input with the same
 expected result fails; a parser stand-in that sees none of the case fails; an LED runner whose `eventOn`
-is a no-op fails a run case; a pinned difference that stops happening (or changes) is an unexpected
+is a no-op fails a run case; on the web, a chain change without the play screen's queue reset fails
+RUN-S-012, the decoder stand-in leaves a pad silent only when its sound is not audio, and a scenario that
+does not watch stops reports none; a pinned difference that stops happening (or changes) is an unexpected
 result; an undetermined case never counts as a pass; a case marked `unobserved` for the platform is
 unverified while it records no result. `selftest.mjs` does the same for `report.mjs`: a pass claimed
 without a result, a pass claimed on an undetermined case, results handed in under another platform's name and an
 iOS log given as `--android` all have to come out unverified, and a result recorded for a case marked
-`unobserved` is judged from that result.
+`unobserved` is judged from that result. It also checks the grammar side: GRAMMAR.md lists 114 items,
+`build-corpus.mjs` refuses a case without items or with an unknown or repeated one, and an item is
+confirmed only as described in [What `report.mjs` counts](#running-it).
 
 ## Keeping the copies in step
 
@@ -299,7 +444,7 @@ repository at an exact commit and runs `selftest.mjs`, `build-corpus.mjs --check
 - the weekly scheduled run: the latest commit of each app's default branch, so a copy changed only in an
   app is noticed.
 
-`copies.json` holds exactly `android` and `ios`, each a full 40-character commit hash; `copies.mjs` refuses a
+`copies.json` holds exactly `android` and `ios`. A plain full 40-character commit hash requires that copy to match the canonical bytes. An explicit `{ "commit": "<40 lowercase hex characters>", "corpusSha256": "<64 lowercase hex characters>" }` pins an older corpus by its exact bytes; `copies.mjs` refuses a
 branch, a tag or a short hash, so the comparison never runs against a moving target. When a change to the
 corpus is reviewed together with its app copies, `copies.json` names the commits of the app pull requests;
 once those are merged, `copies.json` is moved to the merge commits on the app default branches. To run the
@@ -307,11 +452,15 @@ comparison locally, check out both apps at the pinned commits and run the three 
 
 ## What is covered
 
-- info: every key, whitespace, unknown keys, lines without `=`, chain range 1..24, missing required files, `info.json` in place of `info`, missing title/producer, zero and non-numeric sizes.
-- keySound: coordinates and their end values, loop and wormhole, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names that differ from the stored file only in case (KS-019..021, RUN-S-006), spaces, tabs, CRLF, BOM, UTF-16.
-- keyLed: file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
-- autoPlay: on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole, out-of-range and malformed lines, empty file.
-- runners: sound queue and chain, wormhole chain switch, endless and repeated sound loops, LED timeline, loop count, release, chain event, logo, exit, autoPlay timeline and stop.
+Per item, `report.mjs` lists the cases that check it. In short:
+
+- files: root files and folders in any letter case, other names (`keySounds`, `info.txt`, `info.json`), files in sub folders of keyLED.
+- text: the UTF-8 byte order mark and UTF-16 with a byte order mark in every file, CP949 text (legacy Korean Windows).
+- info: every key, whitespace, unknown keys, lines without `=`, a key written twice, chain range 1..24, missing required files, missing title/producer, zero and non-numeric sizes, `squareButton` values other than `true`.
+- keySound: signed 32-bit limits and oversized numbers (KS-B01..08), coordinates and their end values, loop and wormhole, columns after the sixth, queues, blank/short/comment-like lines, malformed numbers, missing sound files and folder, sub folders, sound names in other letter case, spaces, tabs, CRLF, BOM, UTF-16.
+- keyLed: signed 32-bit limits and oversized numbers in file names and events (KL-BN01..08, KL-BE01..10), file name mapping and loop, queue order, on/off/delay/chain in both spellings, hex/auto/velocity colours, round LEDs 1..32 and out-of-range ones, the logo in every spelling, malformed events, empty file, CRLF.
+- autoPlay: signed 32-bit limits and oversized numbers (AP-B01..08), on/off/touch/chain/delay in the long and the short spelling (`o`, `f`, `t`, `c`, `d`), queue numbering and reset, wormhole after `on` and after `touch`, out-of-range and malformed lines, empty file.
+- runners: sound queue and chain, wormhole chain switch, its timing and a wormhole to a chain the pack does not have, a sound that cannot be decoded, endless and repeated sound loops, which sounds a release and a second press stop, the queue reset on a chain change (Android and web), LED timeline with zero and negative delays, loop count, release of an endless and of a counted animation, several animations on one pad, two animations on one light, an event outside the pad grid, chain event, logo, exit, autoPlay timeline, its queue numbers after a hand press and a chain, and stop, and turning autoPlay off while it holds an endless sound and the user holds another (RUN-RP-005).
 - shapes common in real packs (`RP-`, `RUN-RP-`): an 8 x 8 grid to its last pad, an MP3 sound read and
   started, lights that repeat or loop endlessly while autoPlay presses and releases the pad, and
   `squareButton=false`. Five-part keyLED names (`1 1 1 1 a`) are held on an agreed basis.
@@ -319,18 +468,96 @@ comparison locally, check out both apps at the pinned commits and run the three 
 
 ## What is not covered
 
+- The two 32-bit ends in a keySound wormhole field. Android and the web warn and clamp a wormhole outside the pack's chains, while iOS keeps it without a warning. The web now agrees with Android, but iOS still differs, so those end values remain outside this corpus rather than choosing a new cross-platform expectation here. Android's `UniPackFolderIntegerRangeTest` checks that `-2147483648` does not wrap to the last chain. KS-B01..06 do cover wormhole numbers outside the 32-bit range.
+- Every spelling and coordinate position of the new integer cases: AP-B01..08 exercise `on` x, `off` y and `touch` x (not `on` y, `off` x or `touch` y); AP-B01..08 use long commands and KL-BE01..10 short commands rather than both spellings; KL-BE01..10 use `mc` for round LEDs, not its `*` alias.
 - Zip import and extraction, nested top folders, other archive quirks (the web reads a zip, the apps a folder).
-- File and folder name case other than sound names (`keyLED` vs `keyled`, `Sounds` vs `sounds`): it depends on the file system of the machine running the test. Sound names are covered because the expected result is the name the file is stored under: an app that opens `A.wav` on a file system that ignores case reports `A.wav`, not the stored `a.wav`, and fails. Two files whose names differ only in case (`kick.wav` and `Kick.wav`) are not covered: they cannot both be written on such a file system, and the format does not say which one plays.
+- A file whose name matches exactly next to one that differs only in case (`a.wav` and `A.WAV`): a disk that does not tell case apart cannot hold both. Where the disk does not, a parser that opens only the exact name of a root file also passes FS-001 (see "Grammar items"); KS-019 to KS-021 name the sound as it is on disk, so it fails such a parser anyway.
 - Real audio: decoding, latency, mixing, the Oboe / AVAudioEngine / Web Audio engines. Android and the web use a recorder in place of the engine and do not decode the MP3; iOS runs its real engine but the test cannot hear it.
-- Stopping autoPlay without leaving the screen: the play screens clear the lights themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed.
+- The lights when autoPlay is stopped without leaving the screen: the play screens clear them themselves then (web `ledInit`, Android `onEnd`), outside every harness's seam, so whether a light the autoPlay lit stays on is not observed. Only the endless sounds are (RUN-RP-005).
 - Where a pad is pressed on screen, the shape of a button with `squareButton=false`, real light timing, and how many real packs play the same.
 - MIDI devices and drivers, Launchpad colour output, the play screens, practice/guide mode of autoPlay, volume, theme packs.
 - What a user sees after leaving the play screen on iOS, and on any platform with a real Launchpad connected.
 - Android with Pro light mode off (its default), where round and logo lights of a keyLED file are hidden.
-- The queue reset on a chain change (done by the play screens, see "What each harness measures").
+- The queue reset on a chain change on iOS, and which voices the iOS engine stops (see "What each harness measures").
 - A pack opened in the running app on a device or in a browser: no capture exists yet for any platform.
-- Sound loop timing and stop-on-release of endless sounds (the engines differ and the docs do not decide).
-- Encodings other than UTF-8 and UTF-16 with BOM (legacy Korean encodings).
+- Real sound loop timing; release cases record stop requests on Android and web, while iOS cannot observe which voice stops.
+- Encodings other than UTF-8, UTF-16 with BOM and CP949.
 - Large packs, memory and timing under load.
 - Whether the palette matches a Launchpad: the reference copy is Android's table.
 - Whether an `agreed` result is the right behaviour: it is only what the three platforms did.
+
+
+### Explicit historical app copies
+
+A canonical corpus can advance before each app adopts it. A historical pin records the public app commit
+and that commit's corpus hash together. The check verifies the exact corpus bytes and the sidecar hash,
+then prints an `::warning::` annotation naming both editions and hashes if the app is behind. A changed byte,
+missing file, mismatched sidecar, malformed pin, or invalid canonical hash fails the check. This verifies
+what copy the app contains; it does not claim the app conforms to the current corpus. Reports from a
+different corpus remain unverified, even if those reports claim every case passes.
+
+`copies.mjs` continues to print immutable commit hashes for checkout. `sync.mjs --check` reads `copies.json`
+by default (`--pins <file>` selects another manifest). CI supplies `--android-commit` and `--ios-commit` with
+its actual selected checkout commits; a manual or scheduled override to another commit must match the
+current corpus and cannot inherit a historical pin from an unrelated commit.
+
+Use `sync.mjs --check --require-current --android <checkout> --ios <checkout>` for final compatibility
+and release verification. It rejects every copy behind canonical. After an app adopts the corpus and
+its reviewed commit is public, replace its historical object with that commit hash alone; verify both
+apps with the strict check before claiming synchronization. Copying with `sync.mjs` still writes the
+current corpus and hash; historical pins never change what gets copied.
+
+
+## Adopted product operations
+
+`product-cases.mjs` extends the same canonical corpus with 113 cases: 21 exact integer costs,
+76 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
+outputs and two trailing-wait observations. The resulting corpus has 382 cases. The nine PB items in
+GRAMMAR.md state the adopted behavior. Their app-level confirmation remains limited: common operation
+results never certify interruption, screen input ownership, stored settings, atomic backup/restore,
+real decoding, device output or resource failures. Missing app evidence remains unverified.
+
+The audio inputs and expected values are the unchanged third shared admission revision from Android
+commit `cab0f17c373e6830c750c6f289d059c40907f4eb`, manifest SHA-256
+`b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`.
+The web fixture folder records its immutable source. The builder checks the manifest and every binary
+hash, includes the exact physical bytes in each SAFE-F case, and retains only inputs in operation.json.
+SAFE-C uses integer rate/channels/frame inputs; SAFE-W describes the same physical zero-PCM recipe,
+generated one at a time; SAFE-S describes references, bounds and facts. No expected cost, exclusion or
+selected set is passed to an operation. These are explicit operations, not parseable UniPack folders.
+
+A case's `observation` selects the operation: audio-cost, audio-file, audio-wave, audio-selection or
+auto-map. For audio-file the first input file is inspected by content; the original filename is retained
+for provenance. Frame counts, costs and reservations are decimal strings in normalized actual results.
+An inspector result certifies structural facts only, not audible or trimmed duration. The admission
+module is not yet the app loading path. Native adapters must invoke their own corresponding operation
+and report observed values, never read expectations as observations or relabel older corpus files.
+Until supported, these cases remain unverified or explicitly fail; do not feed operation.json into a
+pack parser and call the result a successful operation.
+
+Mapper cases use a real parsed pack plus operation.json with explicit per-sound duration inputs in ms
+(or null for unreadable length). This is transformation, not a decoder test. Report `{events: [...]}`:
+`[on,time,chain,x,y,num]`, `[off,time,chain,x,y]`, `[chain,time,chain]`, and
+`[trailingDelay,time]` when the mapper retains a wait after its last command. Coordinates are zero-based,
+times are milliseconds. Observe actual mapped commands; do not invent missing releases or drop extra
+waits. Touch is equivalent to same-time on/off. Preserve parser queue indices, including values past
+the queue length; choosing the sound still uses the queue's usual cycling behavior.
+
+The runner's watchAutoEnd action records `[autoEnd]` only when its real onEnd callback fires.
+autoplayState records `[autoActive,boolean]`. suspendAuto/resumeAuto invoke the real runner's suspension
+API. These observations do not synthesize screen cleanup or validate manual resume UI. Completion must
+also release auto-play ownership in app-level tests. RUN-P001..002 use `touch 1 1 / d 2000`,
+releasing the input before the final wait so either runner-owned or app-owned completion cleanup
+can satisfy the separate ownership rule. Their first checkpoint includes both on and off; this
+revision changes the input fingerprint and preserves earlier held-input observations under their
+original hash.
+
+The first web observation of these 113 cases was 106 passes and seven failures (all five mapper cases
+and both trailing waits). The five mapper failures remain pinned with status fail. The two trailing-wait
+pins were retired on 2026-10-24 after the corrected web runner matched their unchanged expectations;
+see [RESULTS.md](RESULTS.md#trailing-wait-observations-after-the-web-runner-fix-2026-10-24).
+An assertion process that verifies a remaining pin does not make it a compatibility pass.
+The first expected mapper queue indices for two
+repeated presses were corrected from 0 to 1 to preserve the original parser indices; the first raw
+record is retained separately. Native behavior must be observed before corrections and already-equal
+behavior recorded as equal, without manufacturing a failure.

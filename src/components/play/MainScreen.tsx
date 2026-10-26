@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
-import { listboxTargetIndex } from './listboxNavigation';
+import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -57,6 +57,7 @@ export function MainScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
   const [sortAsc, setSortAsc] = useState(false);
+  const sortChangedRef = useRef(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const filteredAndSortedPacks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -94,7 +95,9 @@ export function MainScreen({
 
   // Restore sort settings from IndexedDB (persists across sessions like Android SharedPreferences)
   useEffect(() => {
+    let cancelled = false;
     Promise.all([getSetting('sortMethod'), getSetting('sortOrder')]).then(([method, order]) => {
+      if (cancelled || sortChangedRef.current) return;
       if (method === 'title' || method === 'producer' || method === 'date') {
         setSortMethod(method);
       }
@@ -102,13 +105,17 @@ export function MainScreen({
         setSortAsc(order === 'true');
       }
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
-  // Persist sort settings to IndexedDB
-  useEffect(() => {
-    setSetting('sortMethod', sortMethod).catch(() => {});
-    setSetting('sortOrder', String(sortAsc)).catch(() => {});
-  }, [sortMethod, sortAsc]);
+  // Only explicit user choices are saved; pending restoration must not overwrite them.
+  const changeSort = (method: SortMethod, ascending: boolean) => {
+    sortChangedRef.current = true;
+    setSortMethod(method);
+    setSortAsc(ascending);
+    setSetting('sortMethod', method).catch(() => {});
+    setSetting('sortOrder', String(ascending)).catch(() => {});
+  };
 
   const selectPackRow = useCallback((id: string, focus: boolean) => {
     setSelectedId(id);
@@ -150,6 +157,7 @@ export function MainScreen({
         if (target !== null) selectPackRow(filteredAndSortedPacks[target].id, false);
         return;
       }
+      if (targetHandlesOwnKeys(event)) return;
       if (event.key === 'Enter' && selectedId) {
         const selected = filteredAndSortedPacks.find((pack) => pack.id === selectedId);
         if (selected) onPlay(selected.id);
@@ -229,7 +237,7 @@ export function MainScreen({
         }} />
       </div>
 
-      {/* Left Panel */}
+      {/* Shrink the details only when the list needs its minimum height. */}
       <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
@@ -251,7 +259,7 @@ export function MainScreen({
       </div>
 
       {/* Right Panel - Pack List */}
-      <div className="flex-1 flex flex-col min-w-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 min-h-56 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
         {/* Top Bar */}
         <div className="flex items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
           {savedPacks.length > 0 && (
@@ -276,7 +284,7 @@ export function MainScreen({
                           className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-colors flex items-center justify-between ${
                             sortMethod === m ? 'bg-accent/10 text-accent' : 'text-white/50 hover:bg-white/[0.05]'
                           }`}
-                          onClick={() => { setSortMethod(m); setSortAsc(m !== 'date'); setShowSortMenu(false); }}
+                          onClick={() => { changeSort(m, m !== 'date'); setShowSortMenu(false); }}
                         >
                           {m === 'title' ? 'Title' : m === 'producer' ? 'Producer' : 'Date'}
                           {sortMethod === m && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
@@ -288,7 +296,7 @@ export function MainScreen({
               </div>
               <button
                 className="px-2 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-xs text-white/50 transition-colors"
-                onClick={() => setSortAsc(!sortAsc)}
+                onClick={() => changeSort(sortMethod, !sortAsc)}
                 aria-label={sortAsc ? t('sortAscending') : t('sortDescending')}
               >
                 {sortAsc ? '↑' : '↓'}
@@ -989,7 +997,10 @@ export function ConfirmDialog({
 }) {
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
+  const dialogRef = useRef<HTMLDivElement>(null);
 
+  // The dialog takes Escape and Enter before the page does. Enter on one of its own buttons is
+  // left to that button, so a focused Cancel cancels instead of confirming.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -998,6 +1009,8 @@ export function ConfirmDialog({
       }
       if (e.key === 'Enter') {
         e.stopImmediatePropagation();
+        if (targetHandlesOwnKeys(e) && dialogRef.current?.contains(e.target as Node)) return;
+        e.preventDefault();
         onConfirm();
       }
     };
@@ -1015,6 +1028,7 @@ export function ConfirmDialog({
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       <motion.div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={label ?? t('confirmDeletionAriaLabel')}

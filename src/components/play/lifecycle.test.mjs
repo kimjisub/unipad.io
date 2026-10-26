@@ -85,7 +85,7 @@ const storeProps = {
   downloadedCodes: new Set(), downloadedPackIdByCode: new Map(),
   downloadingCode: null, failedCode: null, downloadProgress: 0,
   onClose: noop, onReload: noop, onDownload: noop, onRetryFailed: noop,
-  onPlayDownloaded: noop, onCancelDownload: noop, onYoutube: noop, onWebsite: noop,
+  onPlayDownloaded: noop, onCancelDownload: noop, onYoutube: noop,
 };
 
 test('store restores and keeps session filter and sort preferences', () => {

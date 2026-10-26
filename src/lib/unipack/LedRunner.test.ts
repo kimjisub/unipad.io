@@ -30,7 +30,7 @@ describe('LedRunner', () => {
     runner.launch();
     return {
       runner,
-      /** eventOn queues the animation; the next tick adopts it and the one after plays it. */
+      /** The next tick adopts the animation and plays every step due since the press. */
       press: (x: number, y: number) => {
         runner.eventOn(x, y);
         clock.tick(4);
@@ -55,6 +55,24 @@ describe('LedRunner', () => {
     assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
   });
 
+  test('plays every repeat of an animation whose pass takes time', async () => {
+    const { outputs, press } = await startRunner({ '1 1 1 3': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
+
+    press(0, 0);
+    for (let i = 0; i < 20; i++) clock.tick(4);
+    const pass = [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]];
+    assert.deepEqual(outputs, [...pass, ...pass, ...pass]);
+  });
+
+  test('plays every repeat of an animation whose pass takes time when one late tick covers them all', async () => {
+    const { outputs, press } = await startRunner({ '1 1 1 3': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
+
+    press(0, 0);
+    clock.tick(100);
+    const pass = [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]];
+    assert.deepEqual(outputs, [...pass, ...pass, ...pass]);
+  });
+
   test('skips pad events outside the grid and keeps playing the rest', async () => {
     const { outputs, press } = await startRunner({
       '1 1 1': 'o 3 1 a 5\no 1 3 a 5\no 1 0 a 5\no -1 1 a 5\no 9 9 a 5\no 1 1 a 5\nd 10\nf 3 1\nf 1 0\nf 1 1',
@@ -63,6 +81,18 @@ describe('LedRunner', () => {
     press(0, 0);
     clock.tick(10);
     assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
+  });
+
+  test('zero columns light round buttons and invalid zero coordinates stay dark', async () => {
+    const { outputs, press } = await startRunner({
+      '1 1 1': 'on 0 1 a 5\no 0 32 a 5\no 8 0 a 5\no 0 0 a 5\no 0 37 a 5\nd 40\noff 0 1\nf 0 32\nf 8 0\nf 0 0\nf 0 37',
+    });
+    press(0, 0);
+    assert.deepEqual(outputs, [['chainOn', 0, RED, 5], ['chainOn', 31, RED, 5]]);
+    clock.tick(40);
+    assert.deepEqual(outputs, [
+      ['chainOn', 0, RED, 5], ['chainOn', 31, RED, 5], ['chainOff', 0], ['chainOff', 31],
+    ]);
   });
 
   test('turns a looping animation off on release and stays dark', async () => {
@@ -76,6 +106,24 @@ describe('LedRunner', () => {
     for (let i = 0; i < 20; i++) clock.tick(4);
     assert.equal(outputs.length, 2);
   });
+
+  for (const change of ['selection', 'script'] as const) {
+    test(`release ends endless pad and round lights after a ${change} chain change`, async () => {
+      const { runner, outputs, press, setChain } = await startRunner({
+        '1 1 1 0': `o 1 2 a 5\no * 2 a 5\n${change === 'script' ? 'c 2\n' : ''}d 1000`,
+      });
+      press(0, 0);
+      if (change === 'selection') setChain(1);
+      runner.eventOff(0, 0);
+      clock.tick(4);
+      assert.deepEqual(outputs, [
+        ['padOn', 0, 1, RED, 5], ['chainOn', 1, RED, 5],
+        ['padOff', 0, 1], ['chainOff', 1],
+      ]);
+      clock.tick(2000);
+      assert.equal(outputs.length, 4, 'released animation must not relight');
+    });
+  }
 
   describe('an endless animation that outruns one tick', () => {
     // Two passes of this strobe fit in one 4 ms tick, more than the per-tick budget allows.
@@ -177,7 +225,7 @@ describe('LedRunner', () => {
     assert.equal(clock.scheduled, true);
   });
 
-  // A tick that never returns freezes the page and this process with it, so these run in a worker
+  // A tick that never returns freezes the page and this process with it, so the tests below run in a worker
   // that is terminated after a deadline.
   describe('endless animations that never push time forward', () => {
     test('an empty endless keyLed file does not hang a tick', async () => {
@@ -187,6 +235,26 @@ describe('LedRunner', () => {
     test('an endless keyLed file without delays does not hang a tick', async () => {
       const outputs = await playInWorker({ '1 1 1 0': 'o 1 1 a 5\nf 1 1' });
       assert.ok(outputs.length > 0);
+    });
+  });
+
+  describe('repeated animations whose pass takes no time', () => {
+    test('a keyLed file repeated 2147483647 times without delays does not hang a tick and ends dark', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nf 1 1' }), [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
+    });
+
+    test('a keyLed file repeated 2147483647 times with only zero delays ends lit when its pass ends lit', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'f 1 1\nd 0\no 1 1 a 5' }), [['padOn', 0, 0, RED, 5]]);
+    });
+
+    test('a keyLed file repeated 2147483647 times whose delays go back in time does not hang a tick', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd -1' }), [['padOn', 0, 0, RED, 5]]);
+    });
+
+    test('a keyLed file repeated 2147483647 times whose delays sum to zero ends after its first pass from the press time', async () => {
+      assert.deepEqual(await playInWorker({ '1 1 1 2147483647': 'o 1 1 a 5\nd 4\nf 1 1\nd -4' }), [
+        ['padOn', 0, 0, RED, 5], ['padOff', 0, 0],
+      ]);
     });
   });
 

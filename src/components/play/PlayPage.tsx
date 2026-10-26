@@ -12,6 +12,7 @@ import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
+import { PackErrorDialog } from './PackErrorDialog';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
@@ -22,6 +23,7 @@ import {
   listUniPacks,
   deleteUniPack,
   updateUniPackLastOpened,
+  saveUniPackAutoPlay,
   toggleUniPackBookmark,
   saveTheme,
   getTheme,
@@ -40,9 +42,13 @@ import {
   subscribeStoreItems,
   type StoreItem,
 } from '@/lib/store';
-import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
-import type { LaunchpadProfile } from '@/lib/unipack';
+import type { StoredUniPack, StoredTheme, StoredAutoPlay } from '@/lib/unipack';
+import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
+
+// A previous page can still have an IndexedDB write in flight after navigation. Keep successful
+// pack records in order across page instances as well as across opens on the same page.
+let lastPackWrite: Promise<void> = Promise.resolve();
 
 const PACK_QUERY_KEY = 'pack';
 const CODE_QUERY_KEY = 'code';
@@ -77,7 +83,9 @@ export function PlayPage() {
     toggleRecording,
     toggleHideUI,
     toggleWatermark,
+    setSlideMode,
     toggleTraceLog,
+    setTraceLogStyle,
     clearTraceLog,
     toggleProLightMode,
     loadTheme,
@@ -89,6 +97,7 @@ export function PlayPage() {
     setVolumeLevel,
     resumeAudio,
     startAutoMapping,
+    restoreAutoPlay,
   } = useUniPadEngine();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +120,8 @@ export function PlayPage() {
   const [hasStoreUpdate, setHasStoreUpdate] = useState(false);
   const storeVisitedRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
+  /** The autoPlay change waiting for the user to confirm it. */
+  const [pendingAutoPlayEdit, setPendingAutoPlayEdit] = useState<'map' | 'restore' | null>(null);
 
   /**
    * The store item a `?code=` link wants to install, held while the user decides.
@@ -149,6 +160,7 @@ export function PlayPage() {
   }, []);
   const prevLoadedRef = useRef(false);
   const prevRecordingRef = useRef(false);
+  const prevRecordingPackRef = useRef(state.unipack);
   const currentPackIdRef = useRef<string | null>(null);
   const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -156,7 +168,21 @@ export function PlayPage() {
   const toastTimerRef = useRef<number | null>(null);
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
   const triedUrlPackRestoreRef = useRef(false);
+  const packOpenRevisionRef = useRef(0);
+  useEffect(() => {
+    const revisionRef = packOpenRevisionRef;
+    return () => { revisionRef.current++; };
+  }, []);
 
+  const rememberPack = useCallback(async (id: string, isCurrent: () => boolean) => {
+    const writing = lastPackWrite.catch(() => {}).then(async () => {
+      if (isCurrent()) await setSetting('lastUniPackId', id);
+    });
+    lastPackWrite = writing;
+    await writing;
+  }, []);
+
+  // With no pack open the address names none, not even the shared link that opened one: either would open it again.
   const syncPackUrl = useCallback((packId: string | null) => {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
@@ -164,9 +190,21 @@ export function PlayPage() {
       url.searchParams.set(PACK_QUERY_KEY, packId);
     } else {
       url.searchParams.delete(PACK_QUERY_KEY);
+      url.searchParams.delete(CODE_QUERY_KEY);
     }
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
+
+  const beginPackOpen = useCallback(() => {
+    const revision = ++packOpenRevisionRef.current;
+    triedUrlPackRestoreRef.current = true;
+    // Invalidate a decode already in the engine before waiting for storage or file reads.
+    unload();
+    currentPackIdRef.current = null;
+    setLoadingPackTitle(null);
+    syncPackUrl(null);
+    return () => revision === packOpenRevisionRef.current;
+  }, [unload, syncPackUrl]);
 
   const getPackIdFromUrl = useCallback((): string | null => {
     if (typeof window === 'undefined') return null;
@@ -206,15 +244,8 @@ export function PlayPage() {
       try {
         await refreshLists();
         const savedMidiProfile = await getSetting(MIDI_PROFILE_SETTING_KEY);
-        // Every profile the picker offers: launchpad_s, launchpad_mk2, midifighter, matrix and
-        // master_keyboard were missing, so those choices silently reset to Auto on reload.
-        const VALID_PROFILES = [
-          'auto', 'none', 'launchpad_s', 'launchpad_mk2', 'launchpad_pro', 'launchpad_x',
-          'launchpad_mini_mk3', 'launchpad_pro_mk3', 'midifighter', 'matrix', 'master_keyboard',
-        ] as const;
-        if (typeof savedMidiProfile === 'string'
-          && (VALID_PROFILES as readonly string[]).includes(savedMidiProfile)) {
-          setMidiProfile(savedMidiProfile as LaunchpadProfile);
+        if (isLaunchpadProfile(savedMidiProfile)) {
+          setMidiProfile(savedMidiProfile);
         }
         const savedLastPackId = await getSetting('lastUniPackId');
         if (!cancelled && savedLastPackId) setLastPlayedPackId(savedLastPackId);
@@ -284,55 +315,48 @@ export function PlayPage() {
     };
   }, [downloadingStoreCode]);
 
-  // 로딩 완료 후 에러가 있으면 다이얼로그 표시
+  // A refused pack never becomes loaded, but its critical error still needs a visible reason.
   useEffect(() => {
-    if (state.loaded && !prevLoadedRef.current && state.errors.length > 0) {
+    if ((state.criticalError || (state.loaded && !prevLoadedRef.current)) && state.errors.length > 0) {
       setErrorDialogShown(true);
     }
     prevLoadedRef.current = state.loaded;
-  }, [state.loaded, state.errors]);
+  }, [state.loaded, state.criticalError, state.errors]);
 
-  // 로딩 완료 시 저장된 설정 복원
-  const settingsRestoredRef = useRef(false);
-  useEffect(() => {
-    if (!state.loaded || settingsRestoredRef.current) return;
-    settingsRestoredRef.current = true;
-    (async () => {
-      try {
-        const [vol, fb, wm] = await Promise.all([
-          getSetting('volumeLevel'),
-          getSetting('feedbackLight'),
-          getSetting('watermark'),
-        ]);
-        if (vol !== null) setVolumeLevel(Number(vol));
-        if (fb === 'false') toggleFeedbackLight();
-        if (wm === 'false') toggleWatermark();
-      } catch { /* storage unavailable */ }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.loaded]);
-
-  // 설정 변경 시 저장
-  useEffect(() => {
-    if (!state.loaded) return;
-    setSetting('volumeLevel', String(state.volumeLevel)).catch(() => {});
-  }, [state.loaded, state.volumeLevel]);
-  useEffect(() => {
-    if (!state.loaded) return;
-    setSetting('feedbackLight', String(state.feedbackLight)).catch(() => {});
-  }, [state.loaded, state.feedbackLight]);
-  useEffect(() => {
-    if (!state.loaded) return;
-    setSetting('watermark', String(state.watermark)).catch(() => {});
-  }, [state.loaded, state.watermark]);
+  const applyLastTheme = useCallback(async (isCurrent: () => boolean) => {
+    const lastThemeId = await getSetting('lastThemeId');
+    if (!isCurrent() || !lastThemeId) return;
+    const theme = await getTheme(lastThemeId);
+    if (!isCurrent() || !theme) return;
+    currentThemeIdRef.current = lastThemeId;
+    try {
+      // Decoding the theme also waits; the engine must check before applying its result.
+      await loadTheme(theme.zipData, isCurrent);
+    } catch {
+      if (!isCurrent()) return;
+      showToast(tToast('skinFailed'));
+      currentThemeIdRef.current = null;
+      await setSetting('lastThemeId', '');
+    }
+  }, [loadTheme, showToast, tToast]);
 
   const handleImportFile = useCallback(
     async (file: File) => {
+      const isCurrent = beginPackOpen();
       await resumeAudio();
       const buffer = await file.arrayBuffer();
-      await loadUniPack(buffer);
+      // Until this import is saved, an auto mapping has no stored pack to go to.
+      if (isCurrent()) currentPackIdRef.current = null;
+      // Cancel opening the player, not importing the file into the library.
+      const opened = isCurrent() ? await loadUniPack(buffer) : null;
+      if (isCurrent() && opened === false) {
+        // Failed imports clear their own address; a replaced import owns no player state.
+        currentPackIdRef.current = null;
+        syncPackUrl(null);
+      }
 
       try {
+        // Keep a readable imported archive in the library even if another open replaced it.
         const parsed = await parseUniPack(buffer.slice(0));
         const id = await saveUniPack(buffer, {
           ...parsed.info,
@@ -341,31 +365,18 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
-        currentPackIdRef.current = id;
-        await setSetting('lastUniPackId', id);
-        syncPackUrl(id);
         await refreshLists();
-
-        // 마지막 테마도 적용
-        const lastThemeId = await getSetting('lastThemeId');
-        if (lastThemeId) {
-          const theme = await getTheme(lastThemeId);
-          if (theme) {
-            currentThemeIdRef.current = lastThemeId;
-            try {
-              await loadTheme(theme.zipData);
-            } catch {
-              showToast(tToast('skinFailed'));
-              currentThemeIdRef.current = null;
-              await setSetting('lastThemeId', '');
-            }
-          }
-        }
+        if (!isCurrent() || opened !== true) return;
+        currentPackIdRef.current = id;
+        await rememberPack(id, isCurrent);
+        if (!isCurrent()) return;
+        syncPackUrl(id);
+        await applyLastTheme(isCurrent);
       } catch {
         /* storage error */
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, refreshLists, syncPackUrl, showToast, tToast],
+    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const handleImportThemeFile = useCallback(
@@ -392,39 +403,35 @@ export function PlayPage() {
   );
 
   const handlePlay = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean | null> => {
+      const isCurrent = beginPackOpen();
       try {
         await resumeAudio();
+        if (!isCurrent()) return null;
         const pack = await getUniPack(id);
+        if (!isCurrent()) return null;
         if (!pack) return false;
-        currentPackIdRef.current = id;
         setLoadingPackTitle(pack.title);
-        await setSetting('lastUniPackId', id);
-        syncPackUrl(id);
-        await updateUniPackLastOpened(id);
-        await loadUniPack(pack.zipData);
-
-        const lastThemeId = await getSetting('lastThemeId');
-        if (lastThemeId) {
-          const theme = await getTheme(lastThemeId);
-          if (theme) {
-            currentThemeIdRef.current = lastThemeId;
-            try {
-              await loadTheme(theme.zipData);
-            } catch {
-              showToast(tToast('skinFailed'));
-              currentThemeIdRef.current = null;
-              await setSetting('lastThemeId', '');
-            }
-          }
+        // Recent-open history is best effort; a slow or failed write must not prevent playback.
+        void updateUniPackLastOpened(id).catch(error => console.warn('Could not save recent pack history.', error));
+        const opened = await loadUniPack(pack.zipData, pack.autoPlay);
+        if (!isCurrent() || opened === null) return null;
+        if (opened === false) {
+          currentPackIdRef.current = null;
+          syncPackUrl(null);
+          return false;
         }
-        return true;
+        currentPackIdRef.current = id;
+        await rememberPack(id, isCurrent);
+        if (!isCurrent()) return null;
+        syncPackUrl(id);
+        await applyLastTheme(isCurrent);
+        return isCurrent() ? true : null;
       } catch {
-        /* error */
-        return false;
+        return isCurrent() ? false : null;
       }
     },
-    [loadUniPack, loadTheme, resumeAudio, syncPackUrl, showToast, tToast],
+    [beginPackOpen, loadUniPack, resumeAudio, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const getCodeFromUrl = useCallback((): string | null => {
@@ -432,16 +439,19 @@ export function PlayPage() {
     return new URLSearchParams(window.location.search).get(CODE_QUERY_KEY)?.trim() || null;
   }, []);
 
-  // Restore from ?pack=<localId> URL parameter
+  // Restore from ?pack=<localId> URL parameter, decided once when the page opens. Later addresses come
+  // from this page itself and must not reopen a pack that closed or failed.
+  const decidedUrlPackRestoreRef = useRef(false);
   useEffect(() => {
-    if (restoringFromStorage || state.loaded || state.loading) return;
-    if (triedUrlPackRestoreRef.current) return;
+    if (restoringFromStorage || decidedUrlPackRestoreRef.current) return;
+    decidedUrlPackRestoreRef.current = true;
+    if (state.loaded || state.loading || triedUrlPackRestoreRef.current) return;
     const packId = getPackIdFromUrl();
     if (!packId) return;
 
     triedUrlPackRestoreRef.current = true;
     handlePlay(packId).then((ok) => {
-      if (!ok) syncPackUrl(null);
+      if (ok === false) syncPackUrl(null);
     }).catch(() => {
       syncPackUrl(null);
     });
@@ -506,7 +516,8 @@ export function PlayPage() {
 
   const handleToggleBookmark = useCallback(
     async (id: string) => {
-      await toggleUniPackBookmark(id);
+      // Keep the displayed state in sync with storage even if the bookmark write is rolled back.
+      await toggleUniPackBookmark(id).catch(error => console.warn('Could not save the pack bookmark.', error));
       await refreshLists();
     },
     [refreshLists],
@@ -550,8 +561,9 @@ export function PlayPage() {
   }, [optionPanelOpen]);
 
   const handleQuit = useCallback(() => {
+    packOpenRevisionRef.current++;
     setOptionPanelOpen(false);
-    setLastPlayedPackId(currentPackIdRef.current);
+    if (currentPackIdRef.current) setLastPlayedPackId(currentPackIdRef.current);
     setLoadingPackTitle(null);
     unload();
     currentPackIdRef.current = null;
@@ -574,14 +586,17 @@ export function PlayPage() {
 
   // Android: show "Copied" toast when recording stops
   useEffect(() => {
-    if (prevRecordingRef.current && !state.recording) {
+    const samePack = prevRecordingPackRef.current === state.unipack;
+    if (prevRecordingRef.current && !state.recording && samePack && state.loaded) {
       showToast(tToast('copied'));
     }
     prevRecordingRef.current = state.recording;
-  }, [state.recording, showToast, tToast]);
+    prevRecordingPackRef.current = state.unipack;
+  }, [state.loaded, state.recording, state.unipack, showToast, tToast]);
 
   // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
-  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null;
+  const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null
+    || pendingAutoPlayEdit !== null;
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
@@ -834,12 +849,6 @@ export function PlayPage() {
     window.open(getStoreYoutubeSearchUrl(item), '_blank', 'noopener,noreferrer');
   }, [trackStoreEvent]);
 
-  const handleStoreWebsite = useCallback((item: StoreItem) => {
-    if (!item.url) return;
-    trackStoreEvent('store_website_click', { code: item.code });
-    window.open(item.url, '_blank', 'noopener,noreferrer');
-  }, [trackStoreEvent]);
-
   const handlePlayDownloadedStoreItem = useCallback((item: StoreItem) => {
     const pack = savedPacks.find((p) => p.storeCode === item.code);
     if (!pack) {
@@ -942,12 +951,40 @@ export function PlayPage() {
 
   // Engine now uses circle indices directly (chainStates is CIRCLE_ARRAY_SIZE=32)
   const actualChainCount = state.unipack?.info.chain ?? 0;
+  const visibleCircleCount = state.proLightMode ? CIRCLE_ARRAY_SIZE
+    : Math.min(CIRCLE_ARRAY_SIZE, CHAIN_INDEX_OFFSET + actualChainCount);
   const currentCircleChain = state.chain + CHAIN_INDEX_OFFSET;
   const handleChainSelect = useCallback((circleIdx: number) => {
     if (circleIdx >= CHAIN_INDEX_OFFSET && circleIdx < CHAIN_INDEX_OFFSET + actualChainCount) {
       setChain(circleIdx - CHAIN_INDEX_OFFSET);
     }
   }, [setChain, actualChainCount]);
+
+  // The archive the pack was opened from is never rewritten; the autoPlay is stored beside it.
+  const persistAutoPlay = useCallback((autoPlay: StoredAutoPlay) => {
+    const id = currentPackIdRef.current;
+    return id ? saveUniPackAutoPlay(id, autoPlay) : Promise.reject(new Error('The pack is not saved in this browser.'));
+  }, []);
+
+  const confirmAutoPlayEdit = useCallback(async () => {
+    const edit = pendingAutoPlayEdit;
+    setPendingAutoPlayEdit(null);
+    if (!edit) return;
+    const result = await (edit === 'map' ? startAutoMapping : restoreAutoPlay)(persistAutoPlay);
+    if (result === 'saved') showToast(tToast(edit === 'map' ? 'autoPlaySaved' : 'autoPlayRestored'));
+    else if (result === 'failed') showToast(tToast('autoPlaySaveFailed'));
+  }, [pendingAutoPlayEdit, startAutoMapping, restoreAutoPlay, persistAutoPlay, showToast, tToast]);
+
+  const autoPlayEditDialog = pendingAutoPlayEdit && (
+    <ConfirmDialog
+      label={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMappingAriaLabel' : 'confirmRestoreAutoPlayAriaLabel')}
+      message={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMapping' : 'confirmRestoreAutoPlay')}
+      confirmText={t(pendingAutoPlayEdit === 'map' ? 'confirmAutoMappingAction' : 'confirmRestoreAutoPlayAction')}
+      tone="primary"
+      onConfirm={() => void confirmAutoPlayEdit()}
+      onCancel={() => setPendingAutoPlayEdit(null)}
+    />
+  );
 
   const shareInstallDialog = pendingShareItem && (
     <ConfirmDialog
@@ -970,6 +1007,18 @@ export function PlayPage() {
       onCancel={() => {
         setPendingShareItem(null);
         showToast(tToast('installCancelled'));
+      }}
+    />
+  );
+
+  // The same error dialog is needed when an import fails before the player is mounted.
+  const errorDialog = errorDialogShown && state.errors.length > 0 && (
+    <PackErrorDialog
+      errors={state.errors}
+      critical={state.criticalError}
+      onClose={() => {
+        setErrorDialogShown(false);
+        if (state.criticalError) handleQuit();
       }}
     />
   );
@@ -997,7 +1046,7 @@ export function PlayPage() {
           savedThemes={savedThemes}
           activeThemeId={currentThemeIdRef.current}
           lastPlayedPackId={lastPlayedPackId}
-          keyboardDisabled={storeOpen}
+          keyboardDisabled={storeOpen || dialogOpen}
           onPlay={handlePlay}
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
@@ -1035,10 +1084,10 @@ export function PlayPage() {
           onPlayDownloaded={handlePlayDownloadedStoreItem}
           onCancelDownload={handleCancelStoreDownload}
           onYoutube={handleStoreYoutube}
-          onWebsite={handleStoreWebsite}
         />
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
+        {errorDialog}
 
         <AnimatePresence>
           {toast && (
@@ -1212,7 +1261,7 @@ export function PlayPage() {
                 <div style={{ flex: hiddenSideFlex }} />
                 <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1232,7 +1281,7 @@ export function PlayPage() {
               {hiddenSideCols > 0 && (
                 <div className="h-full" style={{ flex: hiddenSideFlex }}>
                   {showLeftChainBar && <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1253,7 +1302,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1261,7 +1312,7 @@ export function PlayPage() {
               {hiddenSideCols > 0 && (
                 <div className="h-full" style={{ flex: hiddenSideFlex }}>
                   {showRightChainBar && <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1280,7 +1331,7 @@ export function PlayPage() {
                 <div style={{ flex: hiddenSideFlex }} />
                 <div style={{ flex: hiddenPadFlex, height: '100%' }}>
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1434,7 +1485,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1462,7 +1513,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1489,7 +1540,9 @@ export function PlayPage() {
                   padStates={state.padStates}
                   squareButton={unipack.info.squareButton}
                   theme={theme}
-                  traceLogSequence={state.traceLog ? state.traceLogSequence[state.chain] : undefined}
+                  traceLogSequence={state.traceLogSequence[state.chain]}
+                  traceLogStyle={state.traceLogStyle}
+                  slideMode={state.slideMode}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1504,7 +1557,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsV}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1529,7 +1582,7 @@ export function PlayPage() {
                   }}
                 >
                   <ChainBar
-                    chainCount={CIRCLE_ARRAY_SIZE}
+                    chainCount={visibleCircleCount}
                     slotCount={chainAreaSlotsH}
                     chainStates={state.chainStates}
                     currentChain={currentCircleChain}
@@ -1577,21 +1630,28 @@ export function PlayPage() {
         recording={state.recording}
         hideUI={state.hideUI}
         watermark={state.watermark}
+        slideMode={state.slideMode}
         traceLog={state.traceLog}
+        traceLogStyle={state.traceLogStyle}
         proLightMode={state.proLightMode}
         midiConnected={state.midiConnected}
         midiConnecting={midiConnecting}
         onToggleFeedbackLight={toggleFeedbackLight}
         onToggleLed={toggleLed}
         onSwitchPlayMode={switchPlayMode}
-        onStartAutoMapping={startAutoMapping}
+        onStartAutoMapping={() => setPendingAutoPlayEdit('map')}
         autoMappingActive={state.autoMappingActive}
         autoMappingProgress={state.autoMappingProgress}
         autoMappingTotal={state.autoMappingTotal}
+        onRestoreAutoPlay={() => setPendingAutoPlayEdit('restore')}
+        autoPlayRestoring={state.autoPlayRestoring}
+        autoPlayBackupAvailable={state.autoPlayBackupAvailable}
         onToggleRecording={toggleRecording}
         onToggleHideUI={toggleHideUI}
         onToggleWatermark={toggleWatermark}
+        onToggleSlideMode={() => setSlideMode(!state.slideMode)}
         onToggleTraceLog={toggleTraceLog}
+        onTraceLogStyleChange={setTraceLogStyle}
         onClearTraceLog={handleClearTraceLog}
         onToggleProLightMode={toggleProLightMode}
         volumeLevel={state.volumeLevel}
@@ -1623,45 +1683,9 @@ export function PlayPage() {
         </div>
       )}
 
-      {/* Error/Warning Dialog */}
-      {errorDialogShown && state.errors.length > 0 && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => {
-            if (!state.criticalError) setErrorDialogShown(false);
-          }} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" role="alertdialog" aria-modal="true" aria-label={state.criticalError ? t('error') : t('warning')}>
-            <div className="bg-[var(--card)] rounded-xl p-5 w-[360px] max-h-[60vh] flex flex-col pointer-events-auto shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className={`text-sm font-bold ${state.criticalError ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {state.criticalError ? t('error') : t('warning')}
-                </h2>
-                <span className="text-[10px] text-white/40">
-                  {state.errors.length} {state.errors.length === 1 ? 'issue' : 'issues'}
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {state.errors.map((err, i) => (
-                  <ErrorMessageItem key={i} message={err} />
-                ))}
-              </div>
-              <button
-                className={`w-full py-2 rounded-lg text-sm font-medium ${
-                  state.criticalError
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-                onClick={() => {
-                  setErrorDialogShown(false);
-                  if (state.criticalError) handleQuit();
-                }}
-              >
-                {state.criticalError ? t('quit') : t('ok')}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      {errorDialog}
 
+      <AnimatePresence>{autoPlayEditDialog}</AnimatePresence>
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
       {/* Toast */}
@@ -1689,36 +1713,6 @@ export function PlayPage() {
 
       <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
-    </div>
-  );
-}
-
-const ERROR_MSG_TRUNCATE = 120;
-
-function ErrorMessageItem({ message }: { message: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = message.length > ERROR_MSG_TRUNCATE;
-  const label = message.split(':')[0] || 'Error';
-  const detail = message.includes(':') ? message.slice(message.indexOf(':') + 1).trim() : message;
-
-  return (
-    <div className="rounded-md bg-white/5 px-3 py-2">
-      <div className="text-[11px] font-medium text-white/80 mb-0.5">{label}</div>
-      <div
-        className={`text-[10px] text-white/50 font-mono break-all leading-relaxed ${
-          !expanded && isLong ? 'line-clamp-3' : ''
-        }`}
-      >
-        {detail}
-      </div>
-      {isLong && (
-        <button
-          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
     </div>
   );
 }

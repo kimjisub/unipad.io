@@ -7,93 +7,163 @@
   "KL-M13": {},
   "KL-M17": {},
   "KL-M18": {},
-  "INF-007": {
+  "INF-G604": {},
+  "INF-G605": {},
+  "KL-G605": {},
+  "KL-G606": {},
+  "KS-G601": {},
+  "KS-G602": {},
+  "KS-G603": {},
+  "KS-G604": {},
+  "KS-G612": {},
+  "KS-G613": {},
+  "KS-G614": {},
+  "KS-G615": {},
+  "KS-G616": {},
+  "KS-G617": {},
+  "KS-G622": {},
+  "KS-G625": {},
+  "RUN-G616": {},
+  "RUN-G618": {
     "android": {
       "status": "fail",
       "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [
-          {
-            "c": 0,
-            "x": 0,
-            "y": 0,
-            "queue": [
-              {
-                "file": "a.wav",
-                "loop": 0,
-                "wormhole": -1
-              }
+        "checkpoints": [
+          [
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
             ]
-          }
-        ],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": null,
-        "errors": [
-          "info:format"
+          ],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ]
+          ]
         ]
       },
-      "note": "Android records a format warning (`info: … format is incorrect`) for the line without `=`; the pack opens and plays the same."
+      "note": "Observed at application commit 208afb9e5be3bebef9fd50c5e1b77dcb40e29330 after unipad-android#304, using a local test-only adapter through PadTouchTracker and controllerPadTouch. Source corpus SHA256 fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8; original RUN-G618.json SHA256 5866b8aa01d14c230421c6a94dd322705378ac404a19d0dbe246a34ca2b2dde0 (investigations/android-input-release-observations/). Releasing the later input leaves its sound and pack light running until the last finger releases. The separately observed pressed indicator follows the last-input rule. This JVM observation does not measure USB transport, screen rendering or audible output."
     }
   },
-  "INF-010": {
+  "RUN-G617": {
     "android": {
       "status": "fail",
       "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 0,
-          "buttonY": 3,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": null,
-        "errors": [
-          "info:format",
-          "info:missing-field",
-          "keySound:range"
+        "checkpoints": [
+          [
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ]
+          ],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "sound",
+              0,
+              0,
+              0,
+              "a.wav",
+              -1
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ],
+            [
+              "ledOn",
+              0,
+              0,
+              "ffff0000",
+              4
+            ]
+          ],
+          [],
+          [
+            [
+              "soundStop",
+              0,
+              0,
+              0,
+              "a.wav"
+            ],
+            [
+              "ledOff",
+              0,
+              0
+            ]
+          ]
         ]
       },
-      "note": "Android reads `abc` as 0 and opens the pack without a pad column: a format warning, buttonX missing, and the keySound line out of range."
-    }
-  },
-  "INF-016": {
-    "android": {
-      "status": "fail",
-      "actual": {
-        "loaded": true,
-        "info": {
-          "title": "Conformance",
-          "producerName": "UniPad Conformance",
-          "buttonX": 4,
-          "buttonY": 0,
-          "chain": 2,
-          "squareButton": true
-        },
-        "sounds": [],
-        "keyLedExist": false,
-        "leds": [],
-        "autoPlay": null,
-        "errors": [
-          "info:format",
-          "info:missing-field",
-          "keySound:range"
-        ]
-      },
-      "note": "Android reads `abc` as 0 and opens the pack without a pad row: a format warning, buttonY missing, and the keySound line out of range."
+      "note": "Observed at application commit 208afb9e5be3bebef9fd50c5e1b77dcb40e29330 after unipad-android#304, using a local test-only adapter through PadTouchTracker and controllerPadTouch. Source corpus SHA256 fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8; original RUN-G617.json SHA256 90aa9083125a706bba3da30cc62d48c01090256cd6b05fad84fd70d12f09a330 (investigations/android-input-release-observations/). Releasing the later input leaves its sound and pack light running until the last finger releases. The separately observed pressed indicator follows the last-input rule. This JVM observation does not measure USB transport, screen rendering or audible output."
     }
   }
 }

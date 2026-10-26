@@ -2,13 +2,15 @@
 // builders that write expected results in the normalized form every platform harness emits.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { fingerprintOf } from '../../src/lib/unipack/fingerprint.mts';
 
 export const SCHEMA = 'unipad-conformance/1';
 
 // ---------------------------------------------------------------------------------------------
 // Sound assets. Only synthesized signals: a 10 ms sine at two pitches and 10 ms of silence,
 // 8 kHz mono unsigned 8-bit PCM, and the 440 Hz sine encoded as MP3. Nothing is taken from a pack, a
-// song or the internet.
+// song or the internet. `not-audio` is a line of text no audio decoder accepts, for a sound file that
+// cannot be decoded.
 // ---------------------------------------------------------------------------------------------
 
 const SAMPLE_RATE = 8000;
@@ -67,6 +69,7 @@ export const ASSET_GENERATORS = {
     describe: `tone-440 (sha256 ${MP3_SOURCE_SHA256}) encoded by LAME 3.100: lame --silent --resample 44.1 -b 64 --cbr --noreplaygain; MPEG-1 Layer III, 44.1 kHz mono, stored bytes`,
     make: storedMp3,
   },
+  'not-audio': { describe: 'one line of ASCII text, in no audio format', make: () => Buffer.from('This is not a sound.\n', 'ascii') },
 };
 
 export function buildAssets() {
@@ -79,12 +82,13 @@ export function buildAssets() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Fingerprint. sha256 over the input files sorted by the UTF-8 bytes of their path; per file:
-//   UTF8(path) 0x00 decimal(length) 0x00 bytes 0x0A
-// A file is either `text` (UTF-8 encoded as written, so BOM and CRLF are kept), `base64`, or an
-// `asset` reference whose bytes come from the corpus assets. The Kotlin and Swift harnesses
-// recompute this from the copied corpus and refuse a case whose files no longer hash to it.
+// Fingerprint (src/lib/unipack/fingerprint.mts holds the formula). A file is either `text` (UTF-8 encoded
+// as written, so BOM and CRLF are kept), `base64`, or an `asset` reference whose bytes come from the
+// corpus assets. The Kotlin and Swift harnesses recompute this from the copied corpus and refuse a case
+// whose files no longer hash to it.
 // ---------------------------------------------------------------------------------------------
+
+export { fingerprintOf };
 
 export function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -102,13 +106,7 @@ export function fileBytes(file, assets) {
 }
 
 export function fingerprint(files, assets) {
-  const sorted = [...files].sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')));
-  const hash = createHash('sha256');
-  for (const file of sorted) {
-    const bytes = fileBytes(file, assets);
-    hash.update(Buffer.concat([Buffer.from(file.path, 'utf8'), Buffer.from([0]), Buffer.from(String(bytes.length), 'ascii'), Buffer.from([0]), bytes, Buffer.from([10])]));
-  }
-  return hash.digest('hex');
+  return fingerprintOf(files, (file) => fileBytes(file, assets));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -118,7 +116,7 @@ export function fingerprint(files, assets) {
 export const STD_INFO = ['title=Conformance', 'producerName=UniPad Conformance', 'buttonX=4', 'buttonY=3', 'chain=2', 'squareButton=true'].join('\n');
 export const DEFAULT_INFO = { title: 'Conformance', producerName: 'UniPad Conformance', buttonX: 4, buttonY: 3, chain: 2, squareButton: true };
 
-const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440', 'a.mp3': 'tone-440-mp3', 'END.wav': 'tone-660' };
+const SOUND_ASSETS = { 'a.wav': 'tone-440', 'b.wav': 'tone-660', 'c.wav': 'silence-10ms', 'fx/s.wav': 'tone-440', 'a.mp3': 'tone-440-mp3', 'bad.wav': 'not-audio', '소리.wav': 'tone-440', 'END.wav': 'tone-660' };
 
 /**
  * `info`/`keySound`: string, or null to leave the file out. `sounds`: names under sounds/ (default
@@ -173,8 +171,9 @@ export const refused = () => ({ loaded: false });
 // Basis entries. `doc` is checked against content/docs/en/unipack at build time. `agreed` is no
 // statement of what is right: no doc or intent decides the case, and the three platforms gave the same
 // result when it was observed (`ref`), so that result is held to catch a change on any one of them.
-// `decision` is a result the maintainers chose where the platforms differed and no doc decides; the
-// platforms that do not give it yet are pinned in divergences.json until they are changed.
+// `decision` is a result the maintainers chose where the platforms, or the docs and the platforms,
+// differed (KL-024, and the items GRAMMAR.md decides); the platforms that do not give it yet are pinned
+// in divergences.json until they are changed.
 export const doc = (file, note) => ({ type: 'doc', ref: `content/docs/en/unipack/${file}`, note });
 export const intent = (ref, note) => ({ type: 'intent', ref, note });
 export const reference = (ref, note) => ({ type: 'reference', ref, note });

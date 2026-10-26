@@ -1,17 +1,15 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
-import { test, expect } from './browser';
-import { pad, point, pressed, touch, touchScreens, type Contact } from './touch';
+import { test, expect, expectPads } from './browser';
+import { chain2, pad, point, pressed, touch, touchScreens, type Contact } from './touch';
 
 test.use({ hasTouch: true });
-// The right strip uses circle slots 9/10 for pack chains 1/2 (offset 8).
-const chain2 = (page: Page) => page.getByRole('button', { name: 'Chain 10', exact: true });
 
 async function load(page: Page, pack = 'manual') {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(`meta/unipack-conformance/chain-release-v1/packs/${pack}.uni`));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 }
@@ -62,7 +60,7 @@ for (const screen of touchScreens) {
       expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
     });
 
-    test('a second finger on the same pad after a chain change leaves the first loop to its own release', async ({ page, context }) => {
+    for (const releaseFirst of ['original', 'later']) test(`same-pad contacts across chains release only their own sound (${releaseFirst} first)`, async ({ page, context }, info) => {
       await load(page);
       const session = await context.newCDPSession(page);
       const a = await point(page, '0,0', 1);
@@ -71,10 +69,15 @@ for (const screen of touchScreens) {
       await tapChain(page, session, [a]);
       await touch(session, 'touchStart', [a, b]);
       await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
-      await touch(session, 'touchEnd', [a]);
-      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
+      await touch(session, 'touchEnd', [releaseFirst === 'original' ? a : b]);
+      // Each contact releases its own chain's sound; feedback stays until the last contact ends.
+      expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([releaseFirst === 'original' ? 1 : 2]);
+      await expect(pressed(page, '0,0')).toBeVisible();
+      await evidence(page, info, 'one-contact-still-held');
       await touch(session, 'touchEnd', []);
-      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops)).toEqual(releaseFirst === 'original' ? [1, 2] : [2, 1]);
+      await expect(pressed(page, '0,0')).toHaveCount(0);
+      await evidence(page, info, 'final-contact-released');
     });
 
     test('CR-003 simultaneous contacts preserve the unreleased loop and feedback', async ({ page, context }) => {

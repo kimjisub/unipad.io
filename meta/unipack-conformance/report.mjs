@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Joins the three platforms' conformance results into one row per case.
-//   node meta/unipack-conformance/report.mjs --web web.json [--android android.json] [--ios ios.json] [--json]
+//   node meta/unipack-conformance/report.mjs --web web.json [--android android.json] [--ios ios.json]
+//     [--android-native results.json] [--ios-native ios-native.json] [--web-native items.json] [--json]
+// It also says, per item of the grammar (GRAMMAR.md), whether the item is confirmed on each platform, and
+// on what: the common cases, the app's own tests (`--<platform>-native`, see native.mjs), or both.
 // The status of a case is worked out here from the result (`actual`) the platform recorded; the status
 // the platform wrote is only cross-checked. A platform that was not given, whose file belongs to
 // another platform, that ran another corpus or other input, or that claims a status without the result
@@ -10,7 +13,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { HARNESS_LIMITS, NATIVE_TESTS, readGrammar } from './grammar.mjs';
 import { restsOnAgreement, restsOnDecision } from './lib.mjs';
+import { readNative } from './native.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PLATFORMS = ['android', 'ios', 'web'];
@@ -54,7 +59,7 @@ export function parseResults(text) {
 export function classify(c, actual, platform) {
   const known = c.known?.[platform];
   if (isDeepStrictEqual(actual, c.expected)) return known ? 'unverified' : 'pass';
-  if (known && isDeepStrictEqual(actual, known.actual)) return known.status;
+  if (known && [known.actual, ...(known.otherActuals ?? []).map((o) => o.actual)].some((a) => isDeepStrictEqual(actual, a))) return known.status;
   return 'fail';
 }
 
@@ -96,7 +101,83 @@ export function judge({ corpus, sha256 }, platform, results) {
   return out;
 }
 
-export function buildReport(canonical, results) {
+/** What a confirmed item rests on, given only when app test results were given at all. */
+export const BASES = { common: 'common', native: 'app tests', both: 'common and app tests' };
+
+/**
+ * Whether the app test results of one platform confirm one item: the item is reported as passed, from the
+ * run it must come from, and every test NATIVE_TESTS lists for it ran exactly once and passed. Other tests
+ * in the file are not counted.
+ */
+function nativeVerdict(id, platform, native) {
+  const reported = native.items[id];
+  if (!reported) return { confirmed: false, detail: `the ${platform} app test results do not report it` };
+  const problems = [];
+  if (!reported.passed) problems.push(`the ${platform} app test results mark it ${reported.status}`);
+  if (reported.unfit) problems.push(`the ${platform} app test results ${reported.unfit}`);
+  const short = NATIVE_TESTS[platform][id].map((name) => [name, reported.test(name)]).filter(([, status]) => status !== 'passed');
+  if (short.length) problems.push(`required ${platform} app tests did not pass exactly once: ${short.map(([name, status]) => `${name} ${status}`).join(', ')}`);
+  return { confirmed: problems.length === 0, detail: problems.join('; ') };
+}
+
+/**
+ * Whether one grammar item is confirmed on one platform. `result` is the platform's result file, for the
+ * flag a limit may name; `native` its app test results (native.mjs), if given.
+ * - No case checks the item: confirmed only by the app tests NATIVE_TESTS lists for it.
+ * - The platform's harness cannot observe it (HARNESS_LIMITS): confirmed only when both its cases and the
+ *   listed app tests pass; neither covers the other.
+ * - Otherwise: by its cases alone, as without app test results. Every case must pass, and an output item
+ *   needs a run or palette case among them.
+ */
+function itemVerdict(item, linked, platform, rowById, result, native, withBasis) {
+  const confirmed = (basis) => ({ confirmed: true, detail: '', ...(withBasis && { basis }) });
+  const listed = native && NATIVE_TESTS[platform]?.[item.id];
+  if (linked.length === 0) {
+    if (!listed) return { confirmed: false, detail: native ? `no case checks this item, and no ${platform} app test is listed for it` : 'no case checks this item' };
+    const own = nativeVerdict(item.id, platform, native);
+    return own.confirmed ? confirmed(BASES.native) : own;
+  }
+  const limit = HARNESS_LIMITS[platform]?.[item.id];
+  const limited = limit && !(limit.unless && result?.[limit.unless] === true);
+  if (limited && !listed) return { confirmed: false, detail: `the ${platform} harness cannot observe it: ${limit.reason}` };
+  if (item.kind === 'output' && !linked.some((c) => c.layer === 'run' || c.layer === 'palette')) {
+    return { confirmed: false, detail: 'an output item is confirmed by a run or palette case, and none checks it' };
+  }
+  const short = linked.filter((c) => rowById.get(c.id)[platform].status !== 'pass');
+  const cases = short.length ? `not every case passes: ${short.map((c) => `${c.id} ${rowById.get(c.id)[platform].status}`).join(', ')}` : '';
+  if (!limited) return cases ? { confirmed: false, detail: cases } : confirmed(BASES.common);
+  const own = nativeVerdict(item.id, platform, native);
+  if (cases || !own.confirmed) return { confirmed: false, detail: [cases, own.detail].filter(Boolean).join('; ') };
+  return confirmed(BASES.both);
+}
+
+/**
+ * One row per grammar item, and the four numbers: confirmed per platform, on all three, and with a case.
+ * `natives` holds the app test results given per platform; with any of them, a confirmed item says what
+ * it rests on (`basis`).
+ */
+export function buildItems(corpus, rows, results, natives = {}, grammar = readGrammar()) {
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  const withBasis = Object.keys(natives).length > 0;
+  const itemRows = grammar.items.map((item) => {
+    const linked = corpus.cases.filter((c) => c.items?.includes(item.id));
+    const row = { id: item.id, kind: item.kind, cases: linked.map((c) => c.id) };
+    for (const p of PLATFORMS) row[p] = itemVerdict(item, linked, p, rowById, results[p], natives[p], withBasis);
+    return row;
+  });
+  return {
+    edition: grammar.edition,
+    corpusEdition: corpus.grammar ?? null,
+    items: itemRows.length,
+    confirmed: Object.fromEntries(PLATFORMS.map((p) => [p, itemRows.filter((r) => r[p].confirmed).length])),
+    confirmedOnAllThree: itemRows.filter((r) => PLATFORMS.every((p) => r[p].confirmed)).length,
+    withCases: itemRows.filter((r) => r.cases.length > 0).length,
+    rows: itemRows,
+  };
+}
+
+/** `natives`: per platform, its app test results as native.mjs reads them; none gives the report as before. */
+export function buildReport(canonical, results, natives = {}) {
   const judged = Object.fromEntries(PLATFORMS.map((p) => [p, judge(canonical, p, results[p])]));
   const rows = canonical.corpus.cases.map((c) => {
     const row = { id: c.id, layer: c.layer, area: c.area, title: c.title, expectation: c.expectation, agreed: restsOnAgreement(c), decided: restsOnDecision(c) };
@@ -121,15 +202,22 @@ export function buildReport(canonical, results) {
   };
   // When each result file was written and whether that run asserted, so a stale or record-only file shows.
   const runs = Object.fromEntries(PLATFORMS.map((p) => [p, results[p] ? { generatedAt: results[p].generatedAt ?? null, assertions: results[p].assertions ?? null } : null]));
+  // Which app test results were counted: the file and the commit the tests ran on, beside `runs`, so a
+  // reader can see whether they ran on the same commit as the common cases.
+  const native = Object.keys(natives).length
+    ? { native: Object.fromEntries(PLATFORMS.map((p) => [p, natives[p] ? { sha256: natives[p].sha256, commit: natives[p].commit } : null])) }
+    : {};
   return {
     corpusSha256: canonical.sha256,
     cases: rows.length,
     runs,
+    ...native,
     summary,
     passOnAllThree: passOnAllThree.length,
     agreed: apart('agreed'),
     decided: apart('decided'),
     rows,
+    grammar: buildItems(canonical.corpus, rows, results, natives),
   };
 }
 
@@ -140,6 +228,10 @@ export function renderText(report) {
     const run = report.runs[p];
     const note = run?.assertions === 'skipped' ? ', a record-only run (UNIPACK_CONFORMANCE_DUMP=1): its cases were not asserted' : '';
     out.push(`${p.padEnd(9)}${run ? `results written ${run.generatedAt ?? 'at an unknown time'}${note}` : 'no results given'}`);
+    if (report.native) {
+      const native = report.native[p];
+      out.push(`${''.padEnd(9)}${native ? `app test results ${native.sha256.slice(0, 12)}, run on commit ${native.commit}` : 'no app test results given'}`);
+    }
   }
   out.push('');
   out.push(`${'platform'.padEnd(9)}${STATUSES.map((s) => s.padStart(20)).join('')}`);
@@ -148,8 +240,12 @@ export function renderText(report) {
   const passes = (counted) => PLATFORMS.map((p) => `${p} ${counted.pass[p]}`).join(', ');
   out.push(`pass on all three platforms: ${report.passOnAllThree} of ${report.cases} cases, ${report.agreed.passOnAllThree} of them on an agreed basis, ${report.decided.passOnAllThree} on a decision basis`);
   out.push(`agreed basis: ${report.agreed.cases} cases hold what Android, iOS and the web all did, mostly where no doc decides (README, "Agreed behaviour", names the one that goes against a doc); pass ${passes(report.agreed)}`);
-  out.push(`decision basis: ${report.decided.cases} cases hold what the maintainers chose where the platforms differed and no doc decides; pass ${passes(report.decided)}`);
+  out.push(`decision basis: ${report.decided.cases} cases hold what the maintainers chose (KL-024, and the items GRAMMAR.md decides) where the platforms, or the docs and the platforms, differed; pass ${passes(report.decided)}`);
   out.push('This is a result for the cases in this corpus only. It does not show that every UniPack is compatible.');
+  out.push('');
+  const g = report.grammar;
+  if (g.corpusEdition !== g.edition) out.push(`the corpus was built against grammar ${g.corpusEdition}, this tool reads ${g.edition}: item numbers may not match`);
+  out.push(`grammar ${g.edition}: confirmed ${PLATFORMS.map((p) => `${p} ${g.confirmed[p]}`).join(', ')} of ${g.items} items; on all three platforms ${g.confirmedOnAllThree} of ${g.items}; ${g.withCases} of ${g.items} have a case`);
   out.push('');
   const short = { pass: 'pass', fail: 'FAIL', unsupported: 'UNSUPP', 'intended-difference': 'INTENDED', unverified: '-' };
   out.push(`${'case'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}title`);
@@ -158,8 +254,15 @@ export function renderText(report) {
     const tail = r.observed ? ` [undetermined: observed results ${r.observed}]` : r.expectation === 'undetermined' ? ' [undetermined]' : r.agreed ? ' [agreed]' : r.decided ? ' [decision]' : '';
     out.push(`${r.id.padEnd(11)}${cells}${r.title}${tail}`);
   }
+  out.push('');
+  out.push(`${'item'.padEnd(11)}${'android'.padEnd(10)}${'ios'.padEnd(10)}${'web'.padEnd(10)}cases`);
+  const mark = { [BASES.common]: 'ok', [BASES.native]: 'ok app', [BASES.both]: 'ok both' };
+  for (const r of g.rows) out.push(`${r.id.padEnd(11)}${PLATFORMS.map((p) => (r[p].confirmed ? mark[r[p].basis] ?? 'ok' : '-').padEnd(10)).join('')}${r.cases.join(' ') || '(none)'}`);
+  if (report.native) out.push('ok: by the common cases; ok app: by the app tests, no case checks it; ok both: by the cases and the app tests, which the harness cannot observe alone');
   const notes = report.rows.flatMap((r) => PLATFORMS.filter((p) => r[p].status !== 'pass' && r[p].detail && r.expectation === 'determined').map((p) => `${r.id} ${p}: ${r[p].detail}`));
   if (notes.length) out.push('', 'notes', ...notes);
+  const itemNotes = g.rows.flatMap((r) => PLATFORMS.filter((p) => !r[p].confirmed).map((p) => `${r.id} ${p}: ${r[p].detail}`));
+  if (itemNotes.length) out.push('', 'items not confirmed', ...itemNotes);
   return out.join('\n');
 }
 
@@ -167,6 +270,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const arg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
   const results = {};
+  const natives = {};
   for (const p of PLATFORMS) {
     const path = arg(`--${p}`);
     if (!path) continue;
@@ -177,6 +281,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.exit(3);
     }
   }
-  const report = buildReport(loadCanonical(arg('--corpus')), results);
+  for (const p of PLATFORMS) {
+    const path = arg(`--${p}-native`);
+    if (!path) continue;
+    try {
+      natives[p] = readNative(p, readFileSync(path));
+    } catch (error) {
+      console.error(`cannot use ${p} app test results from ${path}: ${error.message}`);
+      process.exit(3);
+    }
+  }
+  const report = buildReport(loadCanonical(arg('--corpus')), results, natives);
   console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : renderText(report));
 }

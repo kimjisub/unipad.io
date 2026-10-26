@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 
 // A dialog over the player owns the keyboard: Space (auto-play), pad keys, chain keys and the
 // Alt shortcuts must not act behind it, wherever focus sits after a click on its title or text.
@@ -17,9 +17,12 @@ async function load(page: Page, baseURL: string | undefined, locale: string, pac
   await page.context().addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL }]);
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(pack));
-  await expect(page.locator('[data-pad]')).toHaveCount(64);
+  await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);
+  // Connection status is immediate; wait for the initial light redraw before measuring quiet keys.
+  await expect.poll(() => page.evaluate(() => new Set(window.browserProbe.midi.messages
+    .filter(message => (message[0] & 0xe0) === 0x80).map(message => message[1])).size)).toBeGreaterThanOrEqual(64);
 }
 
 /** Presses every kind of player key; none may play, light, switch chain or start auto-play. */
@@ -56,7 +59,7 @@ for (const locale of ['en', 'ko']) for (const [width, height] of [[1440, 900], [
       await page.keyboard.up('1');
       // Its key LED animation runs on after the release and turns pad 0,1 off 1.2 s after the press;
       // wait for that note-off on the device so it is not counted as a key acting behind the dialog.
-      await expect.poll(() => page.evaluate((from) => window.browserProbe.midi.messages.slice(from), pressed), { timeout: 5000 }).toContainEqual([0x80, 82, 0]);
+      await expect.poll(() => page.evaluate((from) => window.browserProbe.midi.messages.slice(from), pressed), { timeout: 5000 }).toContainEqual([0x90, 82, 0]);
 
       await settings(page).getByRole('heading', { name: t.launchpad.title }).click();
       await expect(page.locator('body')).toBeFocused();

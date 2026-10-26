@@ -174,7 +174,17 @@
     },
     "terms": {
       "title": "이용약관",
-      "description": "개인정보 처리방침 및 앱 사용 범위를 확인하세요."
+      "description": "개인정보 처리방침 및 앱 사용 범위를 확인하세요.",
+      "intro": "개인정보 처리방침 및 앱 사용 범위를 확인할 수 있습니다.",
+      "privacy": {
+        "title": "개인정보 처리방침",
+        "description": "UniPad 앱의 개인정보 처리방침을 확인하세요.",
+        "effectiveDate": "시행일: 2018년 10월 3일"
+      },
+      "usage": {
+        "title": "앱 사용 범위 고지",
+        "description": "UniPad 앱의 상업적/비상업적 사용 범위를 확인하세요."
+      }
     }
   },
   "notices": {
@@ -278,7 +288,6 @@
       "playDownloadedPack": "받은 팩 연주하기",
       "download": "다운로드",
       "youtube": "유튜브",
-      "website": "웹사이트",
       "keyHintSelect": "선택",
       "keyHintAction": "실행",
       "keyHintSearch": "검색",
@@ -297,13 +306,22 @@
       "sectionDisplay": "화면",
       "sectionTools": "도구",
       "feedbackLight": "피드백 라이트",
+      "slideMode": "패드 슬라이드",
       "led": "LED",
       "autoMapping": "자동 매핑",
       "autoMappingActive": "자동 매핑 중... {progress}",
+      "restoreAutoPlay": "이전 자동 연주로 복원",
+      "restoreAutoPlayNoBackup": "저장된 백업이 없습니다",
+      "autoPlayRestoring": "복원 중...",
       "hideUI": "UI 숨기기",
       "watermark": "워터마크",
       "proLightMode": "프로 라이트 모드",
-      "traceLog": "트레이스 로그",
+      "traceLog": "흔적 기록",
+      "traceLogStyle": "흔적 표시 방식",
+      "traceLogNumbers": "숫자",
+      "traceLogLines": "선과 점",
+      "traceLogStyleAriaLabel": "흔적 표시 방식: {style}",
+      "clearTraceLog": "흔적 모두 지우기",
       "record": "녹음",
       "midiConnecting": "MIDI 연결 중...",
       "midiConnected": "MIDI 연결됨",
@@ -316,7 +334,7 @@
       "menu": "메뉴",
       "feedback": "피드백",
       "led": "LED",
-      "trace": "트레이스",
+      "trace": "흔적",
       "rec": "녹음"
     },
     "autoPlay": {
@@ -338,7 +356,7 @@
       "resolvedType": "적용된 기종",
       "typeLabel": "런치패드 기종",
       "autoDetect": "자동 감지",
-      "noInitSysEx": "초기화 SysEx 없음",
+      "noInitSysEx": "사용 안 함",
       "typeHint": "자동 감지는 연결된 출력 이름으로 판별합니다. 기종을 바꾸면 이미 연결된 장치에 바로 적용돼요.",
       "connecting": "연결 중...",
       "reconnect": "다시 연결",
@@ -355,7 +373,10 @@
         "midifighter": "8x8 패드 그리드만 씁니다. 체인 LED 와 기능 LED 가 없습니다.",
         "matrix": "기능 LED 32칸을 쓰는 4뱅크 그리드 매핑입니다.",
         "master_keyboard": "입력 전용 키보드 매핑입니다. LED 출력이 없습니다.",
-        "none": "기본 대체 매핑입니다. 기종별 SysEx 와 안드로이드 드라이버 매핑을 쓰지 않습니다."
+        "none": "MIDI 입력과 조명 출력을 사용하지 않습니다.",
+        "launchpad_pro_cfw": "Launchpad Open 연주 배치입니다. 조명은 MIDI 채널 16으로 보냅니다.",
+        "launchpad_corefw": "RGB Launchpad용 CoreFW 패드 배치입니다.",
+        "launchpad_corefw_rg": "Launchpad S / Mini의 빨강·초록 색을 사용하는 CoreFW 패드 배치입니다."
       },
       "help": {
         "title": "연결·불빛 도움말",
@@ -391,12 +412,18 @@
       "warnings": "경고 {count}개",
       "confirmInstall": "“{title}” 을 설치할까요? unipad.io 에서 받습니다.",
       "confirmInstallByProducer": "{producer} 의 “{title}” 을 설치할까요? unipad.io 에서 받습니다.",
-      "confirmInstallAriaLabel": "설치 확인"
+      "confirmInstallAriaLabel": "설치 확인",
+      "confirmAutoMapping": "자동 연주를 맞출까요? 기다림을 소리 길이로 바꿉니다. 지금의 자동 연주는 백업합니다. 동시에 누른 패드는 함께 둡니다",
+      "confirmAutoMappingAction": "맞추기",
+      "confirmAutoMappingAriaLabel": "자동 매핑 확인",
+      "confirmRestoreAutoPlay": "직전 백업으로 되돌릴까요? 현재 자동 연주와 자리를 바꿉니다. 복원 후에도 다시 되돌릴 수 있어요",
+      "confirmRestoreAutoPlayAction": "복원하기",
+      "confirmRestoreAutoPlayAriaLabel": "자동 연주 복원 확인"
     },
     "toast": {
       "skinFailed": "스킨을 적용하지 못했습니다. 스킨을 초기화합니다.",
       "themeFailed": "테마를 적용하지 못했습니다.",
-      "traceLogCleared": "트레이스 로그를 지웠습니다",
+      "traceLogCleared": "흔적을 모두 지웠습니다",
       "copied": "복사했습니다",
       "midiNoDevice": "MIDI 기기를 찾지 못했습니다.",
       "midiConnected": "MIDI 를 연결했습니다.",
@@ -411,7 +438,10 @@
       "sharedPackFailed": "공유된 팩을 불러오지 못했습니다.",
       "downloadingPack": "“{title}” 을 받는 중...",
       "installFailed": "팩을 설치하지 못했습니다.",
-      "installCancelled": "설치를 취소했습니다."
+      "installCancelled": "설치를 취소했습니다.",
+      "autoPlaySaved": "자동 연주를 저장했습니다. 메뉴에서 이전 것으로 복원할 수 있어요",
+      "autoPlayRestored": "이전 자동 연주로 복원했습니다",
+      "autoPlaySaveFailed": "저장하지 못했습니다. 기존 자동 연주는 그대로입니다"
     }
   }
 }
