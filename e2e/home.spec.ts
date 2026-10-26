@@ -68,10 +68,11 @@ for (const l of locales) {
             await page.goto(l.path);
             // A larger default font size scales everything set in rem, as the browser setting does. Pages use
             // the system font, so a wide one stands in for the widest of them: Verdana where it is installed,
-            // otherwise Linux's DejaVu Sans, which is as wide.
+            // otherwise Linux's DejaVu Sans, which is as wide. Neither has Hangul; Windows draws it in Malgun
+            // Gothic, wider than the Mac's default, so Macs take AppleGothic, which is wider still.
             if (bigText) {
               await page.addStyleTag({
-                content: 'html { font-size: 200% !important; } body, body * { font-family: Verdana, "DejaVu Sans", sans-serif !important; }',
+                content: 'html { font-size: 200% !important; } body, body * { font-family: Verdana, "DejaVu Sans", AppleGothic, sans-serif !important; }',
               });
             }
             const c = heroControls(page, l);
