@@ -70,10 +70,12 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, and `e2e/sound-formats.spec.ts` in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
-workflow runs only `e2e/play.spec.ts` on Windows 2025 with Chromium and the installed
-Chrome and Edge channels; failures fail their jobs, with no retries. None of these
+workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+on Windows 2025 with Chromium and the installed Chrome and Edge channels;
+failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
 GitHub records each step's duration; each job summary records elapsed time from setup
@@ -212,8 +214,8 @@ Tests have zero retries and `test.only` is forbidden.
 `play.spec.ts` covers import/reload, pointer and keyboard input, keyLed, chain
 changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
-WebKit also runs the existing portable page/layout tests. Firefox is scoped to
-playback; exploratory page failures are investigated separately. Firefox allows
+WebKit and Firefox also run the shared multi-touch and page/layout files, with
+explicit skips for unsupported test capabilities. Firefox allows
 90 seconds overall for page setup and playback. Pack-open assertions use the
 shared 15-second state limit from `expectPads`, including import and reload.
 A missing saved pack fails the pad-count assertion with the observed value,
@@ -225,7 +227,7 @@ Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts --project=chromium --project=chrome --project=msedge
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge
 node scripts/playback-summary.mjs
 ```
 

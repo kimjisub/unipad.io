@@ -7,6 +7,7 @@ import { ESLint } from 'eslint';
 const root = new URL('../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
 const setupAction = './.github/actions/setup-web';
+const playbackFiles = ['play.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'home.spec.ts'];
 
 // The text of one job in the workflow, up to the next job at the same indentation.
 function job(workflow, id) {
@@ -73,12 +74,16 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 
-test('Windows runs the shared playback tests with the shared setup', () => {
+test('Windows runs the shared playback tests with the shared setup', async () => {
   const windows = read('.github/workflows/playback-windows.yml');
   assert.match(windows, /runs-on: windows-2025/);
   assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
   assert.doesNotMatch(windows, /pnpm install/);
-  assert.ok(windows.includes('pnpm exec playwright test e2e/play.spec.ts'));
+  const command = windows.split('\n').find(line => line.includes('run: pnpm exec playwright test'));
+  assert.ok(command, 'Windows playback test command must exist');
+  for (const file of playbackFiles) assert.ok(command.includes(`e2e/${file}`), `Windows must run ${file}`);
+  const { windowsPlaybackTests } = await import('../playwright.config.ts');
+  assert.deepEqual(windowsPlaybackTests, playbackFiles);
   assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);
 });
 
@@ -87,7 +92,7 @@ test('WebKit and Firefox include the shared playback tests', async () => {
   for (const engine of ['webkit', 'firefox']) {
     const project = config.projects.find(project => project.name === engine);
     assert.ok(project, `${engine} must be tested`);
-    assert.ok(project.testMatch.includes('play.spec.ts'), `${engine} must run playback`);
+    for (const file of playbackFiles) assert.ok(project.testMatch.includes(file), `${engine} must report ${file}`);
   }
 });
 

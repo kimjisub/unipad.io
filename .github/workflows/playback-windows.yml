@@ -43,9 +43,9 @@ jobs:
         if: matrix.project == 'chromium'
         run: pnpm exec playwright install chromium
       # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
-      - name: Check playback
+      - name: Check playback, multi-touch and layout
         id: playback
-        run: pnpm exec playwright test e2e/play.spec.ts --project=${{ matrix.project }}
+        run: pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=${{ matrix.project }}
       # Only after the tests ran: an earlier setup or build failure stays the only error.
       - name: Save playback results, skip reasons and failure traces
         if: always() && steps.playback.outcome != 'skipped'
