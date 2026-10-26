@@ -692,6 +692,47 @@ test('a return before the cleanup task clears the old lights before restoring pl
   assert.equal(starts.length, lit, 'the pending cleanup must not run twice or restart the song');
 });
 
+test('leaving the page clears the controller lights in the hide task', async () => {
+  nextMidiConnected = true;
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  midiLog.length = 0;
+  // Navigation sends both in one task, and the page runs no task after it.
+  await flush(() => {
+    hidden = true;
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    window.dispatchEvent(new window.Event('pagehide'));
+  });
+  assert.ok(midiLog.some(event => event[0] === 'clear'), 'the controller is cleared before the page goes away');
+});
+
+test('a key held while hiding is released without a redraw in the hide task', async () => {
+  const { result } = await mount();
+  await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1' }))); await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+  await visibility(true);
+  assert.equal(audio.outputGain.value, 0);
+  assert.equal(result.current.state.padStates[0][0].pressed, true, 'the hide task must not redraw the released key');
+  await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+});
+
+for (const restore of ['dialog', 'gesture', 'play']) test(`a ${restore} before the cleanup task clears the old lights first`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  await flush(() => restore === 'dialog' ? result.current.setKeyboardBlocked(true) : window.dispatchEvent(new window.Event('blur')));
+  if (restore === 'dialog') await flush(() => result.current.setKeyboardBlocked(false));
+  if (restore === 'gesture') await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  if (restore === 'play') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await draw();
+    assert.equal(result.current.state.autoPlayPlaying, true, 'the old cleanup must not stop the new Play');
+    return;
+  }
+  assert.ok(result.current.state.padStates.flat().every(p => p.color === 'transparent'));
+});
+
 for (const selected of ['autoPlay', 'guidePlay', 'stepPractice']) {
  for (const interruption of ['hidden', 'blur', 'dialog', 'audio', 'pagehide']) {
   for (const hiddenFor of [1000, 10000]) test(`manual interruption ${interruption} preserves ${selected} after ${hiddenFor} ms`, async () => {

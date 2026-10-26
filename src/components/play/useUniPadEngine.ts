@@ -455,6 +455,8 @@ export function useUniPadEngine() {
   }, []);
 
   const visualFlushRef = useRef<object | null>(null);
+  /** The light and controller cleanup an interruption leaves for the next task. */
+  const pendingInterruptionClearRef = useRef<(() => void) | null>(null);
   const scheduleFlush = useCallback(() => {
     if (visualFlushRef.current !== null) return;
     const pending = {};
@@ -464,6 +466,8 @@ export function useUniPadEngine() {
     queueMicrotask(() => {
       if (visualFlushRef.current !== pending) return;
       visualFlushRef.current = null;
+      // Lights released later in an interrupted task (held pads, keys) are drawn by its cleanup.
+      if (pendingInterruptionClearRef.current) return;
       flushSync(flushVisualState);
     });
   }, [flushVisualState]);
@@ -675,7 +679,6 @@ export function useUniPadEngine() {
     applyMidiStatus(status);
   }, [releaseControllerPads, applyMidiStatus]);
 
-  const pendingInterruptionClearRef = useRef<(() => void) | null>(null);
   /** Runs the cleanup an interruption left for a later task now, before playback is restored. */
   const settleInterruption = useCallback(() => {
     const clear = pendingInterruptionClearRef.current;
@@ -843,8 +846,8 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current?.setSuspended(true, 0, interruptedAt);
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
-    // Firefox passes the mute to its audio thread only when this task ends, so the old sound kept
-    // playing while the lights were cleared and redrawn here. Autoplay is frozen, so nothing new sounds.
+    // Firefox passes audio changes to its audio thread only when the current task ends, so this task
+    // stops at the mute and the lights are cleared in the next one. Autoplay is frozen meanwhile.
     if (pendingInterruptionClearRef.current) return;
     pendingInterruptionClearRef.current = clearInterruptedOutput;
     inNextTask(settleInterruption);
@@ -1761,6 +1764,11 @@ export function useUniPadEngine() {
       }
     };
     const handleBlur = () => interruptPlayback();
+    // A page being left runs no later task, so its lights and the controller are cleared at once.
+    const handlePageHide = () => {
+      interruptPlayback();
+      settleInterruption();
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     const restoreVisibleAudio = () => {
       settleInterruption();
@@ -1785,9 +1793,10 @@ export function useUniPadEngine() {
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
-    window.addEventListener('pagehide', handleBlur);
+    window.addEventListener('pagehide', handlePageHide);
     const revisionRef = interruptionRevisionRef;
     return () => {
+      settleInterruption();
       revisionRef.current++;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
@@ -1795,7 +1804,7 @@ export function useUniPadEngine() {
       }
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('pagehide', handleBlur);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, [interruptPlayback, settleInterruption, requestScreenWakeLock, syncMidiStateToDevice]);
 
