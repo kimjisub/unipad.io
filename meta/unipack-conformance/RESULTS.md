@@ -1,5 +1,15 @@
 # Results
 
+## Shared audio admission revision 4 (2026-10-28)
+
+Nine `INVALID_FORMAT` inputs join the shared audio admission corpus: PCM AIFF and CAF from
+`tone.wav`, AIFF with `SSND` before `COMM`, mu-law AIFF-C, IMA4/AAC/ALAC CAF, an AIFF named
+`.mp3`, and `tone.mp3` behind five chained frame headers that change rate and MPEG version.
+They become SAFE-F077 to SAFE-F085; earlier inputs and expectations are unchanged, and the web
+inspector already rejects all nine without a code change. Regenerating produces 391 cases with
+SHA256 `13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`.
+Native app copy declarations remain historical; the apps copy this revision separately.
+
 ## Combined auto mapping and native observation corpus (2026-10-25)
 
 Integrating [unipad.io#192](https://github.com/kimjisub/unipad.io/pull/192) and
