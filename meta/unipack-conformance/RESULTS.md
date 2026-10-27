@@ -1,5 +1,19 @@
 # Results
 
+## Android copy reference moved to the G6 corpus (2026-10-27)
+
+`copies.json` now selects Android commit `2c9a1932943f959dc44d42f4e0ca1a844995a8ba`
+([unipad-android#330](https://github.com/kimjisub/unipad-android/pull/330), not yet merged) as a
+plain commit hash. Its copy is byte-identical to the 382-case canonical corpus, SHA256
+`671fdb19703a1fda127f2ac116698b1224a97db13647935d15bc769ae640dbbd`, and
+`sync.mjs --check --require-current --android` accepts it. Once that pull request is merged, the
+reference moves to its merge commit on the Android default branch.
+
+iOS still selects merge `e8ac34d11373b3ed071535e365ddc382c1929496` with its historical 214-case
+copy, SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`. The copy comparison
+still warns that it is behind canonical, and the strict check for both apps still refuses it. No
+corpus input, expected value or failure observation changes, and no app result is counted here.
+
 ## Combined auto mapping and native observation corpus (2026-10-25)
 
 Integrating [unipad.io#192](https://github.com/kimjisub/unipad.io/pull/192) and
