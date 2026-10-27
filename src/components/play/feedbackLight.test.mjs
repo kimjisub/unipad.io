@@ -26,7 +26,7 @@ stub('../../lib/unipack/index.ts', { ...real,
   SoundEngine: class {
     context = { state: 'running' };
     async setSuspended(suspended) { this.context.state = suspended ? 'suspended' : 'running'; }
-    async load() { return []; }
+    async load() { return { usedFiles: 0, loadedFiles: 0, failures: [], reservedCost: 0n }; }
     setVolume() {} soundPushToNum() {} soundOn() {} soundOff() {} stopAll() {} destroy() {} resume() {}
   },
   MidiConnection: class {
