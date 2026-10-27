@@ -1,4 +1,4 @@
-import type { AutoPlay, AutoPlayElement, Sound } from './types';
+import type { AutoPlay, AutoPlayElement, AutoPlayElementOn, Sound } from './types';
 
 export interface AutoPlayMapperListener {
   onStart: () => void;
@@ -8,9 +8,22 @@ export interface AutoPlayMapperListener {
   onError: (error: Error) => void;
 }
 
+/** Wait placed before the first press, so the track does not start the instant it is played. */
+export const AUTO_MAP_LEAD_IN_MS = 1000;
+
+const CHUNK_SIZE = 100;
+
 /**
- * 'off' 이벤트를 제거하고 연속된 delay를 병합한 뒤,
- * 각 'on' 이벤트의 실제 사운드 재생 시간으로 delay를 교체한다.
+ * Rewrites an autoPlay so each wait between presses lasts as long as the sound pressed before it.
+ *
+ * - Consecutive waits before a press count as one wait, replaced by the length of the sound of the
+ *   last press before them. Presses with no wait between them stay simultaneous.
+ * - The first press is preceded by {@link AUTO_MAP_LEAD_IN_MS}; waits after the last press are dropped.
+ * - A wait after a sound whose length is unknown keeps its original length.
+ * - Every press becomes a press and an immediate release, so no pad stays held. Chain changes and the
+ *   order of each pad's sounds stay as they were.
+ *
+ * Runs in chunks so a long autoPlay does not block the page. The input is not changed.
  */
 export function autoPlayMap(
   autoPlay: AutoPlay,
@@ -19,109 +32,78 @@ export function autoPlayMap(
 ): void {
   listener.onStart();
 
-  // 1. 'off' 이벤트 제거 후 연속 delay 병합
-  const filtered = filterAndMergeDelays(autoPlay.elements);
+  const elements = autoPlay.elements;
+  const pressCount = elements.reduce((count, e) => (e.type === 'on' ? count + 1 : count), 0);
+  listener.onGetWorkSize(pressCount);
 
-  // 2. 'on' 이벤트 개수를 작업량으로 보고
-  const onEvents = filtered.filter((e) => e.type === 'on');
-  listener.onGetWorkSize(onEvents.length);
-
-  if (onEvents.length === 0) {
-    listener.onDone({ elements: filtered });
+  if (pressCount === 0) {
+    listener.onDone({ elements: elements.map((e) => ({ ...e })) });
     return;
   }
 
-  // 3. 비동기 청크 처리로 UI 블로킹 방지
-  processChunked(filtered, soundTable, listener);
-}
-
-function filterAndMergeDelays(elements: AutoPlayElement[]): AutoPlayElement[] {
-  const withoutOff = elements.filter((e) => e.type !== 'off');
-
-  const merged: AutoPlayElement[] = [];
-  for (const element of withoutOff) {
-    if (element.type === 'delay') {
-      const last = merged[merged.length - 1];
-      if (last && last.type === 'delay') {
-        last.delay += element.delay;
-      } else {
-        merged.push({ ...element });
-      }
-    } else {
-      merged.push({ ...element });
-    }
-  }
-  return merged;
-}
-
-function getSoundDurationMs(
-  element: Extract<AutoPlayElement, { type: 'on' }>,
-  soundTable: (Sound[] | null)[][][],
-): number {
-  const { currChain, x, y, num } = element;
-  const sounds = soundTable[currChain]?.[x]?.[y];
-  if (!sounds || sounds.length === 0) return 0;
-  const sound = sounds[num % sounds.length];
-  if (!sound?.audioBuffer) return 0;
-  return sound.audioBuffer.duration * 1000;
-}
-
-function processChunked(
-  elements: AutoPlayElement[],
-  soundTable: (Sound[] | null)[][][],
-  listener: AutoPlayMapperListener,
-): void {
-  const result: AutoPlayElement[] = [];
+  const result: (AutoPlayElement | null)[] = [];
+  let lastPress: AutoPlayElementOn | null = null;
+  // The waits since the last press: where the replacement goes and their original total.
+  let waitIndex = -1;
+  let waitTotal = 0;
   let progress = 0;
-  let elementIndex = 0;
+  let index = 0;
 
-  // delay accumulator: 'on' 이벤트 사이에 쌓인 delay를 추적
-  let pendingDelay = 0;
-
-  const CHUNK_SIZE = 100;
-
-  function processNextChunk(): void {
-    const end = Math.min(elementIndex + CHUNK_SIZE, elements.length);
-
-    for (; elementIndex < end; elementIndex++) {
-      const element = elements[elementIndex];
-
-      if (element.type === 'delay') {
-        pendingDelay += element.delay;
-      } else if (element.type === 'on') {
-        // Android/iOS emit the note and then its own duration as the gap to the next note. Emitting
-        // the duration first produced a leading gap and gave every gap the *following* note's
-        // length, so an auto-mapped track played with the wrong rhythm.
-        const durationMs = getSoundDurationMs(element, soundTable);
-        if (pendingDelay > 0) {
-          result.push({ type: 'delay', delay: pendingDelay });
-          pendingDelay = 0;
-        }
-        result.push({ ...element });
-        if (durationMs > 0) {
-          result.push({ type: 'delay', delay: Math.round(durationMs) });
-        }
-        progress++;
-        listener.onProgress(progress);
-      } else {
-        // 'chain' 등 나머지 이벤트
-        if (pendingDelay > 0) {
-          result.push({ type: 'delay', delay: pendingDelay });
-          pendingDelay = 0;
-        }
-        result.push({ ...element });
-      }
+  const replaceWaits = () => {
+    if (lastPress === null) {
+      const leadIn = { type: 'delay' as const, delay: AUTO_MAP_LEAD_IN_MS };
+      if (waitIndex >= 0) result[waitIndex] = leadIn;
+      else result.push(leadIn);
+    } else if (waitIndex >= 0) {
+      const lengthMs = soundLengthMs(lastPress, soundTable);
+      result[waitIndex] = { type: 'delay', delay: lengthMs ?? waitTotal };
     }
+    waitIndex = -1;
+    waitTotal = 0;
+  };
 
-    if (elementIndex < elements.length) {
-      setTimeout(processNextChunk, 0);
-    } else {
-      if (pendingDelay > 0) {
-        result.push({ type: 'delay', delay: pendingDelay });
+  const processNextChunk = () => {
+    try {
+      const end = Math.min(index + CHUNK_SIZE, elements.length);
+      for (; index < end; index++) {
+        const element = elements[index];
+        if (element.type === 'delay') {
+          if (waitIndex < 0) {
+            waitIndex = result.length;
+            result.push(null);
+          }
+          waitTotal += element.delay;
+        } else if (element.type === 'on') {
+          replaceWaits();
+          const { x, y, currChain } = element;
+          result.push({ ...element }, { type: 'off', x, y, currChain });
+          lastPress = element;
+          listener.onProgress(++progress);
+        } else if (element.type === 'chain') {
+          result.push({ ...element });
+        }
       }
-      listener.onDone({ elements: result });
+
+      if (index < elements.length) {
+        setTimeout(processNextChunk, 0);
+        return;
+      }
+      // A trailing wait's placeholder is never filled, so it is dropped here with the others.
+      listener.onDone({ elements: result.filter((e): e is AutoPlayElement => e !== null) });
+    } catch (error) {
+      listener.onError(error instanceof Error ? error : new Error(String(error)));
     }
-  }
+  };
 
   setTimeout(processNextChunk, 0);
+}
+
+/** The pressed sound's length in whole milliseconds (an exact half rounds up), or null when unknown. */
+function soundLengthMs(press: AutoPlayElementOn, soundTable: (Sound[] | null)[][][]): number | null {
+  const { currChain, x, y, num } = press;
+  const sounds = soundTable[currChain]?.[x]?.[y];
+  if (!sounds || sounds.length === 0) return null;
+  const seconds = sounds[num % sounds.length]?.audioBuffer?.duration;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.round(seconds * 1000);
 }

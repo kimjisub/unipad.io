@@ -4,6 +4,7 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import JSZip from 'jszip';
 
+const { MessageChannel } = globalThis;
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
 for (const name of ['window', 'document', 'HTMLElement']) globalThis[name] = dom.window[name];
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
@@ -52,6 +53,11 @@ beforeEach(() => {
     mock.method(target, 'clearTimeout', id => timers.delete(id));
   }
   window.requestAnimationFrame = globalThis.requestAnimationFrame = run => later(run, 0);
+  // A port message is a later browser task, so it runs on the next tick like a due timer.
+  globalThis.MessageChannel = class {
+    port1 = { onmessage: null, close() {} };
+    port2 = { postMessage: data => later(() => this.port1.onmessage?.({ data }), 0), close() {} };
+  };
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame = id => timers.delete(id);
   globalThis.AudioContext = class {
     state = 'running'; destination = {}; currentTime = 0;
@@ -73,14 +79,14 @@ beforeEach(() => {
     close() { this.state = 'closed'; }
   };
 });
-afterEach(() => { cleanup(); mock.restoreAll(); delete globalThis.AudioContext; });
+afterEach(() => { cleanup(); mock.restoreAll(); delete globalThis.AudioContext; globalThis.MessageChannel = MessageChannel; });
 
-async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1000\nf 1 1\nd 1000\no 1 2 a 9', wormhole = false, ledName = '1 1 1', keySound } = {}) {
+async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1000\nf 1 1\nd 1000\no 1 2 a 9', wormhole = false, ledName = '1 1 1', keySound, buttonY = 2, leds = { [ledName]: led } } = {}) {
   const zip = new JSZip();
-  zip.file('info', 'title=Transitions\nproducerName=Test\nbuttonX=2\nbuttonY=2\nchain=3\nsquareButton=true');
+  zip.file('info', `title=Transitions\nproducerName=Test\nbuttonX=2\nbuttonY=${buttonY}\nchain=3\nsquareButton=true`);
   zip.file('keySound', keySound ?? `1 1 1 a.wav${wormhole ? ' 1 2' : ''}\n1 1 2 a.wav\n2 1 1 a.wav\n3 1 1 a.wav`);
   zip.file('sounds/a.wav', new Uint8Array([0x52, 0x49, 0x46, 0x46]));
-  zip.file(`keyLED/${ledName}`, led);
+  for (const [name, content] of Object.entries(leds)) zip.file(`keyLED/${name}`, content);
   zip.file('autoPlay', autoPlay);
   const data = await zip.generateAsync({ type: 'arraybuffer' });
   const view = renderHook(useUniPadEngine);
@@ -498,7 +504,7 @@ for (const direct of [false, true]) test(`opening another pack resets session op
   await flush(() => { if (!direct) result.current.unload(); });
   await flush(() => result.current.loadUniPack(data));
   for (const key of ['autoPlayEnabled', 'autoPlayPlaying', 'autoPlayControlsVisible', 'practiceMode', 'recording', 'proLightMode', 'traceLog', 'hideUI']) assert.equal(result.current.state[key], false, key);
-  assert.equal(result.current.state.watermark, true);
+  assert.equal(result.current.state.watermark, false, 'the watermark keeps the last choice');
   assert.equal(oldMidi.released, true);
   assert.equal(oldAudio.state, 'closed');
   const count = starts.length;
@@ -506,20 +512,24 @@ for (const direct of [false, true]) test(`opening another pack resets session op
   assert.equal(starts.length, count + 1, 'the old held keyboard key must not suppress the new press');
 });
 
-for (const releaseFirst of ['first', 'second']) test(`two player inputs keep sound and lights until the final release (${releaseFirst})`, async () => {
+for (const second of ['screen', 'keyboard', 'midi']) for (const releaseFirst of ['first', 'second']) test(`each player input releases its own sound and lights (${second}, ${releaseFirst} first)`, async () => {
   const { result } = await mount({ keySound: '1 1 1 a.wav 0', ledName: '1 1 1 0', led: 'o 2 2 a 5\nd 1000' });
   await flush(() => result.current.setFeedbackLight(true));
   await flush(() => result.current.padTouchOn(0, 0, 'first'));
   await tick(4);
-  await flush(() => result.current.padTouchOn(0, 0, 'second'));
+  const secondInput = down => second === 'screen'
+    ? result.current[down ? 'padTouchOn' : 'padTouchOff'](0, 0, 'second')
+    : second === 'midi' ? midiListener.onPadTouch(0, 0, down)
+    : window.dispatchEvent(new window.KeyboardEvent(down ? 'keydown' : 'keyup', { key: '1', code: 'Digit1' }));
+  await flush(() => secondInput(true));
   await tick(4); await draw();
-  await flush(() => result.current.padTouchOff(0, 0, releaseFirst));
+  await flush(() => releaseFirst === 'first' ? result.current.padTouchOff(0, 0, 'first') : secondInput(false));
   await tick(4); await draw();
-  assert.equal(sources.at(-1).stopped, false);
+  assert.equal(sources.at(-1).stopped, releaseFirst === 'second');
   assert.equal(result.current.state.padStates[0][0].pressedIsWinning, true);
-  assert.notEqual(result.current.state.padStates[1][1].color, 'transparent');
+  assert.equal(result.current.state.padStates[1][1].color === 'transparent', releaseFirst === 'second');
   assert.equal(result.current.state.padStates[0][0].pressed, true);
-  await flush(() => result.current.padTouchOff(0, 0, releaseFirst === 'first' ? 'second' : 'first'));
+  await flush(() => releaseFirst === 'first' ? secondInput(false) : result.current.padTouchOff(0, 0, 'first'));
   await tick(4); await draw();
   assert.equal(sources.at(-1).stopped, true);
   assert.equal(result.current.state.padStates[1][1].color, 'transparent');
@@ -654,6 +664,73 @@ test('visibility mutes output before a slow sequencer pause callback', async () 
   assert.notEqual(mutedAt, null);
   assert.ok(mutedAt - hiddenAt < 50, 'a slow runner must not hold up the output mute request');
   assert.equal(value, 0);
+});
+
+test('hiding ends its task once output is muted and clears the lights in the next task', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  assert.ok(audio.outputGain.value > 0);
+  // Firefox applies the mute only after the hide task, React commits included, has finished.
+  await visibility(true);
+  assert.equal(audio.outputGain.value, 0);
+  assert.ok(sources.every(source => source.stopped));
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'the hide task must not redraw the pads');
+  await draw();
+  assert.ok(result.current.state.padStates.flat().every(p => !p.pressed && !p.guide && p.color === 'transparent'));
+  assert.equal(result.current.state.autoPlayPlaying, false);
+});
+
+test('a return before the cleanup task clears the old lights before restoring playback', async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  await visibility(true); await visibility(false);
+  assert.ok(result.current.state.padStates.flat().every(p => p.color === 'transparent'));
+  assert.equal(result.current.state.autoPlayPlaying, false);
+  const lit = starts.length;
+  await draw(); await tick(10000);
+  assert.equal(starts.length, lit, 'the pending cleanup must not run twice or restart the song');
+});
+
+test('leaving the page clears the controller lights in the hide task', async () => {
+  nextMidiConnected = true;
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  midiLog.length = 0;
+  // Navigation sends both in one task, and the page runs no task after it.
+  await flush(() => {
+    hidden = true;
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    window.dispatchEvent(new window.Event('pagehide'));
+  });
+  assert.ok(midiLog.some(event => event[0] === 'clear'), 'the controller is cleared before the page goes away');
+});
+
+test('a key held while hiding is released without a redraw in the hide task', async () => {
+  const { result } = await mount();
+  await flush(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '1', code: 'Digit1' }))); await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+  await visibility(true);
+  assert.equal(audio.outputGain.value, 0);
+  assert.equal(result.current.state.padStates[0][0].pressed, true, 'the hide task must not redraw the released key');
+  await draw();
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+});
+
+for (const restore of ['dialog', 'gesture', 'play']) test(`a ${restore} before the cleanup task clears the old lights first`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 10000' });
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.notEqual(result.current.state.padStates[0][0].color, 'transparent');
+  await flush(() => restore === 'dialog' ? result.current.setKeyboardBlocked(true) : window.dispatchEvent(new window.Event('blur')));
+  if (restore === 'dialog') await flush(() => result.current.setKeyboardBlocked(false));
+  if (restore === 'gesture') await flush(() => document.dispatchEvent(new window.Event('pointerdown')));
+  if (restore === 'play') {
+    await flush(() => result.current.autoPlayPlayPause());
+    await draw();
+    assert.equal(result.current.state.autoPlayPlaying, true, 'the old cleanup must not stop the new Play');
+    return;
+  }
+  assert.ok(result.current.state.padStates.flat().every(p => p.color === 'transparent'));
 });
 
 for (const selected of ['autoPlay', 'guidePlay', 'stepPractice']) {
@@ -1134,3 +1211,154 @@ for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autop
   await tick(500);
   assert.deepEqual(starts.map(at => at - switchedAt), [800, 1300, 1800]);
 });
+
+// Each pad lights only itself while sounding. The guide light has a higher priority than pack
+// lights, so a pad showing its own light color also proves that no practice guide is left on it.
+const ownLights = pads => Object.fromEntries(pads.map(([x, y]) => [`1 ${x} ${y}`, `o ${x} ${y} a 5\nd 20000`]));
+
+const stepThenAutoPack = {
+  buttonY: 3, autoPlay: 'o 1 1\nd 5000\no 1 2\nd 5000\no 1 3\nd 5000',
+  keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 1 3 a.wav', leds: ownLights([[1, 1], [1, 2], [1, 3]]),
+};
+
+/** Presses the first step, then picks autoplay 300 ms after the second pad is shown. */
+async function replayShownStep(result) {
+  const row = () => result.current.state.padStates[0];
+  await flush(() => result.current.switchPlayMode('stepPractice'));
+  await tick(1); await draw();
+  assert.equal(row()[0].guide, true);
+  await flush(() => { result.current.padTouchOn(0, 0, 'finger'); result.current.padTouchOff(0, 0, 'finger'); });
+  await tick(1); await draw();
+  assert.equal(row()[1].guide, true);
+  const guideColor = row()[1].color;
+  assert.equal(starts.length, 1);
+  await tick(300);
+  // The replayed note belongs to the switch; the next 1 ms timer requests its sound.
+  const soundedAt = now;
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(1); await draw();
+  assert.equal(starts.length, 2, 'the shown second note sounds at once');
+  assert.equal(starts[1] - soundedAt, 1);
+  assert.equal(row()[1].guide, false);
+  assert.notEqual(row()[1].color, 'transparent', 'the replayed note lights its pad');
+  assert.notEqual(row()[1].color, guideColor, 'the practice guide light is gone');
+  return soundedAt;
+}
+
+for (const [via, pausedMs] of [['mode', 0], ['button', 0], ['button', 3000]]) {
+  test(`guide after replaying a shown step note via ${via}${pausedMs ? ` after a ${pausedMs}ms pause` : ''} guides only the following note`, async () => {
+    const { result } = await mount(stepThenAutoPack);
+    const row = () => result.current.state.padStates[0];
+    const soundedAt = await replayShownStep(result);
+    await tick(1000);
+    if (via === 'button') {
+      await flush(() => result.current.autoPlayPlayPause());
+      assert.equal(result.current.state.autoPlayPlaying, false, 'the play button pauses autoplay');
+      assert.equal(result.current.playMode, 'autoPlay');
+      await tick(pausedMs);
+    }
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await draw();
+    assert.ok(row().every(pad => !pad.guide), 'no guide appears right after switching');
+    const target = soundedAt + 5000 + pausedMs;
+    while (now < target - 800 - 100) {
+      await tick(100); await draw();
+      assert.ok(row().every(pad => !pad.guide), `no guide before the third note's lead time (at ${now - soundedAt} ms)`);
+    }
+    await tick(target - 800 - now); await draw();
+    assert.equal(row()[1].guide, false, 'the sounded second note is never guided again');
+    assert.equal(row()[2].guide, true, 'the third note is guided next');
+    assert.equal(row()[2].guideTargetWallTimeMs, target);
+    await tick(799); await draw();
+    assert.equal(row()[2].guide, true);
+    await tick(1); await draw();
+    assert.equal(row()[2].guide, false);
+    assert.equal(row()[1].guide, false);
+    assert.equal(starts.length, 2, 'guide mode never sounds a note');
+  });
+}
+
+for (const resume of ['button', 'mode']) test(`pausing guide right after a replayed step note via ${resume} offers only the following note`, async () => {
+  const { result } = await mount(stepThenAutoPack);
+  const row = () => result.current.state.padStates[0];
+  await replayShownStep(result);
+  await tick(1000);
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await draw();
+  assert.ok(row().every(pad => !pad.guide));
+  // Pausing guide play is step practice, which offers the next group at once.
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('stepPractice'));
+  await tick(1); await draw();
+  assert.deepEqual(row().map(pad => pad.guide), [false, false, true], 'the paused practice offers the third note, not the sounded second');
+  await tick(3000); await draw();
+  assert.deepEqual(row().map(pad => pad.guide), [false, false, true]);
+  // Resuming treats the offered third note as passed, so the song only waits out its 5000 ms gap.
+  const resumedAt = now;
+  await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
+  // The first timer consumes one millisecond of the song clock; a later first timer would shift it.
+  await tick(1); await draw();
+  assert.equal(result.current.playMode, 'guidePlay');
+  assert.equal(result.current.state.autoPlayPlaying, true, 'guide play resumes');
+  for (let elapsed = 1; elapsed < 4999; elapsed += 100) {
+    await tick(Math.min(100, resumedAt + 4999 - now)); await draw();
+    assert.equal(result.current.state.autoPlayEnabled, true, `guide still plays ${now - resumedAt} ms after resuming`);
+    assert.equal(row()[1].guide, false, 'the sounded second note is never guided again');
+    assert.equal(row()[2].guide, false, 'the passed third note is not guided again');
+  }
+  assert.equal(now - resumedAt, 4999);
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false, 'the song ends 5000 ms after resuming');
+  assert.ok(row().every(pad => !pad.guide));
+  assert.equal(starts.length, 2, 'guide mode never sounds a note');
+});
+
+for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
+  test(`autoplay after returning to partial step practice sounds only the unpressed pad after ${hiddenFor} ms, final=${finalGroup}`, async () => {
+    const { result } = await mount({
+      autoPlay: `o 1 1\nd 1000\no 1 2\no 2 1${finalGroup ? '' : '\nd 1000\no 2 2\nd 1000'}`,
+      keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 2 1 a.wav\n1 2 2 a.wav', leds: ownLights([[1, 1], [1, 2], [2, 1], [2, 2]]),
+    });
+    const pad = (x, y) => result.current.state.padStates[x][y];
+    await flush(() => result.current.switchPlayMode('stepPractice'));
+    await tick(1); await draw();
+    await flush(() => { result.current.padTouchOn(0, 0, 'finger'); result.current.padTouchOff(0, 0, 'finger'); });
+    await tick(1); await draw();
+    assert.equal(pad(0, 1).guide, true);
+    assert.equal(pad(1, 0).guide, true);
+    await flush(() => { result.current.padTouchOn(0, 1, 'finger'); result.current.padTouchOff(0, 1, 'finger'); });
+    await tick(1); await draw();
+    assert.equal(pad(0, 1).guide, false);
+    assert.equal(pad(1, 0).guide, true);
+    assert.equal(starts.length, 2);
+    await visibility(true); await tick(hiddenFor); await visibility(false); await draw();
+    assert.ok(result.current.state.padStates.flat().every(p => !p.guide && p.color === 'transparent'));
+    await flush(() => result.current.autoPlayPlayPause());
+    await tick(1); await draw();
+    assert.equal(result.current.playMode, 'stepPractice');
+    assert.deepEqual(result.current.state.padStates.flat().map(p => p.guide), [false, false, true, false],
+      'the return guides only the unpressed pad of the same group');
+    const guideColor = pad(1, 0).color;
+    assert.equal(starts.length, 2);
+    const switchedAt = now;
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1); await draw();
+    assert.equal(starts.length, 3, 'the unpressed pad sounds once at once');
+    assert.equal(starts[2] - switchedAt, 1);
+    assert.equal(pad(1, 0).guide, false);
+    assert.notEqual(pad(1, 0).color, 'transparent', 'the replayed pad lights with its sound');
+    assert.notEqual(pad(1, 0).color, guideColor);
+    assert.equal(pad(0, 0).color, 'transparent', 'the earlier group does not sound again');
+    assert.equal(pad(0, 1).color, 'transparent', 'the pressed pad does not sound again');
+    if (finalGroup) {
+      assert.equal(result.current.state.autoPlayEnabled, false, 'the last group ends after sounding');
+    } else {
+      // The replayed group belongs to the switch, so the written 1000 ms gap counts from there.
+      await tick(switchedAt + 999 - now); assert.equal(starts.length, 3);
+      await tick(1); await draw();
+      assert.deepEqual(starts.slice(2).map(at => at - switchedAt), [1, 1000]);
+      assert.notEqual(pad(1, 1).color, 'transparent');
+      assert.equal(pad(0, 0).color, 'transparent');
+      assert.equal(pad(0, 1).color, 'transparent');
+    }
+  });
+}

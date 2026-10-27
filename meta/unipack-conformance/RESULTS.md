@@ -1,5 +1,220 @@
 # Results
 
+## Combined auto mapping and native observation corpus (2026-10-25)
+
+Integrating [unipad.io#192](https://github.com/kimjisub/unipad.io/pull/192) and
+[unipad.io#195](https://github.com/kimjisub/unipad.io/pull/195) preserves both Android
+RUN-G617/RUN-G618 pack-output failure pins and the removal of the resolved iOS RUN-G616 pin.
+The five resolved web MAP-P001 to MAP-P005 pins remain removed. Regenerating from these sources
+produces 382 cases with SHA256
+`671fdb19703a1fda127f2ac116698b1224a97db13647935d15bc769ae640dbbd`.
+Compared with main `24d08b1`, no input, fingerprint, scenario or expected value changes;
+only the five web observations are removed. Earlier measurements below retain their original
+corpus hashes. Native app copy declarations remain historical and native applications are not
+rerun by this integration.
+
+## Web auto mapping correction (2026-10-25)
+
+Auto mapping now replaces each run of waits before a press with the rounded length of the sound
+pressed last, keeps presses without a wait between them simultaneous, starts the first press after
+1000 ms, drops the waits after the last press and gives every press its release at the same time.
+A wait after a sound whose length is unknown keeps its original length.
+The web failure observations for MAP-P001 to MAP-P005 are removed.
+
+With the mapper from `d2ee45eb`, the five inputs fail: presses lose their releases, a sound length
+is added to the existing waits, and the first press starts without the 1000 ms lead-in. With the
+corrected mapper they match their unchanged expectations. The durations in each case's
+`operation.json` are mapper inputs, not decoded audio.
+
+All 382 case inputs, fingerprints, expected results, scenarios and other platform observations are
+unchanged. Only these five web observations change. The canonical corpus advances from SHA256
+`859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20` to
+`7a1b070a37eb5f408bf81981637478f2df2593cb5f483cb8d12d956ee40d5cba`. The Node web conformance run
+on this corpus records **382 passes and no failures**. The historical app copy references are
+unchanged; their integrity checks still warn that both are behind the canonical corpus. This is web
+mapper evidence, without a claim about current app copies, real speakers or MIDI hardware.
+
+## iOS delayed chain callback corrected (2026-10-25)
+
+The app correction in [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217)
+cancels pending sound wormholes when autoPlay is turned off. An asserting iOS observation on
+application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`, with the separately retained
+executor changes described in the [source investigation](investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25),
+records RUN-G616 equal to its unchanged expected checkpoints. Only that obsolete iOS failure
+pin is removed. All 382 inputs, fingerprints, scenarios, expectations and other platform pins
+are unchanged, including the merged web corrections and both Android input-owned release pins.
+The canonical SHA256 advances from `708d14a349fa739acce37f1ac5ddefd8c7d68d9c4cef1eb495ea39f3590389de`
+to `2223116e3a1612fcebed1d6c03e5075b3f0dbd1cd4bcffa12ff81b3e86c93d50`.
+
+The retained [fixed-ios.json](investigations/ios-playback-observations/fixed-ios.json) still names
+the original `859e24aa…` corpus. Its raw statuses are 374 pass, 3 fail and 5 unverified; the full
+xcodebuild command exited 65. RUN-G616's status is pass but its detail rejects the obsolete pin.
+With that pinned corpus the report classifies this case as unverified, not a current compatibility
+pass. Neither the raw file nor the earlier nine-case failure is rewritten or given the new hash.
+No full iOS rerun on the regenerated corpus, audible output, rendered press indicator or physical
+MIDI output is claimed. Both native copy references remain historical; this change does not update
+`copies.json` or establish remote current-copy verification.
+
+## Native input-owned release observations (2026-10-25)
+
+Both target cases retain their input files, fingerprints, scenarios and corrected expectations.
+The Android observations below use application commit
+[`208afb9e5be3bebef9fd50c5e1b77dcb40e29330`](https://github.com/kimjisub/unipad-android/commit/208afb9e5be3bebef9fd50c5e1b77dcb40e29330),
+after [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304) changed input ownership.
+Sound and pack lights are separate from the pressed indicator:
+
+| Case | Web sound and pack lights | iOS sound and pack lights | Android sound and pack lights | Android pressed indicator |
+| --- | --- | --- | --- | --- |
+| RUN-G617, two fingers | Match | Match | Fails: stops at the fourth checkpoint | Matches |
+| RUN-G618, finger and controller | Match | Match | Fails: stops at the fourth checkpoint | Matches |
+
+The [original Android files and result hashes](investigations/android-input-release-observations/README.md)
+retain their source 382-case corpus SHA256
+`fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8`.
+A local test-only adapter sends distinct fingers through `PadTouchTracker` and controller input
+through `controllerPadTouch`. Both pack outputs have an empty third checkpoint and stop at the
+fourth, while both pressed sequences match `[true, true, true, false]`. Both pack outputs are
+pinned as Android failures. The two selected tests failed by value (exit 1, no errors or skips);
+the command took 202.082 seconds. Pack output and pressed state were collected in separate
+scenario executions with press feedback disabled and enabled. This is not a full-corpus run.
+
+The older observations on Android `777cc4a37a997afb327756dd239f167adf155c50` used input corpus
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`. Before #304, RUN-G617's
+pack output matched and its pressed indicator cleared early; RUN-G618's pack output was delayed.
+Those historical results are preserved as history and do not describe the changed implementation.
+The merged `laterFingerReleaseStillWaitsForTheFirstFinger` test in #304 expects pack output to
+survive the later finger's release, which contradicts the corrected per-input release expectation.
+That implementation and its opposing test expectation require a separate Android fix.
+
+On iOS application commit `e8ac34d11373b3ed071535e365ddc382c1929496`, both target actuals equal
+the corrected expectations. The source `ios.json` SHA256 is
+`c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2`; its corpus hash is the
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` input and it declares `assertions: partial`. Nine selected cases ran: seven
+matched, RUN-G613 and RUN-G616 failed by value, and the command exited 65. The two target cases pass;
+this is not an all-cases pass. The two additional failures retain their original evidence and are
+tracked separately. The subsequently merged investigation classifies RUN-G613 as a stored-loop
+observation limitation rather than a playback defect, and pins the RUN-G616 delayed chain change.
+This two-case update preserves both conclusions and their original evidence.
+
+The web observation on `5e8828502b00c01c297d88f1279ea9742ee3b5d9`
+([unipad.io#179](https://github.com/kimjisub/unipad.io/pull/179)) used corpus SHA256
+`cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364` and both targets match.
+Original platform files keep their original hashes. Comparing these unchanged case expectations
+with those actuals does not create a new aggregate report for another corpus hash.
+
+After the refreshed Android observation, the canonical corpus still has 382 cases, SHA256
+`708d14a349fa739acce37f1ac5ddefd8c7d68d9c4cef1eb495ea39f3590389de`.
+Both target cases list Android as an expected pack-output failure; neither lists iOS or web.
+All 380 non-target cases, including the separate iOS RUN-G616 pin, remain unchanged from the
+reviewed revision. Inputs, fingerprints, scenarios and corrected expectations are unchanged for
+all 382 cases. The previously prepared corpus `fe37e773…69c8` and earlier `b424628b…a795`
+keep their original execution records; they are not relabelled with this new hash.
+`copies.json` still declares the same historical 214-case app copies. Their byte check is separate
+from the refreshed Android application observations and current compatibility. Final copy adoption
+still requires `sync.mjs --check --require-current`.
+
+The observations cover application input paths and engine/light requests. They do not establish
+physical finger or USB delivery, audible output, or the iOS screen indicator's lifetime.
+
+## Combined input-owned release, trailing-wait and sound lookup corpus (2026-10-25)
+
+Integrating [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178) and
+[unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183) with the input-owned release fix
+below keeps every removed web pin: RUN-G617/RUN-G618, RUN-P001/RUN-P002 and the sixteen archive and
+sound lookup observations. The newer RUN-G616 iOS observation is preserved. The combined canonical
+corpus has 382 cases, SHA256 `859e24aafe7de59082daf45a5f0fb64b538d7330a662ce051145a556a8940b20`.
+The integration changes no input, scenario, fingerprint or expected value. The hashes in the entries
+below belong to their own runs and are not relabelled; the earlier combination with #178 alone was
+`5f92bb5655e6c298409db4b967b67b097666df6b0175867ed03c25b944da6436`. Both native copy references stay historical.
+
+## Web archive and sound lookup corrections (2026-10-25)
+
+The parser now resolves canonically equivalent sound names, normalizes relative sound paths,
+rejects missing grid dimensions, and reports malformed round-light columns before their range.
+Sixteen web failure observations are retired: INF-G604, INF-G605, KL-G605, KL-G606,
+KS-G601, KS-G602, KS-G603, KS-G604, KS-G612, KS-G613, KS-G614, KS-G615,
+KS-G616, KS-G617, KS-G622 and KS-G625.
+
+The same sixteen inputs fail with the parser from `184c1e4b` and match their unchanged
+expectations with the corrected parser. Sound identity is checked using the selected original
+archive name and a SHA-256 of its actual bytes, including the two canonical-name collisions.
+App regression tests also reverse archive order, preserve distinct entries whose separators
+normalize alike, and reject root files outside the sounds directory.
+
+All 382 case inputs, fingerprints, expected results, scenarios and other platform observations
+are unchanged. Only these sixteen web observations change. The canonical corpus advances
+from SHA256 `5cd04f0d10d4538afaad0a995827dd0314b28938ab31f88e10a7e395c1b863d5`
+to `1241d422a26e3249b0b0c1e5ab831f9b6abe606914b890883e68c046c6ae6cf4`. Combined with the
+trailing-wait change below, which removes the RUN-P001 and RUN-P002 web observations, the corpus is
+`5b34f76475ca943313878999e2f1bb69478bffb45c7c98e7bb7699e7e928ee63`; only MAP-P001 to MAP-P005 keep web failures.
+Other remaining failures retain their observations. The historical app copy references are
+unchanged; their integrity checks still warn that both are behind the canonical corpus.
+This is web parser evidence, without a claim about current app copies, real speakers or MIDI hardware.
+
+## Web input-owned release fix (2026-10-25)
+
+The play hook now forwards each screen pointer, key and MIDI input identity to the sound engine
+and LED runner and handles every release. The pressed overlay still waits for the last input.
+App regression tests cover both release orders for screen, keyboard and MIDI inputs; browser tests
+also cover the same coordinate and contacts on different chains.
+
+On application commit `1dbf0f464611041a3da6db02ce6b2175b41e4dbf`, the unmodified 382-case test input
+with SHA256 `7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180` was used through
+the actual play hook. RUN-G617 and RUN-G618 match their corrected expectations: the third checkpoint
+stops the replacement sound and light and the fourth is empty. This is a two-case assertion, not a
+full conformance pass or a physical-device or audible-output observation. The earlier results below
+retain their original commit and corpus hash.
+
+Only those two obsolete web failure pins are removed. The regenerated canonical corpus has 382 cases,
+SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`. All input files,
+fingerprints, scenarios and corrected expectations are unchanged; the other 380 cases are unchanged.
+This is the same hash as the earlier expectations-only input because the fixed app now satisfies it.
+Combined with the separate iOS RUN-G616 pin below, the canonical corpus is SHA256
+`0cecd5e2b5db8838effed8e03eabf76277a007524028fe7c2a0bb3b96f83446c`.
+The Android and iOS historical copy declarations remain explicit and are not current compatibility
+results.
+
+## Input-owned release expectations (2026-10-25)
+
+RUN-G617 and RUN-G618 now expect the later input's release to stop the replacement endless sound
+and light that input started. Their third checkpoint contains `soundStop` and `ledOff`; the fourth
+checkpoint is empty because the earlier input no longer owns either output. Only the pressed
+indicator waits for the final input. The two case descriptions and their expectation notes follow
+that rule. Every input file, fingerprint and scenario is unchanged; the other 380 cases are unchanged.
+
+The canonical corpus still has 382 cases. Its SHA256 advances from
+`3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6` to
+`7ac226a82324ba278859443772c67be864387809138b1884fe57cbc187bc4180`.
+This includes two new pinned web failures. Before pinning, the corrected expectations alone produced
+SHA256 `cbb873545db298192d3b02b8769b414d8eaae274c045573cd22769acfd543364`;
+the first asserting web run failed precisely these two comparisons (969 tests, two failures).
+That initial run is retained separately from the subsequent asserting run with failure pins.
+A regression test fails against the old expectations and passes against the corrected expectations.
+The subsequent asserting `pnpm test:unipack` run passed all 969 test assertions, while its 382
+compatibility results remain 357 pass and 25 fail, including these two pinned failures.
+
+The web play-hook adapter on `b995a86f4f9c7c69fd9da65827e142828d6bc799` still records an empty third
+checkpoint and stops both outputs at the fourth. Both observations were pinned in `divergences.json` at that revision.
+They were compatibility failures even though their known-difference assertions passed. The older
+"Web playback observations retired with G6" entry below describes the earlier expectations and is
+superseded for these two cases; it is preserved as historical evidence.
+
+New native results are pending. iOS must be rerun on
+`e8ac34d11373b3ed071535e365ddc382c1929496` or a descendant
+([unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213)); its earlier results used the old
+corpus hash and are not new results. Android's current common adapter does not read the scenario's
+`input` identity, so its lower-level output cannot establish two-finger or finger/MIDI behavior.
+A native input-path observation is required before either Android case can be counted or pinned.
+No native pass or failure is claimed here, and no new three-platform aggregate is reported.
+
+`copies.json` selects Android `777cc4a37a997afb327756dd239f167adf155c50` and the iOS merge above.
+Both still carry historical 214-case G5 copies, SHA256
+`18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
+The copy comparison verifies those declared bytes and warns that they are behind canonical;
+it does not establish current app compatibility. The native reruns use the corrected corpus as a
+separate test input and must report its exact hash. The stored app copies are not updated here.
+
+
 ## Trailing-wait observations after the web runner fix (2026-10-24)
 
 The prepared canonical corpus advances from `3f6b68d623d0870f126285653426948c2b6309a939c71c4bc0f5a15b27c257b6`

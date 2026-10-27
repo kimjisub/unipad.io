@@ -104,6 +104,34 @@ describe('AutoPlayRunner', () => {
     runner.stop();
   });
 
+  test('a guide launched after auto-mapping replaced the script follows the new script', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 2 2 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'o 1 1\nd 1000',
+    }));
+    const mapped = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 2 2 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'd 500\no 2 2\nd 1000',
+    }));
+    const guides: [string, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+      onGuidePadOn: (x, y, at) => { guides.push([`${x},${y}`, at]); },
+      onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    clock.tick(1);
+    assert.deepEqual(guides.map(([pad]) => pad), ['0,0']);
+    runner.stop();
+
+    pack.autoPlay = mapped.autoPlay;
+    guides.length = 0;
+    const noteAt = performance.now() + 500;
+    runner.launch();
+    clock.tick(1);
+    assert.deepEqual(guides, [['1,1', noteAt]]);
+    runner.stop();
+  });
+
   test('step resume distinguishes consumed pads from chain-only scans and rewound groups', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
@@ -141,6 +169,163 @@ describe('AutoPlayRunner', () => {
     assert.equal(runner.leaveStepPractice(), true);
     assert.equal(runner.progress, scannedProgress - 2, 'keep consumed pads, but restore the delay and chain-only scan before the next pad');
     assert.equal(runner.hasScannedStepPads, false);
+    runner.stop();
+  });
+
+  for (const gap of [0, 1, 300, 5000]) {
+    for (const finalGroup of [false, true]) {
+      test(`autoplay retains unpressed step pads after ${gap}ms, final=${finalGroup}`, async () => {
+        const pack = await parseUniPack(await packZip({
+          info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+          autoPlay: `d 1000\no 1 1\nf 1 1${finalGroup ? '' : '\nd 500\no 1 2\nf 1 2\nd 1000'}`,
+        }));
+        const notes: [number, number][] = [];
+        const runner = new AutoPlayRunner(pack, {
+          onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+          onPadTouchOn: (_x, y, at) => { notes.push([y, at]); },
+          onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+        }, () => 0, () => {}, () => {}, () => {});
+        runner.practiceGuide = true; runner.launch(); clock.tick(1); clock.tick(100);
+        runner.pause(); runner.stepMode = true;
+        if (gap) clock.tick(gap);
+        const resumedAt = clock.now;
+        runner.play(false); clock.tick(1);
+        const firstAt = gap ? resumedAt : 2000;
+        if (!gap) clock.tick(firstAt - clock.now);
+        assert.deepEqual(notes, [[0, firstAt]], 'the shown unpressed note plays immediately; an unshown note keeps its delay');
+        if (!finalGroup) {
+          clock.tick(firstAt + 499 - clock.now); assert.equal(notes.length, 1);
+          clock.tick(1); assert.deepEqual(notes, [[0, firstAt], [1, firstAt + 500]]);
+        } else assert.equal(runner.active, false, 'the last group sounds before ending');
+        runner.stop();
+      });
+    }
+  }
+
+  for (const queuedPress of [false, true]) test(`autoplay skips completed groups and pressed members, queued=${queuedPress}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 2 1\nf 2 1\nd 500\no 1 1\no 1 2\nf 1 1\nf 1 2',
+    }));
+    const notes: string[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y) => { notes.push(`${x},${y}`); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(1, 0); clock.tick(1);
+    runner.stepPadPressed(0, 0);
+    if (!queuedPress) clock.tick(300);
+    runner.play(false); clock.tick(1);
+    assert.deepEqual(notes, ['0,1'], 'only the unpressed member of the last group sounds');
+    assert.equal(runner.active, false);
+    runner.stop();
+  });
+
+  for (const pressedBeforeSwitch of [false, true]) test(`autoplay distinguishes queued presses on different chains, prior press=${pressedBeforeSwitch}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'o 1 1\no 1 2\nf 1 1\nf 1 2',
+    }));
+    let chain = 0;
+    const notes: number[][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onPadTouchOff() {},
+      onChainChange: c => { chain = c; },
+      onPadTouchOn: (x, y) => { notes.push([x, y]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1);
+    if (pressedBeforeSwitch) runner.stepPadPressed(0, 0);
+    chain = 1;
+    runner.stepPadPressed(0, 1);
+    runner.play(false); clock.tick(1);
+    assert.deepEqual(notes, pressedBeforeSwitch ? [[0, 1]] : [[0, 0], [0, 1]],
+      'only a press on the guided chain completes that pad, even before the next timer tick');
+    assert.equal(runner.active, false);
+    runner.stop();
+  });
+
+  const partialGroup = 'o 1 1\nf 1 1\nd 10\no 1 2\nf 1 2\nd 20\no 2 1\nf 2 1\nd 500\no 2 2\nf 2 2';
+
+  test('partial step replay retains short written gaps and skips a pressed middle pad', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
+    }));
+    const notes: [number, number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y, at) => { notes.push([x, y, at]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    const firstAt = clock.now;
+    runner.play(false); clock.tick(1);
+    assert.deepEqual(notes, [[0, 0, firstAt]]);
+    clock.tick(5); runner.pause(); clock.tick(100); runner.play(false); clock.tick(0);
+    clock.tick(firstAt + 129 - clock.now); assert.equal(notes.length, 1);
+    clock.tick(1); assert.deepEqual(notes.at(-1), [1, 0, firstAt + 130]);
+    clock.tick(499); assert.equal(notes.length, 2);
+    clock.tick(1); assert.deepEqual(notes.at(-1), [1, 1, firstAt + 630]);
+    runner.stop();
+  });
+
+  test('returning to step practice right after a partial replay keeps every note for the next playthrough', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
+    }));
+    const notes: string[] = [];
+    const guides: [number, number][] = [];
+    let ended = 0;
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onEnd: () => { ended++; },
+      onPadTouchOn: (x, y) => { notes.push(`${x},${y}`); },
+      onGuidePadOn: (x, y) => { guides.push([x, y]); },
+      onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    runner.play(false); clock.tick(1); clock.tick(2);
+    // Back to step practice inside the 10 ms gap, before autoplay reaches the pressed pad's lines.
+    runner.pause(); runner.practiceGuide = true; runner.stepMode = true;
+    for (let i = 0; i < 40 && ended === 0; i++) {
+      clock.tick(5);
+      for (const [x, y] of guides.splice(0)) runner.stepPadPressed(x, y);
+    }
+    assert.equal(ended, 1);
+
+    notes.length = 0;
+    runner.practiceGuide = false; runner.stepMode = false; runner.playmode = true; runner.launch();
+    clock.tick(1); clock.tick(2000);
+    assert.deepEqual(notes, ['0,0', '0,1', '1,0', '1,1'], 'a pad pressed in an earlier playthrough sounds again');
+    runner.stop();
+  });
+
+  test('a late resume before a pressed pad keeps the next sounding note at its written time', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: partialGroup,
+    }));
+    const notes: [number, number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOff() {},
+      onPadTouchOn: (x, y, at) => { notes.push([x, y, at]); },
+      onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {}, onGuideChainOn() {},
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch();
+    clock.tick(1); runner.stepPadPressed(0, 1); clock.tick(300);
+    const firstAt = clock.now;
+    runner.play(false); clock.tick(1); clock.tick(2);
+    runner.pause(); clock.tick(100);
+    const resumedAt = clock.now;
+    runner.play(false); clock.tick(300);
+    while (notes.length < 3 && clock.scheduled) clock.tick(1);
+    // Song time froze 3 ms in; the pressed pad at 10 ms is skipped, so the late tick waits for (1,0)
+    // at 30 ms like a pack without that pad, which the late tick has already passed.
+    assert.deepEqual(notes, [[0, 0, firstAt], [1, 0, resumedAt + 300], [1, 1, resumedAt + 800]]);
     runner.stop();
   });
 

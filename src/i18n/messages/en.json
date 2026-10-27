@@ -306,13 +306,22 @@
       "sectionDisplay": "Display",
       "sectionTools": "Tools",
       "feedbackLight": "Feedback Light",
+      "slideMode": "Slide across pads",
       "led": "LED",
       "autoMapping": "Auto Mapping",
       "autoMappingActive": "Auto Mapping... {progress}",
+      "restoreAutoPlay": "Restore previous AutoPlay",
+      "restoreAutoPlayNoBackup": "No saved backup",
+      "autoPlayRestoring": "Restoring...",
       "hideUI": "Hide UI",
       "watermark": "Watermark",
       "proLightMode": "Pro Light Mode",
       "traceLog": "Trace Log",
+      "traceLogStyle": "Trace style",
+      "traceLogNumbers": "Numbers",
+      "traceLogLines": "Lines and dots",
+      "traceLogStyleAriaLabel": "Trace style: {style}",
+      "clearTraceLog": "Clear all traces",
       "record": "Record",
       "midiConnecting": "MIDI Connecting...",
       "midiConnected": "MIDI Connected",
@@ -403,7 +412,13 @@
       "warnings": "{count} warnings",
       "confirmInstall": "Install “{title}”? It will be downloaded from unipad.io.",
       "confirmInstallByProducer": "Install “{title}” by {producer}? It will be downloaded from unipad.io.",
-      "confirmInstallAriaLabel": "Confirm install"
+      "confirmInstallAriaLabel": "Confirm install",
+      "confirmAutoMapping": "Map the AutoPlay? Waits become the length of each sound. The current AutoPlay is kept as a backup. Pads pressed together stay together.",
+      "confirmAutoMappingAction": "Map",
+      "confirmAutoMappingAriaLabel": "Confirm auto mapping",
+      "confirmRestoreAutoPlay": "Go back to the previous backup? It swaps places with the current AutoPlay. You can switch back again after restoring.",
+      "confirmRestoreAutoPlayAction": "Restore",
+      "confirmRestoreAutoPlayAriaLabel": "Confirm restoring the AutoPlay"
     },
     "toast": {
       "skinFailed": "Failed to apply skin. Reset skin.",
@@ -423,7 +438,10 @@
       "sharedPackFailed": "Failed to load shared pack.",
       "downloadingPack": "Downloading “{title}”",
       "installFailed": "Could not install that pack",
-      "installCancelled": "Install cancelled"
+      "installCancelled": "Install cancelled",
+      "autoPlaySaved": "Saved the AutoPlay. You can restore the previous one from the menu.",
+      "autoPlayRestored": "Restored the previous AutoPlay.",
+      "autoPlaySaveFailed": "Couldn’t save. The AutoPlay is unchanged."
     }
   }
 }

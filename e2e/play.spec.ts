@@ -3,10 +3,12 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
-import { configureMidiPorts, midiPortMessages } from './midi';
+import { touchScreens } from './touch';
+import { savedRecords } from './saved-packs';
+import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
 const pack = resolve('e2e/fixtures/basic.uni');
@@ -299,6 +301,111 @@ test('a missing saved pack fails the pad value check after restoration ends', as
   await expect(page).not.toHaveURL(/pack=/);
 });
 
+test('a delayed earlier storage read cannot replace the last pack selected', async ({ page }, info) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/pack=.+/);
+  const zip = await JSZip.loadAsync(await readFile(pack));
+  zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Earlier Pack'));
+  const bytes = Array.from(await zip.generateAsync({ type: 'uint8array' }));
+  await page.evaluate(async bytes => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('unipad');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const store = transaction.objectStore('unipackMetadata');
+        transaction.objectStore('unipacks').put({ id: 'earlier-pack', zipData: new Uint8Array(bytes).buffer });
+        const request = store.getAll();
+        request.onsuccess = () => store.put({ ...request.result[0], id: 'earlier-pack', title: 'Earlier Pack' });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    } finally { db.close(); }
+    const get = IDBObjectStore.prototype.get;
+    let held = false;
+    IDBObjectStore.prototype.get = function (query) {
+      const request = get.call(this, query);
+      if (this.name === 'unipacks' && query === 'earlier-pack' && !held) {
+        held = true;
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          document.documentElement.dataset.heldPackRead = 'true';
+          window.addEventListener('release-earlier-pack', () => request.onsuccess?.call(request, event), { once: true });
+        }, { once: true });
+      }
+      return request;
+    };
+  }, bytes);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await page.getByRole('option', { name: 'Earlier Pack by UniPad Tests', exact: true }).dblclick();
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
+  await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
+  await expectPads(page);
+  await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+  await expect(page).toHaveURL(/pack=.+/);
+  const latestUrl = page.url();
+  // The unit tests hold every await deterministically. This browser observation also keeps a
+  // record of any transient wrong title after releasing the native IndexedDB result.
+  const titles = await page.evaluate(() => new Promise<string[]>(resolve => {
+    const titles = [document.title];
+    const observer = new MutationObserver(() => titles.push(document.title));
+    observer.observe(document.querySelector('title')!, { childList: true, subtree: true, characterData: true });
+    window.dispatchEvent(new Event('release-earlier-pack'));
+    setTimeout(() => { observer.disconnect(); resolve(titles); }, 1000);
+  }));
+  await info.attach('pack-after-delayed-read', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('delayed-read-observation', { body: JSON.stringify({ titles, latestUrl, observedUrl: page.url() }), contentType: 'application/json' });
+  expect(titles.every(title => title === 'Browser Test Pack | UniPad Web Player')).toBe(true);
+  await expect(page).toHaveURL(latestUrl);
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  await page.keyboard.down('q');
+  await expect(pressed(page, '1,0')).toBeVisible();
+  await page.keyboard.up('q');
+  await expect(pressed(page, '1,0')).toHaveCount(0);
+});
+
+test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
+  await loadPack(page);
+  await expect(page).toHaveURL(/pack=.+/);
+  const savedUrl = page.url();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.getByRole('listbox', { name: 'UniPack list' })).toBeVisible();
+  const zip = await JSZip.loadAsync(await readFile(pack));
+  zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Imported Later'));
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = async function () {
+      const buffer = await read.call(this);
+      if (this.name === 'delayed-import.uni') {
+        document.documentElement.dataset.heldImportRead = 'true';
+        await new Promise<void>(resolve => window.addEventListener('release-import-read', () => resolve(), { once: true }));
+      }
+      return buffer;
+    };
+  });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+    name: 'delayed-import.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
+  });
+  await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
+  await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
+  await expectPads(page);
+  await expect(page).toHaveURL(savedUrl);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
+  await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
+  await info.attach('import-kept-after-replacement', { body: JSON.stringify({ saved: await savedRecords(page), observedUrl: page.url(), title: await page.title() }), contentType: 'application/json' });
+  await expect(page).toHaveURL(savedUrl);
+  await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Imported Later by UniPad Tests', exact: true })).toBeVisible();
+  await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
 test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
   await loadPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
@@ -379,43 +486,51 @@ test('keyboard down/up reaches the mapped pad and ignores repeated keydown', asy
   }
 });
 
-test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
-  await loadPack(page);
-  const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
-  await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
-  await pad(page, '0,0').hover();
-  await page.mouse.down();
-  let playingRms: number | null = null;
-  await expect.poll(async () => {
-    playingRms = await rms();
-    return playingRms;
-  }, 'the held pad must produce a nonzero post-volume audio signal').toBeGreaterThan(0.001);
-  // Preserve the positive measurement even if a later control check fails.
-  await info.attach('output-signal', {
-    body: JSON.stringify({ playingRms, browser: info.project.name, browserVersion: browser.version(),
-      measurement: 'RMS after application output gain, before native audio destination', humanListening: false }),
-    contentType: 'application/json',
-  });
-  await page.mouse.up();
-  await expect.poll(rms, 'release must silence the output').toBe(0);
-  const releasedRms = await rms();
+for (const screen of [{ name: 'desktop', viewport: { width: 1280, height: 800 } }, ...touchScreens]) {
+  test.describe(`${screen.name}: output signal`, () => {
+    test.use({ viewport: screen.viewport });
 
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await page.locator('input[type=range][max="7"]').fill('0');
-  await page.getByRole('button', { name: 'Close menu', exact: true }).click();
-  await page.keyboard.down('q');
-  await expect.poll(() => starts(page)).toBe(2);
-  // Still playing a looping source: a pre-volume probe would incorrectly report sound.
-  await expect.poll(rms, 'zero application volume must silence a running source').toBe(0);
-  const mutedRms = await rms();
-  await page.keyboard.up('q');
-  await info.attach('output-signal-controls', {
-    body: JSON.stringify({ playingRms, releasedRms, mutedRms,
-      measurement: 'RMS after application output gain, before native audio destination',
-      humanListening: false }),
-    contentType: 'application/json',
+    test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
+      await loadPack(page);
+      // A stopped output also reads as silence; the idle check below means nothing until it runs.
+      await expectAudioOutputRunning(page);
+      const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
+      await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
+      await pad(page, '0,0').hover();
+      await page.mouse.down();
+      let playingRms: number | null = null;
+      await expect.poll(async () => {
+        playingRms = await rms();
+        return playingRms;
+      }, 'the held pad must produce a nonzero post-volume audio signal').toBeGreaterThan(0.001);
+      // Preserve the positive measurement even if a later control check fails.
+      await info.attach('output-signal', {
+        body: JSON.stringify({ playingRms, viewport: page.viewportSize(), input: 'mouse and keyboard', browser: info.project.name, browserVersion: browser.version(),
+          measurement: 'RMS after application output gain, before native audio destination', humanListening: false }),
+        contentType: 'application/json',
+      });
+      await page.mouse.up();
+      await expect.poll(rms, 'release must silence the output').toBe(0);
+      const releasedRms = await rms();
+
+      await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+      await page.locator('input[type=range][max="7"]').fill('0');
+      await page.getByRole('button', { name: 'Close menu', exact: true }).click();
+      await page.keyboard.down('q');
+      await expect.poll(() => starts(page)).toBe(2);
+      // Still playing a looping source: a pre-volume probe would incorrectly report sound.
+      await expect.poll(rms, 'zero application volume must silence a running source').toBe(0);
+      const mutedRms = await rms();
+      await page.keyboard.up('q');
+      await info.attach('output-signal-controls', {
+        body: JSON.stringify({ playingRms, releasedRms, mutedRms,
+          measurement: 'RMS after application output gain, before native audio destination',
+          humanListening: false }),
+        contentType: 'application/json',
+      });
+    });
   });
-});
+}
 
 test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
   await page.goto('/play');
@@ -452,6 +567,7 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
     });
   });
   await loadPack(page);
+  await expectAudioOutputRunning(page);
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   await auto.click();
@@ -478,6 +594,27 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
 });
 
+for (const invalidBeforeMode of [false, true]) {
+  test(`MIDI profile capture excludes earlier work and retains ${invalidBeforeMode ? 'invalid' : 'valid'} change commands`, async ({ page }) => {
+    await page.setContent('<select><option value="auto">Auto</option><option value="mini">Mini</option></select>');
+    const oldFrame = [0xb0, 95, 61];
+    const mode = [0xf0, 0, 0x20, 0x29, 2, 0x0d, 0x0e, 1, 0xf7];
+    const change = [...(invalidBeforeMode ? [[0x90, 82, 5]] : []), [0x90, 81, 0], mode, [0x90, 81, 3]];
+    await page.evaluate(({ oldFrame, change }) => {
+      Object.defineProperty(window, 'browserProbe', { configurable: true, value: { midi: { messages: [] } } });
+      // selectOption sends input before change. Model the old controller's last redraw there.
+      document.querySelector('select')!.addEventListener('input', () => window.browserProbe.midi.messages.push(oldFrame));
+      // Like React's delegated handler, process the profile change after element capture listeners.
+      document.addEventListener('change', () => window.browserProbe.midi.messages.push(...change));
+    }, { oldFrame, change });
+    await selectMidiProfile(page.locator('select'), 'mini');
+    const recorded = await midiMessages(page);
+    expect(recorded).toEqual(change);
+    const firstMode = recorded.findIndex(message => message[0] === 0xf0);
+    expect(recorded.slice(0, firstMode).every(message => message[2] === 0)).toBe(!invalidBeforeMode);
+  });
+}
+
 for (const delayedInspection of [false, true]) {
   test(`Web MIDI discovers devices, receives notes, emits LED bytes and disconnects${delayedInspection ? ' after delayed inspection' : ''}`, async ({ page }, testInfo) => {
     await skipWithoutWebMidi(page);
@@ -492,8 +629,7 @@ for (const delayedInspection of [false, true]) {
     await expect(dialog).toContainText('Resolved Type: launchpad_x');
     // The hint promises what the model picker does: a connected device is re-initialised at once.
     await expect(dialog).toContainText('Changing the model applies it immediately to devices that are already connected.');
-    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-    await dialog.locator('select').selectOption('launchpad_mini_mk3');
+    await selectMidiProfile(dialog.locator('select'), 'launchpad_mini_mk3');
     await expect(dialog).toContainText('Resolved Type: launchpad_mini_mk3');
     await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     // As on Android and iOS: lights off in the old layout, the new mode switch, then the whole board again.
@@ -505,8 +641,7 @@ for (const delayedInspection of [false, true]) {
     const redrawn = modelChange.slice(firstSysEx + 2);
     expect(redrawn.filter(m => m[0] === 0xf0), 'one mode switch only').toEqual([]);
     expect(new Set(redrawn.filter(m => (m[0] & 0xe0) === 0x80).map(m => m[1])).size, 'every pad redrawn').toBeGreaterThanOrEqual(64);
-    await page.evaluate(() => { window.browserProbe.midi.messages.length = 0; });
-    await dialog.locator('select').selectOption('auto');
+    await selectMidiProfile(dialog.locator('select'), 'auto');
     await expect(dialog).toContainText('Resolved Type: launchpad_x');
     await expect.poll(async () => padLightsAfterMode(await midiMessages(page))).toBeGreaterThanOrEqual(64);
     expect((await midiMessages(page)).filter(m => m[0] === 0xf0)).toEqual([[0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x10, 0, 0xf7], [0xf0, 0, 0x20, 0x29, 2, 0x0c, 0x0e, 1, 0xf7]]);
@@ -589,6 +724,12 @@ const analyticsEvents = (page: Page) => page.evaluate(() =>
     .filter(([command]) => command === 'event')
     .map(([, name, params]) => ({ name, inputSource: (params as Record<string, unknown> | undefined)?.input_source })));
 
+// The page view logged on load shows analytics is on; a build without the README's Firebase
+// configuration turns it off in every browser, and the pad press checks would only see no events.
+const expectAnalyticsOn = (page: Page) => expect.poll(() => analyticsEvents(page).then(events => events.length), {
+  message: 'No analytics event was queued. Rebuild with the Firebase configuration in the README.',
+}).toBeGreaterThan(0);
+
 const padInputs: Record<'screen' | 'keyboard' | 'midi', (page: Page) => Promise<void>> = {
   screen: async page => { await pad(page, '0,0').hover(); await page.mouse.down(); await page.mouse.up(); },
   keyboard: async page => { await page.keyboard.down('q'); await page.keyboard.up('q'); },
@@ -600,6 +741,7 @@ for (const [source, press] of Object.entries(padInputs)) {
     await loadPack(page);
     const midi = await hasWebMidi(page);
     test.skip(source === 'midi' && !midi, noWebMidi);
+    await expectAnalyticsOn(page);
     await press(page);
     for (const [other, otherPress] of Object.entries(padInputs)) if (other !== 'midi' || midi) await otherPress(page);
     await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
@@ -610,6 +752,8 @@ for (const [source, press] of Object.entries(padInputs)) {
 
 test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
   await loadPack(page);
+  await expectAudioOutputRunning(page);
+  await expectAnalyticsOn(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   await expect.poll(() => starts(page)).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();

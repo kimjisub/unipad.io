@@ -42,7 +42,8 @@ function findClearBottom(): number | null {
 	const targets = [...document.querySelectorAll<HTMLElement>(`${SCROLL_TOP_AVOID_SELECTOR} a, ${SCROLL_TOP_AVOID_SELECTOR} button`)]
 		.filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0)
 		.map(layoutRect)
-		.filter((rect) => rect.left < right && left < rect.right);
+		// Offsets are whole pixels, and a link's text in another font can be a fraction wider.
+		.filter((rect) => rect.left < right + CLEARANCE_PX && left - CLEARANCE_PX < rect.right);
 
 	let bottom = EDGE_REM * rem;
 	for (let i = 0; i <= targets.length; i++) {

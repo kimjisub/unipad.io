@@ -11,7 +11,7 @@ declare global { interface Window {
 } }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
-async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string } = {}) {
+async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string; leds?: Record<string, string> } = {}) {
   await page.addInitScript(() => {
     const gain = AudioContext.prototype.createGain;
     AudioContext.prototype.createGain = function () { window.transitionAudio = this; return gain.call(this); };
@@ -20,7 +20,8 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=3'));
   zip.file('keySound', options.keySound ?? `1 1 1 tone.wav 1${wormhole ? ' 2' : ''}\n1 1 2 tone.wav\n2 1 1 tone.wav\n3 1 1 tone.wav`);
   zip.remove('keyLED');
-  zip.file(`keyLED/1 1 1${options.endless ? ' 0' : ''}`, options.led ?? 'o 1 2 a 5\nd 1000\nf 1 2\nd 1000\no 1 3 a 9');
+  const leds = options.leds ?? { [`1 1 1${options.endless ? ' 0' : ''}`]: options.led ?? 'o 1 2 a 5\nd 1000\nf 1 2\nd 1000\no 1 3 a 9' };
+  for (const [name, content] of Object.entries(leds)) zip.file(`keyLED/${name}`, content);
   zip.file('autoPlay', autoPlay);
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
@@ -392,7 +393,7 @@ test('compatibility: step practice leaves the final group available until played
   await expect(page.locator('[data-pad="0,0"] .z-\\[25\\]')).toHaveCount(0);
 });
 
-for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts wait for the last release (later first ${laterFirst})`, async ({ page }, info) => {
+for (const laterFirst of [false, true]) test(`compatibility: same-pad feedback waits for the last release while each contact releases its effects (later first ${laterFirst})`, async ({ page }, info) => {
   await open(page, 'd 10000\no 1 1', false, { endless: true, led: 'o 1 2 a 5\nd 1000', keySound: '1 1 1 tone.wav 0' });
   await page.getByRole('button', { name: 'Feedback', exact: true }).dispatchEvent('click');
   const target = page.locator('[data-pad="0,0"]');
@@ -404,8 +405,8 @@ for (const laterFirst of [false, true]) test(`compatibility: same-pad contacts w
   await pointer('pointerdown', 101); await pointer('pointerdown', 102);
   await pointer('pointerup', laterFirst ? 102 : 101);
   await snapshot(page, info, 'one-contact-still-held');
-  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1]);
-  await expect(packLight(page)).toHaveCount(1);
+  expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual(laterFirst ? [1, 2] : [1]);
+  await expect(packLight(page)).toHaveCount(laterFirst ? 0 : 1);
   await expect(target.locator('img[src="/theme/btn_.png"]')).toHaveCount(1);
   await pointer('pointerup', laterFirst ? 101 : 102);
   expect(await page.evaluate(() => window.browserProbe.audio.stops)).toEqual([1, 2]);
@@ -817,3 +818,147 @@ for (const via of ['mode', 'button']) test(`leaving a timed chain wait for autop
   await page.clock.fastForward(1);
   expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(3);
 });
+
+
+for (const via of ['mode', 'button']) for (const gap of [0, 1, 300, 5000]) {
+  test(`unpressed step note resumes via ${via} after ${gap}ms`, async ({ page }, info) => {
+    // Starting in Auto lets the transport button retain Auto mode when it resumes.
+    await open(page, 'o 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 500\no 1 1\nf 1 1\nd 1000');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1); await page.clock.fastForward(100);
+    if (via === 'button') await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    else await mode(page, 'Step').dispatchEvent('click');
+    if (gap) await page.clock.fastForward(gap);
+    await info.attach('before-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await (via === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Auto')).dispatchEvent('click');
+    await page.clock.runFor(1);
+    await info.attach('after-resume', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    const count = () => page.evaluate(() => window.browserProbe.audio.starts.length);
+    // Auto pause does not scan steps; Step mode does. Only a shown note is immediately due.
+    const shown = via === 'mode' && gap > 0;
+    expect(await count()).toBe(shown ? 2 : 1);
+    if (!shown) await page.clock.fastForward(899);
+    expect(await count()).toBe(2);
+    // The clock is now 1 ms past the second note, so the third one is due 499 ms later.
+    await page.clock.fastForward(498); expect(await count()).toBe(2);
+    await page.clock.runFor(1); expect(await count()).toBe(3);
+    await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
+  });
+}
+
+test('autoplay from a partially played final step sounds only its unpressed pad', async ({ page }, info) => {
+  await open(page, 'o 1 1\no 1 2\nf 1 1\nf 1 2');
+  await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20);
+  await page.keyboard.press('1'); await page.clock.runFor(20);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await info.attach('partial-final-before', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(20);
+  await info.attach('partial-final-after', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(2);
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
+});
+
+
+// Each pad lights only itself in the pack color while sounding. The guide light has a higher
+// priority, so a pad drawn in the pack color also proves that no practice guide is left on it.
+const ownLights = (pads: [number, number][]) => Object.fromEntries(pads.map(([x, y]) => [`1 ${x} ${y}`, `o ${x} ${y} a 5\nd 20000`]));
+const packColor = 'rgb(239, 83, 80)';
+const guideColor = 'rgb(139, 195, 74)';
+const padLight = (page: Page, position: string) => page.locator(`[data-pad="${position}"] div.z-10`);
+const padGuide = (page: Page, position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+const anyGuide = (page: Page) => page.locator('[data-pad] .z-\\[25\\]');
+const soundRequests = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
+
+for (const [via, pausedMs] of [['mode', 0], ['button', 0], ['button', 3000]] as const) {
+  test(`guide after replaying a shown step note via ${via}${pausedMs ? ` after a ${pausedMs}ms pause` : ''} guides only the following note`, async ({ page }, info) => {
+    await open(page, 'o 1 1\nd 5000\no 1 2\nd 5000\no 1 3\nd 5000', false, {
+      keySound: '1 1 1 tone.wav\n1 1 2 tone.wav\n1 1 3 tone.wav', leds: ownLights([[1, 1], [1, 2], [1, 3]]),
+    });
+    await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+    await expect(padGuide(page, '0,0')).toHaveCount(1);
+    await page.keyboard.press('1'); await page.clock.runFor(20);
+    await expect(padGuide(page, '0,1')).toHaveCount(1);
+    await expect(padLight(page, '0,1')).toHaveCSS('background-color', guideColor);
+    expect(await soundRequests(page)).toBe(1);
+    await page.clock.fastForward(300);
+    // The replayed note belongs to the switch, so later times count from this click.
+    await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(20);
+    await info.attach('replayed-second-note', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    expect(await soundRequests(page)).toBe(2);
+    await expect(padGuide(page, '0,1')).toHaveCount(0);
+    await expect(padLight(page, '0,1')).toHaveCSS('background-color', packColor);
+    await page.clock.fastForward(1000);
+    if (via === 'button') {
+      await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+      await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+      await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+      if (pausedMs) await page.clock.fastForward(pausedMs);
+    }
+    await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(20);
+    await expect(anyGuide(page)).toHaveCount(0);
+    // 1040 ms of song time have passed; the third note's 800 ms lead starts 4200 ms after the switch.
+    await page.clock.fastForward(3100); await page.clock.runFor(20);
+    await expect(anyGuide(page)).toHaveCount(0);
+    await page.clock.fastForward(40); await page.clock.runFor(20);
+    await info.attach('third-note-guided', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await expect(padGuide(page, '0,1')).toHaveCount(0);
+    await expect(padGuide(page, '0,2')).toHaveCount(1);
+    await expect(anyGuide(page)).toHaveCount(1);
+    await page.clock.fastForward(740); await page.clock.runFor(20);
+    await expect(padGuide(page, '0,2')).toHaveCount(1);
+    await page.clock.fastForward(20); await page.clock.runFor(20);
+    await expect(anyGuide(page)).toHaveCount(0);
+    expect(await soundRequests(page)).toBe(2);
+  });
+}
+
+for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
+  test(`autoplay after returning to partial step practice sounds only the unpressed pad after ${hiddenFor} ms, final=${finalGroup}`, async ({ page }, info) => {
+    await open(page, `o 1 1\nd 1000\no 1 2\no 2 1${finalGroup ? '' : '\nd 1000\no 2 2\nd 1000'}`, false, {
+      keySound: '1 1 1 tone.wav\n1 1 2 tone.wav\n1 2 1 tone.wav\n1 2 2 tone.wav', leds: ownLights([[1, 1], [1, 2], [2, 1], [2, 2]]),
+    });
+    await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+    await page.keyboard.press('1'); await page.clock.runFor(20);
+    await expect(padGuide(page, '0,1')).toHaveCount(1);
+    await expect(padGuide(page, '1,0')).toHaveCount(1);
+    await page.keyboard.press('2'); await page.clock.runFor(20);
+    await expect(padGuide(page, '0,1')).toHaveCount(0);
+    await expect(padGuide(page, '1,0')).toHaveCount(1);
+    expect(await soundRequests(page)).toBe(2);
+    await visibility(page, true);
+    await page.clock.fastForward(hiddenFor);
+    await visibility(page, false);
+    await page.clock.runFor(20);
+    await expect(anyGuide(page)).toHaveCount(0);
+    await expect(page.locator('[data-pad] div.z-10')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(20);
+    await info.attach('returned-step-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await expect(mode(page, 'Step')).toHaveAttribute('aria-pressed', 'true');
+    await expect(padGuide(page, '1,0')).toHaveCount(1);
+    await expect(anyGuide(page)).toHaveCount(1);
+    await expect(padLight(page, '1,0')).toHaveCSS('background-color', guideColor);
+    expect(await soundRequests(page)).toBe(2);
+    await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(20);
+    await info.attach('replayed-unpressed-pad', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    expect(await soundRequests(page)).toBe(3);
+    await expect(padGuide(page, '1,0')).toHaveCount(0);
+    await expect(padLight(page, '1,0')).toHaveCSS('background-color', packColor);
+    await expect(padLight(page, '0,0')).toHaveCount(0);
+    await expect(padLight(page, '0,1')).toHaveCount(0);
+    if (finalGroup) {
+      await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
+    } else {
+      // The written 1000 ms gap counts from the switch.
+      await page.clock.fastForward(960); await page.clock.runFor(10);
+      expect(await soundRequests(page)).toBe(3);
+      await page.clock.fastForward(20); await page.clock.runFor(10);
+      expect(await soundRequests(page)).toBe(4);
+      await expect(padLight(page, '1,1')).toHaveCSS('background-color', packColor);
+      await expect(padLight(page, '0,0')).toHaveCount(0);
+      await expect(padLight(page, '0,1')).toHaveCount(0);
+    }
+    await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
+  });
+}

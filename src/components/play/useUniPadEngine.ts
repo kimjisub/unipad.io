@@ -36,6 +36,9 @@ import type {
   LaunchpadProfile,
   MidiConnectionStatus,
   ThemeAssets,
+  AutoPlay,
+  AutoPlayElement,
+  StoredAutoPlay,
 } from '@/lib/unipack';
 
 const CHAIN_INDEX_OFFSET = 8;
@@ -45,8 +48,17 @@ const OPTION_PANEL_LED_COUNT = CHAIN_INDEX_OFFSET + 8;
 // What holds a pad, so a release ends only its own press (screen pointers name themselves in PadGrid,
 // auto play uses AUTO_PLAY_INPUT).
 const MIDI_INPUT = 'midi';
-const PLAYER_INPUT = 'player';
 const keyInput = (code: string) => `key-${code}`;
+
+/** Runs `run` in a later task. Unlike timers, port messages are not throttled on hidden pages. */
+function inNextTask(run: () => void): void {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => {
+    channel.port1.close();
+    run();
+  };
+  channel.port2.postMessage(null);
+}
 
 /** A round button or the logo shows its highest-priority light on the launchpad (Android's
  *  setLedLaunchpadChain), so pack lights stay off them outside Pro light mode as on Android and iOS. */
@@ -97,7 +109,10 @@ export interface EngineState {
   recording: boolean;
   hideUI: boolean;
   watermark: boolean;
+  /** Off: a finger stays on the pad it went down on. On: it plays each pad it is drawn onto. */
+  slideMode: boolean;
   traceLog: boolean;
+  traceLogStyle: TraceLogStyle;
   traceLogSequence: { x: number; y: number }[][];
   proLightMode: boolean;
   criticalError: boolean;
@@ -105,9 +120,47 @@ export interface EngineState {
   autoMappingActive: boolean;
   autoMappingProgress: number;
   autoMappingTotal: number;
+  autoPlayRestoring: boolean;
+  /** The pack has an earlier autoPlay that restoring would bring back. */
+  autoPlayBackupAvailable: boolean;
 }
 
 export type PlayMode = 'none' | 'autoPlay' | 'guidePlay' | 'stepPractice';
+
+function playModeOf(s: Pick<EngineState, 'autoPlayEnabled' | 'practiceMode' | 'stepPractice'>): PlayMode {
+  return !s.autoPlayEnabled ? 'none'
+    : !s.practiceMode ? 'autoPlay'
+    : !s.stepPractice ? 'guidePlay'
+    : 'stepPractice';
+}
+
+/** Stores a pack's new autoPlay and its backup; resolves only once both are written. */
+export type PersistAutoPlay = (autoPlay: StoredAutoPlay) => Promise<void>;
+
+/**
+ * `saved`: stored and now playing. `failed`: not stored, the pack keeps the autoPlay it had.
+ * `cancelled`: nothing was done, because the pack was closed or another change was running.
+ */
+export type AutoPlayEditResult = 'saved' | 'failed' | 'cancelled';
+
+/** How the trace is drawn: the tap order as numbers on each pad, or a line through dots. */
+export type TraceLogStyle = 'numbers' | 'lines';
+
+const MAX_VOLUME_LEVEL = 7;
+
+/** Saved playing choices. Only a choice the player makes is written; a missing one keeps its default. */
+type PlayPreferenceKey = 'volumeLevel' | 'watermark' | 'slideMode' | 'traceLogStyle';
+const PLAY_PREFERENCE_KEYS: readonly PlayPreferenceKey[] = ['volumeLevel', 'watermark', 'slideMode', 'traceLogStyle'];
+
+const clampVolumeLevel = (level: number) => Math.max(0, Math.min(MAX_VOLUME_LEVEL, level));
+const parseBoolean = (value: string | null) => (value === 'true' ? true : value === 'false' ? false : null);
+const parseVolumeLevel = (value: string | null) => {
+  const level = value === null ? NaN : Number(value);
+  return Number.isFinite(level) ? clampVolumeLevel(level) : null;
+};
+const parseTraceLogStyle = (value: string | null): TraceLogStyle | null => (
+  value === 'numbers' || value === 'lines' ? value : null
+);
 
 const LED_RED_DIM = 1;
 const LED_RED = 3;
@@ -154,13 +207,15 @@ export function useUniPadEngine() {
     autoPlayControlsVisible: false,
     autoPlayProgress: 0,
     autoPlayTotal: 0,
-    volumeLevel: 7,
+    volumeLevel: MAX_VOLUME_LEVEL,
     practiceMode: false,
     stepPractice: false,
     recording: false,
     hideUI: false,
     watermark: true,
+    slideMode: false,
     traceLog: false,
+    traceLogStyle: 'numbers',
     traceLogSequence: [],
     proLightMode: false,
     criticalError: false,
@@ -168,12 +223,11 @@ export function useUniPadEngine() {
     autoMappingActive: false,
     autoMappingProgress: 0,
     autoMappingTotal: 0,
+    autoPlayRestoring: false,
+    autoPlayBackupAvailable: false,
   });
 
-  const playMode: PlayMode = !state.autoPlayEnabled ? 'none'
-    : !state.practiceMode ? 'autoPlay'
-    : !state.stepPractice ? 'guidePlay'
-    : 'stepPractice';
+  const playMode = playModeOf(state);
 
   const soundEngineRef = useRef<SoundEngine | null>(null);
   const playbackTicker = useRef<PlaybackTicker | null>(null);
@@ -188,12 +242,15 @@ export function useUniPadEngine() {
   const wakeLockRequestRef = useRef<Promise<WakeLockSentinel> | null>(null);
   const chainRef = useRef(0);
   const unipackRef = useRef<UniPackData | null>(null);
+  const autoPlayBackupRef = useRef<AutoPlayElement[] | null>(null);
+  const autoPlayEditingRef = useRef(false);
   const padStatesRef = useRef<PadState[][]>([]);
   const chainStatesRef = useRef<{ color: string; active: boolean; guide?: boolean }[]>([]);
   const feedbackLightRef = useRef(true);
-  // A mode's temporary light is separate from the browser's explicit user preference.
-  const feedbackPreferenceRef = useRef<boolean | null>(null);
-  const feedbackChoiceRevisionRef = useRef(0);
+  const watermarkRef = useRef(true);
+  // Read once per visit. A choice made in this visit is newer than anything the read returns.
+  const playPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const chosenPlayPreferencesRef = useRef(new Set<PlayPreferenceKey>());
   const traceLogRef = useRef(false);
   const traceLogSequenceRef = useRef<{ x: number; y: number }[][]>([]);
   // physical key code -> pad it is holding down ("x,y"), so the release goes to the same pad
@@ -207,6 +264,8 @@ export function useUniPadEngine() {
   const keyboardBlockedRef = useRef(false);
   const interruptedRef = useRef(false);
   const interruptionRevisionRef = useRef(0);
+  // Each unload ends the pack load in progress; see loadUniPack.
+  const loadRevisionRef = useRef(0);
   const interruptPlaybackRef = useRef<() => void>(() => {});
   const cyclePlayModeRef = useRef<(() => void) | null>(null);
   const toggleAutoPlayRef = useRef<() => void>(() => {});
@@ -220,7 +279,7 @@ export function useUniPadEngine() {
   const midiProfileRef = useRef<LaunchpadProfile>('auto');
   const midiListenerRef = useRef<MidiControllerListener | null>(null);
   const autoPlayListenerRef = useRef<AutoPlayListener | null>(null);
-  const volumeLevelRef = useRef(7);
+  const volumeLevelRef = useRef(MAX_VOLUME_LEVEL);
   const stateRef = useRef(state);
   const midiOptionPanelOpenRef = useRef(false);
   const midiToggleOptionPanelRef = useRef<(() => void) | null>(null);
@@ -396,6 +455,8 @@ export function useUniPadEngine() {
   }, []);
 
   const visualFlushRef = useRef<object | null>(null);
+  /** The light and controller cleanup an interruption leaves for the next task. */
+  const pendingInterruptionClearRef = useRef<(() => void) | null>(null);
   const scheduleFlush = useCallback(() => {
     if (visualFlushRef.current !== null) return;
     const pending = {};
@@ -405,6 +466,8 @@ export function useUniPadEngine() {
     queueMicrotask(() => {
       if (visualFlushRef.current !== pending) return;
       visualFlushRef.current = null;
+      // Lights released later in an interrupted task (held pads, keys) are drawn by its cleanup.
+      if (pendingInterruptionClearRef.current) return;
       flushSync(flushVisualState);
     });
   }, [flushVisualState]);
@@ -425,7 +488,7 @@ export function useUniPadEngine() {
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
     if (cm) {
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
       refreshAllChains();
     }
     syncMidiFunctionLeds();
@@ -466,6 +529,46 @@ export function useUniPadEngine() {
     setChain(c);
   }, [setChain]);
 
+  const applyVolumeLevel = useCallback((level: number) => {
+    const next = clampVolumeLevel(level);
+    volumeLevelRef.current = next;
+    soundEngineRef.current?.setVolume(next, MAX_VOLUME_LEVEL);
+    setState((prev) => ({ ...prev, volumeLevel: next }));
+  }, []);
+
+  const applyWatermark = useCallback((enabled: boolean) => {
+    watermarkRef.current = enabled;
+    setState((prev) => ({ ...prev, watermark: enabled }));
+  }, []);
+
+  const readPlayPreferences = useCallback(() => {
+    playPreferencesReadRef.current ??= Promise.allSettled(PLAY_PREFERENCE_KEYS.map((key) => getSetting(key)))
+      .then((results) => {
+        const saved = (key: PlayPreferenceKey) => {
+          if (chosenPlayPreferencesRef.current.has(key)) return null;
+          const result = results[PLAY_PREFERENCE_KEYS.indexOf(key)];
+          return result.status === 'fulfilled' ? result.value : null;
+        };
+        const volumeLevel = parseVolumeLevel(saved('volumeLevel'));
+        if (volumeLevel !== null) applyVolumeLevel(volumeLevel);
+        const watermark = parseBoolean(saved('watermark'));
+        if (watermark !== null) applyWatermark(watermark);
+        const slideMode = parseBoolean(saved('slideMode'));
+        const traceLogStyle = parseTraceLogStyle(saved('traceLogStyle'));
+        setState((prev) => ({
+          ...prev,
+          slideMode: slideMode ?? prev.slideMode,
+          traceLogStyle: traceLogStyle ?? prev.traceLogStyle,
+        }));
+      });
+    return playPreferencesReadRef.current;
+  }, [applyVolumeLevel, applyWatermark]);
+
+  const choosePlayPreference = useCallback((key: PlayPreferenceKey, value: string) => {
+    chosenPlayPreferencesRef.current.add(key);
+    setSetting(key, value).catch(() => {});
+  }, []);
+
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
   const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
     if (document.hidden || keyboardBlockedRef.current || (interruptedRef.current && autoPlayRunnerRef.current?.active)) return;
@@ -477,11 +580,10 @@ export function useUniPadEngine() {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
-    // Player contacts share the latest press until their last release; autoplay owns its press separately.
-    const owner = input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
-    se?.soundOn(x, y, owner);
-    lr?.eventOn(x, y, eventAt, owner);
+    // Each contact owns its sound and pack lights; only the pressed overlay shares holds.
+    if (input === AUTO_PLAY_INPUT) autoPlayPadsRef.current.add(`${x},${y}`);
+    se?.soundOn(x, y, input);
+    lr?.eventOn(x, y, eventAt, input);
     recorderRef.current.recordOn(x, y);
 
     if (traceLogRef.current) {
@@ -530,10 +632,9 @@ export function useUniPadEngine() {
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    const owner = input === undefined ? undefined : input === AUTO_PLAY_INPUT ? AUTO_PLAY_INPUT : PLAYER_INPUT;
-    if (owner === AUTO_PLAY_INPUT || owner === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
-    se?.soundOff(x, y, owner);
-    lr?.eventOff(x, y, eventAt, owner);
+    if (input === AUTO_PLAY_INPUT || input === undefined) autoPlayPadsRef.current.delete(`${x},${y}`);
+    se?.soundOff(x, y, input);
+    lr?.eventOff(x, y, eventAt, input);
     recorderRef.current.recordOff(x, y);
 
     if (playerHoldsRef.current.isHeld(x, y) || autoPlayPadsRef.current.has(`${x},${y}`)) return;
@@ -555,7 +656,6 @@ export function useUniPadEngine() {
   /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
   const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
     const releasesAutoPlay = playerHoldsRef.current.release(x, y);
-    if (playerHoldsRef.current.isHeld(x, y)) return;
     padTouchOff(x, y, releasesAutoPlay ? undefined : input);
   }, [padTouchOff]);
 
@@ -579,6 +679,13 @@ export function useUniPadEngine() {
     applyMidiStatus(status);
   }, [releaseControllerPads, applyMidiStatus]);
 
+  /** Runs the cleanup an interruption left for a later task now, before playback is restored. */
+  const settleInterruption = useCallback(() => {
+    const clear = pendingInterruptionClearRef.current;
+    pendingInterruptionClearRef.current = null;
+    clear?.();
+  }, []);
+
   /** While a dialog is open its keys (Space on a button, typing, clicks on its text leaving focus on
    *  the body) must not play pads, switch chains or toggle auto-play behind it. Pads held when it
    *  opens are released, since their keyup may land in the dialog. */
@@ -586,11 +693,12 @@ export function useUniPadEngine() {
     keyboardBlockedRef.current = blocked;
     if (blocked) interruptPlaybackRef.current();
     else if (!document.hidden) {
+      settleInterruption();
       void soundEngineRef.current?.setSuspended(false).catch(() => {});
       requestScreenWakeLock();
       syncMidiStateToDevice();
     }
-  }, [requestScreenWakeLock, syncMidiStateToDevice]);
+  }, [settleInterruption, requestScreenWakeLock, syncMidiStateToDevice]);
 
   // Keyboard input handler
   useEffect(() => {
@@ -710,15 +818,8 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, refreshChain, scheduleFlush]);
 
-  const interruptPlayback = useCallback(() => {
-    const interruptedAt = performance.now();
-    interruptedRef.current = true;
-    interruptionRevisionRef.current++;
-    const sound = soundEngineRef.current;
-    // Mute first, before callbacks or rendering can delay the request.
-    void sound?.setSuspended(true).catch(() => {});
-    sound?.stopAll();
-    autoPlayRunnerRef.current?.setSuspended(true, 0, interruptedAt);
+  /** Clears what an interruption left on the screen and the controller. */
+  const clearInterruptedOutput = useCallback(() => {
     autoPlayRunnerRef.current?.clearGuideOutput();
     ledRunnerRef.current?.stop();
     playerHoldsRef.current.clear();
@@ -732,12 +833,29 @@ export function useUniPadEngine() {
     autoPlayRemoveGuide();
     setState(prev => ({ ...prev, autoPlayPlaying: false }));
     midiRef.current?.clearAllLeds();
+  }, [padTouchOff, ledInit, autoPlayRemoveGuide]);
+
+  const interruptPlayback = useCallback(() => {
+    const interruptedAt = performance.now();
+    interruptedRef.current = true;
+    interruptionRevisionRef.current++;
+    const sound = soundEngineRef.current;
+    // Mute first, before callbacks or rendering can delay the request.
+    void sound?.setSuspended(true).catch(() => {});
+    sound?.stopAll();
+    autoPlayRunnerRef.current?.setSuspended(true, 0, interruptedAt);
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
-  }, [padTouchOff, ledInit, autoPlayRemoveGuide]);
+    // Firefox passes audio changes to its audio thread only when the current task ends, so this task
+    // stops at the mute and the lights are cleared in the next one. Autoplay is frozen meanwhile.
+    if (pendingInterruptionClearRef.current) return;
+    pendingInterruptionClearRef.current = clearInterruptedOutput;
+    inNextTask(settleInterruption);
+  }, [clearInterruptedOutput, settleInterruption]);
   interruptPlaybackRef.current = interruptPlayback;
 
   const activatePlaybackAudio = useCallback(async () => {
+    settleInterruption();
     if (document.hidden || keyboardBlockedRef.current) return false;
     const revision = ++interruptionRevisionRef.current;
     const sound = soundEngineRef.current;
@@ -747,7 +865,7 @@ export function useUniPadEngine() {
       !document.hidden && !keyboardBlockedRef.current && sound.context.state === 'running';
     if (ready) requestScreenWakeLock();
     return ready;
-  }, [requestScreenWakeLock]);
+  }, [settleInterruption, requestScreenWakeLock]);
 
   const applyModeFlags = useCallback((runner: InstanceType<typeof AutoPlayRunner>, targetMode: PlayMode) => {
     if (targetMode === 'autoPlay' || targetMode === 'guidePlay') {
@@ -766,10 +884,7 @@ export function useUniPadEngine() {
     const unipack = unipackRef.current;
     const prev = stateRef.current;
 
-    const currentMode: PlayMode = !prev.autoPlayEnabled ? 'none'
-      : !prev.practiceMode ? 'autoPlay'
-      : !prev.stepPractice ? 'guidePlay'
-      : 'stepPractice';
+    const currentMode = playModeOf(prev);
 
     const mode = targetMode === currentMode ? 'none' : targetMode;
     if (mode === 'autoPlay') usageTracker.autoplayStarted();
@@ -784,7 +899,7 @@ export function useUniPadEngine() {
       padInit();
       ledInit();
       autoPlayRemoveGuide();
-      const feedback = feedbackPreferenceRef.current ?? !unipack?.keyLedExist;
+      const feedback = !unipack?.keyLedExist;
       feedbackLightRef.current = feedback;
       setState((s) => ({
         ...s,
@@ -833,10 +948,7 @@ export function useUniPadEngine() {
 
   /** none -> autoPlay -> guidePlay -> stepPractice -> none, as Android's cyclePlayMode. */
   const cyclePlayMode = useCallback(() => {
-    const current: PlayMode = !stateRef.current.autoPlayEnabled ? 'none'
-      : !stateRef.current.practiceMode ? 'autoPlay'
-      : !stateRef.current.stepPractice ? 'guidePlay'
-      : 'stepPractice';
+    const current = playModeOf(stateRef.current);
     const next: PlayMode = current === 'none' ? 'autoPlay'
       : current === 'autoPlay' ? 'guidePlay'
       : current === 'guidePlay' ? 'stepPractice'
@@ -906,8 +1018,9 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current?.progressOffset(40);
   }, [padInit, ledInit, autoPlayRemoveGuide]);
 
-  const unload = useCallback(() => {
-    usageTracker.unloaded();
+  /** Lets go of the open pack's audio, runners, controller and screen lock; the state is the caller's. */
+  const releasePack = useCallback(() => {
+    pendingInterruptionClearRef.current = null;
     interruptionRevisionRef.current++;
     interruptedRef.current = false;
     soundEngineRef.current?.destroy();
@@ -930,9 +1043,16 @@ export function useUniPadEngine() {
     autoPlayRunnerRef.current = null;
     channelManagerRef.current = null;
     unipackRef.current = null;
+    autoPlayBackupRef.current = null;
     midiRef.current?.release();
     midiRef.current = null;
     midiListenerRef.current = null;
+  }, []);
+
+  const unload = useCallback(() => {
+    usageTracker.unloaded();
+    loadRevisionRef.current++;
+    releasePack();
     setState((prev) => {
       if (prev.theme) releaseThemeUrls(prev.theme);
       return {
@@ -951,8 +1071,9 @@ export function useUniPadEngine() {
         autoMappingActive: false,
         autoMappingProgress: 0,
         autoMappingTotal: 0,
+        autoPlayRestoring: false,
+        autoPlayBackupAvailable: false,
         hideUI: false,
-        watermark: true,
         chain: 0,
         loaded: false,
         loading: false,
@@ -968,17 +1089,32 @@ export function useUniPadEngine() {
         theme: getDefaultTheme(),
       };
     });
-  }, [usageTracker]);
+  }, [usageTracker, releasePack]);
 
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer) => {
+  /**
+   * Opens a pack; `savedAutoPlay` is the autoPlay stored for it, played in place of the archive's.
+   * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
+   * when a later load or a quit replaced this one: the player belongs to that, so leave it alone.
+   */
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay): Promise<boolean | null> => {
     unload();
+    // A later load or a quit unloads this one, and that unload already destroyed the sound engine
+    // this load made. Going on would set up a second pack whose keyboard and timers nobody owns.
+    const revision = loadRevisionRef.current;
+    const superseded = () => revision !== loadRevisionRef.current;
+    const playPreferences = readPlayPreferences();
 
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
 
     try {
       const unipack = await parseUniPack(zipData, (phase) => {
-        setState((prev) => ({ ...prev, loadPhase: phase }));
+        if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
       });
+      // Nothing plays before a lowered volume is known: opening a pack must not raise it.
+      await playPreferences;
+      if (superseded()) return null;
+      if (savedAutoPlay && unipack.autoPlay) unipack.autoPlay = { elements: savedAutoPlay.current };
+      autoPlayBackupRef.current = savedAutoPlay && unipack.autoPlay ? savedAutoPlay.backup : null;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1005,7 +1141,7 @@ export function useUniPadEngine() {
       chainRef.current = 0;
       cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
       for (const [c, code] of WATERMARK_LEDS) cm.add(-1, c, Channel.UI_UNIPAD, -1, code);
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && stateRef.current.watermark);
+      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
@@ -1016,6 +1152,7 @@ export function useUniPadEngine() {
         () => chainRef.current,
         setChain,
         (loaded, total) => {
+          if (superseded()) return;
           setState((prev) => ({
             ...prev,
             loadProgress: Math.round((loaded / total) * 100),
@@ -1025,13 +1162,13 @@ export function useUniPadEngine() {
       );
       soundEngineRef.current = soundEngine;
       const failedSounds = await soundEngine.load();
-      soundEngine.setVolume(volumeLevelRef.current, 7);
+      if (superseded()) return null;
+      soundEngine.setVolume(volumeLevelRef.current, MAX_VOLUME_LEVEL);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
       const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
       if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        setState((prev) => ({ ...prev, errors: [...prev.errors, ...soundWarnings], criticalError: true }));
-        return;
+        throw new Error(soundWarnings[0]);
       }
 
       const ledListener: LedRunnerListener = {
@@ -1076,11 +1213,7 @@ export function useUniPadEngine() {
       if (unipack.autoPlayExist && unipack.autoPlay) {
         const autoPlayListener: AutoPlayListener = {
           onStart: () => {
-            const current = stateRef.current;
-            const startingMode: PlayMode = !current.autoPlayEnabled ? 'none'
-              : !current.practiceMode ? 'autoPlay'
-              : !current.stepPractice ? 'guidePlay'
-              : 'stepPractice';
+            const startingMode = playModeOf(stateRef.current);
 
             if (startingMode === 'stepPractice') {
               autoPlayRunnerRef.current?.pause();
@@ -1158,7 +1291,7 @@ export function useUniPadEngine() {
               for (let y = 0; y < unipack.info.buttonY; y++) padTouchOff(x, y, AUTO_PLAY_INPUT);
             }
             autoPlayRemoveGuide();
-            const feedback = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
+            const feedback = !unipack.keyLedExist;
             feedbackLightRef.current = feedback;
             setState((prev) => ({
               ...prev,
@@ -1199,7 +1332,7 @@ export function useUniPadEngine() {
       }
 
       // Android initSetting(): keyLedExist에 따라 초기 상태 설정
-      const initFeedbackLight = feedbackPreferenceRef.current ?? !unipack.keyLedExist;
+      const initFeedbackLight = !unipack.keyLedExist;
       const initLedEnabled = unipack.keyLedExist;
       feedbackLightRef.current = initFeedbackLight;
 
@@ -1211,6 +1344,7 @@ export function useUniPadEngine() {
           loading: false,
           loadPhase: '',
           unipack,
+          autoPlayBackupAvailable: autoPlayBackupRef.current !== null,
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
@@ -1302,18 +1436,25 @@ export function useUniPadEngine() {
         profile: midiProfileRef.current,
         onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
       });
+      return true;
     } catch (err) {
+      if (superseded()) return null;
       console.error('Failed to load UniPack:', err);
       usageTracker.packLoadFailed();
+      // A pack that did not open must not keep its audio or count as open for the screen lock.
+      releasePack();
       setState((prev) => ({
         ...prev,
         loading: false,
         criticalError: true,
         errors: [err instanceof Error ? err.message : String(err)],
       }));
+      return false;
     }
   }, [
     unload,
+    releasePack,
+    readPlayPreferences,
     setChain,
     selectChain,
     usageTracker,
@@ -1336,30 +1477,9 @@ export function useUniPadEngine() {
     setState((prev) => ({ ...prev, feedbackLight: enabled }));
   }, [padInit]);
 
-  const setFeedbackLight = useCallback((enabled: boolean) => {
-    feedbackChoiceRevisionRef.current++;
-    feedbackPreferenceRef.current = enabled;
-    applyFeedbackLight(enabled);
-    // Only a direct screen, keyboard or controller choice reaches this write.
-    setSetting('feedbackLight', String(enabled)).catch(() => {});
-  }, [applyFeedbackLight]);
-
-  useEffect(() => {
-    if (!state.loaded || !state.unipack) return;
-    // A choice in this session is newer than any read, including one racing its pending write.
-    if (feedbackChoiceRevisionRef.current > 0) return;
-    let cancelled = false;
-    const revision = feedbackChoiceRevisionRef.current;
-    const pack = state.unipack;
-    void getSetting('feedbackLight').then(value => {
-      if (cancelled || revision !== feedbackChoiceRevisionRef.current) return;
-      const preference = value === 'true' ? true : value === 'false' ? false : null;
-      feedbackPreferenceRef.current = preference;
-      // A read may complete during a mode. Keep its temporary light until exit.
-      if (!autoPlayRunnerRef.current?.active) applyFeedbackLight(preference ?? !pack.keyLedExist);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [state.loaded, state.unipack, applyFeedbackLight]);
+  /** Not saved: each pack opens, and each auto-play ends, with the pack's own rule (light off
+   *  when the pack has its own lights), so a choice lasts until then. */
+  const setFeedbackLight = applyFeedbackLight;
 
   const toggleFeedbackLight = useCallback(() => {
     setFeedbackLight(!feedbackLightRef.current);
@@ -1367,11 +1487,9 @@ export function useUniPadEngine() {
   toggleFeedbackLightRef.current = toggleFeedbackLight;
 
   const setVolumeLevel = useCallback((level: number) => {
-    const next = Math.max(0, Math.min(7, level));
-    volumeLevelRef.current = next;
-    soundEngineRef.current?.setVolume(next, 7);
-    setState((prev) => ({ ...prev, volumeLevel: next }));
-  }, []);
+    applyVolumeLevel(level);
+    choosePlayPreference('volumeLevel', String(volumeLevelRef.current));
+  }, [applyVolumeLevel, choosePlayPreference]);
   setVolumeLevelRef.current = setVolumeLevel;
 
   const toggleLed = useCallback(() => {
@@ -1425,13 +1543,24 @@ export function useUniPadEngine() {
   toggleHideUiRef.current = toggleHideUI;
 
   const setWatermark = useCallback((enabled: boolean) => {
-    setState((prev) => ({ ...prev, watermark: enabled }));
-  }, []);
+    applyWatermark(enabled);
+    choosePlayPreference('watermark', String(enabled));
+  }, [applyWatermark, choosePlayPreference]);
 
   const toggleWatermark = useCallback(() => {
-    setState((prev) => ({ ...prev, watermark: !prev.watermark }));
-  }, []);
+    setWatermark(!watermarkRef.current);
+  }, [setWatermark]);
   toggleWatermarkRef.current = toggleWatermark;
+
+  const setSlideMode = useCallback((enabled: boolean) => {
+    setState((prev) => ({ ...prev, slideMode: enabled }));
+    choosePlayPreference('slideMode', String(enabled));
+  }, [choosePlayPreference]);
+
+  const setTraceLogStyle = useCallback((style: TraceLogStyle) => {
+    setState((prev) => ({ ...prev, traceLogStyle: style }));
+    choosePlayPreference('traceLogStyle', style);
+  }, [choosePlayPreference]);
 
   const toggleProLightMode = useCallback(() => {
     const cm = channelManagerRef.current;
@@ -1514,14 +1643,21 @@ export function useUniPadEngine() {
     applyChainSelectionVisibility();
   }, [applyChainSelectionVisibility, releaseControllerPads]);
 
-  const loadTheme = useCallback(async (zipData: ArrayBuffer) => {
+  const loadTheme = useCallback(async (zipData: ArrayBuffer, isCurrent: () => boolean = () => true) => {
+    const revision = loadRevisionRef.current;
+    const superseded = () => revision !== loadRevisionRef.current || !isCurrent();
     try {
       const theme = await loadThemeFromZip(zipData);
+      if (superseded()) {
+        releaseThemeUrls(theme);
+        return;
+      }
       setState((prev) => {
         if (prev.theme) releaseThemeUrls(prev.theme);
         return { ...prev, theme };
       });
     } catch (err) {
+      if (superseded()) return;
       console.error('Failed to load theme:', err);
       const defaultTheme = getDefaultTheme();
       setState((prev) => {
@@ -1532,60 +1668,94 @@ export function useUniPadEngine() {
     }
   }, []);
 
-  const startAutoMapping = useCallback(() => {
-    const unipack = unipackRef.current;
-    if (!unipack || !unipack.autoPlay) return;
+  /** Plays `autoPlay` from now on, keeping its backup for restoring. */
+  const installAutoPlay = useCallback((unipack: UniPackData, autoPlay: StoredAutoPlay) => {
+    unipack.autoPlay = { elements: autoPlay.current };
+    autoPlayBackupRef.current = autoPlay.backup;
 
-    setState((prev) => ({ ...prev, autoMappingActive: true, autoMappingProgress: 0, autoMappingTotal: 0 }));
+    const runner = autoPlayRunnerRef.current;
+    const listener = autoPlayListenerRef.current;
+    const soundEngine = soundEngineRef.current;
+    if (runner && listener && soundEngine) {
+      runner.stop();
+      const newRunner = new AutoPlayRunner(
+        unipack,
+        listener,
+        () => chainRef.current,
+        setChain,
+        (c, x, y, num) => soundEngine.soundPushToNum(c, x, y, num),
+        (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
+        playbackTicker.current!,
+      );
+      newRunner.setSuspended(document.hidden);
+      autoPlayRunnerRef.current = newRunner;
+    }
 
-    autoPlayMap(unipack.autoPlay, unipack.soundTable, {
-      onStart: () => {},
-      onGetWorkSize: (size) => {
-        setState((prev) => ({ ...prev, autoMappingTotal: size }));
-      },
-      onProgress: (progress) => {
-        setState((prev) => ({ ...prev, autoMappingProgress: progress }));
-      },
-      onDone: (mappedAutoPlay) => {
-        unipack.autoPlay = mappedAutoPlay;
-        unipackRef.current = unipack;
-
-        const runner = autoPlayRunnerRef.current;
-        const listener = autoPlayListenerRef.current;
-        if (runner && listener) {
-          runner.stop();
-          const soundEngine = soundEngineRef.current;
-          if (soundEngine) {
-            const soundPushToNum = (c: number, x: number, y: number, num: number) => {
-              soundEngine.soundPushToNum(c, x, y, num);
-            };
-            const newRunner = new AutoPlayRunner(
-              unipack,
-              listener,
-              () => chainRef.current,
-              setChain,
-              soundPushToNum,
-              (c, x, y, num) => ledPushToNum(unipack, c, x, y, num),
-              playbackTicker.current!,
-            );
-            newRunner.setSuspended(document.hidden);
-            autoPlayRunnerRef.current = newRunner;
-          }
-        }
-
-        setState((prev) => ({ ...prev, autoMappingActive: false, unipack }));
-      },
-      onError: (error) => {
-        console.error('Auto mapping failed:', error);
-        setState((prev) => ({ ...prev, autoMappingActive: false }));
-      },
-    });
+    setState((prev) => ({
+      ...prev,
+      unipack,
+      autoPlayTotal: autoPlay.current.length,
+      autoPlayProgress: 0,
+      autoPlayBackupAvailable: true,
+    }));
   }, [setChain]);
+
+  /**
+   * Replaces the open pack's autoPlay with what `next` makes of it. Playback stops first and one
+   * change runs at a time. The new autoPlay is used only after `persist` stored it, so a failed
+   * save leaves the pack playing the autoPlay it had.
+   */
+  const editAutoPlay = useCallback(async (
+    next: (unipack: UniPackData, autoPlay: AutoPlay) => Promise<StoredAutoPlay | null>,
+    persist: PersistAutoPlay,
+    busy: 'autoMappingActive' | 'autoPlayRestoring',
+  ): Promise<AutoPlayEditResult> => {
+    const unipack = unipackRef.current;
+    const autoPlay = unipack?.autoPlay;
+    if (!unipack || !autoPlay || autoPlayEditingRef.current) return 'cancelled';
+    autoPlayEditingRef.current = true;
+    setState((prev) => ({ ...prev, [busy]: true }));
+    try {
+      if (stateRef.current.autoPlayEnabled) await switchPlayMode(playModeOf(stateRef.current));
+      const edited = await next(unipack, autoPlay);
+      if (!edited || unipackRef.current !== unipack) return 'cancelled';
+      await persist(edited);
+      if (unipackRef.current !== unipack) return 'cancelled';
+      installAutoPlay(unipack, edited);
+      return 'saved';
+    } catch (error) {
+      console.error('Saving the autoPlay failed:', error);
+      return 'failed';
+    } finally {
+      autoPlayEditingRef.current = false;
+      setState((prev) => ({ ...prev, [busy]: false }));
+    }
+  }, [switchPlayMode, installAutoPlay]);
+
+  /** Auto mapping: the current autoPlay becomes the backup of the mapped one. */
+  const startAutoMapping = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (unipack, autoPlay) => {
+    setState((prev) => ({ ...prev, autoMappingProgress: 0, autoMappingTotal: 0 }));
+    const mapped = await new Promise<AutoPlay>((resolve, reject) => autoPlayMap(autoPlay, unipack.soundTable, {
+      onStart: () => {},
+      onGetWorkSize: (size) => setState((prev) => ({ ...prev, autoMappingTotal: size })),
+      onProgress: (progress) => setState((prev) => ({ ...prev, autoMappingProgress: progress })),
+      onDone: resolve,
+      onError: reject,
+    }));
+    return { current: mapped.elements, backup: autoPlay.elements };
+  }, persist, 'autoMappingActive'), [editAutoPlay]);
+
+  /** Swaps the current autoPlay with its backup, so restoring again swaps them back. */
+  const restoreAutoPlay = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (_unipack, autoPlay) => {
+    const backup = autoPlayBackupRef.current;
+    return backup ? { current: backup, backup: autoPlay.elements } : null;
+  }, persist, 'autoPlayRestoring'), [editAutoPlay]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) interruptPlayback();
       else {
+        settleInterruption();
         ledRunnerRef.current?.setSuspended(false);
         requestScreenWakeLock();
         // Restoring an audio connection never releases the sequencer or restores old sources.
@@ -1594,8 +1764,14 @@ export function useUniPadEngine() {
       }
     };
     const handleBlur = () => interruptPlayback();
+    // A page being left runs no later task, so its lights and the controller are cleared at once.
+    const handlePageHide = () => {
+      interruptPlayback();
+      settleInterruption();
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     const restoreVisibleAudio = () => {
+      settleInterruption();
       if (document.hidden || keyboardBlockedRef.current || !interruptedRef.current) return;
       const sound = soundEngineRef.current;
       const revision = interruptionRevisionRef.current;
@@ -1617,9 +1793,10 @@ export function useUniPadEngine() {
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
-    window.addEventListener('pagehide', handleBlur);
+    window.addEventListener('pagehide', handlePageHide);
     const revisionRef = interruptionRevisionRef;
     return () => {
+      settleInterruption();
       revisionRef.current++;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
@@ -1627,12 +1804,14 @@ export function useUniPadEngine() {
       }
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('pagehide', handleBlur);
+      window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [interruptPlayback, requestScreenWakeLock, syncMidiStateToDevice]);
+  }, [interruptPlayback, settleInterruption, requestScreenWakeLock, syncMidiStateToDevice]);
 
   useEffect(() => {
+    const revisionRef = loadRevisionRef;
     return () => {
+      revisionRef.current++;
       soundEngineRef.current?.destroy();
       ledRunnerRef.current?.stop();
       autoPlayRunnerRef.current?.stop();
@@ -1663,7 +1842,9 @@ export function useUniPadEngine() {
     toggleHideUI,
     toggleWatermark,
     setWatermark,
+    setSlideMode,
     toggleTraceLog,
+    setTraceLogStyle,
     clearTraceLog,
     toggleProLightMode,
     loadTheme,
@@ -1675,5 +1856,6 @@ export function useUniPadEngine() {
     setVolumeLevel,
     resumeAudio: () => soundEngineRef.current?.resume(),
     startAutoMapping,
+    restoreAutoPlay,
   };
 }

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 
 // Newest first: the list sorts by the date a pack was added.
@@ -57,13 +58,15 @@ for (const [method, ascending, titles] of sortCases) {
         request.onerror = () => reject(request.error);
       });
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction('unipacks', 'readwrite');
-        const store = tx.objectStore('unipacks');
+        const tx = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const store = tx.objectStore('unipackMetadata');
+        const archive = tx.objectStore('unipacks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
           const records = request.result;
           const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
           records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
+          tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
           store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
@@ -307,8 +310,9 @@ async function openLongList(page: Page, square: boolean) {
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('unipacks', 'readwrite');
-      const store = transaction.objectStore('unipacks');
+      const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+      const store = transaction.objectStore('unipackMetadata');
+      const archive = transaction.objectStore('unipacks').getAll();
       const request = store.getAll();
       request.onsuccess = () => {
         const template = request.result[0];
@@ -318,6 +322,7 @@ async function openLongList(page: Page, square: boolean) {
           return;
         }
         for (let index = 0; index < 12; index++) {
+          transaction.objectStore('unipacks').put({ ...archive.result[0], id: `local-${index}` });
           store.put({ ...template, id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
         }
       };
@@ -328,6 +333,14 @@ async function openLongList(page: Page, square: boolean) {
   });
   await page.goto('/play');
   await expect(list(page).getByRole('option')).toHaveCount(13);
+}
+
+// A resized page lays out at once but reaches the screen later; WebKit can drop a wheel sent before
+// the new layout is drawn. Wait until the page has the new size, then for two drawn frames.
+async function resize(page: Page, viewport: { width: number; height: number }) {
+  await page.setViewportSize(viewport);
+  await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
@@ -377,8 +390,9 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   ).length)).toBe(0);
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
-  await page.setViewportSize(viewport);
+  // The list is back before the resize, so the drawn frames below include its new layout.
   await expect(list(page).getByRole('option')).toHaveCount(13);
+  await resize(page, viewport);
 }
 
 for (const square of [true, false]) {
@@ -387,7 +401,7 @@ for (const square of [true, false]) {
       test.setTimeout(60_000);
       await openLongList(page, square);
       const viewport = { width, height };
-      await page.setViewportSize(viewport);
+      await resize(page, viewport);
       await info.attach('list-before-scroll', { body: await page.screenshot(), contentType: 'image/png' });
       const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
@@ -419,3 +433,45 @@ test('a single saved pack keeps detail playback visible in a tall phone viewport
   await play.click();
   await expectPads(page);
 });
+
+for (const action of ['opening', 'bookmarking'] as const) {
+  test(`saved pack ${action} handles an aborted metadata write`, async ({ page }, info) => {
+    await openList(page, [packs[0][0]]);
+    const before = await storedPackRecords(page);
+    await page.evaluate(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (...args) {
+        const request = put.apply(this, args);
+        if (this.name === 'unipackMetadata') {
+          request.addEventListener('success', () => {
+            // Native rollback after put succeeds, before its transaction commits.
+            this.transaction.abort();
+            document.documentElement.dataset.abortedPackWrite = 'true';
+          }, { once: true });
+        }
+        return request;
+      };
+    });
+    await info.attach('before-aborted-write', { body: await page.screenshot(), contentType: 'image/png' });
+    try {
+      if (action === 'opening') {
+        await page.getByRole('button', { name: 'Play', exact: true }).click();
+        await expectPads(page);
+        await expect(page).toHaveURL(/\/play\?pack=.+/);
+        const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+        await page.locator('[data-pad="0,0"]').click();
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
+      } else {
+        const bookmark = page.getByRole('button', { name: 'Add bookmark', exact: true });
+        await bookmark.click();
+        await expect(bookmark).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Remove bookmark', exact: true })).toHaveCount(0);
+      }
+      await expect(page.locator('html')).toHaveAttribute('data-aborted-pack-write', 'true');
+      const after = await storedPackRecords(page);
+      expect(after).toEqual(before);
+    } finally {
+      await info.attach('after-aborted-write', { body: await page.screenshot(), contentType: 'image/png' });
+    }
+  });
+}

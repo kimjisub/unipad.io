@@ -70,10 +70,12 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts` and `e2e/offline-play.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, and `e2e/sound-formats.spec.ts` in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
-workflow runs only `e2e/play.spec.ts` on Windows 2025 with Chromium and the installed
-Chrome and Edge channels; failures fail their jobs, with no retries. None of these
+workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+on Windows 2025 with Chromium and the installed Chrome and Edge channels;
+failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
 GitHub records each step's duration; each job summary records elapsed time from setup
@@ -212,8 +214,8 @@ Tests have zero retries and `test.only` is forbidden.
 `play.spec.ts` covers import/reload, pointer and keyboard input, keyLed, chain
 changes while holding a loop, auto-play, quitting, MIDI capability and audio RMS.
 It runs on Chromium, WebKit and Firefox locally. Chromium runs the full suite;
-WebKit also runs the existing portable page/layout tests. Firefox is scoped to
-playback; exploratory page failures are investigated separately. Firefox allows
+WebKit and Firefox also run the shared multi-touch and page/layout files, with
+explicit skips for unsupported test capabilities. Firefox allows
 90 seconds overall for page setup and playback. Pack-open assertions use the
 shared 15-second state limit from `expectPads`, including import and reload.
 A missing saved pack fails the pad-count assertion with the observed value,
@@ -225,9 +227,14 @@ Native multi-touch CDP tests remain Chromium-only.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts --project=chromium --project=chrome --project=msedge
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge
 node scripts/playback-summary.mjs
 ```
+
+The machine needs an audio output device. GitHub's hosted Windows runners have none,
+so the workflow installs the Scream virtual sound card and starts Windows Audio first.
+Without an output, Firefox never starts Web Audio: the output-signal and auto-play
+tests then fail on "the browser did not start the audio output of the opened pack".
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,
@@ -323,3 +330,32 @@ the bottom and right edges play the mapped pad at four screen sizes.
 
 Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
 The default suite includes all these cases; the GitHub workflow is unchanged.
+
+### Saved pack storage
+
+IndexedDB version 2 keeps archive bytes in `unipacks` and the pack's small fields
+(including recent-open history, bookmarks and custom autoPlay) in `unipackMetadata`.
+Listing or updating these fields never reads or rewrites an archive. Saving,
+replacing and deleting a pack changes both stores in one transaction.
+
+The version 1 upgrade reads each legacy record once to copy its metadata. It does
+not rewrite or delete the original archive records. A failed or aborted upgrade
+rolls back all metadata copies and the database version; the next open retries.
+An already upgraded database needs a version 2 reader: reverting to code that
+explicitly opens version 1 will fail with `VersionError`. Keep the version 2
+reader when rolling back other changes.
+
+`e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
+transaction interruption, retry, existing theme/settings preservation and pack
+reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+For an optional large-pack measurement on macOS or Linux, run after building:
+
+```bash
+STORAGE_MEMORY_PROBE=1 pnpm test:e2e e2e/storage-memory.probe.spec.ts --project=chromium
+```
+
+The probe generates a 96 MiB archive containing 32 original PCM sounds, imports
+it normally, then compares opening with recent-history writes enabled or disabled
+three times each. Attachments include sampled CDP backing-store/heap sizes and
+renderer RSS from `ps`; the maximum is a sampled peak, not a memory limit or a
+measurement on a physical phone. The normal suite skips this diagnostic.

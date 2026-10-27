@@ -142,19 +142,43 @@ are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own 
 
 ### Open differences found by the corpus
 
-- **RUN-G616: iOS can change chain after autoPlay is turned off.** The retained
-  partial run records a real delayed sound-wormhole callback after the stop.
-  Its unchanged expected final checkpoint is empty; the observation is pinned
-  as a failure. RUN-G613 from the same run is excluded from app playback pins:
-  the harness writes a stored negative loop value even though the engine schedules
-  one playback. See the [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md)
-  for provenance, source references and the checks still needed on iOS.
+- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
+  Native input-path observations on application commit `208afb9e`, after
+  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
+  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
+  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
+  remain on until the last input releases. The older `777cc4a3` observations predate that input change
+  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
+  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
+  stored historical app copies remain separate from these observations. See the
+  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
+  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
+
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
 
+- **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
+  [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
+  mode-off path. A new asserting observation at application base `2827087ecbf1449ab8d5c55df22cd09610cc7e27`
+  with separately retained executor changes matches the unchanged expected final checkpoint `[]`.
+  Only the iOS pin is retired, producing the 382-case corpus `2223116e3a1612fcebed1d6c03e5075b3f0dbd1cd4bcffa12ff81b3e86c93d50`.
+  The original partial failure and the newer full run keep their own hashes and statuses. The full
+  run still failed (raw 374 pass, 3 fail, 5 unverified, exit 65), and is not a run on this regenerated
+  corpus. RUN-G613 remains an unpinned repeat-count observation error. See the
+  [source investigation](unipack-conformance/investigations/ios-playback-observations/README.md#corrected-callback-observation-2026-10-25)
+  and [result limits](unipack-conformance/RESULTS.md#ios-delayed-chain-callback-corrected-2026-10-25).
+
+- **RUN-G617, RUN-G618: the web play hook releases the later input's sound and lights immediately.**
+  The play hook preserves each input identity and handles each release while keeping the press
+  overlay until the final input. Both cases match the corrected expectations on application commit
+  `1dbf0f464611041a3da6db02ce6b2175b41e4dbf` with unchanged test input SHA256 `7ac226a8…`.
+  The two web pins are removed in regenerated corpus `cbb87354…` (`859e24aa…` together with the
+  iOS RUN-G616 pin, the resolved RUN-P001/RUN-P002 web pins and the sixteen web sound lookup pins
+  retired by [unipad.io#183](https://github.com/kimjisub/unipad.io/pull/183)); the earlier failure observations
+  keep their original commit and hash. No native or physical-output pass is claimed. See [RESULTS.md](unipack-conformance/RESULTS.md#web-input-owned-release-fix-2026-10-25).
 - **RUN-P001, RUN-P002: web trailing-wait observations match their existing expectations.**
   [unipad.io#178](https://github.com/kimjisub/unipad.io/pull/178), merged as
   `d8eb6ba516bf250a4894cc2b0f26edd5b9ee8291`, resolves the two web observations without
@@ -169,12 +193,14 @@ platform's own fix removes it.
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.
-  The app copy references now select that Android merge and
-  [unipad-ios#215](https://github.com/kimjisub/unipad-ios/pull/215): identical 214-case snapshots,
+  The app copy references now select that Android merge and iOS merge `e8ac34d…`
+  ([unipad-ios#213](https://github.com/kimjisub/unipad-ios/pull/213)): identical 214-case snapshots,
   SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
   The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
   app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
-- **Twelve G6 web playback differences now match their existing expectations.**
+- **Twelve G6 web playback differences matched their expectations at that revision.**
+  RUN-G617 and RUN-G618 have since received corrected input-owned release expectations and are
+  failed again before the input-owned release fix above. The following observation retains its original hash.
   [unipad.io#173](https://github.com/kimjisub/unipad.io/pull/173) fixes RUN-G601..605,
   RUN-G607..610 and RUN-G616..618. Their web failure pins were already retired in
   [unipad.io#165](https://github.com/kimjisub/unipad.io/pull/165). A rerun on the merged G6 main
