@@ -362,7 +362,8 @@ interface StartedSource { name: string; loop: boolean; stopAt: number | null; st
  * as they would in a browser.
  */
 class FakeAudioContext {
-  static decodeNames: string[] = [];
+  /** Each sound file's own bytes, which SoundEngine hands to the decoder, by archive name. */
+  static decodeNames = new Map<ArrayBuffer, string>();
   static started: StartedSource[] = [];
   /** Called when a started source is stopped at once, the first time only (a scheduled stop is not). */
   static onStopped: (source: StartedSource) => void = () => {};
@@ -373,7 +374,7 @@ class FakeAudioContext {
   async resume() {}
   async close() {}
   async decodeAudioData(data: ArrayBuffer) {
-    const name = FakeAudioContext.decodeNames.shift() ?? '?';
+    const name = FakeAudioContext.decodeNames.get(data) ?? '?';
     if (!looksLikeAudio(new Uint8Array(data))) throw new Error(`EncodingError: ${name} is not audio`);
     return { name, duration: 0.01 };
   }
@@ -413,7 +414,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
     clock.install();
     g.AudioContext = FakeAudioContext;
     FakeAudioContext.started = [];
-    FakeAudioContext.decodeNames = Array.from(pack.soundFiles.keys());
+    FakeAudioContext.decodeNames = new Map(Array.from(pack.soundFiles, ([name, bytes]) => [bytes, name]));
 
     let chain = 0;
     let events: Json[] = [];

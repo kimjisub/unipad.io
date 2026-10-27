@@ -23,7 +23,7 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
   await expectPads(page);
 }
 
-/** basic.uni with its only sound replaced by bytes no browser decodes, as a file to choose. */
+/** basic.uni with its only sound replaced by bytes that are no audio file, as a file to choose. */
 export async function undecodablePack() {
   const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
   zip.file('sounds/tone.wav', 'not audio');

@@ -82,13 +82,13 @@ for (const [index, [item, format, filename, bytes]] of formats.entries()) {
   });
 }
 
-test('a sound that cannot be decoded is silent once and the pad goes on to its next sound', async ({ page }) => {
+test('a sound file that cannot be read is silent once and the pad goes on to its next sound', async ({ page }) => {
   await loadPack(page, {
     keySound: '1 1 1 broken.wav\n1 1 1 tone.wav\n',
     'sounds/broken.wav': 'not audio',
   });
-  await expect(page.getByRole('alertdialog')).toContainText('1 audio file(s) failed to decode');
-  await page.getByRole('alertdialog').getByRole('button').click();
+  await expect(page.getByRole('status').filter({ hasText: '1 sound file cannot be read' })).toBeVisible();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(async () => (await audio(page)).decoded).toEqual([0.1]);
 
   await tap(page, '0,0');
@@ -106,20 +106,21 @@ function countLoadFailures(page: Page) {
 }
 
 const loadError = (page: Page) => page.getByRole('alertdialog', { name: 'Error', exact: true });
+const soundFailure = (page: Page) => page.getByRole('alertdialog', { name: 'Cannot open this pack’s sounds', exact: true });
 const totalPlays = (page: Page) => page.getByText('Total Plays', { exact: true }).locator('xpath=preceding-sibling::div');
 
-/** Leaves the error over the list and waits for the list to show again. */
+/** Leaves the notice of a pack whose sounds all failed and waits for the list to show again. */
 async function quitLoadError(page: Page) {
-  await loadError(page).getByRole('button', { name: 'Quit', exact: true }).click();
-  await expect(loadError(page)).toHaveCount(0);
+  await soundFailure(page).getByRole('button', { name: 'Pack list', exact: true }).click();
+  await expect(soundFailure(page)).toHaveCount(0);
 }
 
-test('a pack none of whose sounds decode ends loading with the reason and a way back to the list', async ({ page }, info) => {
+test('a pack none of whose sounds can be read ends loading with the reason and a way back to the list', async ({ page }, info) => {
   const count = countLoadFailures(page);
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   try {
-    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+    await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
     await expect(page.getByText(/Loading audio/)).toHaveCount(0);
   } finally {
     await info.attach('all-sounds-failed', { body: await page.screenshot(), contentType: 'image/png' });
@@ -133,7 +134,7 @@ test('a pack none of whose sounds decode ends loading with the reason and a way 
   await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('a saved pack none of whose sounds decode opens once from the list and counts one play', async ({ page }, info) => {
+test('a saved pack none of whose sounds can be read opens once from the list and counts one play', async ({ page }, info) => {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
@@ -144,7 +145,7 @@ test('a saved pack none of whose sounds decode opens once from the list and coun
   await expect(option).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Enter');
   try {
-    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+    await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   } finally {
     await info.attach('opened-from-list', { body: await page.screenshot(), contentType: 'image/png' });
   }
@@ -156,7 +157,7 @@ test('a saved pack none of whose sounds decode opens once from the list and coun
   await info.attach('after-quit', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('an address naming a saved pack none of whose sounds decode opens it once and drops the pack', async ({ page }, info) => {
+test('an address naming a saved pack none of whose sounds can be read opens it once and drops the pack', async ({ page }, info) => {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
@@ -164,7 +165,7 @@ test('an address naming a saved pack none of whose sounds decode opens it once a
   const count = countLoadFailures(page);
   await page.goto(`/play?pack=${encodeURIComponent(id)}`);
   try {
-    await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+    await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   } finally {
     await info.attach('opened-from-address', { body: await page.screenshot(), contentType: 'image/png' });
   }
@@ -175,16 +176,16 @@ test('an address naming a saved pack none of whose sounds decode opens it once a
   expect(count.failures).toBe(1);
 });
 
-test('a pack none of whose sounds decode, dropped over a playing pack, keeps its reason and leaves the address', async ({ page }, info) => {
+test('a pack none of whose sounds can be read, dropped over a playing pack, keeps its reason and leaves the address', async ({ page }, info) => {
   await loadPack(page, {});
   await expect(page).toHaveURL(/[?&]pack=/);
   const count = countLoadFailures(page);
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
-  await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   // The playing pack closed when the new one began to open; its address would open it over the reason.
   await expect(page).not.toHaveURL(/[?&]pack=/);
   await expect(page.locator('[data-pad]')).toHaveCount(0);
-  await expect(loadError(page)).toBeVisible();
+  await expect(soundFailure(page)).toBeVisible();
   await info.attach('dropped-over-playing', { body: await page.screenshot(), contentType: 'image/png' });
   await quitLoadError(page);
   expect(count.failures).toBe(1);
@@ -213,7 +214,7 @@ test('an archive that cannot be read, dropped over a playing pack, shows the rea
   expect(count.failures).toBe(1);
 });
 
-test('a pack none of whose sounds decode closes its audio when loading ends', async ({ page }) => {
+test('a pack none of whose sounds can be read closes its audio when loading ends', async ({ page }) => {
   await page.addInitScript(() => {
     const contexts: AudioContext[] = [];
     Reflect.set(window, 'audioContexts', contexts);
@@ -226,7 +227,7 @@ test('a pack none of whose sounds decode closes its audio when loading ends', as
   });
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
-  await expect(loadError(page)).toContainText('1 audio file(s) failed to decode');
+  await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   // A pack left behind would keep its audio and could hold the screen awake while the reason is shown.
   await expect.poll(() => page.evaluate(() =>
     (Reflect.get(window, 'audioContexts') as AudioContext[]).map(context => context.state))).toEqual(['closed']);
