@@ -52,7 +52,7 @@ stub('../../lib/unipack/index.ts', {
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
-    loaded: false, loading: false, errors: [], unipack: null, padStates: [], chainStates: [], traceLogSequence: [], theme: { images: {}, colors: {} },
+    loaded: false, loading: false, errors: [], soundLoadReport: null, unipack: null, padStates: [], chainStates: [], traceLogSequence: [], theme: { images: {}, colors: {} },
   });
   const revision = React.useRef(0);
   const unload = React.useCallback(() => {

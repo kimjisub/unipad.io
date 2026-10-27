@@ -39,7 +39,7 @@ stub('../../lib/unipack/index.ts', {
 let engine;
 function useTestEngine() {
   const [state, setState] = React.useState({
-    loaded: false, loading: false, errors: [], feedbackLight: true, watermark: true, volumeLevel: 7,
+    loaded: false, loading: false, errors: [], soundLoadReport: null, feedbackLight: true, watermark: true, volumeLevel: 7,
     slideMode: false, traceLog: false, traceLogStyle: 'numbers', chain: 0,
     unipack: null, padStates: [], chainStates: [], traceLogSequence: [], theme: { images: {}, colors: {} },
   });

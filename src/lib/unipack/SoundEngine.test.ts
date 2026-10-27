@@ -142,7 +142,8 @@ for (const scenario of cases) {
 }
 
 describe('SoundEngine', () => {
-  const UNDECODABLE = new Uint8Array([0x42, 0x41, 0x44]);
+  /** A well-formed file the fake decoder refuses, as a browser refuses a codec it lacks. */
+  const UNDECODABLE = Uint8Array.from([...SILENT_WAV.subarray(0, 44), 0x42, 0x41]);
 
   /** A pack whose sounds decode as the fake context says, with every source it starts. */
   async function engineFor(t: TestContext, keySound: string) {
@@ -157,7 +158,7 @@ describe('SoundEngine', () => {
       currentTime = 0;
       createGain() { return { gain: { value: 1 }, connect() {} }; }
       async decodeAudioData(data: ArrayBuffer) {
-        if (new Uint8Array(data)[0] === UNDECODABLE[0]) throw new Error('EncodingError');
+        if (new Uint8Array(data).at(-1) === UNDECODABLE.at(-1)) throw new Error('EncodingError');
         return { duration: 0.1 };
       }
       createBufferSource() { const node = new Source(() => 0, stops); sources.push(node); return node; }
@@ -187,7 +188,7 @@ describe('SoundEngine', () => {
 
   test('a sound that cannot be decoded is silent and the pad moves on to its next sound', async t => {
     const sound = await engineFor(t, '1 1 1 bad.wav\n1 1 1 a.wav');
-    assert.deepEqual(sound.failed, ['sounds/bad.wav']);
+    assert.deepEqual(sound.failed.failures.map(({ file, reason }) => [file, reason]), [['sounds/bad.wav', 'decode']]);
     sound.engine.soundOn(0, 0);
     assert.deepEqual(sound.played(), []);
     sound.engine.soundOn(0, 0);
