@@ -5,11 +5,11 @@ import { decision, pack } from './lib.mjs';
 
 const source = new URL('../../src/lib/unipack/__fixtures__/audio-safety/', import.meta.url);
 const manifest = readFileSync(new URL('cases.json', source));
-const MANIFEST_SHA256 = 'b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4';
+const MANIFEST_SHA256 = '08e51f9cf9ae53de55080e9bd560d1a3395f76fb544d7e24bd83ab6b6d3e1d76';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const jsonInput = input => ({ path: 'operation.json', text: JSON.stringify(input) });
 export function productCases() {
-  if (digest(manifest) !== MANIFEST_SHA256) throw new Error('shared audio admission revision 3 changed');
+  if (digest(manifest) !== MANIFEST_SHA256) throw new Error('shared audio admission revision 4 changed');
   const audio = JSON.parse(manifest);
   const cases = [];
   const add = (id, item, observation, title, files, expected, extra = {}) => cases.push({

@@ -229,12 +229,12 @@ test('a thrown read failure is final for duplicate identities and later files st
   assert.equal(result.reservedCost, 2n);
 });
 
-test('the common manifest is the unchanged third revision', () => {
+test('the common manifest is the pinned fourth revision', () => {
   assert.equal(
     createHash('sha256')
       .update(readFileSync(directory + 'cases.json'))
       .digest('hex'),
-    'b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4',
+    '08e51f9cf9ae53de55080e9bd560d1a3395f76fb544d7e24bd83ab6b6d3e1d76',
   );
 });
 const words = (...values) => {

@@ -510,16 +510,17 @@ current corpus and hash; historical pins never change what gets copied.
 
 ## Adopted product operations
 
-`product-cases.mjs` extends the same canonical corpus with 113 cases: 21 exact integer costs,
-76 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
-outputs and two trailing-wait observations. The resulting corpus has 382 cases. The nine PB items in
+`product-cases.mjs` extends the same canonical corpus with 122 cases: 21 exact integer costs,
+85 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
+outputs and two trailing-wait observations. The resulting corpus has 391 cases. The nine PB items in
 GRAMMAR.md state the adopted behavior. Their app-level confirmation remains limited: common operation
 results never certify interruption, screen input ownership, stored settings, atomic backup/restore,
 real decoding, device output or resource failures. Missing app evidence remains unverified.
 
-The audio inputs and expected values are the unchanged third shared admission revision from Android
-commit `cab0f17c373e6830c750c6f289d059c40907f4eb`, manifest SHA-256
-`b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`.
+The audio inputs and expected values are the fourth shared admission revision: the third revision
+from Android commit `cab0f17c373e6830c750c6f289d059c40907f4eb` plus nine rejected AIFF, AIFF-C, CAF
+and damaged MP3 inputs, manifest SHA-256
+`08e51f9cf9ae53de55080e9bd560d1a3395f76fb544d7e24bd83ab6b6d3e1d76`.
 The web fixture folder records its immutable source. The builder checks the manifest and every binary
 hash, includes the exact physical bytes in each SAFE-F case, and retains only inputs in operation.json.
 SAFE-C uses integer rate/channels/frame inputs; SAFE-W describes the same physical zero-PCM recipe,
