@@ -99,9 +99,10 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      # Downloads Chromium only on a cache miss; the system libraries are installed every run.
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      # Ubuntu 24.04 already supplies the libraries for headless Chromium.
+      # Keep its bundled browser version; download only on a cache miss, without changing system packages.
+      - name: Install Chromium browser from cache or download
+        run: pnpm exec playwright install chromium
       - name: Build
         run: pnpm build
       - name: Test playback, offline saved packs and sound formats
