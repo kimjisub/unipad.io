@@ -54,12 +54,15 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   const readme = read('README.md');
   const browser = job(workflow, 'browser-playback');
   assert.doesNotMatch(job(workflow, 'checks'), /playwright|test:e2e/);
+  assert.match(browser, /runs-on: ubuntu-24\.04/);
+  assert.match(browser, /timeout-minutes: 20/);
+  assert.doesNotMatch(browser, /--with-deps|install-deps|apt-get|apt install/, 'playback setup must not depend on Ubuntu package downloads');
   assert.match(browser, /NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https:\/\/unipad-browser-test\.firebaseio\.com'/);
   const steps = [
     `uses: ${setupAction}`,
-    'run: pnpm exec playwright install --with-deps chromium',
+    'run: pnpm exec playwright install chromium',
     'run: pnpm build',
-    'run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts',
+    'run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts',
     'uses: actions/upload-artifact@',
   ];
   let position = -1;
