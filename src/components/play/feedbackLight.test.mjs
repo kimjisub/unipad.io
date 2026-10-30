@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { afterEach, test } from 'node:test';
+import { afterEach, mock, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import JSZip from 'jszip';
 
@@ -37,7 +37,27 @@ stub('../../lib/unipack/index.ts', { ...real,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-afterEach(cleanup);
+afterEach(() => { cleanup(); mock.restoreAll(); });
+
+// Only playback time is controlled; parsing, React updates and pad rendering stay real.
+// A slow render must not finish the song before the test makes its in-play choice.
+function playbackClock() {
+  let now = 1000, nextId = 0;
+  const pending = new Map();
+  mock.method(performance, 'now', () => now);
+  mock.method(window, 'setTimeout', callback => {
+    const id = ++nextId;
+    pending.set(id, callback);
+    return id;
+  });
+  mock.method(window, 'clearTimeout', id => pending.delete(id));
+  return async ms => flush(() => {
+    now += ms;
+    const ready = [...pending.values()];
+    pending.clear();
+    for (const callback of ready) callback();
+  });
+}
 const flush = async action => act(async () => { await action?.(); await new Promise(resolve => setTimeout(resolve, 5)); });
 
 async function pack(keyLedExist, autoPlay = 'd 10000\no 1 1\nf 1 1\n'.repeat(20)) {
@@ -97,10 +117,13 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     assert.deepEqual(writes, []);
   });
   test(`natural end returns to the pack rule: LEDs ${leds}, saved ${saved}`, async () => {
+    const tick = playbackClock();
     const result = await mount(saved);
     await open(result, leds, 'd 20\no 1 1\nf 1 1\n');
     await flush(() => result.current.switchPlayMode('autoPlay'));
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 80)); });
+    assert.equal(result.current.playMode, 'autoPlay');
+    await tick(0); // Start the real runner's song clock.
+    await tick(20);
     await waitFor(() => assert.equal(result.current.playMode, 'none'));
     await expectFeedback(result, !leds);
     assert.deepEqual(writes, []);
@@ -121,12 +144,19 @@ test('packs keep their own rule in either order, even after a choice in the prev
 });
 
 test('natural completion replaces the choice made while playing with the pack rule', async () => {
+  const tick = playbackClock();
   const result = await mount('true');
   await open(result, true, 'd 100\no 1 1\nf 1 1\n');
   await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(0);
+  assert.equal(result.current.playMode, 'autoPlay');
   await flush(() => result.current.toggleFeedbackLight());
   await expectFeedback(result, true);
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+  assert.equal(result.current.playMode, 'autoPlay');
+  await tick(99);
+  assert.equal(result.current.playMode, 'autoPlay');
+  await expectFeedback(result, true);
+  await tick(1);
   await waitFor(() => assert.equal(result.current.playMode, 'none'));
   await expectFeedback(result, false);
   assert.deepEqual(writes, []);
