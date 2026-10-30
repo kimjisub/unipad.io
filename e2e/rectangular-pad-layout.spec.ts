@@ -8,13 +8,20 @@ const screens = [
   { name: 'phone', viewport: { width: 844, height: 390 } },
   { name: 'tablet', viewport: { width: 1180, height: 820 } },
   { name: 'laptop', viewport: { width: 1280, height: 800 } },
+  // Portrait tablets play directly, so every pad is pressed, not only the outer edges.
+  { name: 'smallest portrait tablet', viewport: { width: 768, height: 1024 }, everyPad: true },
+  { name: 'portrait tablet', viewport: { width: 834, height: 1210 }, everyPad: true },
+  { name: 'large portrait tablet', viewport: { width: 1032, height: 1244 }, everyPad: true },
 ];
+const rotatePrompt = (page: Page) => page.getByText('Rotate to landscape', { exact: true });
 const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements => elements.map(element => {
   const rect = element.getBoundingClientRect();
   return { position: element.getAttribute('data-pad')!, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 }));
 // A press shows within a frame or two; the default first retry after 100 ms adds up over every edge press.
 const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
+// 0 and 1 are a pad's outer edges, so the grid's border pads are pressed near the border.
+const edgeOffset = (index: number, last: number) => index === 0 ? 0 : index === last ? 1 : 0.5;
 async function record(page: Page, info: TestInfo, name: string) {
   await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await info.attach(`${name}-geometry-and-input`, {
@@ -34,9 +41,11 @@ for (const screen of screens) {
       test.use({ viewport: screen.viewport });
       for (const square of [true, false]) {
         const label = square ? 'square' : 'rectangular';
-        test(`${label} pads fit and play every bottom and right edge`, async ({ page }, info) => {
+        test(`${label} pads fit and play ${screen.everyPad ? 'every pad' : 'every bottom and right edge'}`, async ({ page }, info) => {
+          test.slow(!!screen.everyPad);
           await loadInputPack(page, shape.rows, shape.cols, square);
           await expect.poll(async () => (await bounds(page))[0].width, poll).toBeGreaterThan(1);
+          await expect(rotatePrompt(page)).toBeHidden();
           await record(page, info, `${label}-before-input`);
           // Pressing a pad never moves the layout; the hit test below still checks each point at press time.
           const pads = await bounds(page);
@@ -48,7 +57,10 @@ for (const screen of screens) {
           }
           const lastRow = shape.rows - 1;
           const lastCol = shape.cols - 1;
-          const locations = [
+          const locations = screen.everyPad ? pads.map(({ position }) => {
+            const [row, col] = position.split(',').map(Number);
+            return { position, x: edgeOffset(col, lastCol), y: edgeOffset(row, lastRow) };
+          }) : [
             { position: '0,0', x: 0, y: 0 },
             { position: `0,${lastCol}`, x: 1, y: 0 },
             ...Array.from({ length: shape.cols }, (_, col) => ({ position: `${lastRow},${col}`, x: col === 0 ? 0 : 1, y: 1 })),
@@ -79,3 +91,15 @@ for (const screen of screens) {
     });
   }
 }
+
+test('the rotate prompt covers the pads only below the tablet width', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 834 });
+  await loadInputPack(page);
+  await expect(rotatePrompt(page)).toBeVisible();
+  await page.setViewportSize({ width: 767, height: 1024 });
+  await expect(rotatePrompt(page)).toBeVisible();
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await expect(rotatePrompt(page)).toBeHidden();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(rotatePrompt(page)).toBeHidden();
+});

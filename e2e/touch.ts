@@ -1,9 +1,10 @@
 import { expect, type CDPSession, type Page } from '@playwright/test';
 
-// /play is played in landscape; in portrait a full-screen "rotate" overlay covers the pads.
+// Phones play /play in landscape: in portrait a full-screen "rotate" overlay covers the pads.
 export const touchScreens = [
   { name: 'phone', viewport: { width: 844, height: 390 } },
   { name: 'tablet', viewport: { width: 1180, height: 820 } },
+  { name: 'portrait tablet', viewport: { width: 834, height: 1210 } },
 ];
 
 export const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
