@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { resize } from './layout';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
@@ -334,14 +335,6 @@ async function openLongList(page: Page, square: boolean) {
   });
   await page.goto('/play');
   await expect(list(page).getByRole('option')).toHaveCount(13);
-}
-
-// A resized page lays out at once but reaches the screen later; WebKit can drop a wheel sent before
-// the new layout is drawn. Wait until the page has the new size, then for two drawn frames.
-async function resize(page: Page, viewport: { width: number; height: number }) {
-  await page.setViewportSize(viewport);
-  await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport);
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
