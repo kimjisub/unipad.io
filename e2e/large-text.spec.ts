@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './browser';
+import { reachable } from './layout';
 
 test.use({ locale: 'ko-KR' });
 
@@ -7,18 +8,6 @@ test.use({ locale: 'ko-KR' });
 async function useLargeText(page: Page) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-}
-
-/** Whether the whole element is inside the viewport and a press at its centre reaches it. */
-function reachable(target: Locator) {
-  return target.evaluate(element => {
-    const box = element.getBoundingClientRect();
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return {
-      inside: box.left >= 0 && box.right <= document.documentElement.clientWidth && box.top >= 0 && box.bottom <= innerHeight,
-      pressable: !!hit && element.contains(hit),
-    };
-  });
 }
 
 /**

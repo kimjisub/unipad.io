@@ -31,12 +31,12 @@ export async function savedRecords(page: Page): Promise<SavedRecord[]> {
   return (await storedPackRecords(page)).map(({ id, storeCode, zipData }) => ({ id, storeCode, zipBytes: zipData.length }));
 }
 
-/** Imports the fixture pack through the normal file input and waits until it is saved. */
-export async function importSavedPack(page: Page) {
+/** Imports the fixture pack through the normal file input, waits until it is saved and opens `landing`. */
+export async function importSavedPack(page: Page, landing = '/') {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
   await expect.poll(async () => (await savedRecords(page)).length).toBe(1);
-  await page.goto('/');
+  await page.goto(landing);
 }
 
