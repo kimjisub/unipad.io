@@ -4,6 +4,7 @@ import { getPerformance } from 'firebase/performance';
 import { getRemoteConfig, fetchAndActivate, RemoteConfig } from 'firebase/remote-config';
 import { Database, getDatabase } from 'firebase/database';
 import { Messaging, getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging';
+import { forgetEarlierSocketFailure } from './firebaseSocket';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -105,6 +106,7 @@ export function initFirebaseServices(): Promise<FirebaseServices | null> {
 
       let database: Database | null = null;
       try {
+        forgetEarlierSocketFailure();
         database = getDatabase(app);
       } catch {
         database = null;
