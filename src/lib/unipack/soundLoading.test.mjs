@@ -220,3 +220,57 @@ test('inspection ends before the first decode and closing again is safe', async 
     assert.deepEqual(events, ['inspect', 'inspect', 'close', 'decode', 'decode']);
   } finally { inspector.close(); engine.destroy(); globalThis.Worker = previousWorker; }
 });
+
+async function costRun(costs) {
+  const { PACK_AUDIO_LIMIT } = await import('./audioSafety.ts');
+  const names = costs.map((_, i) => `${i + 1}.wav`);
+  const pack = await parseUniPack(await packZip({ info: INFO,
+    keySound: names.map(name => `1 1 1 ${name}`).join('\n'),
+    ...Object.fromEntries(names.map((name, i) => [`sounds/${name}`, new Uint8Array([i + 1])])),
+  }));
+  fakeAudio();
+  const decode = AudioContext.prototype.decodeAudioData;
+  const gates = costs.map(() => deferred());
+  const started = [];
+  AudioContext.prototype.decodeAudioData = async function (bytes) {
+    const mark = new Uint8Array(bytes).at(-1);
+    started.push(mark); await gates[mark - 1].promise;
+    return Reflect.apply(decode, this, [bytes]);
+  };
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const loading = engine.load({ inspect: async bytes => ({ exclusion: null,
+    facts: { sampleRate: 48000, channels: 2, frames: costs[new Uint8Array(bytes)[0] - 1] / 2n } }) });
+  await turn();
+  return { gates, started, loading, limit: PACK_AUDIO_LIMIT / 4n, finish: async () => {
+    gates.forEach(g => g.resolve()); await loading; engine.destroy();
+  } };
+}
+
+test('decode batches follow admitted audio cost, including a file larger than one batch', async () => {
+  const { PACK_AUDIO_LIMIT } = await import('./audioSafety.ts');
+  const limit = PACK_AUDIO_LIMIT / 4n;
+  const run = await costRun([limit / 2n, limit / 2n, 2n, limit + 2n, 2n, limit, 2n]);
+  try {
+    assert.deepEqual(run.started, [1, 2], 'the cost boundary is inclusive');
+    run.gates[0].resolve(); await turn();
+    assert.deepEqual(run.started, [1, 2], 'finish the batch before starting another');
+    for (let index = 1; index < 7; index++) {
+      run.gates[index].resolve(); await turn();
+      assert.deepEqual(run.started, Array.from({ length: Math.min(index + 2, 7) }, (_, i) => i + 1));
+    }
+    const report = await run.loading;
+    assert.equal(report.loadedFiles, 7, 'an oversize batch file is decoded alone, never omitted');
+    assert.deepEqual(report.failures, []);
+    assert.equal(report.reservedCost, 3n * limit + 8n);
+  } finally { await run.finish(); }
+});
+
+test('small sounds still decode ten at once', async () => {
+  const run = await costRun(Array(12).fill(2n));
+  try {
+    assert.deepEqual(run.started, Array.from({ length: 10 }, (_, i) => i + 1));
+    for (const gate of run.gates.slice(0, 10)) gate.resolve();
+    await turn();
+    assert.deepEqual(run.started, Array.from({ length: 12 }, (_, i) => i + 1));
+  } finally { await run.finish(); }
+});
