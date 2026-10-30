@@ -259,9 +259,9 @@ export function MainScreen({
       </div>
 
       {/* Right Panel - Pack List */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-56 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
-        {/* Top Bar */}
-        <div className="flex items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
+      <div className="flex-1 flex flex-col min-w-0 min-h-56 max-[480px]:min-h-64 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
+        {/* Top Bar: the buttons take their own row when they would leave the search box too narrow. */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
           {savedPacks.length > 0 && (
             <>
               <div className="relative">
@@ -302,7 +302,7 @@ export function MainScreen({
                 {sortAsc ? '↑' : '↓'}
               </button>
 
-              <div className="flex-1 min-w-0 relative">
+              <div className="flex-[1_1_7rem] min-w-0 relative">
                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/25 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -325,46 +325,46 @@ export function MainScreen({
             </>
           )}
 
-          {!savedPacks.length && <div className="flex-1" />}
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            {savedPacks.length > 0 && <div className="hidden lg:block w-px h-5 bg-white/[0.08] shrink-0" />}
 
-          {savedPacks.length > 0 && <div className="w-px h-5 bg-white/[0.08] shrink-0" />}
-
-          <button
-            className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-accent/20 text-xs text-white/50 transition-colors border border-transparent"
-            onClick={onImportTheme}
-          >
-            {t('theme')}
-          </button>
-          <button
-            className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-secondary/20 text-xs text-white/50 transition-all border border-transparent relative group"
-            onClick={onOpenStore}
-          >
-            {t('store')}
-            {storeCount > 0 && (
-              <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-medium ${hasStoreUpdate ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/[0.06] text-white/40'}`}>
-                {storeCount}
-              </span>
-            )}
-            {hasStoreUpdate && (
-              reduceMotion ? (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400" />
-              ) : (
-                <motion.span
-                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
-                  animate={{ scale: [1, 1.25, 1], opacity: [0.75, 1, 0.75] }}
-                  transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
-                />
-              )
-            )}
-          </button>
-          <button
-            className="relative px-4 py-1.5 rounded-xl text-xs text-white font-semibold transition-all hover:scale-[1.02] active:scale-[0.97] group"
-            style={{ background: 'var(--accent)' }}
-            onClick={onImport}
-          >
-            <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
-            + Import
-          </button>
+            <button
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-accent/20 text-xs text-white/50 transition-colors border border-transparent"
+              onClick={onImportTheme}
+            >
+              {t('theme')}
+            </button>
+            <button
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-secondary/20 text-xs text-white/50 transition-all border border-transparent relative group"
+              onClick={onOpenStore}
+            >
+              {t('store')}
+              {storeCount > 0 && (
+                <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-medium ${hasStoreUpdate ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/[0.06] text-white/40'}`}>
+                  {storeCount}
+                </span>
+              )}
+              {hasStoreUpdate && (
+                reduceMotion ? (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400" />
+                ) : (
+                  <motion.span
+                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
+                    animate={{ scale: [1, 1.25, 1], opacity: [0.75, 1, 0.75] }}
+                    transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                )
+              )}
+            </button>
+            <button
+              className="relative px-4 py-1.5 rounded-xl text-xs text-white font-semibold transition-all hover:scale-[1.02] active:scale-[0.97] group"
+              style={{ background: 'var(--accent)' }}
+              onClick={onImport}
+            >
+              <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-40 blur-sm -z-10 group-hover:opacity-60 transition-opacity" />
+              + Import
+            </button>
+          </div>
         </div>
 
         {/* Pack List */}
