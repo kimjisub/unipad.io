@@ -30,6 +30,7 @@ const screens = [
   { name: 'phone portrait', width: 390, height: 844 },
   { name: 'phone landscape', width: 844, height: 390 },
   { name: 'tablet', width: 1180, height: 820 },
+  { name: 'portrait tablet', width: 834, height: 1210 },
   { name: 'laptop', width: 1280, height: 800 },
 ];
 

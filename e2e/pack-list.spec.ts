@@ -5,6 +5,7 @@ import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
+import { rotatePrompt, showsRotatePrompt } from './touch';
 
 // Newest first: the list sorts by the date a pack was added.
 const packs = [
@@ -367,8 +368,8 @@ async function wheelTo(page: Page, target: Locator) {
 async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
   await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
   await expectPads(page);
-  if (viewport.width < 768 && viewport.width < viewport.height) {
-    await expect(page.getByText('Rotate to landscape', { exact: true })).toBeVisible();
+  if (showsRotatePrompt(viewport)) {
+    await expect(rotatePrompt(page)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
   }
   const pad = page.locator('[data-pad="7,7"]');

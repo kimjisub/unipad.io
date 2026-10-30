@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, stateTimeout } from './browser';
 import { duration, loadInputPack } from './input-fixture';
-import { lit } from './touch';
+import { lit, rotatePrompt } from './touch';
 
 const screens = [
   { name: 'compact phone', viewport: { width: 667, height: 320 } },
@@ -9,11 +9,11 @@ const screens = [
   { name: 'tablet', viewport: { width: 1180, height: 820 } },
   { name: 'laptop', viewport: { width: 1280, height: 800 } },
   // Portrait tablets play directly, so every pad is pressed, not only the outer edges.
-  { name: 'smallest portrait tablet', viewport: { width: 768, height: 1024 }, everyPad: true },
+  { name: 'smallest portrait tablet', viewport: { width: 600, height: 960 }, everyPad: true },
+  { name: 'iPad mini portrait', viewport: { width: 744, height: 1133 }, everyPad: true },
   { name: 'portrait tablet', viewport: { width: 834, height: 1210 }, everyPad: true },
   { name: 'large portrait tablet', viewport: { width: 1032, height: 1244 }, everyPad: true },
 ];
-const rotatePrompt = (page: Page) => page.getByText('Rotate to landscape', { exact: true });
 const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements => elements.map(element => {
   const rect = element.getBoundingClientRect();
   return { position: element.getAttribute('data-pad')!, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
@@ -31,7 +31,7 @@ async function record(page: Page, info: TestInfo, name: string) {
   });
 }
 
-// Each test decodes a two-chain pack and presses up to 17 edge pads with trusted mouse input. On a busy
+// Each test decodes a two-chain pack and presses up to 17 edge pads, or every pad on portrait tablets, with trusted mouse input. On a busy
 // shared machine one browser round trip can take 300 ms, which put the 8x8 tests at 20-28 s of the 30 s default.
 test.describe.configure({ timeout: 60_000 });
 
@@ -96,9 +96,9 @@ test('the rotate prompt covers the pads only below the tablet width', async ({ p
   await page.setViewportSize({ width: 375, height: 834 });
   await loadInputPack(page);
   await expect(rotatePrompt(page)).toBeVisible();
-  await page.setViewportSize({ width: 767, height: 1024 });
+  await page.setViewportSize({ width: 599, height: 960 });
   await expect(rotatePrompt(page)).toBeVisible();
-  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.setViewportSize({ width: 600, height: 960 });
   await expect(rotatePrompt(page)).toBeHidden();
   await page.setViewportSize({ width: 844, height: 390 });
   await expect(rotatePrompt(page)).toBeHidden();

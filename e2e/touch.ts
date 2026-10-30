@@ -1,6 +1,9 @@
 import { expect, type CDPSession, type Page } from '@playwright/test';
 
-// Phones play /play in landscape: in portrait a full-screen "rotate" overlay covers the pads.
+// Phones play /play in landscape: in portrait, below 600px wide, a full-screen "rotate" overlay covers the pads.
+export const showsRotatePrompt = ({ width, height }: { width: number; height: number }) => width < 600 && width < height;
+export const rotatePrompt = (page: Page) => page.getByText('Rotate to landscape', { exact: true });
+
 export const touchScreens = [
   { name: 'phone', viewport: { width: 844, height: 390 } },
   { name: 'tablet', viewport: { width: 1180, height: 820 } },
