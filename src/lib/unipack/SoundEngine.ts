@@ -162,6 +162,11 @@ export class SoundEngine {
       else failures.push({ file: identity, reason: exclusionReason(exclusion), exclusion });
     }
 
+    const selected = new Set(admitted);
+    for (const file of soundFiles.keys()) {
+      if (!selected.has(file)) soundFiles.delete(file);
+    }
+
     const total = plan.files.length;
     let settled = failures.length;
     for (let i = 0; i < admitted.length; i += DECODE_BATCH_SIZE) {
@@ -196,7 +201,7 @@ export class SoundEngine {
     };
   }
 
-  /** The decoder takes the file's own bytes, without a copy: nothing reads them after this. */
+  /** Pass the original bytes; WebKit may copy them internally. Drop our reference on settlement. */
   private async decode(file: string): Promise<'decode' | 'memory' | null> {
     try {
       this.bufferCache.set(file, await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!));
@@ -204,6 +209,8 @@ export class SoundEngine {
     } catch (error) {
       console.warn(`Failed to decode audio: ${file}`, error);
       return isMemoryFailure(error) ? 'memory' : 'decode';
+    } finally {
+      this.unipack.soundFiles.delete(file);
     }
   }
 

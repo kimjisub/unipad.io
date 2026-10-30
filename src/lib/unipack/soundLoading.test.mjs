@@ -136,3 +136,58 @@ test('a pack whose used sounds all fail is reported as such; a pack without soun
   assert.equal(silent.report.usedFiles, 0);
   assert.deepEqual(silent.report.failures, []);
 });
+
+const turn = () => new Promise(resolve => setImmediate(resolve));
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+
+async function pendingLoad() {
+  const pack = await parseUniPack(await packZip({ info: INFO,
+    keySound: '1 1 1 a.wav\n1 1 2 b.wav\n1 2 1 c.wav\n1 2 2 bad.wav',
+    'sounds/a.wav': wave({ frames: 8000, mark: 1 }),
+    'sounds/b.wav': wave({ frames: 8000, mark: 2 }),
+    'sounds/c.wav': wave({ frames: 8000, mark: 3 }),
+    'sounds/bad.wav': 'not audio',
+  }));
+  // The parser normally only extracts referenced sounds; a caller may retain an extra file.
+  pack.soundFiles.set('unused.wav', new ArrayBuffer(1));
+  const gates = [null, deferred(), deferred(), deferred()];
+  const decoded = fakeAudio({ 2: encodingError });
+  const decode = AudioContext.prototype.decodeAudioData;
+  const entered = deferred();
+  AudioContext.prototype.decodeAudioData = async function (bytes) {
+    const mark = new Uint8Array(bytes).at(-1);
+    entered.resolve();
+    await gates[mark].promise;
+    return Reflect.apply(decode, this, [bytes]);
+  };
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const loading = engine.load();
+  await entered.promise;
+  return { pack, gates, loading, decoded, engine, finish: async () => {
+    for (const gate of gates.slice(1)) gate.resolve();
+    await loading; engine.destroy();
+  } };
+}
+
+test('excluded and unused sound bytes are released before decoding begins', async () => {
+  const run = await pendingLoad();
+  try {
+    assert.equal(run.pack.soundFiles.has('sounds/bad.wav'), false);
+    assert.equal(run.pack.soundFiles.has('unused.wav'), false);
+    assert.equal(run.pack.soundFiles.has('sounds/a.wav'), true, 'pending files keep their bytes');
+  } finally { await run.finish(); }
+});
+
+for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
+  test(`settling ${file} releases its bytes while another decode is pending`, async () => {
+    const run = await pendingLoad();
+    try {
+      run.gates[mark].resolve();
+      await turn();
+      assert.equal(run.pack.soundFiles.has(`sounds/${file}`), false);
+      assert.equal(run.pack.soundFiles.has('sounds/c.wav'), true);
+    } finally { await run.finish(); }
+    assert.equal(run.pack.soundFiles.size, 0);
+    assert.deepEqual(run.decoded.sort(), [1, 2, 3]);
+  });
+}
