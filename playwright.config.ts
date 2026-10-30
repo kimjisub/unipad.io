@@ -27,7 +27,7 @@ export default defineConfig({
     { name: 'webkit', testMatch: portableTests, use: { browserName: 'webkit' } },
     // Scales only the device stream after the Web Audio graph, so the analyser still measures the signal.
     // Firefox also counts text that spills into a button's side padding as overflow, so the home page runs here too.
-    { name: 'firefox', timeout: 90_000, testMatch: ['storage-migration.spec.ts', 'import-compatibility.spec.ts', 'audio-visibility.spec.ts', 'play.spec.ts', 'home.spec.ts', 'pack-list-narrow.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'sound-loading.spec.ts'], use: { browserName: 'firefox', launchOptions: { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } } },
+    { name: 'firefox', timeout: 90_000, testMatch: ['storage-migration.spec.ts', 'import-compatibility.spec.ts', 'audio-visibility.spec.ts', 'play.spec.ts', 'home.spec.ts', 'pack-list-narrow.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'sound-loading.spec.ts', 'socket-failure-record.spec.ts'], use: { browserName: 'firefox', launchOptions: { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } } },
     // The Windows runner supplies these installed channels; local Macs still run all three engines.
     ...(process.platform === 'win32' ? [
       { name: 'chrome', testMatch: windowsPlaybackTests, use: { browserName: 'chromium' as const, channel: 'chrome' } },
