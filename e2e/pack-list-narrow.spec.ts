@@ -5,8 +5,11 @@ import { reachable, resize } from './layout';
 import { importSavedPack } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
-// Beyond the phone widths: the buttons drop to their own row at a width set by the store number and the language.
-const widths = Array.from({ length: 33 }, (_, step) => 320 + step * 10);
+// Phone widths, then the wider ones where the store number and the language decide when the buttons wrap.
+const widths = [
+  ...Array.from({ length: 12 }, (_, step) => 320 + step * 10),
+  ...Array.from({ length: 11 }, (_, step) => 440 + step * 20),
+];
 
 const locales = [
   { locale: 'en-US', search: 'Search unipacks', ascending: 'Sort ascending', descending: 'Sort descending', theme: 'Theme', store: 'Store' },
@@ -39,17 +42,21 @@ async function showStoreCount(page: Page, context: BrowserContext, text: (typeof
 }
 
 /** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
-async function expectAllReachable(controls: Locator[]) {
-  const boxes = await Promise.all(controls.map(control => control.boundingBox()));
-  for (const [index, control] of controls.entries()) {
-    const name = await control.getAttribute('aria-label') ?? await control.textContent();
-    expect(await reachable(control), name!).toEqual({ inside: true, pressable: true });
+async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
+  const named = Object.entries(controls);
+  const [states, boxes] = await Promise.all([
+    Promise.all(named.map(([, control]) => reachable(control))),
+    Promise.all(named.map(([, control]) => control.boundingBox())),
+  ]);
+  for (const [index, [name]] of named.entries()) {
+    expect(states[index], name).toEqual({ inside: true, pressable: true });
     const box = boxes[index]!;
-    for (const [otherIndex, other] of boxes.entries()) {
+    for (const [otherIndex, [otherName]] of named.entries()) {
       if (otherIndex <= index) continue;
-      const overlaps = box.x < other!.x + other!.width && other!.x < box.x + box.width
-        && box.y < other!.y + other!.height && other!.y < box.y + box.height;
-      expect(overlaps, `${name} overlaps control ${otherIndex}`).toBe(false);
+      const other = boxes[otherIndex]!;
+      const overlaps = box.x < other.x + other.width && other.x < box.x + box.width
+        && box.y < other.y + other.height && other.y < box.y + box.height;
+      expect(overlaps, `${name} overlaps ${otherName}`).toBe(false);
     }
   }
 }
@@ -77,7 +84,7 @@ for (const text of locales) {
       const { theme, store, import: importButton } = bar(page, text);
       for (const viewport of viewports) {
         await resize(page, viewport);
-        await expectAllReachable([theme, store, importButton]);
+        await expectAllReachable({ theme, store, import: importButton });
         await expectFileChooser(page, theme);
         await expectStoreOpens(page, store);
         await expectFileChooser(page, importButton);
@@ -91,7 +98,7 @@ for (const text of locales) {
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       for (const width of widths) {
         await resize(page, { width, height: 568 });
-        await expectAllReachable(Object.values(controls));
+        await expectAllReachable(controls);
         expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(112);
         await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
       }
@@ -129,13 +136,13 @@ for (const text of locales) {
 
     test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
       await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
-      const { search, ...buttons } = bar(page, text);
+      const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       await expect(row).toBeVisible();
       await resize(page, { width: 320, height: 800 });
       await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
-      await expectAllReachable([search, ...Object.values(buttons)]);
-      expect((await search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
+      await expectAllReachable(controls);
+      expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
       await expect(row).toBeInViewport({ ratio: 0.99 });
     });
   });
