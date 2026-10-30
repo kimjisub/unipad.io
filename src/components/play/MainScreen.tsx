@@ -259,7 +259,7 @@ export function MainScreen({
       </div>
 
       {/* Right Panel - Pack List */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-56 max-[480px]:min-h-64 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
         {/* Top Bar: the buttons take their own row when they would leave the search box too narrow. */}
         <div className="flex flex-wrap items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
           {savedPacks.length > 0 && (
@@ -367,8 +367,9 @@ export function MainScreen({
           </div>
         </div>
 
-        {/* Pack List */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 rounded-xl">
+        {/* Pack List: this minimum, added to the rows above and below it, sizes the panel, so a wrapped
+            button row takes its height from the details and not from the first pack. */}
+        <div className="grow basis-0 overflow-y-auto overflow-x-hidden min-h-24 md:min-h-0 rounded-xl">
           {filteredAndSortedPacks.length === 0 ? (
             searchQuery.trim() ? (
               <NoResults query={searchQuery.trim()} onClear={() => setSearchQuery('')} />

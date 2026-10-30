@@ -1,9 +1,12 @@
-import type { Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect } from './browser';
+import { connectStore } from './database';
+import { reachable, resize } from './layout';
 import { importSavedPack } from './saved-packs';
 
-const viewports = [[320, 568], [375, 667], [430, 932]] as const;
-const widths = Array.from({ length: 12 }, (_, step) => 320 + step * 10);
+const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
+// Beyond the phone widths: the buttons drop to their own row at a width set by the store number and the language.
+const widths = Array.from({ length: 33 }, (_, step) => 320 + step * 10);
 
 const locales = [
   { locale: 'en-US', search: 'Search unipacks', ascending: 'Sort ascending', descending: 'Sort descending', theme: 'Theme', store: 'Store' },
@@ -11,6 +14,8 @@ const locales = [
 ] as const;
 
 const packTitle = 'Browser Test Pack';
+// Live visitors see this number on the store button, which makes the button row wider.
+const storeCount = 128;
 
 /** Every control in the bar, in reading order. */
 function bar(page: Page, text: (typeof locales)[number]) {
@@ -25,30 +30,26 @@ function bar(page: Page, text: (typeof locales)[number]) {
   };
 }
 
-function resize(page: Page, width: number, height: number) {
-  return test.step(`${width}x${height}`, async () => {
-    await page.setViewportSize({ width, height });
-    await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, { width, height });
-  });
+/** The store answers with a count, as it does for a visitor; a build without a database stops here. */
+async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: () => Promise<void>) {
+  const database = await connectStore(context, storeCount);
+  await open();
+  await database.publish(storeCount);
+  await expect(bar(page, text).store).toContainText(String(storeCount));
 }
 
-/** A press at the centre of the control reaches it, the whole control is on screen and no two controls touch. */
+/** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
 async function expectAllReachable(controls: Locator[]) {
-  const boxes = await Promise.all(controls.map(control => control.evaluate(element => {
-    const box = element.getBoundingClientRect();
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return {
-      name: element.getAttribute('aria-label') ?? element.textContent,
-      left: box.left, right: box.right, top: box.top, bottom: box.bottom,
-      onScreen: box.left >= 0 && box.right <= document.documentElement.clientWidth && box.top >= 0 && box.bottom <= innerHeight,
-      pressable: !!hit && element.contains(hit),
-    };
-  })));
-  for (const [index, box] of boxes.entries()) {
-    expect({ name: box.name, onScreen: box.onScreen, pressable: box.pressable }).toEqual({ name: box.name, onScreen: true, pressable: true });
-    for (const other of boxes.slice(index + 1)) {
-      const overlaps = box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom;
-      expect(overlaps, `${box.name} overlaps ${other.name}`).toBe(false);
+  const boxes = await Promise.all(controls.map(control => control.boundingBox()));
+  for (const [index, control] of controls.entries()) {
+    const name = await control.getAttribute('aria-label') ?? await control.textContent();
+    expect(await reachable(control), name!).toEqual({ inside: true, pressable: true });
+    const box = boxes[index]!;
+    for (const [otherIndex, other] of boxes.entries()) {
+      if (otherIndex <= index) continue;
+      const overlaps = box.x < other!.x + other!.width && other!.x < box.x + box.width
+        && box.y < other!.y + other!.height && other!.y < box.y + box.height;
+      expect(overlaps, `${name} overlaps control ${otherIndex}`).toBe(false);
     }
   }
 }
@@ -71,12 +72,11 @@ for (const text of locales) {
   test.describe(text.locale, () => {
     test.use({ locale: text.locale });
 
-    test('every control works on a phone-width screen with no saved packs', async ({ page }) => {
-      await page.goto('/play');
+    test('every control works on a phone-width screen with no saved packs', async ({ page, context }) => {
+      await showStoreCount(page, context, text, async () => { await page.goto('/play'); });
       const { theme, store, import: importButton } = bar(page, text);
-      await expect(importButton).toBeVisible();
-      for (const [width, height] of viewports) {
-        await resize(page, width, height);
+      for (const viewport of viewports) {
+        await resize(page, viewport);
         await expectAllReachable([theme, store, importButton]);
         await expectFileChooser(page, theme);
         await expectStoreOpens(page, store);
@@ -84,19 +84,26 @@ for (const text of locales) {
       }
     });
 
-    test('every control works on a phone-width screen with a saved pack', async ({ page }) => {
+    test('the bar and the first pack fit a short screen at every narrow width', async ({ page, context }) => {
       test.setTimeout(90_000);
-      await importSavedPack(page, '/play');
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
-      await expect(row).toBeVisible();
       for (const width of widths) {
-        await resize(page, width, 844);
+        await resize(page, { width, height: 568 });
         await expectAllReachable(Object.values(controls));
         expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(112);
+        await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
       }
-      for (const [width, height] of viewports) {
-        await resize(page, width, height);
+    });
+
+    test('every control works on a phone-width screen with a saved pack', async ({ page, context }) => {
+      test.setTimeout(90_000);
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+      const controls = bar(page, text);
+      const row = page.getByRole('option', { name: new RegExp(packTitle) });
+      for (const viewport of viewports) {
+        await resize(page, viewport);
         await expect(row).toBeInViewport({ ratio: 0.99 });
 
         await controls.search.click();
@@ -119,14 +126,17 @@ for (const text of locales) {
         await expectFileChooser(page, controls.import);
       }
     });
+
+    test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+      const { search, ...buttons } = bar(page, text);
+      const row = page.getByRole('option', { name: new RegExp(packTitle) });
+      await expect(row).toBeVisible();
+      await resize(page, { width: 320, height: 800 });
+      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      await expectAllReachable([search, ...Object.values(buttons)]);
+      expect((await search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
+      await expect(row).toBeInViewport({ ratio: 0.99 });
+    });
   });
 }
-
-test('the search box stays usable at 320px with 200% text', async ({ page }) => {
-  await importSavedPack(page, '/play');
-  await page.setViewportSize({ width: 320, height: 800 });
-  await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
-  const { search, ...buttons } = bar(page, locales[0]);
-  await expectAllReachable([search, ...Object.values(buttons)]);
-  expect((await search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
-});
