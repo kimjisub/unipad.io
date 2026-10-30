@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checksOf, isLocalRequest } from './web_rules.mjs';
 
-const profile = { first: [1280, 800] };
+const profile = { first: [1280, 800], rotated: [800, 1280] };
 const checks = (padPress, rotate) => checksOf(profile, { packOpened: { pads: 64 }, padPress, rotate });
 
 test('initial sound needs a start and a running context', () => {
@@ -22,6 +22,21 @@ test('sound after rotation needs new starts and a running context', () => {
   assert.equal(checks({}, { ...rotate, soundStartsAfter: 1 }).sound, false);
   assert.equal(checks({}, { ...rotate, pressedAfterRotate: false }).sound, false);
   assert.equal(checks({}, rotate).sound, true);
+});
+
+test('the rotate hint is expected only on phone-width portrait layouts', () => {
+  const rotation = (first, rotated, portraitHintVisibleBefore, portraitHintVisibleAfter) => checksOf({ first, rotated }, {
+    packOpened: { pads: 64 }, padPress: {},
+    rotate: { portraitHintVisibleBefore, portraitHintVisibleAfter, padsAfter: { pads: 64 } },
+  }).rotation;
+  assert.equal(rotation([390, 844], [844, 390], true, false), true);
+  assert.equal(rotation([390, 844], [844, 390], false, false), false);
+  assert.equal(rotation([599, 960], [960, 599], true, false), true);
+  for (const [first, rotated] of [[[834, 1194], [1194, 834]], [[1024, 768], [768, 1024]], [[600, 960], [960, 600]]]) {
+    assert.equal(rotation(first, rotated, false, false), true, `${first}`);
+    assert.equal(rotation(first, rotated, true, false), false, `${first}`);
+    assert.equal(rotation(first, rotated, false, true), false, `${first}`);
+  }
 });
 
 test('requests must have the same server origin', () => {

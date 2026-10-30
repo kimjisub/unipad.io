@@ -30,6 +30,7 @@ const screens = [
   { name: 'phone portrait', width: 390, height: 844 },
   { name: 'phone landscape', width: 844, height: 390 },
   { name: 'tablet', width: 1180, height: 820 },
+  { name: 'portrait tablet', width: 834, height: 1210 },
   { name: 'laptop', width: 1280, height: 800 },
 ];
 
@@ -98,7 +99,7 @@ for (const mode of ['mouse', 'touch'] as const) {
     for (const [step, screen] of trip.entries()) {
       await test.step(screen.name, async () => {
         await page.setViewportSize({ width: screen.width, height: screen.height });
-        // The existing grid remains mounted under the portrait overlay and keeps capture.
+        // The existing grid remains mounted, under the overlay on phone portrait, and keeps capture.
         await held(page, ['2,2'], ['2,2']);
         await stopped(page, []);
         await evidence(page, info, `${mode}-${step}-${screen.name.replaceAll(' ', '-')}`);
