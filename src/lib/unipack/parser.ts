@@ -41,8 +41,22 @@ function logoColorTokens(split: string[]): string[] {
   }
 }
 
-export async function parseUniPack(
+/** Library fields share the player's parsing rules without decompressing sound file contents. */
+export type UniPackMetadata = Pick<UniPackData,
+  'info' | 'keyLedExist' | 'autoPlayExist' | 'soundCount' | 'ledCount'>;
+
+export async function readUniPackMetadata(zipData: ArrayBuffer): Promise<UniPackMetadata> {
+  const { info, keyLedExist, autoPlayExist, soundCount, ledCount } = await parseArchive(zipData, false);
+  return { info, keyLedExist, autoPlayExist, soundCount, ledCount };
+}
+
+export function parseUniPack(zipData: ArrayBuffer, onPhase?: (phase: string) => void): Promise<UniPackData> {
+  return parseArchive(zipData, true, onPhase);
+}
+
+async function parseArchive(
   zipData: ArrayBuffer,
+  extractSounds: boolean,
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
@@ -69,6 +83,7 @@ export async function parseUniPack(
     rootPrefix,
     info,
     errors,
+    extractSounds,
   );
   onPhase?.('Loading LEDs...');
   const ledAnimationTable = await parseKeyLed(zip, rootPrefix, info, errors);
@@ -241,6 +256,7 @@ async function parseKeySound(
   prefix: string,
   info: UniPackInfo,
   errors: string[],
+  extractSounds: boolean,
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const table: (Sound[] | null)[][][] = Array.from({ length: info.chain }, () =>
     Array.from({ length: info.buttonX }, () =>
@@ -257,9 +273,9 @@ async function parseKeySound(
       // pad silent and one warning.
       throw new Error("Invalid UniPack: keySound doesn't exist");
     }
-    return parseKeySoundFromFile(keySoundLower, zip, prefix, info, table, soundFiles, errors);
+    return parseKeySoundFromFile(keySoundLower, zip, prefix, info, table, soundFiles, errors, extractSounds);
   }
-  return parseKeySoundFromFile(keySoundFile, zip, prefix, info, table, soundFiles, errors);
+  return parseKeySoundFromFile(keySoundFile, zip, prefix, info, table, soundFiles, errors, extractSounds);
 }
 
 async function parseKeySoundFromFile(
@@ -270,6 +286,7 @@ async function parseKeySoundFromFile(
   table: (Sound[] | null)[][][],
   soundFiles: Map<string, ArrayBuffer>,
   errors: string[],
+  extractSounds: boolean,
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const text = await readText(file);
   const findSoundFile = soundFileFinder(zip, prefix);
@@ -323,7 +340,7 @@ async function parseKeySoundFromFile(
       continue;
     }
 
-    if (!soundFiles.has(soundPath)) {
+    if (extractSounds && !soundFiles.has(soundPath)) {
       const data = await zip.files[soundPath].async('arraybuffer');
       soundFiles.set(soundPath, data);
     }

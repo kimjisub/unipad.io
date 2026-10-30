@@ -18,7 +18,7 @@ import { allSoundsFailed, type SoundLoadReport } from '@/lib/unipack/soundLoadin
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
-  parseUniPack,
+  readUniPackMetadata,
   saveUniPack,
   saveStoreUniPack,
   getUniPack,
@@ -364,7 +364,7 @@ export function PlayPage() {
 
       try {
         // Keep a readable imported archive in the library even if another open replaced it.
-        const parsed = await parseUniPack(buffer.slice(0));
+        const parsed = await readUniPackMetadata(buffer);
         const id = await saveUniPack(buffer, {
           ...parsed.info,
           keyLedExist: parsed.keyLedExist,
@@ -800,7 +800,7 @@ export function PlayPage() {
       const zipData = await downloadStoreItem(item, (percent) => {
         setStoreProgress(percent);
       }, controller.signal);
-      const parsed = await runStoreDownloadStep('invalid_pack', () => parseUniPack(zipData.slice(0)));
+      const parsed = await runStoreDownloadStep('invalid_pack', () => readUniPackMetadata(zipData));
 
       await runStoreDownloadStep('storage', () => saveStoreUniPack(zipData, {
         ...parsed.info,

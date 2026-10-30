@@ -26,7 +26,7 @@ let main;
 stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: () => null });
 stub('../../lib/store.ts', { subscribeStoreCount: async () => noop });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: noop });
-let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides;
+let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides, savedImports, importSaved;
 const deferred = () => { let resolve, reject; return { promise: new Promise((r, j) => { resolve = r; reject = j; }), resolve, reject }; };
 const hold = kind => {
   const waiting = { ...deferred(), entered: deferred() };
@@ -47,8 +47,9 @@ stub('../../lib/unipack/index.ts', {
   getTheme: () => step('themeRead', () => ({ zipData: 'saved-theme' })),
   getSetting: key => step(key === 'lastThemeId' ? 'themeSetting' : 'setting', () => storage.get(key) ?? null),
   setSetting: (key, value) => step(key === 'lastUniPackId' ? 'lastWrite' : 'write', () => storage.set(key, value)),
-  parseUniPack: async data => pack(data),
-  saveUniPack: () => step('save', () => { library.set('Imported', pack('Imported')); return 'Imported'; }),
+  parseUniPack: async () => { throw new Error("Library metadata must not extract sounds"); },
+  readUniPackMetadata: async data => data.byteLength ? require("../../lib/unipack/parser.ts").readUniPackMetadata(data) : pack(data),
+  saveUniPack: (bytes, metadata) => step('save', () => { savedImports.push({ bytes, metadata }); importSaved.resolve(); library.set('Imported', pack('Imported')); return 'Imported'; }),
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -88,7 +89,7 @@ const { PlayPage } = require('./PlayPage.tsx');
 const flush = async action => act(async () => { await action?.(); });
 async function mount(url = '/play', prepare = noop) {
   library = new Map([['A', pack('A')], ['B', pack('B')]]);
-  held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; nextResult = true; engine = null; main = null;
+  held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; savedImports = []; importSaved = deferred(); nextResult = true; engine = null; main = null;
   prepare();
   window.history.replaceState(null, '', url);
   const view = render(React.createElement(PlayPage));
@@ -329,4 +330,31 @@ for (const phase of ['resume', 'file', 'load', 'save']) {
       assert.ok(main.savedPacks.some(pack => pack.id === 'Imported'), 'the saved file appears without another list refresh');
     });
   }
+}
+
+for (const phase of ['file', 'load', 'failed']) {
+  test(`import saves unchanged bytes and full list metadata after ${phase}`, async () => {
+    const { packZip, INFO_2X2_2CHAIN, SILENT_WAV } = require('../../lib/unipack/testUtils.ts');
+    const bytes = await packZip({ info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 2 2 a.wav',
+      'sounds/a.wav': SILENT_WAV, 'keyLed/1 1 1': 'o 1 1 a 5', autoPlay: 'o 1 1\nf 1 1' });
+    const original = Buffer.from(bytes).toString('hex');
+    const view = await mount();
+    const waiting = phase === 'failed' ? null : hold(phase);
+    if (phase === 'failed') nextResult = false;
+    await flush(() => {
+      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ arrayBuffer: () => step('file', () => bytes) }] } });
+      return waiting?.entered.promise;
+    });
+    if (waiting) {
+      await flush(() => main.onPlay('B'));
+      await flush(() => waiting.resolve());
+    }
+    await flush(() => importSaved.promise);
+    assert.equal(savedImports.length, 1);
+    const saved = savedImports[0];
+    assert.equal(saved.bytes, bytes);
+    assert.equal(Buffer.from(saved.bytes).toString('hex'), original);
+    assert.deepEqual([saved.metadata.soundCount, saved.metadata.ledCount, saved.metadata.keyLedExist, saved.metadata.autoPlayExist], [2, 1, true, true]);
+    assert.equal(saved.metadata.title, 'Test');
+  });
 }
