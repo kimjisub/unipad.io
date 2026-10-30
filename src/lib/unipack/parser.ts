@@ -17,6 +17,11 @@ const ROUND_TOKENS = new Set(['*', 'mc']);
 const LOGO_TOKEN = 'l';
 const AUTO_TOKENS = new Set(['auto', 'a']);
 
+// JSZip 3.10 exposes this streaming API, but its bundled JSZipObject types omit it.
+interface StreamingZipObject extends JSZip.JSZipObject {
+  internalStream(type: 'uint8array'): JSZip.JSZipStreamHelper<Uint8Array>;
+}
+
 /**
  * `mc 1`..`mc 32` as a round LED index, or null. Any other 32-bit integer is dropped without a warning, as
  * Android's drivers dropped it before; index 32 would otherwise light the logo. A non-number or a value
@@ -41,7 +46,7 @@ function logoColorTokens(split: string[]): string[] {
   }
 }
 
-/** Library fields share the player's parsing rules without decompressing sound file contents. */
+/** Library fields share the player's parsing and archive validation without retaining sound bytes. */
 export type UniPackMetadata = Pick<UniPackData,
   'info' | 'keyLedExist' | 'autoPlayExist' | 'soundCount' | 'ledCount'>;
 
@@ -290,6 +295,7 @@ async function parseKeySoundFromFile(
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const text = await readText(file);
   const findSoundFile = soundFileFinder(zip, prefix);
+  const readSounds = new Set<string>();
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -340,9 +346,21 @@ async function parseKeySoundFromFile(
       continue;
     }
 
-    if (extractSounds && !soundFiles.has(soundPath)) {
-      const data = await zip.files[soundPath].async('arraybuffer');
-      soundFiles.set(soundPath, data);
+    if (!readSounds.has(soundPath)) {
+      if (extractSounds) {
+        const data = await zip.files[soundPath].async('arraybuffer');
+        soundFiles.set(soundPath, data);
+      } else {
+        // Draining the same decompressor preserves the player's archive error checks. Do not
+        // accumulate its chunks: metadata needs neither a complete sound buffer nor a copy.
+        await new Promise<void>((resolve, reject) => {
+          (zip.files[soundPath] as StreamingZipObject).internalStream('uint8array')
+            .on('error', reject)
+            .on('end', resolve)
+            .resume();
+        });
+      }
+      readSounds.add(soundPath);
     }
 
     const sound: Sound = {

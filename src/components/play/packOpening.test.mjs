@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { afterEach, test } from 'node:test';
 import { JSDOM } from 'jsdom';
+import { corruptSoundArchive } from '../../lib/unipack/corruptArchive.testUtils.mjs';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
 for (const name of ['window', 'document', 'HTMLElement', 'Element', 'SVGElement', 'screen']) globalThis[name] = dom.window[name];
@@ -19,13 +20,22 @@ const noop = () => {};
 const translate = key => key;
 stub('next-intl', { useTranslations: () => translate });
 stub('framer-motion', { AnimatePresence: ({ children }) => children, motion: { div: 'div' } });
-for (const name of ['PadGrid', 'ChainBar', 'ControlPanel', 'OptionPanel', 'StoreModal', 'SkinImage', 'LaunchpadSettingsModal']) {
+for (const name of ['PadGrid', 'ChainBar', 'ControlPanel', 'OptionPanel', 'SkinImage', 'LaunchpadSettingsModal']) {
   stub(`./${name}.tsx`, { [name]: () => null });
 }
 let main;
+let store, downloadedBytes, storeSaves, analytics, metadataRead;
+stub('./StoreModal.tsx', { StoreModal: props => { store = props; return null; } });
 stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: () => null });
-stub('../../lib/store.ts', { subscribeStoreCount: async () => noop });
-stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: noop });
+const realStore = require('../../lib/store.ts');
+stub('../../lib/store.ts', {
+  ...realStore,
+  subscribeStoreCount: async () => noop,
+  subscribeStoreItems: async () => noop,
+  fetchStoreItemsResult: async () => ({ items: [] }),
+  downloadStoreItem: async () => downloadedBytes,
+});
+stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push({ name, params }) });
 let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides, savedImports, importSaved;
 const deferred = () => { let resolve, reject; return { promise: new Promise((r, j) => { resolve = r; reject = j; }), resolve, reject }; };
 const hold = kind => {
@@ -47,9 +57,16 @@ stub('../../lib/unipack/index.ts', {
   getTheme: () => step('themeRead', () => ({ zipData: 'saved-theme' })),
   getSetting: key => step(key === 'lastThemeId' ? 'themeSetting' : 'setting', () => storage.get(key) ?? null),
   setSetting: (key, value) => step(key === 'lastUniPackId' ? 'lastWrite' : 'write', () => storage.set(key, value)),
-  parseUniPack: async () => { throw new Error("Library metadata must not extract sounds"); },
-  readUniPackMetadata: async data => data.byteLength ? require("../../lib/unipack/parser.ts").readUniPackMetadata(data) : pack(data),
+  parseUniPack: async data => {
+    try { return data.byteLength ? await require('../../lib/unipack/parser.ts').parseUniPack(data) : pack(data); }
+    finally { metadataRead.resolve(); }
+  },
+  readUniPackMetadata: async data => {
+    try { return data.byteLength ? await require('../../lib/unipack/parser.ts').readUniPackMetadata(data) : pack(data); }
+    finally { metadataRead.resolve(); }
+  },
   saveUniPack: (bytes, metadata) => step('save', () => { savedImports.push({ bytes, metadata }); importSaved.resolve(); library.set('Imported', pack('Imported')); return 'Imported'; }),
+  saveStoreUniPack: async (bytes, metadata) => { storeSaves.push({ bytes, metadata }); return 'Downloaded'; },
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -90,6 +107,7 @@ const flush = async action => act(async () => { await action?.(); });
 async function mount(url = '/play', prepare = noop) {
   library = new Map([['A', pack('A')], ['B', pack('B')]]);
   held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; savedImports = []; importSaved = deferred(); nextResult = true; engine = null; main = null;
+  store = null; downloadedBytes = null; storeSaves = []; analytics = []; metadataRead = deferred();
   prepare();
   window.history.replaceState(null, '', url);
   const view = render(React.createElement(PlayPage));
@@ -358,3 +376,30 @@ for (const phase of ['file', 'load', 'failed']) {
     assert.equal(saved.metadata.title, 'Test');
   });
 }
+
+test('an imported archive with damaged compressed sound bytes is never saved', async () => {
+  const bytes = await corruptSoundArchive();
+  const view = await mount();
+  nextResult = false;
+  await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
+    target: { files: [{ arrayBuffer: async () => bytes }] },
+  }));
+  await flush(() => metadataRead.promise);
+  assert.equal(savedImports.length, 0);
+  assert.equal(library.has('Imported'), false);
+});
+
+test('a damaged store archive is rejected before replacing a saved copy or recording success', async () => {
+  await mount();
+  downloadedBytes = await corruptSoundArchive();
+  const previous = pack('Previous');
+  previous.storeCode = 'damaged';
+  library.set(previous.id, previous);
+  await flush(() => store.onDownload({ code: 'damaged', title: 'Damaged' }));
+  assert.equal(storeSaves.length, 0, 'invalid data must never reach the replacing storage operation');
+  assert.equal(library.get(previous.id), previous);
+  assert.equal(store.failedCode, 'damaged');
+  assert.equal(store.downloadingCode, null);
+  assert.equal(analytics.some(event => event.name === 'store_download_success'), false);
+  assert.ok(analytics.some(event => event.name === 'store_download_fail' && event.params.error_type === 'invalid_pack'));
+});
