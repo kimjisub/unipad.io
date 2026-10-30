@@ -76,6 +76,8 @@ export function audioReferences(pack: UniPackData): AudioReference[] {
 /** Reads a sound file's audio facts before anything decodes it. */
 export interface AudioInspector {
   inspect(bytes: ArrayBuffer): Promise<AudioInspection>;
+  /** Release inspection resources as soon as selection finishes, before audio decoding. */
+  close?(): void;
 }
 
 /** Reads on the calling thread; a long FLAC or Ogg file holds it for seconds (see audioInspectionWorker). */

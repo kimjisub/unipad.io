@@ -154,6 +154,8 @@ export class SoundEngine {
         return bytes ? inspector.inspect(bytes) : { exclusion: 'READ_FAILURE' };
       },
     );
+    // Worker copies are no longer needed; do not keep them alive during native decoding.
+    inspector.close?.();
     const order = new Map(plan.files.map(({ identity }, index) => [identity, index]));
     const failures: SoundFailure[] = [];
     const admitted: string[] = [];

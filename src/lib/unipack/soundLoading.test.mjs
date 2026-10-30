@@ -191,3 +191,32 @@ for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
     assert.deepEqual(run.decoded.sort(), [1, 2, 3]);
   });
 }
+
+test('inspection ends before the first decode and closing again is safe', async () => {
+  const { createAudioInspector } = await import('./audioInspectionWorker.ts');
+  const { inspectAudio } = await import('./audioInspection.ts');
+  const previousWorker = globalThis.Worker;
+  const events = [];
+  globalThis.Worker = class {
+    postMessage({ id, bytes }) {
+      // A structured copy leaves the source available for fallback and decoding.
+      const copied = structuredClone(bytes);
+      queueMicrotask(() => { events.push('inspect'); this.onmessage({ data: { id, inspection: inspectAudio(copied) } }); });
+    }
+    terminate() { events.push('close'); }
+  };
+  const pack = await parseUniPack(await packZip({ info: INFO, keySound: '1 1 1 a.wav\n1 1 2 b.wav',
+    'sounds/a.wav': wave({ frames: 8000, mark: 1 }), 'sounds/b.wav': wave({ frames: 8000, mark: 2 }) }));
+  fakeAudio();
+  const decode = AudioContext.prototype.decodeAudioData;
+  AudioContext.prototype.decodeAudioData = function (bytes) {
+    events.push('decode'); return Reflect.apply(decode, this, [bytes]);
+  };
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const inspector = createAudioInspector();
+  try {
+    await engine.load(inspector);
+    inspector.close(); inspector.close();
+    assert.deepEqual(events, ['inspect', 'inspect', 'close', 'decode', 'decode']);
+  } finally { inspector.close(); engine.destroy(); globalThis.Worker = previousWorker; }
+});
