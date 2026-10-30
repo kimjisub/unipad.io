@@ -5,6 +5,7 @@ import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
+import { rotatePrompt, showsRotatePrompt } from './touch';
 
 // Newest first: the list sorts by the date a pack was added.
 const packs = [
@@ -367,8 +368,8 @@ async function wheelTo(page: Page, target: Locator) {
 async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
   await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
   await expectPads(page);
-  if (viewport.width < viewport.height) {
-    await expect(page.getByText('Rotate to landscape', { exact: true })).toBeVisible();
+  if (showsRotatePrompt(viewport)) {
+    await expect(rotatePrompt(page)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
   }
   const pad = page.locator('[data-pad="7,7"]');
@@ -396,7 +397,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
 }
 
 for (const square of [true, false]) {
-  for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [1280, 800]]) {
+  for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
       test.setTimeout(60_000);
       await openLongList(page, square);

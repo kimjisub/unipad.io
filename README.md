@@ -282,11 +282,12 @@ outside this change; existing input filtering and visual release rules are kept.
 contacts at once through Chromium's native touch dispatch, so the browser's own
 pointer events reach the `PadGrid` listeners. Each item is one test named after
 its letter (A–G, I); item H is the CR tests above. Both files run on a landscape
-phone (844×390) and a landscape tablet (1180×820) screen; `e2e/touch.ts` holds
-the shared touch helpers. Headless Chromium never hides the tab or blurs the
-window by itself, so test G sends the `visibilitychange` and `blur` events a
-browser sends when the notification shade or another app takes over. These are
-synthetic-input results; real fingers on a physical device are not certified.
+phone (844×390), a landscape tablet (1180×820) and a portrait tablet (834×1210)
+screen; `e2e/touch.ts` holds the shared touch helpers. Headless Chromium never
+hides the tab or blurs the window by itself, so test G sends the
+`visibilitychange` and `blur` events a browser sends when the notification shade
+or another app takes over. These are synthetic-input results; real fingers on a
+physical device are not certified.
 
 ### Held resize and input boundary checks
 
@@ -298,12 +299,12 @@ The unchanged press overlay distinguishes held and released pads.
 
 The resize tests first prove a pad is sounding and lit at the laptop size, keep
 the input down from there through phone portrait (390×844), phone landscape
-(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
-landscape, then release in that different layout and play another pad.
-The existing grid remains mounted beneath the portrait overlay. These are
-viewport changes, not a physical device rotation test. Mouse dragging and chain
-clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
-touch resizing and both mouse/touch hold orders: both inputs must succeed and
+(844×390), tablet (1180×820), portrait tablet (834×1210), back to laptop
+(1280×800) and on to phone landscape, then release in that different layout and
+play another pad. The existing grid remains mounted beneath the phone portrait
+overlay. These are viewport changes, not a physical device rotation test. Mouse
+dragging and chain clicks run in both Chromium and WebKit. Chromium additionally
+runs native CDP touch resizing and both mouse/touch hold orders: both inputs must succeed and
 remain active together, and releasing the second must preserve the first.
 
 WebKit's public Playwright touchscreen API only supports `tap()`; creating a
@@ -325,8 +326,10 @@ limitation. Pointer records observe browser events, including their trusted
 flag and input type; they do not call input handlers.
 
 `squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
-covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
-the bottom and right edges play the mapped pad at four screen sizes.
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen at
+eight screen sizes. The bottom and right edges play the mapped pad at the four
+phone, landscape tablet and laptop sizes, and every pad plays at the four
+portrait tablet sizes.
 
 Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
 The default suite includes all these cases; the GitHub workflow is unchanged.
