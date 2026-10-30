@@ -1,9 +1,12 @@
 # Shared admission inputs
 
-This directory copies the complete third revision of the generated audio admission
-inputs from [unipad-android at cab0f17c373e6830c750c6f289d059c40907f4eb](https://github.com/kimjisub/unipad-android/tree/cab0f17c373e6830c750c6f289d059c40907f4eb/app/src/sharedTest/assets/audio-safety).
-The binary files, `cases.json`, and `README.md` are byte-for-byte copies.
-The manifest SHA-256 is `b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`.
+The third revision of the generated audio admission inputs was copied byte for byte from
+[unipad-android at cab0f17c373e6830c750c6f289d059c40907f4eb](https://github.com/kimjisub/unipad-android/tree/cab0f17c373e6830c750c6f289d059c40907f4eb/app/src/sharedTest/assets/audio-safety)
+(manifest SHA-256 `b16e4f635d671b3ab2d20222cea55bec72cce91e496d6b2ea87ccf6525c193c4`).
+This directory holds the fourth revision, which adds nine `INVALID_FORMAT` inputs: AIFF, AIFF-C and
+CAF files, an AIFF named `.mp3`, and an MP3 behind a chain of false frame headers. Expectations of
+the earlier inputs are unchanged. The Android and iOS copies follow from this directory.
+The manifest SHA-256 is `08e51f9cf9ae53de55080e9bd560d1a3395f76fb544d7e24bd83ab6b6d3e1d76`.
 The web tests check the manifest and each binary hash without changing expectations.
 These inputs are separate from the historical parser conformance corpus.
 

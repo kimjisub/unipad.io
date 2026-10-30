@@ -13,6 +13,8 @@ import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { PackErrorDialog } from './PackErrorDialog';
+import { SoundLoadNotice } from './SoundLoadNotice';
+import { allSoundsFailed, type SoundLoadReport } from '@/lib/unipack/soundLoading';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
@@ -169,6 +171,10 @@ export function PlayPage() {
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
   const triedUrlPackRestoreRef = useRef(false);
   const packOpenRevisionRef = useRef(0);
+  /** The stored pack a retry after failed sounds opens again. */
+  const retryPackIdRef = useRef<string | null>(null);
+  const [dismissedSoundReport, setDismissedSoundReport] = useState<SoundLoadReport | null>(null);
+  const [soundDetailsOpen, setSoundDetailsOpen] = useState(false);
   useEffect(() => {
     const revisionRef = packOpenRevisionRef;
     return () => { revisionRef.current++; };
@@ -343,6 +349,7 @@ export function PlayPage() {
   const handleImportFile = useCallback(
     async (file: File) => {
       const isCurrent = beginPackOpen();
+      retryPackIdRef.current = null;
       await resumeAudio();
       const buffer = await file.arrayBuffer();
       // Until this import is saved, an auto mapping has no stored pack to go to.
@@ -365,6 +372,8 @@ export function PlayPage() {
           soundCount: parsed.soundCount,
           ledCount: parsed.ledCount,
         });
+        // A retry reopens the imported pack from the library.
+        if (isCurrent()) retryPackIdRef.current = id;
         await refreshLists();
         if (!isCurrent() || opened !== true) return;
         currentPackIdRef.current = id;
@@ -405,6 +414,7 @@ export function PlayPage() {
   const handlePlay = useCallback(
     async (id: string): Promise<boolean | null> => {
       const isCurrent = beginPackOpen();
+      retryPackIdRef.current = id;
       try {
         await resumeAudio();
         if (!isCurrent()) return null;
@@ -594,9 +604,16 @@ export function PlayPage() {
     prevRecordingPackRef.current = state.unipack;
   }, [state.loaded, state.recording, state.unipack, showToast, tToast]);
 
+  // The sound notice shows once per open: over the player when some sounds failed, over the pack list
+  // when all of them did and the pack did not open.
+  const soundReport = state.soundLoadReport;
+  const soundLoadFailed = soundReport !== null && allSoundsFailed(soundReport);
+  const soundNoticeShown = soundReport !== null && soundReport !== dismissedSoundReport && !state.loading
+    && (state.loaded || soundLoadFailed);
+
   // Dialogs over the player own the keyboard: only Escape (to close them) reaches the player.
   const dialogOpen = launchpadSettingsOpen || (errorDialogShown && state.errors.length > 0) || pendingShareItem !== null
-    || pendingAutoPlayEdit !== null;
+    || pendingAutoPlayEdit !== null || (soundNoticeShown && (soundLoadFailed || soundDetailsOpen));
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
@@ -606,7 +623,10 @@ export function PlayPage() {
       if (e.key === 'Escape') {
         e.preventDefault();
         (document.activeElement as HTMLElement)?.blur?.();
-        if (errorDialogShown) {
+        if (soundNoticeShown && soundDetailsOpen) {
+          setSoundDetailsOpen(false);
+          setDismissedSoundReport(soundReport);
+        } else if (errorDialogShown) {
           if (!state.criticalError) setErrorDialogShown(false);
         } else if (launchpadSettingsOpen) {
           setLaunchpadSettingsOpen(false);
@@ -642,6 +662,7 @@ export function PlayPage() {
     toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
     toggleWatermark, toggleProLightMode, toggleRecording,
     errorDialogShown, launchpadSettingsOpen, optionPanelOpen, dialogOpen,
+    soundNoticeShown, soundDetailsOpen, soundReport,
   ]);
 
   useEffect(() => {
@@ -1011,6 +1032,29 @@ export function PlayPage() {
     />
   );
 
+  const dismissSoundNotice = () => {
+    setSoundDetailsOpen(false);
+    setDismissedSoundReport(soundReport);
+  };
+  const soundNotice = soundNoticeShown && (
+    <SoundLoadNotice
+      report={soundReport}
+      failed={soundLoadFailed}
+      detailsOpen={soundDetailsOpen}
+      onDetailsOpenChange={setSoundDetailsOpen}
+      onClose={() => {
+        dismissSoundNotice();
+        if (soundLoadFailed) handleQuit();
+      }}
+      onRetry={() => {
+        dismissSoundNotice();
+        const id = retryPackIdRef.current;
+        if (id) void handlePlay(id);
+        else handleQuit();
+      }}
+    />
+  );
+
   // The same error dialog is needed when an import fails before the player is mounted.
   const errorDialog = errorDialogShown && state.errors.length > 0 && (
     <PackErrorDialog
@@ -1088,6 +1132,7 @@ export function PlayPage() {
 
         <AnimatePresence>{shareInstallDialog}</AnimatePresence>
         {errorDialog}
+        {soundNotice}
 
         <AnimatePresence>
           {toast && (
@@ -1684,6 +1729,7 @@ export function PlayPage() {
       )}
 
       {errorDialog}
+      {soundNotice}
 
       <AnimatePresence>{autoPlayEditDialog}</AnimatePresence>
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
@@ -1703,8 +1749,8 @@ export function PlayPage() {
         )}
       </AnimatePresence>
 
-      {/* Portrait orientation hint (mobile only, hidden when landscape or wider screen) */}
-      <div className="fixed inset-0 z-[90] bg-black/90 flex-col items-center justify-center gap-4 text-white hidden portrait:flex landscape:hidden md:hidden">
+      {/* Portrait orientation hint (below 600px, the phone width class; tablets play in portrait) */}
+      <div className="fixed inset-0 z-[90] bg-black/90 flex-col items-center justify-center gap-4 text-white hidden max-[599px]:portrait:flex">
         <svg className="w-12 h-12 text-white/60 animate-[spin_2s_ease-in-out_infinite]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>

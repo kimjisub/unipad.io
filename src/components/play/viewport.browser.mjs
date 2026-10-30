@@ -130,7 +130,7 @@ try {
     assert.equal(geometry.fits, true, 'All 64 pads, including the last row, fit the visible viewport');
     // The existing portrait rotation prompt is intentional; returning to
     // landscape must restore every pad. Store can still be checked from the menu.
-    const portrait = size && size[0] < 768 && size[0] < size[1];
+    const portrait = size && size[0] < 600 && size[0] < size[1];
     if (portrait) {
       assert.equal(await run(`document.body.textContent.includes('Rotate to landscape')`), true, 'Existing portrait rotation prompt remains');
       await command('Page.navigate', { url });

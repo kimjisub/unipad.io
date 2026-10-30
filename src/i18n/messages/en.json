@@ -442,6 +442,23 @@
       "autoPlaySaved": "Saved the AutoPlay. You can restore the previous one from the menu.",
       "autoPlayRestored": "Restored the previous AutoPlay.",
       "autoPlaySaveFailed": "Couldn’t save. The AutoPlay is unchanged."
+    },
+    "soundLoad": {
+      "limit": "{count, plural, one {# sound is too long or large and will not play} other {# sounds are too long or large and will not play}}",
+      "unreadable": "{count, plural, one {# sound file cannot be read} other {# sound files cannot be read}}",
+      "decode": "{count, plural, one {# sound cannot be played} other {# sounds cannot be played}}",
+      "memory": "{count, plural, one {Device memory is low. # sound could not be loaded. Close other apps and reopen the pack.} other {Device memory is low. # sounds could not be loaded. Close other apps and reopen the pack.}}",
+      "failedTitle": "Cannot open this pack’s sounds",
+      "details": "Details",
+      "close": "Close",
+      "retry": "Retry",
+      "packList": "Pack list",
+      "reason": {
+        "limit": "Too long or too large",
+        "unreadable": "File cannot be read",
+        "decode": "Sound cannot be played",
+        "memory": "Insufficient device memory"
+      }
     }
   }
 }

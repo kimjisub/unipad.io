@@ -8,7 +8,7 @@ import type { Json } from './conformanceHarness';
 export type Operation = 'audio-cost' | 'audio-file' | 'audio-wave' | 'audio-selection' | 'auto-map';
 interface WaveRecipe { rate: number; channels: number; frames: number; claimedSeconds: number }
 
-/** Same physical PCM recipe as shared audio admission revision 3, one file allocated at a time. */
+/** Same physical PCM recipe as the shared audio admission corpus, one file allocated at a time. */
 function wave(c: WaveRecipe): Buffer {
   const size = c.frames * c.channels * 2;
   if (!Number.isSafeInteger(size) || size < 0 || size > 512 * 1024 * 1024) throw new Error('invalid shared wave recipe');

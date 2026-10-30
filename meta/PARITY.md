@@ -198,8 +198,8 @@ platform's own fix removes it.
   SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
   The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
   app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
-  Android has since moved to its current G6 copy; see
-  [RESULTS.md](unipack-conformance/RESULTS.md#android-copy-reference-moved-to-the-g6-corpus-2026-10-27).
+  Android has since moved to the current corpus copy; see
+  [RESULTS.md](unipack-conformance/RESULTS.md#android-copy-reference-moved-to-the-current-corpus-2026-10-31).
 - **Twelve G6 web playback differences matched their expectations at that revision.**
   RUN-G617 and RUN-G618 have since received corrected input-owned release expectations and are
   failed again before the input-owned release fix above. The following observation retains its original hash.

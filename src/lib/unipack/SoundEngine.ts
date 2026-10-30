@@ -1,4 +1,18 @@
 import { Sound, NO_WORMHOLE, UniPackData } from './types';
+import { selectAudio } from './audioSafety';
+import {
+  EMPTY_SOUND_LOAD_REPORT,
+  INLINE_AUDIO_INSPECTOR,
+  audioReferences,
+  exclusionReason,
+  isMemoryFailure,
+  type AudioInspector,
+  type SoundFailure,
+  type SoundLoadReport,
+} from './soundLoading';
+
+/** Files decoded at once. Not yet measured on low-memory devices; the shared limit bounds what they hold. */
+const DECODE_BATCH_SIZE = 10;
 
 /** The input name auto play holds pads with, apart from the player's pointers, keys and launchpad. */
 export const AUTO_PLAY_INPUT = 'autoplay';
@@ -123,49 +137,74 @@ export class SoundEngine {
     this.gainNode.gain.value = this.outputMuted ? 0 : this.volume;
   }
 
-  async load(): Promise<string[]> {
-    if (this.loaded) return [];
+  /**
+   * Admits the pack's sound files under the shared limits, then decodes only the admitted ones. The
+   * whole selection is made before any decoding, so a file that fails to decode keeps its reservation
+   * and never lets a later file in. The pack's encoded bytes are released once read.
+   */
+  async load(inspector: AudioInspector = INLINE_AUDIO_INSPECTOR): Promise<SoundLoadReport> {
+    if (this.loaded) return EMPTY_SOUND_LOAD_REPORT;
 
-    const entries = Array.from(this.unipack.soundFiles.entries());
-    const total = entries.length;
-    let loadedCount = 0;
-    const failedFiles: string[] = [];
+    const { soundTable, soundFiles, info } = this.unipack;
+    const plan = await selectAudio(
+      audioReferences(this.unipack),
+      { chains: info.chain, width: info.buttonX, height: info.buttonY },
+      identity => {
+        const bytes = soundFiles.get(identity);
+        return bytes ? inspector.inspect(bytes) : { exclusion: 'READ_FAILURE' };
+      },
+    );
+    const order = new Map(plan.files.map(({ identity }, index) => [identity, index]));
+    const failures: SoundFailure[] = [];
+    const admitted: string[] = [];
+    for (const { identity, exclusion } of plan.files) {
+      if (exclusion === null) admitted.push(identity);
+      else failures.push({ file: identity, reason: exclusionReason(exclusion), exclusion });
+    }
 
-    const batchSize = 10;
-    for (let i = 0; i < entries.length; i += batchSize) {
-      const batch = entries.slice(i, i + batchSize);
+    const total = plan.files.length;
+    let settled = failures.length;
+    for (let i = 0; i < admitted.length; i += DECODE_BATCH_SIZE) {
       await Promise.all(
-        batch.map(async ([path, data]) => {
-          try {
-            const buffer = await this.audioContext.decodeAudioData(data.slice(0));
-            this.bufferCache.set(path, buffer);
-          } catch {
-            console.warn(`Failed to decode audio: ${path}`);
-            failedFiles.push(path);
-          }
-          loadedCount++;
-          this.onLoadProgress?.(loadedCount, total);
+        admitted.slice(i, i + DECODE_BATCH_SIZE).map(async file => {
+          const reason = await this.decode(file);
+          if (reason) failures.push({ file, reason, exclusion: null });
+          settled++;
+          this.onLoadProgress?.(settled, total);
         }),
       );
     }
+    soundFiles.clear();
 
-    // Assign buffers to sounds
-    const { soundTable, info } = this.unipack;
     for (let c = 0; c < info.chain; c++) {
       for (let x = 0; x < info.buttonX; x++) {
         for (let y = 0; y < info.buttonY; y++) {
-          const sounds = soundTable[c][x][y];
-          if (sounds) {
-            for (const sound of sounds) {
-              sound.audioBuffer = this.bufferCache.get(sound.file) ?? null;
-            }
+          for (const sound of soundTable[c][x][y] ?? []) {
+            sound.audioBuffer = this.bufferCache.get(sound.file) ?? null;
           }
         }
       }
     }
 
     this.loaded = true;
-    return failedFiles;
+    failures.sort((a, b) => order.get(a.file)! - order.get(b.file)!);
+    return {
+      usedFiles: total,
+      loadedFiles: this.bufferCache.size,
+      failures,
+      reservedCost: plan.reservedCost,
+    };
+  }
+
+  /** The decoder takes the file's own bytes, without a copy: nothing reads them after this. */
+  private async decode(file: string): Promise<'decode' | 'memory' | null> {
+    try {
+      this.bufferCache.set(file, await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!));
+      return null;
+    } catch (error) {
+      console.warn(`Failed to decode audio: ${file}`, error);
+      return isMemoryFailure(error) ? 'memory' : 'decode';
+    }
   }
 
   async resume(): Promise<void> {

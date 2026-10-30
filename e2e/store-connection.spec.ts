@@ -157,7 +157,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
   await context.route('**/api/store/download?*', route => route.fulfill({ body: pack.buffer, contentType: 'application/octet-stream' }));
   let failures = 0;
   page.on('console', message => { if (message.text().includes('Failed to load UniPack')) failures += 1; });
-  const error = page.getByRole('alertdialog', { name: 'Error', exact: true });
+  const error = page.getByRole('alertdialog', { name: 'Cannot open this pack’s sounds', exact: true });
   const packs = page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option');
   // Left in the address, the link would open the pack again and count another play on every reload.
   const expectNoReopen = async (opened: number) => {
@@ -173,7 +173,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
   await page.goto('/play?code=browser-pack');
   await page.getByRole('alertdialog', { name: 'Confirm install', exact: true }).getByRole('button', { name: 'Install', exact: true }).click();
   try {
-    await expect(error).toContainText('1 audio file(s) failed to decode');
+    await expect(error).toContainText('1 sound file cannot be read');
   } finally {
     await testInfo.attach('shared-pack-failed', { body: await page.screenshot(), contentType: 'image/png' });
   }
@@ -181,7 +181,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
 
   // The same link again finds the pack already downloaded and opens it without asking.
   await page.goto('/play?code=browser-pack');
-  await expect(error).toContainText('1 audio file(s) failed to decode');
+  await expect(error).toContainText('1 sound file cannot be read');
   await expectNoReopen(2);
 });
 
