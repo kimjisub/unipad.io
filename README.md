@@ -70,7 +70,7 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, and `e2e/sound-formats.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`, and `e2e/socket-failure-record.spec.ts` in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
