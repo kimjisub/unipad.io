@@ -29,18 +29,25 @@ export interface PageErrors {
 const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
   && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
 
-/** The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate. */
+/**
+ * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
+ * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
+ */
 function collectPageErrors(page: Page): PageErrors {
   const collected: PageErrors = { errors: [], ignored: [] };
-  let navigations = 0;
-  page.on('pageerror', error => (navigations && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
-  const whileLeaving = <T>(navigation: Promise<T>) => {
-    navigations++;
-    return navigation.finally(() => navigations--);
+  let leaving = false;
+  page.on('pageerror', error => (leaving && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
+  page.on('framenavigated', frame => {
+    if (frame === page.mainFrame()) leaving = false;
+  });
+  const whileLeaving = <T>(navigation: () => Promise<T>) => {
+    leaving = true;
+    return navigation().finally(() => { leaving = false; });
   };
-  const { goto, reload } = { goto: page.goto.bind(page), reload: page.reload.bind(page) };
-  page.goto = (url, options) => whileLeaving(goto(url, options));
-  page.reload = options => whileLeaving(reload(options));
+  const goto = page.goto.bind(page);
+  const reload = page.reload.bind(page);
+  page.goto = (url, options) => whileLeaving(() => goto(url, options));
+  page.reload = options => whileLeaving(() => reload(options));
   return collected;
 }
 
