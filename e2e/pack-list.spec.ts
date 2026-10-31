@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
@@ -132,7 +132,7 @@ async function expectActive(page: Page, name: string) {
   await expect(list(page).locator('[aria-selected="true"]')).toHaveCount(1);
 }
 
-test('the pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
+test('a short pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
   await openListWithThreePacks(page);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
   await option(page, middle).click();
@@ -395,7 +395,7 @@ async function wheelTo(page: Page, target: Locator) {
 }
 
 async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
-  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
+  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/, { timeout: stateTimeout });
   await expectPads(page);
   if (showsRotatePrompt(viewport)) {
     await expect(rotatePrompt(page)).toBeVisible();
@@ -425,10 +425,41 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   await resize(page, viewport);
 }
 
+test('saved pack playback waits for delayed settings completion', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await openLongList(page, true);
+  await option(page, 'Local pack 0 by UniPad Tests').click();
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = put.apply(this, args);
+      if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+        // Finish the native write but hold the Promise that gates the pack URL.
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          document.documentElement.dataset.heldPackSetting = 'true';
+          window.addEventListener('release-pack-setting', () => request.onsuccess?.call(request, event), { once: true });
+        }, { once: true });
+        IDBObjectStore.prototype.put = put;
+      }
+      return request;
+    };
+  });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expectPads(page);
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true');
+  const playback = playAndReturn(page, { width: 1280, height: 800 }).catch(error => error);
+  // Keep this response pending beyond the default five-second URL assertion.
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
+  expect(await playback).toBeUndefined();
+});
+
 for (const square of [true, false]) {
   for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
-      test.setTimeout(60_000);
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
       await openLongList(page, square);
       const viewport = { width, height };
       await resize(page, viewport);
