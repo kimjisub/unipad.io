@@ -91,6 +91,12 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await playMode(page, 'Guide').click();
     await expectFeedback(page, !leds, saved);
+    await info.attach('guide-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  });
+  test(`step mode and exit preserve feedback: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
+    await openFeedbackModePack(page, leds, saved);
+    await playMode(page, 'Auto').click();
+    await playMode(page, 'Guide').click();
     await playMode(page, 'Step').click();
     await expectFeedback(page, !leds, saved);
     await playMode(page, 'Step').click();
