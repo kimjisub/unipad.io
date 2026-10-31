@@ -28,7 +28,7 @@ async function openList(page: Page, files: readonly PackFile[]) {
       await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
       await expectPads(page);
       // The import shows the pads before it saves the pack; the URL changes once it is saved.
-      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
       // Setup needs the buttons' actions, not pointer hit testing during their animations.
       // Keep the page alive and return to the list before the next import.
       await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
@@ -318,7 +318,7 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 // Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
 async function openLongList(page: Page, square: boolean) {
   await loadInputPack(page, 8, 8, square);
-  await expect(page).toHaveURL(/pack=/);
+  await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('unipad');
@@ -425,26 +425,40 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   await resize(page, viewport);
 }
 
+function holdNextPackSetting() {
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args);
+    if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+      // Finish the native write but hold the Promise that gates the pack URL.
+      request.addEventListener('success', event => {
+        event.stopImmediatePropagation();
+        document.documentElement.dataset.heldPackSetting = 'true';
+        window.addEventListener('release-pack-setting', () => request.onsuccess?.call(request, event), { once: true });
+      }, { once: true });
+      IDBObjectStore.prototype.put = put;
+    }
+    return request;
+  };
+}
+
+test('saved pack import waits for delayed settings completion', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await page.addInitScript(holdNextPackSetting);
+  const imported = openList(page, [packs[0][0]]).catch(error => error);
+  await page.waitForURL(/\/play$/);
+  await expectPads(page);
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true', { timeout: stateTimeout });
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
+  expect(await imported).toBeUndefined();
+});
+
 test('saved pack playback waits for delayed settings completion', async ({ page }, info) => {
   test.setTimeout(Math.max(info.project.timeout, 60_000));
   await openLongList(page, true);
   await option(page, 'Local pack 0 by UniPad Tests').click();
-  await page.evaluate(() => {
-    const put = IDBObjectStore.prototype.put;
-    IDBObjectStore.prototype.put = function (...args) {
-      const request = put.apply(this, args);
-      if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
-        // Finish the native write but hold the Promise that gates the pack URL.
-        request.addEventListener('success', event => {
-          event.stopImmediatePropagation();
-          document.documentElement.dataset.heldPackSetting = 'true';
-          window.addEventListener('release-pack-setting', () => request.onsuccess?.call(request, event), { once: true });
-        }, { once: true });
-        IDBObjectStore.prototype.put = put;
-      }
-      return request;
-    };
-  });
+  await page.evaluate(holdNextPackSetting);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expectPads(page);
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true');
@@ -518,7 +532,7 @@ for (const action of ['opening', 'bookmarking'] as const) {
       if (action === 'opening') {
         await page.getByRole('button', { name: 'Play', exact: true }).click();
         await expectPads(page);
-        await expect(page).toHaveURL(/\/play\?pack=.+/);
+        await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
         const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
         await page.locator('[data-pad="0,0"]').click();
         await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);

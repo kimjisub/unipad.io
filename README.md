@@ -220,7 +220,8 @@ explicit skips for unsupported test capabilities. Firefox allows
 shared 15-second state limit from `expectPads`, including import and reload.
 Saved-pack tail cases retain that project's 90-second limit (60 seconds in the
 other projects), and their pack URL assertion uses the same 15-second state limit.
-A settings response held for six seconds checks the URL wait without slowing the app.
+Settings responses held for six seconds check the import and reopening URL waits
+without slowing the app.
 The one-Tab-stop pack-list check uses a short list; with an overflowing list,
 Firefox can focus the native scroll container before the selected row.
 A missing saved pack fails the pad-count assertion with the observed value,
