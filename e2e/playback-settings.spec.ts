@@ -89,7 +89,7 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await expectFeedback(page, !leds, saved);
     await info.attach('exit-screen', { body: await page.screenshot(), contentType: 'image/png' });
   });
-  test(`direct feedback choice lasts until the mode ends and is not saved: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
+  test(`direct feedback choice survives pause and resets on resume without saving: LEDs ${leds}, saved ${saved}`, async ({ page }) => {
     await openFeedbackModePack(page, leds, saved);
     await playMode(page, 'Auto').click();
     await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
@@ -99,6 +99,14 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
     await expectFeedback(page, leds, saved);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expectFeedback(page, !leds, saved);
+  });
+  // Mode exit and reload start with a fresh pack instead of sharing the pause/resume budget.
+  // Exit while the direct choice is still active, so the reset cannot be supplied by resume.
+  test(`direct feedback choice resets on mode exit and reload without saving: LEDs ${leds}, saved ${saved}`, async ({ page }, info) => {
+    await openFeedbackModePack(page, leds, saved);
+    await playMode(page, 'Auto').click();
+    await expect(playMode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
     await playMode(page, 'Auto').click();
     await expectFeedback(page, !leds, saved);
     await page.getByRole('button', { name: 'Feedback', exact: true }).click();
