@@ -156,9 +156,19 @@ test('the pack list is one Tab stop and arrow, Home and End keys move focus and 
   await expectActive(page, first);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
 
+  // Test the list's Tab order within the page. Headless Firefox keeps the last element
+  // focused when Tab would enter browser chrome, so provide an explicit next stop.
+  await page.evaluate(() => {
+    const next = document.createElement('button');
+    next.id = 'after-pack-list';
+    // WebKit's default Tab navigation requires buttons to opt in explicitly.
+    next.tabIndex = 0;
+    next.textContent = 'After pack list';
+    document.body.append(next);
+  });
   // Tab leaves the list instead of walking through every row.
   await page.keyboard.press('Tab');
-  await expect(list(page).getByRole('option').and(page.locator(':focus'))).toHaveCount(0);
+  await expect(page.locator('#after-pack-list')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(option(page, first)).toBeFocused();
 });
@@ -347,20 +357,38 @@ async function openLongList(page: Page, square: boolean) {
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
-  const scroll = await target.evaluate(element => {
+  const readScroll = () => target.evaluate(element => {
     const targetRect = element.getBoundingClientRect();
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (getComputedStyle(parent).overflowY === 'auto' && parent.scrollHeight > parent.clientHeight) {
         const rect = parent.getBoundingClientRect();
-        const delta = targetRect.top < rect.top ? -2000 : targetRect.bottom > rect.bottom ? 2000 : 0;
-        if (delta) return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, delta };
+        // Stop within the final assertion's existing 0.99 ratio: integer scroll offsets can
+        // leave a fractional sliver clipped at the end of a fractional-height scrollport.
+        const tolerance = targetRect.height * 0.01;
+        const direction = targetRect.top < rect.top - tolerance ? -1 : targetRect.bottom > rect.bottom + tolerance ? 1 : 0;
+        if (direction) return {
+          x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+          top: parent.scrollTop, delta: direction * 2000,
+          // Bound the gesture sequence by the content size, including one partial final step.
+          steps: Math.ceil(parent.scrollHeight / (parent.clientHeight / 2)) + 1,
+        };
       }
     }
     return null;
   });
-  if (scroll) {
+  const initial = await readScroll();
+  // Firefox limits a large wheel event to less than one scrollport. Send a sequence of
+  // wheel gestures and require movement after each one, rather than assuming deltaY
+  // equals the distance scrolled or silently retrying the final visibility assertion.
+  for (let remaining = initial?.steps ?? 0; remaining > 0; remaining--) {
+    const scroll = await readScroll();
+    if (!scroll) break;
     await page.mouse.move(scroll.x, scroll.y);
     await page.mouse.wheel(0, scroll.delta);
+    await expect.poll(async () => {
+      const next = await readScroll();
+      return !next || next.top !== scroll.top;
+    }, { message: 'Wheel input must move the target scroll container' }).toBe(true);
   }
   // Fractional scroll offsets can leave less than one CSS pixel clipped.
   await expect(target).toBeInViewport({ ratio: 0.99 });
