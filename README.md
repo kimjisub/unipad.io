@@ -218,6 +218,12 @@ WebKit and Firefox also run the shared multi-touch and page/layout files, with
 explicit skips for unsupported test capabilities. Firefox allows
 90 seconds overall for page setup and playback. Pack-open assertions use the
 shared 15-second state limit from `expectPads`, including import and reload.
+Saved-pack tail cases retain that project's 90-second limit (60 seconds in the
+other projects), and their pack URL assertion uses the same 15-second state limit.
+Settings responses held for six seconds check the import and reopening URL waits
+without slowing the app.
+The one-Tab-stop pack-list check uses a short list; with an overflowing list,
+Firefox can focus the native scroll container before the selected row.
 A missing saved pack fails the pad-count assertion with the observed value,
 rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
