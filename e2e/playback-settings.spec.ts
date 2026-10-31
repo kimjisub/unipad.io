@@ -1,7 +1,7 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test as restartTest, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
-import { test, expect, expectAudioOutputRunning, expectPads, installBrowserProbe, installationResponse } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, stateTimeout, installBrowserProbe, installationResponse } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
 
@@ -58,6 +58,15 @@ async function expectFeedback(page: Page, enabled: boolean, stored: string | nul
   await expect.poll(async () => (await playbackSettings(page)).feedbackLight).toBe(stored);
 }
 
+async function expectSavedPlaybackPack(page: Page) {
+  // Pads appear before persistence finishes. Observe both within the existing pad-state budget,
+  // rather than starting a separate, shorter URL deadline as soon as the pads appear.
+  await expect.poll(() => page.evaluate(() => ({
+    pads: document.querySelectorAll('[data-pad]').length,
+    saved: Boolean(new URL(location.href).searchParams.get('pack')),
+  })), { timeout: stateTimeout }).toEqual({ pads: 64, saved: true });
+}
+
 async function openFeedbackModePack(page: Page, leds: boolean, saved: string | null, short = false) {
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
   await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
@@ -66,8 +75,7 @@ async function openFeedbackModePack(page: Page, leds: boolean, saved: string | n
   if (!leds) zip.remove('keyLED');
   zip.file('autoPlay', short ? 'd 1000\no 1 1\nd 50\nf 1 1\n' : 'd 1000\no 1 1\nd 50\nf 1 1\n'.repeat(30));
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'feedback.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
-  await expectPads(page);
-  await expect(page).toHaveURL(/pack=/);
+  await expectSavedPlaybackPack(page);
   await expectAudioOutputRunning(page);
 }
 const playMode = (page: Page, label: string) => page.getByRole('button', { name: `Play mode: ${label}`, exact: true });
@@ -140,10 +148,8 @@ async function importPlaybackPack(page: Page, keyLedExist: boolean) {
   const zip = await JSZip.loadAsync(await readFile(`e2e/fixtures/${keyLedExist ? 'basic' : 'multi-touch'}.uni`));
   if (!keyLedExist) zip.file('autoPlay', 'd 1000\no 1 1\nd 50\nf 1 1\n'.repeat(10));
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'settings.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
-  // Import decodes audio before saving the pack and updating its URL.
-  // Keep the URL assertion focused on persistence after loading completes.
-  await expectPads(page);
-  await expect(page).toHaveURL(/pack=/);
+  // Loading and persistence share one readiness check; neither alone prepares a reload.
+  await expectSavedPlaybackPack(page);
   return page.url();
 }
 
@@ -179,6 +185,43 @@ test('settings import waits for native audio decoding before checking the saved 
   await expectPlaybackSettings(page, false);
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
+
+// Hold only delivery to the app; the native setting write and transaction still finish.
+function holdImportedPackSetting() {
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args);
+    if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+      request.addEventListener('success', event => {
+        event.stopImmediatePropagation();
+        document.documentElement.dataset.heldPlaybackSetting = 'true';
+        window.addEventListener('release-playback-setting', () => request.onsuccess?.call(request, event), { once: true });
+      }, { once: true });
+      IDBObjectStore.prototype.put = put;
+    }
+    return request;
+  };
+}
+
+for (const preparation of ['settings', 'mode'] as const) {
+  test(`${preparation} preparation waits for saved pack readiness within the pad deadline`, async ({ page }, info) => {
+    await page.addInitScript(holdImportedPackSetting);
+    const opening = (preparation === 'mode' ? openFeedbackModePack(page, true, null) : (async () => {
+      await page.goto('/play', { waitUntil: 'domcontentloaded' });
+      await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+      await playbackSettings(page, { feedbackLight: null });
+      await importPlaybackPack(page, true);
+    })()).catch(error => error);
+    await expect(page.locator('html')).toHaveAttribute('data-held-playback-setting', 'true', { timeout: stateTimeout });
+    await expectPads(page);
+    // The helper has seen pads, but its real settings response is still pending.
+    await page.waitForTimeout(6000);
+    await page.evaluate(() => window.dispatchEvent(new Event('release-playback-setting')));
+    expect(await opening).toBeUndefined();
+    await expectFeedback(page, false, null);
+    await info.attach('saved-pack-url', { body: page.url(), contentType: 'text/plain' });
+  });
+}
 
 async function launchRestartProfile(browserType: BrowserType, profile: string, args: string[] = []) {
   return browserType.launchPersistentContext(profile, {
