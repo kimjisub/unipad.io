@@ -192,8 +192,9 @@ test('settings import waits for native audio decoding before checking the saved 
   await info.attach('delayed-import-storage', { body: JSON.stringify(await playbackSettings(page)), contentType: 'application/json' });
 });
 
-// Hold only delivery to the app; the native setting write and transaction still finish.
-function holdImportedPackSetting() {
+// Delay delivery inside the browser so host round trips cannot extend the six-second hold.
+// The native setting write and transaction still finish normally.
+function delayImportedPackSetting() {
   const put = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function (...args) {
     const request = put.apply(this, args);
@@ -201,7 +202,7 @@ function holdImportedPackSetting() {
       request.addEventListener('success', event => {
         event.stopImmediatePropagation();
         document.documentElement.dataset.heldPlaybackSetting = 'true';
-        window.addEventListener('release-playback-setting', () => request.onsuccess?.call(request, event), { once: true });
+        setTimeout(() => request.onsuccess?.call(request, event), 6000);
       }, { once: true });
       IDBObjectStore.prototype.put = put;
     }
@@ -211,19 +212,16 @@ function holdImportedPackSetting() {
 
 for (const preparation of ['settings', 'mode'] as const) {
   test(`${preparation} preparation waits for saved pack readiness within the pad deadline`, async ({ page }, info) => {
-    await page.addInitScript(holdImportedPackSetting);
-    const opening = (preparation === 'mode' ? openFeedbackModePack(page, true, null) : (async () => {
+    await page.addInitScript(delayImportedPackSetting);
+    if (preparation === 'mode') {
+      await openFeedbackModePack(page, true, null);
+    } else {
       await page.goto('/play', { waitUntil: 'domcontentloaded' });
       await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
       await playbackSettings(page, { feedbackLight: null });
       await importPlaybackPack(page, true);
-    })()).catch(error => error);
-    await expect(page.locator('html')).toHaveAttribute('data-held-playback-setting', 'true', { timeout: stateTimeout });
-    await expectPads(page);
-    // The helper has seen pads, but its real settings response is still pending.
-    await page.waitForTimeout(6000);
-    await page.evaluate(() => window.dispatchEvent(new Event('release-playback-setting')));
-    expect(await opening).toBeUndefined();
+    }
+    await expect(page.locator('html')).toHaveAttribute('data-held-playback-setting', 'true');
     await expectFeedback(page, false, null);
     await info.attach('saved-pack-url', { body: page.url(), contentType: 'text/plain' });
   });
