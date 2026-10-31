@@ -60,15 +60,19 @@ for (const [method, ascending, titles] of sortCases) {
         request.onerror = () => reject(request.error);
       });
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const tx = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
         const store = tx.objectStore('unipackMetadata');
         const archive = tx.objectStore('unipacks').getAll();
+        const chunks = tx.objectStore('unipackChunks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
           const records = request.result;
           const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
           records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
           tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
+          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
+            tx.objectStore('unipackChunks').put({ ...chunk, packId: 'favorite' });
+          }
           store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
@@ -312,9 +316,10 @@ async function openLongList(page: Page, square: boolean) {
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+      const transaction = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
       const store = transaction.objectStore('unipackMetadata');
       const archive = transaction.objectStore('unipacks').getAll();
+      const chunks = transaction.objectStore('unipackChunks').getAll();
       const request = store.getAll();
       request.onsuccess = () => {
         const template = request.result[0];
@@ -325,6 +330,9 @@ async function openLongList(page: Page, square: boolean) {
         }
         for (let index = 0; index < 12; index++) {
           transaction.objectStore('unipacks').put({ ...archive.result[0], id: `local-${index}` });
+          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
+            transaction.objectStore('unipackChunks').put({ ...chunk, packId: `local-${index}` });
+          }
           store.put({ ...template, id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
         }
       };
