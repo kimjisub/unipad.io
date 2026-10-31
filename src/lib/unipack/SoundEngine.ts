@@ -178,8 +178,7 @@ export class SoundEngine {
       else failures.push({ file: identity, reason: exclusionReason(exclusion), exclusion });
     }
 
-    const discardSound = (file: string) => {
-      const bytes = soundFiles.get(file);
+    const discardSound = (file: string, bytes = soundFiles.get(file)) => {
       soundFiles.delete(file);
       if (bytes && !sharedBuffers.has(bytes)) releaseArrayBuffer(bytes);
     };
@@ -203,9 +202,11 @@ export class SoundEngine {
       }
       await Promise.all(
         admitted.slice(i, end).map(async ({ identity: file }) => {
+          // destroy() clears the map while a native decode can still be pending.
+          const bytes = soundFiles.get(file);
           let reason;
           try { reason = await this.decode(file); }
-          finally { discardSound(file); }
+          finally { discardSound(file, bytes); }
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
           if (!this.destroyed) this.onLoadProgress?.(settled, total);

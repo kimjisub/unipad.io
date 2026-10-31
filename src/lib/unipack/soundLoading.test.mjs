@@ -321,3 +321,16 @@ test('replacing a pack during inspection never starts a decode', async () => {
   assert.deepEqual(decoded, []);
   assert.equal(pack.soundFiles.size, 0);
 });
+
+
+test('a replaced pack discards an in-flight sound buffer when decoding settles after its map was cleared', async () => {
+  const run = await costRun([2n]);
+  const bytes = run.pack.soundFiles.get('sounds/1.wav');
+  try {
+    run.engine.destroy();
+    assert.equal(run.pack.soundFiles.size, 0);
+    run.gates[0].resolve();
+    await run.loading;
+    assert.equal(bytes.byteLength, 0, 'late decoding still releases its exclusively owned encoded bytes');
+  } finally { await run.finish(); }
+});
