@@ -17,10 +17,36 @@ export function installationResponse(url: URL) {
     : { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken };
 }
 
-export const test = base.extend<{ checkedPage: void }>({
+export interface PageErrors {
+  /** Fail the test unless it empties this list itself. */
+  errors: string[];
+  /** Firebase fetches cut off while their page was being replaced. */
+  ignored: string[];
+}
+
+// WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
+// text at the URL's first colon. The fetch's own rejection is a separate error, so ignoring the line hides no exception.
+const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
+  && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
+
+/** The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate. */
+function collectPageErrors(page: Page): PageErrors {
+  const collected: PageErrors = { errors: [], ignored: [] };
+  let navigations = 0;
+  page.on('pageerror', error => (navigations && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
+  const whileLeaving = <T>(navigation: Promise<T>) => {
+    navigations++;
+    return navigation.finally(() => navigations--);
+  };
+  const { goto, reload } = { goto: page.goto.bind(page), reload: page.reload.bind(page) };
+  page.goto = (url, options) => whileLeaving(goto(url, options));
+  page.reload = options => whileLeaving(reload(options));
+  return collected;
+}
+
+export const test = base.extend<{ checkedPage: PageErrors }>({
   checkedPage: [async ({ page, context, baseURL }, use) => {
-    const errors: string[] = [];
-    page.on('pageerror', error => errors.push(error.message));
+    const collected = collectPageErrors(page);
     // Firebase analytics receives inert local responses so its installation
     // promise does not reject when networking is blocked. No requests leave CI.
     await context.route('**/*', route => {
@@ -35,8 +61,8 @@ export const test = base.extend<{ checkedPage: void }>({
     });
     await context.routeWebSocket(/.*/, socket => socket.close());
     await installBrowserProbe(page);
-    await use();
-    expect(errors, 'uncaught browser errors').toEqual([]);
+    await use(collected);
+    expect(collected.errors, 'uncaught browser errors').toEqual([]);
   }, { auto: true }],
 });
 
