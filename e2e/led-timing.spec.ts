@@ -184,6 +184,7 @@ function expectOnlyLaunchpadPads(outputs: Run['otherOutputPads']) {
 }
 
 interface MidiQuietRecording {
+  waitStartedAt: number;
   sentAt: number[];
   collectedAt: number;
   quietMs: number;
@@ -193,13 +194,18 @@ interface MidiQuietRecording {
 /** Wait past the intended tail and for a full quiet second after the last actual send. A continuing
  * stream times out explicitly instead of being read partway through and called missing commands. */
 async function waitForMidiQuiet(page: Page, lastT0: number): Promise<MidiQuietRecording> {
+  await page.evaluate(() => performance.clearMarks('midi-quiet-start'));
   let recording!: MidiQuietRecording;
   await expect.poll(async () => {
     const result = await page.evaluate((lastIntended) => new Promise<MidiQuietRecording | null>((resolve) => {
-      // Start a quiet window in a page timer turn. A paused frame alone cannot satisfy it:
-      // sends that run during this window invalidate it, even if the final timer is overdue.
+      // Observe a window between page timer turns, rather than treating a stalled frame as quiet.
       setTimeout(() => {
-        const sentCount = window.ledTiming.sent.length;
+        if (!performance.getEntriesByName('midi-quiet-start').length) performance.mark('midi-quiet-start');
+        const { sent, autoStart } = window.ledTiming;
+        const sentCount = sent.length;
+        // Schedule the check past the intended tail too. Merely checking its timestamp after
+        // a stall could let this timer overtake a later send timer that has also become due.
+        const delay = Math.max(1000, autoStart! + lastIntended + 1000 - performance.now());
         setTimeout(() => {
           const { sent, autoStart } = window.ledTiming;
           const lastSent = sent.length ? sent[sent.length - 4] : autoStart!;
@@ -209,6 +215,7 @@ async function waitForMidiQuiet(page: Page, lastT0: number): Promise<MidiQuietRe
             return;
           }
           resolve({
+            waitStartedAt: performance.getEntriesByName('midi-quiet-start')[0].startTime - autoStart!,
             sentAt: sent.filter((_, index) => index % 4 === 0).map(time => time - autoStart!),
             collectedAt: now - autoStart!,
             quietMs: now - lastSent,
@@ -216,7 +223,7 @@ async function waitForMidiQuiet(page: Page, lastT0: number): Promise<MidiQuietRe
               start: entry.startTime - autoStart!, duration: entry.duration,
             })),
           });
-        }, 1000);
+        }, delay);
       }, 0);
     }), lastT0);
     if (result) recording = result;
@@ -247,22 +254,24 @@ test('records only Launchpad output commands and keeps synthesizer sends separat
 
 });
 
-for (const { name, lastT0, stallMs } of [
-  { name: 'records late tail commands until the MIDI output has gone quiet', lastT0: 0, stallMs: 1100 },
-  { name: 'rechecks MIDI quiet after overdue timers resume from a stalled frame', lastT0: 1800, stallMs: 3100 },
+const LATE_TAIL_MS = 1800;
+
+for (const { name, lastT0, stallMs, tailDelays } of [
+  { name: 'records late tail commands until the MIDI output has gone quiet', lastT0: 0, stallMs: 1100, tailDelays: [900, LATE_TAIL_MS] },
+  { name: 'rechecks MIDI quiet after overdue timers resume from a stalled frame', lastT0: LATE_TAIL_MS, stallMs: 3100, tailDelays: [LATE_TAIL_MS] },
 ]) {
 test(name, async ({ page }, testInfo) => {
   await page.goto('/play');
-  await page.evaluate((stallMs) => {
+  await page.evaluate(({ stallMs, tailDelays }) => {
     const sent: number[] = [];
     window.ledTiming = { sent, otherOutputs: {}, ticks: [], autoStart: performance.now() };
     const send = () => sent.push(performance.now(), 0x90, 81, 5);
     send();
-    setTimeout(send, 900);
-    setTimeout(send, 1800);
-    // Stall a real frame across pending send deadlines while the recorder is waiting.
+    for (const delay of tailDelays) setTimeout(send, delay);
+    // Wait for the recorder's first observation, so a slow browser round trip cannot
+    // postpone the entire wait until after the stall and overdue sends have finished.
     const frame = () => {
-      if (performance.now() - window.ledTiming.autoStart! < 100) {
+      if (!performance.getEntriesByName('midi-quiet-start').length || performance.now() - window.ledTiming.autoStart! < 100) {
         requestAnimationFrame(frame);
         return;
       }
@@ -271,17 +280,18 @@ test(name, async ({ page }, testInfo) => {
       performance.measure('midi-frame-stall', { start, end: performance.now() });
     };
     requestAnimationFrame(frame);
-  }, stallMs);
+  }, { stallMs, tailDelays });
   // Use the snapshot taken in the waiter's decision task. A later page round trip could
   // include overdue sends and hide an early decision.
   const recording = await waitForMidiQuiet(page, lastT0);
   await testInfo.attach('midi-quiet.json', { body: JSON.stringify(recording, null, 2), contentType: 'application/json' });
   expect(recording.stall).toHaveLength(1);
   const [stall] = recording.stall;
-  expect(stall.start).toBeLessThan(900);
+  expect(recording.waitStartedAt).toBeLessThan(stall.start);
+  expect(stall.start).toBeLessThan(tailDelays[0]);
   expect(stall.duration).toBeGreaterThanOrEqual(stallMs);
-  expect(stall.start + stall.duration).toBeGreaterThan(Math.max(900, lastT0 + 1000));
-  expect(recording.sentAt).toHaveLength(3);
+  expect(stall.start + stall.duration).toBeGreaterThan(Math.max(tailDelays[0], lastT0 + 1000));
+  expect(recording.sentAt).toHaveLength(1 + tailDelays.length);
   expect(recording.quietMs).toBeGreaterThanOrEqual(1000);
 });
 }
