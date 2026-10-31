@@ -424,7 +424,7 @@ export function PlayPage() {
         setLoadingPackTitle(pack.title);
         // Recent-open history is best effort; a slow or failed write must not prevent playback.
         void updateUniPackLastOpened(id).catch(error => console.warn('Could not save recent pack history.', error));
-        const opened = await loadUniPack(pack.zipData, pack.autoPlay);
+        const opened = await loadUniPack(pack.zipData, pack.autoPlay, { releaseArchive: true });
         if (!isCurrent() || opened === null) return null;
         if (opened === false) {
           currentPackIdRef.current = null;

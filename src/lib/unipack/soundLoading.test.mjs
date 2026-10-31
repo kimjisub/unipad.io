@@ -140,7 +140,7 @@ test('a pack whose used sounds all fail is reported as such; a pack without soun
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-async function pendingLoad() {
+async function pendingLoad(shared = false) {
   const pack = await parseUniPack(await packZip({ info: INFO,
     keySound: '1 1 1 a.wav\n1 1 2 b.wav\n1 2 1 c.wav\n1 2 2 bad.wav',
     'sounds/a.wav': wave({ frames: 8000, mark: 1 }),
@@ -149,7 +149,8 @@ async function pendingLoad() {
     'sounds/bad.wav': 'not audio',
   }));
   // The parser normally only extracts referenced sounds; a caller may retain an extra file.
-  pack.soundFiles.set('unused.wav', new ArrayBuffer(1));
+  pack.soundFiles.set('unused.wav', shared ? pack.soundFiles.get('sounds/a.wav') : new ArrayBuffer(1));
+  const encoded = new Map(pack.soundFiles);
   const gates = [null, deferred(), deferred(), deferred()];
   const decoded = fakeAudio({ 2: encodingError });
   const decode = AudioContext.prototype.decodeAudioData;
@@ -163,7 +164,7 @@ async function pendingLoad() {
   const engine = new SoundEngine(pack, () => 0, () => {});
   const loading = engine.load();
   await entered.promise;
-  return { pack, gates, loading, decoded, engine, finish: async () => {
+  return { pack, encoded, gates, loading, decoded, engine, finish: async () => {
     for (const gate of gates.slice(1)) gate.resolve();
     await loading; engine.destroy();
   } };
@@ -175,7 +176,21 @@ test('excluded and unused sound bytes are released before decoding begins', asyn
     assert.equal(run.pack.soundFiles.has('sounds/bad.wav'), false);
     assert.equal(run.pack.soundFiles.has('unused.wav'), false);
     assert.equal(run.pack.soundFiles.has('sounds/a.wav'), true, 'pending files keep their bytes');
+    assert.equal(run.encoded.get('sounds/bad.wav').byteLength, 0);
+    assert.equal(run.encoded.get('unused.wav').byteLength, 0);
   } finally { await run.finish(); }
+});
+
+test('an excluded alias cannot discard bytes still owned by a selected sound', async () => {
+  const run = await pendingLoad(true);
+  try {
+    assert.equal(run.pack.soundFiles.has('unused.wav'), false);
+    assert.ok(run.encoded.get('sounds/a.wav').byteLength > 0);
+    run.gates[1].resolve();
+    await turn();
+    assert.ok(run.encoded.get('sounds/a.wav').byteLength > 0, 'shared buffers keep their original lifetime');
+  } finally { await run.finish(); }
+  assert.deepEqual(run.decoded.sort(), [1, 2, 3]);
 });
 
 for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
@@ -186,6 +201,7 @@ for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
       await turn();
       assert.equal(run.pack.soundFiles.has(`sounds/${file}`), false);
       assert.equal(run.pack.soundFiles.has('sounds/c.wav'), true);
+      assert.equal(run.encoded.get(`sounds/${file}`).byteLength, 0);
     } finally { await run.finish(); }
     assert.equal(run.pack.soundFiles.size, 0);
     assert.deepEqual(run.decoded.sort(), [1, 2, 3]);

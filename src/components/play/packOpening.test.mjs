@@ -36,7 +36,7 @@ stub('../../lib/store.ts', {
   downloadStoreItem: async () => downloadedBytes,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push({ name, params }) });
-let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides, savedImports, importSaved;
+let held = {}, storage, loads, themes, engine, nextResult, library, loadOverrides, loadOptions, savedImports, importSaved;
 const deferred = () => { let resolve, reject; return { promise: new Promise((r, j) => { resolve = r; reject = j; }), resolve, reject }; };
 const hold = kind => {
   const waiting = { ...deferred(), entered: deferred() };
@@ -77,8 +77,9 @@ function useTestEngine() {
     revision.current++;
     setState(prev => ({ ...prev, loaded: false, loading: false, unipack: null }));
   }, []);
-  const loadUniPack = React.useCallback(async (data, autoPlay) => {
+  const loadUniPack = React.useCallback(async (data, autoPlay, options) => {
     loadOverrides.push(autoPlay);
+    loadOptions.push(options);
     unload(); const own = revision.current;
     loads.push(data);
     setState(prev => ({ ...prev, loading: true }));
@@ -106,7 +107,7 @@ const { PlayPage } = require('./PlayPage.tsx');
 const flush = async action => act(async () => { await action?.(); });
 async function mount(url = '/play', prepare = noop) {
   library = new Map([['A', pack('A')], ['B', pack('B')]]);
-  held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; savedImports = []; importSaved = deferred(); nextResult = true; engine = null; main = null;
+  held = {}; storage = new Map(); loads = []; loadOverrides = []; loadOptions = []; themes = []; savedImports = []; importSaved = deferred(); nextResult = true; engine = null; main = null;
   store = null; downloadedBytes = null; storeSaves = []; analytics = []; metadataRead = deferred();
   prepare();
   window.history.replaceState(null, '', url);
@@ -159,6 +160,7 @@ test('a saved open passes its stored autoPlay to the player', async () => {
   await mount();
   await flush(() => main.onPlay('B'));
   assert.deepEqual(loadOverrides, [savedAutoPlay]);
+  assert.deepEqual(loadOptions, [{ releaseArchive: true }]);
 });
 
 test('requests that finish reading in reverse order keep the last requested pack and its record', async () => {
