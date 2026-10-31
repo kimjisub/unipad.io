@@ -1105,7 +1105,7 @@ export function useUniPadEngine() {
    * Opens a pack; `savedAutoPlay` is the autoPlay stored for it, played in place of the archive's.
    * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
    * when a later load or a quit replaced this one: the player belongs to that, so leave it alone.
-   * `releaseArchive` consumes a storage read after parsing; imports keep their archive for saving.
+   * `releaseArchive` consumes the bytes after parsing. Callers that save must read the File again.
    */
   const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay, options: { releaseArchive?: boolean } = {}): Promise<boolean | null> => {
     unload();

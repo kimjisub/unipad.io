@@ -23,6 +23,7 @@ let held = { parse: [], decode: [], theme: [] };
 let started = { led: 0, wake: 0, midi: 0 };
 // What the next sound load reports; every used sound loaded unless a test says otherwise.
 let soundReport = null;
+let onParsingProgress = () => {};
 const analytics = [];
 const releasedThemes = [];
 const runners = [];
@@ -37,7 +38,7 @@ const step = async (kind, run) => {
 };
 const real = require('../../lib/unipack/index.ts');
 stub('../../lib/unipack/index.ts', { ...real,
-  parseUniPack: (...args) => step('parse', () => real.parseUniPack(...args)),
+  parseUniPack: (bytes, progress) => step('parse', () => real.parseUniPack(bytes, phase => { onParsingProgress(bytes); progress?.(phase); })),
   LedRunner: class extends real.LedRunner {
     constructor(...args) { super(...args); runners.push(this); }
     launch(...args) { started.led++; return super.launch(...args); }
@@ -61,7 +62,7 @@ stub('../../lib/unipack/index.ts', { ...real,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push([name, params?.result]) });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; soundReport = null; analytics.length = 0; loadedPacks.length = 0; });
+afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; soundReport = null; analytics.length = 0; loadedPacks.length = 0; onParsingProgress = () => {}; });
 const flush = async action => act(async () => { await action?.(); await new Promise(resolve => setTimeout(resolve, 5)); });
 const deferred = () => { let resolve; return { promise: new Promise(r => { resolve = r; }), resolve: () => resolve() }; };
 const hold = kind => {
@@ -88,9 +89,11 @@ test('a saved archive stays readable through parsing and is discarded before sou
     loading = result.current.loadUniPack(bytes, undefined, { releaseArchive: true });
     return reading.entered.promise;
   });
-  assert.ok(bytes.byteLength > 0, 'parsing still needs the archive');
+  let parsingObserved = false;
+  onParsingProgress = archive => { parsingObserved = true; assert.ok(archive.byteLength > 0, 'parsing still needs the archive'); };
   await flush(() => { reading.resolve(); return decoding.entered.promise; });
   try {
+    assert.ok(parsingObserved, 'the archive was checked during parsing');
     assert.equal(bytes.byteLength, 0, 'sound loading no longer needs the saved archive');
     const parsed = loadedPacks.at(-1);
     assert.ok(parsed.soundFiles.size > 0);

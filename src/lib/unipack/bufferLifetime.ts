@@ -1,5 +1,8 @@
-/** Discard exclusively owned bytes without waiting for garbage collection. */
+/** Discard exclusively owned bytes without waiting for garbage collection, when supported. */
 export function releaseArrayBuffer(bytes: ArrayBuffer): void {
-  // Older browsers keep the existing garbage-collected lifetime.
-  if (bytes.byteLength > 0 && typeof bytes.transfer === 'function') bytes.transfer(0);
+  try {
+    if (bytes.byteLength > 0 && typeof bytes.transfer === 'function') bytes.transfer(0);
+  } catch {
+    // An unavailable or refused transfer must not turn a successful load into a failure.
+  }
 }

@@ -176,3 +176,55 @@ test('a pack of lights only opens without a sound notice', async ({ page }) => {
   await expect(page.getByRole('status').filter({ has: page.getByRole('button', { name: 'Details' }) })).toHaveCount(0);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
+
+test('an imported archive is released during decoding and freshly read for saving', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = File.prototype.arrayBuffer;
+    const reads: ArrayBuffer[] = [];
+    let checked = false;
+    Object.assign(window, { importArchiveProbe: { reads, get checked() { return checked; } } });
+    File.prototype.arrayBuffer = async function () {
+      const bytes = await Reflect.apply(read, this, []);
+      reads.push(bytes);
+      return bytes;
+    };
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = function (...args) {
+      if (reads.length > 0) {
+        if (reads.length !== 1 || reads[0].byteLength !== 0) throw new Error('Import archive retained during decoding');
+        checked = true;
+      }
+      return Reflect.apply(decode, this, args);
+    };
+  });
+  await openBasicWith(page, {});
+  await expect(page).toHaveURL(/pack=/);
+  expect(await page.evaluate(() => {
+    const probe = (window as unknown as { importArchiveProbe: { reads: ArrayBuffer[]; checked: boolean } }).importArchiveProbe;
+    return { checked: probe.checked, lengths: probe.reads.map(bytes => bytes.byteLength) };
+  })).toEqual({ checked: true, lengths: [0, expect.any(Number)] });
+  await page.reload();
+  await expectPads(page);
+});
+
+test('an unreadable import source keeps playing and can be imported again', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = File.prototype.arrayBuffer;
+    let reads = 0;
+    File.prototype.arrayBuffer = function () {
+      if (++reads === 2) return Promise.reject(new DOMException('Source file disappeared', 'NotReadableError'));
+      return Reflect.apply(read, this, []);
+    };
+  });
+  await openBasicWith(page, {});
+  await expect(page.getByText('Could not install that pack', { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/pack=/);
+  await pad(page, '0,0').hover();
+  await page.mouse.down();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await page.mouse.up();
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles('e2e/fixtures/basic.uni');
+  await expect(page).toHaveURL(/pack=/);
+  await page.reload();
+  await expectPads(page);
+});
