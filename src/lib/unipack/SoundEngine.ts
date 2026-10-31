@@ -1,5 +1,5 @@
 import { Sound, NO_WORMHOLE, UniPackData } from './types';
-import { selectAudio } from './audioSafety';
+import { PACK_AUDIO_LIMIT, selectAudio, type AudioSelection } from './audioSafety';
 import {
   EMPTY_SOUND_LOAD_REPORT,
   INLINE_AUDIO_INSPECTOR,
@@ -11,8 +11,9 @@ import {
   type SoundLoadReport,
 } from './soundLoading';
 
-/** Files decoded at once. Not yet measured on low-memory devices; the shared limit bounds what they hold. */
+/** Web-only decode scheduling; admission and its shared limits stay unchanged. */
 const DECODE_BATCH_SIZE = 10;
+const DECODE_BATCH_COST = PACK_AUDIO_LIMIT / BigInt(4);
 
 /** The input name auto play holds pads with, apart from the player's pointers, keys and launchpad. */
 export const AUTO_PLAY_INPUT = 'autoplay';
@@ -154,25 +155,43 @@ export class SoundEngine {
         return bytes ? inspector.inspect(bytes) : { exclusion: 'READ_FAILURE' };
       },
     );
+    // Worker copies are no longer needed; do not keep them alive during native decoding.
+    inspector.close?.();
     const order = new Map(plan.files.map(({ identity }, index) => [identity, index]));
     const failures: SoundFailure[] = [];
-    const admitted: string[] = [];
-    for (const { identity, exclusion } of plan.files) {
-      if (exclusion === null) admitted.push(identity);
+    const admitted: AudioSelection[] = [];
+    for (const file of plan.files) {
+      const { identity, exclusion } = file;
+      if (exclusion === null) admitted.push(file);
       else failures.push({ file: identity, reason: exclusionReason(exclusion), exclusion });
+    }
+
+    const selected = new Set(admitted.map(({ identity }) => identity));
+    for (const file of soundFiles.keys()) {
+      if (!selected.has(file)) soundFiles.delete(file);
     }
 
     const total = plan.files.length;
     let settled = failures.length;
-    for (let i = 0; i < admitted.length; i += DECODE_BATCH_SIZE) {
+    for (let i = 0; i < admitted.length;) {
+      let end = i;
+      let cost = BigInt(0);
+      while (end < admitted.length && end - i < DECODE_BATCH_SIZE) {
+        const nextCost = admitted[end].cost;
+        // A file larger than the batch budget still runs, by itself, and always advances the loop.
+        if (end > i && cost + nextCost > DECODE_BATCH_COST) break;
+        cost += nextCost;
+        end++;
+      }
       await Promise.all(
-        admitted.slice(i, i + DECODE_BATCH_SIZE).map(async file => {
+        admitted.slice(i, end).map(async ({ identity: file }) => {
           const reason = await this.decode(file);
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
           this.onLoadProgress?.(settled, total);
         }),
       );
+      i = end;
     }
     soundFiles.clear();
 
@@ -196,7 +215,7 @@ export class SoundEngine {
     };
   }
 
-  /** The decoder takes the file's own bytes, without a copy: nothing reads them after this. */
+  /** Pass the original bytes; WebKit may copy them internally. Drop our reference on settlement. */
   private async decode(file: string): Promise<'decode' | 'memory' | null> {
     try {
       this.bufferCache.set(file, await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!));
@@ -204,6 +223,8 @@ export class SoundEngine {
     } catch (error) {
       console.warn(`Failed to decode audio: ${file}`, error);
       return isMemoryFailure(error) ? 'memory' : 'decode';
+    } finally {
+      this.unipack.soundFiles.delete(file);
     }
   }
 
