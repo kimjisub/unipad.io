@@ -330,10 +330,12 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
       const request = get.call(this, query);
       if (this.name === 'unipacks' && query === 'earlier-pack' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Delay the assembled result, not native request dispatch: chunk reads need an active transaction.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
           document.documentElement.dataset.heldPackRead = 'true';
-          window.addEventListener('release-earlier-pack', () => request.onsuccess?.call(request, event), { once: true });
+          window.addEventListener('release-earlier-pack', () => transaction.oncomplete?.call(transaction, event), { once: true });
         }, { once: true });
       }
       return request;
@@ -406,7 +408,7 @@ test('a file still enters the library when another pack replaces its pending rea
   await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
+test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
   await loadPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
@@ -418,9 +420,12 @@ test('restoration waits past the temporary pack list before reading a saved pack
       const request = get.call(this, query);
       if (this.name === 'unipacks' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Let native reads finish and release their locks; hold only the storage Promise's result.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
-          void released.then(() => request.onsuccess?.call(request, event));
+          document.documentElement.dataset.heldPackRead = 'true';
+          void released.then(() => transaction.oncomplete?.call(transaction, event));
         }, { once: true });
       }
       return request;
@@ -428,6 +433,8 @@ test('restoration waits past the temporary pack list before reading a saved pack
   });
   await page.reload();
   await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
   await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
   const restored = expectLoadedPack(page).catch(error => error);
   // Keep the actual storage result pending beyond the former five-second assertion.

@@ -3,6 +3,8 @@ import { type BrowserContext, type Page } from '@playwright/test';
 import { undecodablePack } from './basic-pack';
 import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
+import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
+import { storedPackRecords } from './saved-packs';
 
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',
@@ -148,6 +150,35 @@ test('a connected shared link still asks before installing and plays the downloa
   await expect(confirmation).toBeVisible();
   await expect(page.locator('[data-pad]')).toHaveCount(0);
   await confirmation.getByRole('button', { name: 'Install', exact: true }).click();
+  await expectPads(page);
+});
+
+test('a store download with damaged compressed audio stays unsaved and offers a working retry', async ({ page, context }, testInfo) => {
+  await connectStore(context);
+  const damaged = Buffer.from(await corruptSoundArchive());
+  let broken = true;
+  await context.route('**/api/store/download?*', route => route.fulfill({
+    body: broken ? damaged : readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream',
+  }));
+  await verifyDatabase(page);
+  await page.getByRole('button', { name: /^Store/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Store', exact: true });
+  const row = dialog.locator('[data-store-code="browser-pack"]');
+  await row.getByRole('button', { name: 'Download', exact: true }).click();
+  try {
+    await expect(row.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    expect(await storedPackRecords(page)).toEqual([]);
+    await expect(dialog.getByRole('button', { name: 'Play Downloaded Pack' })).toHaveCount(0);
+  } finally {
+    await testInfo.attach('damaged-download', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  broken = false;
+  await row.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Play Downloaded Pack' })).toBeVisible();
+  const saved = await storedPackRecords(page);
+  expect(saved).toHaveLength(1);
+  expect(saved[0].zipData).toEqual([...readFileSync('e2e/fixtures/basic.uni')]);
+  await dialog.getByRole('button', { name: 'Play Downloaded Pack' }).click();
   await expectPads(page);
 });
 

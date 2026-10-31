@@ -11,15 +11,24 @@ export function storedPackRecords(page: Page) {
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const db = open.result;
-      const transaction = db.transaction(['unipacks', 'unipackMetadata']);
+      const transaction = db.transaction(['unipacks', 'unipackMetadata', ...(db.objectStoreNames.contains('unipackChunks') ? ['unipackChunks'] : [])]);
       const archives = transaction.objectStore('unipacks').getAll();
       const metadata = transaction.objectStore('unipackMetadata').getAll();
+      const chunks = db.objectStoreNames.contains('unipackChunks') ? transaction.objectStore('unipackChunks').getAll() : undefined;
       transaction.onabort = () => { db.close(); reject(transaction.error); };
       transaction.oncomplete = () => {
         db.close();
         resolve(metadata.result.map(record => ({
           ...record,
-          zipData: Array.from(new Uint8Array(archives.result.find(archive => archive.id === record.id).zipData)),
+          zipData: (() => {
+            const archive = archives.result.find(archive => archive.id === record.id);
+            if (archive.zipData) return Array.from(new Uint8Array(archive.zipData));
+            const bytes = new Uint8Array(archive.byteLength);
+            for (const chunk of chunks?.result ?? []) {
+              if (chunk.packId === record.id) bytes.set(new Uint8Array(chunk.data), chunk.index * 8 * 1024 * 1024);
+            }
+            return Array.from(bytes);
+          })(),
         })));
       };
     };
