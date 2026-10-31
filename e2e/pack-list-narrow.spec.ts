@@ -1,8 +1,9 @@
+import { resolve } from 'node:path';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
 import { reachable, resize } from './layout';
-import { importSavedPack } from './saved-packs';
+import { importSavedPack, savedRecords } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
 // Phone widths, then the wider ones where the store number and the language decide when the buttons wrap.
@@ -12,8 +13,8 @@ const widths = [
 ];
 
 const locales = [
-  { locale: 'en-US', search: 'Search unipacks', ascending: 'Sort ascending', descending: 'Sort descending', theme: 'Theme', store: 'Store' },
-  { locale: 'ko-KR', search: '유니팩 검색', ascending: '오름차순 정렬', descending: '내림차순 정렬', theme: '테마', store: '스토어' },
+  { locale: 'en-US', search: 'Search unipacks', ascending: 'Sort ascending', descending: 'Sort descending', theme: 'Theme', store: 'Store', play: 'Play' },
+  { locale: 'ko-KR', search: '유니팩 검색', ascending: '오름차순 정렬', descending: '내림차순 정렬', theme: '테마', store: '스토어', play: '재생' },
 ] as const;
 
 const packTitle = 'Browser Test Pack';
@@ -135,15 +136,106 @@ for (const text of locales) {
     });
 
     test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       await expect(row).toBeVisible();
       await resize(page, { width: 320, height: 800 });
       await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      // Measure every control after the text resize has finished moving the layout.
+      await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
       await expectAllReachable(controls);
       expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
       await expect(row).toBeInViewport({ ratio: 0.99 });
     });
+  });
+}
+
+// Include every reported short height and the widths where the counted store button wraps.
+const shortScreens = [
+  { width: 360, height: 600 },
+  ...Array.from({ length: 16 }, (_, index) => ({ width: 340 + index * 10, height: 640 })),
+  { width: 320, height: 640 }, { width: 320, height: 667 }, { width: 360, height: 700 },
+];
+const scrollSwitchScreens = [{ width: 320, height: 568 }, { width: 640, height: 360 }];
+
+for (const text of locales) {
+  for (const textScale of [100, 200]) {
+    test.describe(`${text.locale} ${textScale}% text`, () => {
+      test.use({ locale: text.locale, reducedMotion: 'reduce' });
+      test('selected pack can start without scrolling on short phones', async ({ page, context }, testInfo) => {
+        test.setTimeout(120_000);
+        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+        if (textScale === 200) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        const row = page.getByRole('option', { name: new RegExp(packTitle) });
+        if (await row.getAttribute('aria-selected') !== 'true') await row.click();
+        await expect(row).toHaveAttribute('aria-selected', 'true');
+        const play = page.getByRole('button', { name: text.play, exact: true });
+        const measurements = [];
+        for (const viewport of [...shortScreens, ...(textScale === 100 ? scrollSwitchScreens : [])]) {
+          await resize(page, viewport);
+          // Never let locator.click scroll the details to disguise a clipped action.
+          const state = await reachable(play);
+          const search = await bar(page, text).search.boundingBox();
+          const pack = await row.boundingBox();
+          measurements.push({ ...viewport, state, searchWidth: search!.width, packHeight: pack!.height });
+          if (viewport.width === 360 && viewport.height === 600) {
+            await testInfo.attach('short-selected-pack', { body: await page.screenshot(), contentType: 'image/png' });
+          }
+          await testInfo.attach(`layout-${viewport.width}x${viewport.height}`, { body: JSON.stringify(measurements.at(-1)), contentType: 'application/json' });
+          await expect(play).toBeInViewport({ ratio: 1 });
+          expect(state, `play at ${viewport.width}x${viewport.height}`).toEqual({ inside: true, pressable: true });
+          expect(search!.width, 'search box width').toBeGreaterThanOrEqual(180);
+          expect(pack!.height, 'first pack height').toBe(72);
+          await expect(row).toBeInViewport({ ratio: 0.99 });
+        }
+        // A visible button must actually open the pack and start sound from a pad.
+        const decoded = await page.evaluate(() => window.browserProbe.audio.decoded.length);
+        await play.click();
+        await expectPads(page);
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBeGreaterThan(decoded);
+        // Phone playback asks for landscape before accepting pad input.
+        await resize(page, { width: 700, height: 360 });
+        const pad = page.locator('[data-pad="0,0"]');
+        const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+        await pad.click();
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBeGreaterThan(starts);
+      });
+    });
+  }
+
+  test.describe(`${text.locale} scrolled details`, () => {
+    test.use({ locale: text.locale, reducedMotion: 'reduce' });
+    for (const viewport of scrollSwitchScreens) {
+      test(`switching packs restores playback after scrolling at ${viewport.width}x${viewport.height}`, async ({ page, context }, testInfo) => {
+        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+        await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+        await expectPads(page);
+        await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
+        await page.goto('/play');
+        await resize(page, viewport);
+        const first = page.getByRole('option', { name: new RegExp(packTitle) });
+        const second = page.getByRole('option', { name: /Chain Release v1 manual/ });
+        const play = page.getByRole('button', { name: text.play, exact: true });
+        for (const [from, to] of [[first, second], [second, first]]) {
+          if (await from.getAttribute('aria-selected') !== 'true') await from.click();
+          await expect(from).toHaveAttribute('aria-selected', 'true');
+          const details = page.locator('div.overflow-y-auto').filter({ has: play });
+          await details.evaluate(element => { element.scrollTop = element.scrollHeight; });
+          await expect.poll(() => details.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+          await expect(play).not.toBeInViewport({ ratio: 1 });
+          await to.click();
+          await expect(to).toHaveAttribute('aria-selected', 'true');
+          await testInfo.attach('switched-pack', { body: await page.screenshot(), contentType: 'image/png' });
+          // Check before clicking: Playwright would otherwise scroll a clipped button into view.
+          await expect(play).toBeInViewport({ ratio: 1 });
+          expect(await reachable(play)).toEqual({ inside: true, pressable: true });
+          expect(await details.evaluate(element => element.scrollTop)).toBe(0);
+        }
+        await play.click();
+        await expectPads(page);
+      });
+    }
   });
 }
