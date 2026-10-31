@@ -53,6 +53,20 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   const workflow = read('.github/workflows/ci.yml');
   const readme = read('README.md');
   const browser = job(workflow, 'browser-playback');
+  const command = browser.split('\n').find(line => /^\s+run: pnpm test:e2e --project=chromium\s/.test(line));
+  assert.ok(command, 'Browser playback tests must have a Chromium test command');
+  const files = command.trim().split(/\s+/).slice(4);
+  assert.deepEqual(files, [
+    'e2e/play.spec.ts',
+    'e2e/offline-play.spec.ts',
+    'e2e/sound-formats.spec.ts',
+    'e2e/socket-failure-record.spec.ts',
+  ], 'Browser playback tests must run all four spec files in order');
+  const description = readme.match(/\*\*Browser playback tests\*\* job\b([\s\S]*?)\bin Chromium;/);
+  assert.ok(description, 'README must describe the Browser playback tests job');
+  const documentedFiles = [...description[1].matchAll(/`(e2e\/[^`]+\.spec\.ts)`/g)].map(match => match[1]);
+  assert.deepEqual(documentedFiles, files, 'README must list the Browser playback tests spec files in execution order');
+  for (const spec of files) assert.ok(read(spec), `${spec} must exist`);
   assert.doesNotMatch(job(workflow, 'checks'), /playwright|test:e2e/);
   assert.match(browser, /runs-on: ubuntu-24\.04/);
   assert.match(browser, /timeout-minutes: 20/);
@@ -62,7 +76,7 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
     `uses: ${setupAction}`,
     'run: pnpm exec playwright install chromium',
     'run: pnpm build',
-    'run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts',
+    command.trim(),
     'uses: actions/upload-artifact@',
   ];
   let position = -1;
@@ -73,7 +87,6 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
   }
   assert.match(browser, /if: failure\(\)\n\s+uses: actions\/upload-artifact@/);
   for (const folder of ['playwright-report/', 'test-results/']) assert.ok(browser.includes(folder), `${folder} must be uploaded`);
-  for (const spec of ['e2e/play.spec.ts', 'e2e/offline-play.spec.ts']) assert.ok(read(spec), `${spec} must exist`);
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 
