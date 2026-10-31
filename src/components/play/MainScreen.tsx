@@ -237,8 +237,8 @@ export function MainScreen({
         }} />
       </div>
 
-      {/* Keep playback first when the details yield space to the list. */}
-      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-3 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
+      {/* Reset scrolling for each selection so its playback action starts in view. */}
+      <div key={selectedPack?.id ?? 'summary'} className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-3 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
             pack={selectedPack}
@@ -367,7 +367,7 @@ export function MainScreen({
           </div>
         </div>
 
-        {/* Pack List: this minimum, added to the rows above and below it, sizes the panel, so a wrapped
+        {/* Pack List: this minimum plus the toolbar sizes the mobile panel, so a wrapped
             button row takes its height from the details and not from the first pack. */}
         <div className="grow basis-0 overflow-y-auto overflow-x-hidden min-h-[72px] md:min-h-0 rounded-xl">
           {filteredAndSortedPacks.length === 0 ? (
