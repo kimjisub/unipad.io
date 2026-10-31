@@ -91,9 +91,15 @@ export function MainScreen({
     });
   }, [savedPacks, searchQuery, sortMethod, sortAsc]);
   const selectedPack = filteredAndSortedPacks.find((p) => p.id === selectedId) ?? null;
-  // Reset scrolling without replacing controls that may hold keyboard focus.
+  // Start at playback unless a focused detail control needs to remain in view.
   useLayoutEffect(() => {
-    if (detailsPanelRef.current) detailsPanelRef.current.scrollTop = 0;
+    const panel = detailsPanelRef.current;
+    if (!panel) return;
+    panel.scrollTop = 0;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && panel.contains(focused)) {
+      focused.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
   }, [selectedPack?.id]);
 
   // Only one row is in the Tab order: the selected pack, or the first one when none is selected.

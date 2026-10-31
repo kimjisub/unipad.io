@@ -136,12 +136,15 @@ for (const text of locales) {
     });
 
     test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       await expect(row).toBeVisible();
       await resize(page, { width: 320, height: 800 });
       await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      // Measure every control after the text resize has finished moving the layout.
+      await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
       await expectAllReachable(controls);
       expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(224);
       await expect(row).toBeInViewport({ ratio: 0.99 });

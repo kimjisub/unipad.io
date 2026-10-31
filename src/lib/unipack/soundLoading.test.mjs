@@ -241,7 +241,7 @@ async function costRun(costs) {
   const loading = engine.load({ inspect: async bytes => ({ exclusion: null,
     facts: { sampleRate: 48000, channels: 2, frames: costs[new Uint8Array(bytes)[0] - 1] / 2n } }) });
   await turn();
-  return { gates, started, loading, limit: PACK_AUDIO_LIMIT / 4n, finish: async () => {
+  return { engine, pack, gates, started, loading, limit: PACK_AUDIO_LIMIT / 4n, finish: async () => {
     gates.forEach(g => g.resolve()); await loading; engine.destroy();
   } };
 }
@@ -273,4 +273,35 @@ test('small sounds still decode ten at once', async () => {
     await turn();
     assert.deepEqual(run.started, Array.from({ length: 12 }, (_, i) => i + 1));
   } finally { await run.finish(); }
+});
+
+
+test('replacing a pack stops before the next decode batch and drops late results', async () => {
+  const run = await costRun(Array(12).fill(2n));
+  try {
+    assert.equal(run.started.length, 10);
+    run.engine.destroy();
+    for (const gate of run.gates.slice(0, 10)) gate.resolve();
+    await turn();
+    assert.deepEqual(run.started, Array.from({ length: 10 }, (_, i) => i + 1));
+    const report = await run.loading;
+    assert.equal(report.loadedFiles, 0);
+    assert.equal(run.pack.soundFiles.size, 0);
+    assert.ok(run.pack.soundTable.flat(2).flat().every(sound => !sound || sound.audioBuffer === null));
+  } finally { await run.finish(); }
+});
+
+
+test('replacing a pack during inspection never starts a decode', async () => {
+  const pack = await parseUniPack(await packZip({ info: INFO, keySound: '1 1 1 a.wav', 'sounds/a.wav': wave({ frames: 800, mark: 1 }) }));
+  const decoded = fakeAudio();
+  const gate = deferred();
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const loading = engine.load({ inspect: async () => { await gate.promise; return { exclusion: null,
+    facts: { sampleRate: 8000, channels: 1, frames: 800n } }; } });
+  engine.destroy();
+  gate.resolve();
+  await loading;
+  assert.deepEqual(decoded, []);
+  assert.equal(pack.soundFiles.size, 0);
 });

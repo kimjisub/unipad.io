@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import { readFile } from 'node:fs/promises';
 import { test, expect, expectPads } from './browser';
 import type { Page } from '@playwright/test';
@@ -120,3 +121,189 @@ test('listing and bookmarking saved packs never access archive records', async (
   await expect(page.locator('html')).not.toHaveAttribute('data-unexpected-archive-access');
   await info.attach('metadata-only-list', { body: await page.screenshot(), contentType: 'image/png' });
 });
+
+
+/** Runs the production storage module against each browser's real IndexedDB. */
+async function openStorageModule(page: Page) {
+  const source = await readFile('src/lib/unipack/storage.ts', 'utf8');
+  const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
+  await page.route('**/storage-module.mjs', route => route.fulfill({ contentType: 'text/javascript', body: outputText }));
+  await page.route('**/storage-test', route => route.fulfill({ contentType: 'text/html', body: '<p>Archive storage test</p>' }));
+  await page.goto('/storage-test');
+}
+
+test('large archives use bounded writes, reopen byte for byte and remove every chunk', async ({ page }) => {
+  await openStorageModule(page);
+  const result = await page.evaluate(async () => {
+    const path = '/storage-module.mjs';
+    const api = await import(path) as typeof import('../src/lib/unipack/storage');
+    const put = IDBObjectStore.prototype.put;
+    const sizes: number[] = [];
+    let pending = 0;
+    let maxPending = 0;
+    IDBObjectStore.prototype.put = function (value, key) {
+      const data = value.zipData ?? value.data;
+      if (data instanceof ArrayBuffer) {
+        sizes.push(data.byteLength);
+        if (data.byteLength > 8 * 1024 * 1024) throw new DOMException('Single value is too large.', 'QuotaExceededError');
+      }
+      const request = put.call(this, value, key);
+      if (data instanceof ArrayBuffer) {
+        maxPending = Math.max(maxPending, ++pending);
+        request.addEventListener('success', () => pending--, { once: true });
+      }
+      return request;
+    };
+    const bytes = new Uint8Array(16 * 1024 * 1024 + 7).fill(37);
+    bytes[bytes.length - 1] = 91;
+    const info = { title: 'Bounded archive', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1 };
+    const id = await api.saveUniPack(bytes.buffer, info);
+    const pack = await api.getUniPack(id);
+    const restored = pack && new Uint8Array(pack.zipData);
+    const identical = restored && bytes.length === restored.length && bytes.every((byte, i) => restored[i] === byte);
+    await api.deleteUniPack(id);
+    const absent = await api.getUniPack(id) === undefined;
+    const counts = await new Promise<number[]>((resolve, reject) => {
+      const open = indexedDB.open('unipad');
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction(Array.from(db.objectStoreNames));
+        const requests = ['unipacks', 'unipackMetadata', 'unipackChunks'].map(name => tx.objectStore(name).count());
+        tx.oncomplete = () => { db.close(); resolve(requests.map(r => r.result)); };
+        tx.onabort = () => reject(tx.error);
+      };
+    });
+    return { identical, absent, sizes, counts, maxPending };
+  });
+  expect(result).toEqual({ identical: true, absent: true, sizes: [8388608, 8388608, 7], counts: [0, 0, 0], maxPending: 1 });
+});
+
+for (const saving of ['import', 'store'] as const) {
+  for (const failure of ['quota', 'abort', 'exception'] as const) {
+    test(`${saving} keeps the previous archive when the second chunk fails with ${failure}`, async ({ page }) => {
+      await openStorageModule(page);
+      const result = await page.evaluate(async ({ saving, failure }) => {
+        const path = '/storage-module.mjs';
+        const api = await import(path) as typeof import('../src/lib/unipack/storage');
+        const info = { title: 'Existing archive', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, storeCode: 'test-store' };
+        const oldId = await api.saveStoreUniPack(new Uint8Array([1, 2, 3]).buffer, info);
+        await api.toggleUniPackBookmark(oldId);
+        const previous = await api.getUniPack(oldId);
+        const put = IDBObjectStore.prototype.put;
+        let chunks = 0;
+        IDBObjectStore.prototype.put = function (value, key) {
+          if (this.name === 'unipackChunks' && chunks === 1) {
+            chunks++;
+            if (failure !== 'abort') throw new DOMException('Injected storage failure.', failure === 'quota' ? 'QuotaExceededError' : 'DataCloneError');
+            const request = put.call(this, value, key);
+            request.addEventListener('success', () => this.transaction.abort(), { once: true });
+            return request;
+          }
+          const request = put.call(this, value, key);
+          if (this.name === 'unipackChunks') chunks++;
+          return request;
+        };
+        let error = '';
+        try {
+          const bytes = new Uint8Array(16 * 1024 * 1024 + 7).buffer;
+          if (saving === 'store') await api.saveStoreUniPack(bytes, info);
+          else await api.saveUniPack(bytes, info);
+        } catch (cause) { error = (cause as Error).name; }
+        const after = await api.getUniPack(oldId);
+        const records = await api.listUniPacks();
+        const sameBytes = after && Array.from(new Uint8Array(after.zipData));
+        return { error, chunks, sameBytes, unchanged: JSON.stringify(previous) === JSON.stringify(after), ids: records.map(r => r.id), oldId };
+      }, { saving, failure });
+      expect(result.error).toBe(failure === 'quota' ? 'QuotaExceededError' : failure === 'exception' ? 'DataCloneError' : 'AbortError');
+      expect(result.chunks).toBe(2);
+      expect(result.sameBytes).toEqual([1, 2, 3]);
+      expect(result.unchanged).toBe(true);
+      expect(result.ids).toEqual([result.oldId]);
+    });
+  }
+}
+
+for (const damage of ['missing', 'short'] as const) {
+  test(`an archive with a ${damage} chunk rejects the read`, async ({ page }) => {
+    await openStorageModule(page);
+    const result = await page.evaluate(async damage => {
+      const path = '/storage-module.mjs';
+      const api = await import(path) as typeof import('../src/lib/unipack/storage');
+      const id = await api.saveUniPack(new Uint8Array(8 * 1024 * 1024 + 7).buffer,
+        { title: 'Incomplete archive', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1 });
+      await new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('unipad');
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction('unipackChunks', 'readwrite');
+          const store = tx.objectStore('unipackChunks');
+          if (damage === 'missing') store.delete([id, 1]);
+          else store.put({ packId: id, index: 1, data: new Uint8Array(6).buffer });
+          tx.oncomplete = () => { db.close(); resolve(); };
+          tx.onabort = () => reject(tx.error);
+        };
+      });
+      try { await api.getUniPack(id); return 'unexpected success'; }
+      catch (error) { return (error as Error).message; }
+    }, damage);
+    expect(result).toBe('Missing or incomplete archive chunk.');
+  });
+}
+
+test('store replacement commits the new bytes and removes the earlier chunks', async ({ page }) => {
+  await openStorageModule(page);
+  const result = await page.evaluate(async () => {
+    const path = '/storage-module.mjs';
+    const api = await import(path) as typeof import('../src/lib/unipack/storage');
+    const info = { title: 'Store archive', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, storeCode: 'test-store' };
+    const oldId = await api.saveStoreUniPack(new Uint8Array(8 * 1024 * 1024 + 7).buffer, info);
+    const id = await api.saveStoreUniPack(new Uint8Array([4, 5, 6, 7]).buffer, info);
+    const current = await api.getUniPack(id);
+    const old = await api.getUniPack(oldId);
+    const chunks = await new Promise<{ packId: string }[]>((resolve, reject) => {
+      const open = indexedDB.open('unipad');
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction('unipackChunks');
+        const all = tx.objectStore('unipackChunks').getAll();
+        tx.oncomplete = () => { db.close(); resolve(all.result); };
+        tx.onabort = () => reject(tx.error);
+      };
+    });
+    return { bytes: current && Array.from(new Uint8Array(current.zipData)), oldAbsent: old === undefined,
+      ids: (await api.listUniPacks()).map(pack => pack.id), chunkIds: chunks.map(chunk => chunk.packId), id };
+  });
+  expect(result.bytes).toEqual([4, 5, 6, 7]);
+  expect(result.oldAbsent).toBe(true);
+  expect(result.ids).toEqual([result.id]);
+  expect(result.chunkIds).toEqual([result.id]);
+});
+
+for (const saving of ['import', 'store'] as const) {
+  test(`${saving} reclaims old chunks when the archive id is reused`, async ({ page }) => {
+    await openStorageModule(page);
+    const result = await page.evaluate(async saving => {
+      const path = '/storage-module.mjs';
+      const api = await import(path) as typeof import('../src/lib/unipack/storage');
+      Date.now = () => 123;
+      const info = { title: 'Same archive id', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, storeCode: 'same-store' };
+      const save = saving === 'store' ? api.saveStoreUniPack : api.saveUniPack;
+      const oldId = await save(new Uint8Array(16 * 1024 * 1024 + 7).buffer, info);
+      const id = await save(new Uint8Array([1, 2, 3]).buffer, info);
+      const record = await api.getUniPack(id);
+      const count = await new Promise<number>((resolve, reject) => {
+        const open = indexedDB.open('unipad');
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction('unipackChunks');
+          const count = tx.objectStore('unipackChunks').count();
+          tx.oncomplete = () => { db.close(); resolve(count.result); };
+          tx.onabort = () => reject(tx.error);
+        };
+      });
+      return { sameId: id === oldId, bytes: record && Array.from(new Uint8Array(record.zipData)), count };
+    }, saving);
+    expect(result).toEqual({ sameId: true, bytes: [1, 2, 3], count: 1 });
+  });
+}

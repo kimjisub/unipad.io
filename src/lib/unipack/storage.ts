@@ -1,10 +1,20 @@
 import type { AutoPlayElement } from './types';
 
 const DB_NAME = 'unipad';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_UNIPACKS = 'unipacks';
 const STORE_PACK_METADATA = 'unipackMetadata';
-const PACK_STORES = [STORE_UNIPACKS, STORE_PACK_METADATA];
+const STORE_PACK_CHUNKS = 'unipackChunks';
+const PACK_STORES = [STORE_UNIPACKS, STORE_PACK_METADATA, STORE_PACK_CHUNKS];
+// Bound structured-clone and browser IPC copies to one chunk, not the entire archive.
+const ARCHIVE_CHUNK_BYTES = 8 * 1024 * 1024;
+
+interface ChunkedArchive {
+  id: string;
+  format: 'chunks-v1';
+  byteLength: number;
+  chunkCount: number;
+}
 const STORE_THEMES = 'themes';
 const STORE_SETTINGS = 'settings';
 
@@ -76,6 +86,9 @@ function openDB(): Promise<IDBDatabase> {
           }
         };
       }
+      if (!db.objectStoreNames.contains(STORE_PACK_CHUNKS)) {
+        db.createObjectStore(STORE_PACK_CHUNKS, { keyPath: ['packId', 'index'] });
+      }
       if (!db.objectStoreNames.contains(STORE_THEMES)) {
         db.createObjectStore(STORE_THEMES, { keyPath: 'id' });
       }
@@ -124,9 +137,9 @@ async function commit(
     const transaction = db.transaction(storeName, 'readwrite');
     let failure: unknown;
     const fail = (error: unknown) => {
-      failure ??= error;
       try {
         transaction.abort();
+        failure ??= error;
       } catch {
         // Already aborted; onabort rejects.
       }
@@ -210,10 +223,44 @@ function createUniPackRecord(zipData: ArrayBuffer, info: UniPackInfo): StoredUni
   };
 }
 
+/** Queue only one chunk at a time while keeping the entire replacement atomic. */
+function writeArchive(
+  transaction: IDBTransaction,
+  fail: (error: unknown) => void,
+  id: string,
+  zipData: ArrayBuffer,
+): void {
+  const archive: ChunkedArchive = {
+    id, format: 'chunks-v1', byteLength: zipData.byteLength,
+    chunkCount: Math.ceil(zipData.byteLength / ARCHIVE_CHUNK_BYTES),
+  };
+  transaction.objectStore(STORE_UNIPACKS).put(archive);
+  const chunks = transaction.objectStore(STORE_PACK_CHUNKS);
+  // The timestamp-based id may be reused; a smaller replacement must not leave old tail chunks.
+  chunks.delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+  let index = 0;
+  const next = () => {
+    if (index === archive.chunkCount) return;
+    try {
+      const start = index * ARCHIVE_CHUNK_BYTES;
+      const request = chunks.put({ packId: id, index, data: zipData.slice(start, start + ARCHIVE_CHUNK_BYTES) });
+      index++;
+      request.onsuccess = next;
+    } catch (error) { fail(error); }
+  };
+  next();
+}
+
+function deleteArchive(transaction: IDBTransaction, id: string): void {
+  transaction.objectStore(STORE_UNIPACKS).delete(id);
+  transaction.objectStore(STORE_PACK_METADATA).delete(id);
+  transaction.objectStore(STORE_PACK_CHUNKS).delete(IDBKeyRange.bound([id, 0], [id, Infinity]));
+}
+
 export async function saveUniPack(zipData: ArrayBuffer, info: UniPackInfo): Promise<string> {
   const record = createUniPackRecord(zipData, info);
-  await commit(PACK_STORES, (transaction) => {
-    transaction.objectStore(STORE_UNIPACKS).put({ id: record.id, zipData });
+  await commit(PACK_STORES, (transaction, fail) => {
+    writeArchive(transaction, fail, record.id, zipData);
     transaction.objectStore(STORE_PACK_METADATA).put(packMetadata(record));
   });
   return record.id;
@@ -234,11 +281,11 @@ export async function saveStoreUniPack(
     .filter((pack) => pack.storeCode === info.storeCode)
     .map((pack) => pack.id);
   const record = createUniPackRecord(zipData, info);
-  await commit(PACK_STORES, (transaction) => {
-    transaction.objectStore(STORE_UNIPACKS).put({ id: record.id, zipData });
+  await commit(PACK_STORES, (transaction, fail) => {
+    writeArchive(transaction, fail, record.id, zipData);
     transaction.objectStore(STORE_PACK_METADATA).put(packMetadata(record));
     for (const id of previousIds) {
-      for (const name of PACK_STORES) transaction.objectStore(name).delete(id);
+      if (id !== record.id) deleteArchive(transaction, id);
     }
   });
   return record.id;
@@ -257,18 +304,55 @@ export async function saveUniPackAutoPlay(id: string, autoPlay: StoredAutoPlay):
 export async function getUniPack(id: string): Promise<StoredUniPack | undefined> {
   const db = await openDB();
   const transaction = db.transaction(PACK_STORES, 'readonly');
-  transaction.oncomplete = () => db.close();
   return new Promise((resolve, reject) => {
     const archive = transaction.objectStore(STORE_UNIPACKS).get(id);
     const metadata = transaction.objectStore(STORE_PACK_METADATA).get(id);
+    let zipData: ArrayBuffer | undefined;
+    let failure: unknown;
     let reads = 0;
+    const fail = (error: unknown) => { failure = error; transaction.abort(); };
     const loaded = () => {
-      if (++reads === 2) resolve(archive.result && metadata.result
-        ? { ...metadata.result, zipData: archive.result.zipData } as StoredUniPack : undefined);
+      if (++reads !== 2 || !archive.result || !metadata.result) return;
+      // Read old archives in place; never rewrite or bulk-migrate the user's saved packs.
+      if (archive.result.zipData instanceof ArrayBuffer) {
+        zipData = archive.result.zipData;
+        return;
+      }
+      try {
+        const record = archive.result as ChunkedArchive;
+        if (record.format !== 'chunks-v1' || !Number.isSafeInteger(record.byteLength) || record.byteLength < 0 ||
+          record.chunkCount !== Math.ceil(record.byteLength / ARCHIVE_CHUNK_BYTES)) {
+          throw new Error('Invalid archive storage record.');
+        }
+        const bytes = new Uint8Array(record.byteLength);
+        zipData = bytes.buffer;
+        let index = 0;
+        const next = () => {
+          if (index === record.chunkCount) return;
+          const request = transaction.objectStore(STORE_PACK_CHUNKS).get([id, index]);
+          request.onsuccess = () => {
+            try {
+              const chunk = request.result?.data;
+              const offset = index * ARCHIVE_CHUNK_BYTES;
+              if (!(chunk instanceof ArrayBuffer) || chunk.byteLength !== Math.min(ARCHIVE_CHUNK_BYTES, record.byteLength - offset)) {
+                throw new Error('Missing or incomplete archive chunk.');
+              }
+              bytes.set(new Uint8Array(chunk), offset);
+              index++;
+              next();
+            } catch (error) { fail(error); }
+          };
+        };
+        next();
+      } catch (error) { fail(error); }
     };
     archive.onsuccess = loaded;
     metadata.onsuccess = loaded;
-    transaction.onabort = () => { db.close(); reject(transaction.error); };
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(zipData && metadata.result ? { ...metadata.result, zipData } as StoredUniPack : undefined);
+    };
+    transaction.onabort = () => { db.close(); reject(transaction.error ?? failure); };
   });
 }
 
@@ -301,7 +385,7 @@ export async function listUniPacks(): Promise<StoredUniPack[]> {
 
 export async function deleteUniPack(id: string): Promise<void> {
   await commit(PACK_STORES, (transaction) => {
-    for (const name of PACK_STORES) transaction.objectStore(name).delete(id);
+    deleteArchive(transaction, id);
   });
 }
 

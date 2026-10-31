@@ -58,6 +58,7 @@ export class SoundEngine {
   private setChain: (c: number) => void;
   private unipack: UniPackData;
   private loaded = false;
+  private destroyed = false;
   private onLoadProgress?: (loaded: number, total: number) => void;
   private pendingChainChanges = new Set<PendingChainChange>();
   private chainChangesSuspended = false;
@@ -144,7 +145,7 @@ export class SoundEngine {
    * and never lets a later file in. The pack's encoded bytes are released once read.
    */
   async load(inspector: AudioInspector = INLINE_AUDIO_INSPECTOR): Promise<SoundLoadReport> {
-    if (this.loaded) return EMPTY_SOUND_LOAD_REPORT;
+    if (this.loaded || this.destroyed) return EMPTY_SOUND_LOAD_REPORT;
 
     const { soundTable, soundFiles, info } = this.unipack;
     const plan = await selectAudio(
@@ -157,6 +158,7 @@ export class SoundEngine {
     );
     // Worker copies are no longer needed; do not keep them alive during native decoding.
     inspector.close?.();
+    if (this.destroyed) { soundFiles.clear(); return EMPTY_SOUND_LOAD_REPORT; }
     const order = new Map(plan.files.map(({ identity }, index) => [identity, index]));
     const failures: SoundFailure[] = [];
     const admitted: AudioSelection[] = [];
@@ -174,6 +176,7 @@ export class SoundEngine {
     const total = plan.files.length;
     let settled = failures.length;
     for (let i = 0; i < admitted.length;) {
+      if (this.destroyed) { soundFiles.clear(); return EMPTY_SOUND_LOAD_REPORT; }
       let end = i;
       let cost = BigInt(0);
       while (end < admitted.length && end - i < DECODE_BATCH_SIZE) {
@@ -188,12 +191,13 @@ export class SoundEngine {
           const reason = await this.decode(file);
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
-          this.onLoadProgress?.(settled, total);
+          if (!this.destroyed) this.onLoadProgress?.(settled, total);
         }),
       );
       i = end;
     }
     soundFiles.clear();
+    if (this.destroyed) return EMPTY_SOUND_LOAD_REPORT;
 
     for (let c = 0; c < info.chain; c++) {
       for (let x = 0; x < info.buttonX; x++) {
@@ -218,7 +222,8 @@ export class SoundEngine {
   /** Pass the original bytes; WebKit may copy them internally. Drop our reference on settlement. */
   private async decode(file: string): Promise<'decode' | 'memory' | null> {
     try {
-      this.bufferCache.set(file, await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!));
+      const buffer = await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!);
+      if (!this.destroyed) this.bufferCache.set(file, buffer);
       return null;
     } catch (error) {
       console.warn(`Failed to decode audio: ${file}`, error);
@@ -411,6 +416,9 @@ export class SoundEngine {
   }
 
   destroy(): void {
+    this.destroyed = true;
+    this.bufferCache.clear();
+    this.unipack.soundFiles.clear();
     this.suspensionRevision++;
     this.onInterrupted = null;
     this.audioContext.onstatechange = null;
