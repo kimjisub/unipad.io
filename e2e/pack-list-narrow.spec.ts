@@ -1,5 +1,5 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
-import { test, expect } from './browser';
+import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
 import { reachable, resize } from './layout';
 import { importSavedPack } from './saved-packs';
@@ -146,4 +146,57 @@ for (const text of locales) {
       await expect(row).toBeInViewport({ ratio: 0.99 });
     });
   });
+}
+
+// Include every reported short height and the widths where the counted store button wraps.
+const shortScreens = [
+  { width: 360, height: 600 },
+  ...Array.from({ length: 16 }, (_, index) => ({ width: 340 + index * 10, height: 640 })),
+  { width: 320, height: 640 }, { width: 320, height: 667 }, { width: 360, height: 700 },
+];
+
+for (const text of locales) {
+  for (const textScale of [100, 200]) {
+    test.describe(`${text.locale} ${textScale}% text`, () => {
+      test.use({ locale: text.locale, reducedMotion: 'reduce' });
+      test('selected pack can start without scrolling on short phones', async ({ page, context }, testInfo) => {
+        test.setTimeout(120_000);
+        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+        if (textScale === 200) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        const row = page.getByRole('option', { name: new RegExp(packTitle) });
+        if (await row.getAttribute('aria-selected') !== 'true') await row.click();
+        await expect(row).toHaveAttribute('aria-selected', 'true');
+        const play = page.getByRole('button', { name: /^(Play|재생)$/, exact: true });
+        const measurements = [];
+        for (const viewport of shortScreens) {
+          await resize(page, viewport);
+          // Never let locator.click scroll the details to disguise a clipped action.
+          const state = await reachable(play);
+          const search = await bar(page, text).search.boundingBox();
+          const pack = await row.boundingBox();
+          measurements.push({ ...viewport, state, searchWidth: search!.width, packHeight: pack!.height });
+          if (viewport.width === 360 && viewport.height === 600) {
+            await testInfo.attach('short-selected-pack', { body: await page.screenshot(), contentType: 'image/png' });
+          }
+          await testInfo.attach(`layout-${viewport.width}x${viewport.height}`, { body: JSON.stringify(measurements.at(-1)), contentType: 'application/json' });
+          await expect(play).toBeInViewport({ ratio: 1 });
+          expect(state, `play at ${viewport.width}x${viewport.height}`).toEqual({ inside: true, pressable: true });
+          expect(search!.width, 'search box width').toBeGreaterThanOrEqual(180);
+          expect(pack!.height, 'first pack height').toBe(72);
+          await expect(row).toBeInViewport({ ratio: 0.99 });
+        }
+        // A visible button must actually open the pack and start sound from a pad.
+        const decoded = await page.evaluate(() => window.browserProbe.audio.decoded.length);
+        await play.click();
+        await expectPads(page);
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBeGreaterThan(decoded);
+        // Phone playback asks for landscape before accepting pad input.
+        await resize(page, { width: 700, height: 360 });
+        const pad = page.locator('[data-pad="0,0"]');
+        const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+        await pad.click();
+        await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBeGreaterThan(starts);
+      });
+    });
+  }
 }

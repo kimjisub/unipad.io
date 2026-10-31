@@ -216,7 +216,7 @@ export function MainScreen({
   const sortLabel = sortMethod === 'title' ? 'Title' : sortMethod === 'producer' ? 'Producer' : 'Date';
 
   return (
-    <div className="h-screen flex flex-col md:flex-row bg-[var(--background)] text-white overflow-hidden relative">
+    <div className="h-screen supports-[height:100dvh]:h-dvh flex flex-col md:flex-row bg-[var(--background)] text-white overflow-hidden relative">
       {/* Ambient radial glows (brand style) */}
       <div className="absolute inset-0 pointer-events-none" aria-hidden>
         <div
@@ -237,8 +237,8 @@ export function MainScreen({
         }} />
       </div>
 
-      {/* Shrink the details only when the list needs its minimum height. */}
-      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-4 pt-6 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
+      {/* Keep playback first when the details yield space to the list. */}
+      <div className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-3 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
             pack={selectedPack}
@@ -259,7 +259,7 @@ export function MainScreen({
       </div>
 
       {/* Right Panel - Pack List */}
-      <div className="flex-1 flex flex-col min-w-0 md:min-h-0 p-4 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 md:min-h-0 p-3 md:p-5 md:pl-0 md:border-l md:border-white/[0.06] relative z-10">
         {/* Top Bar: the buttons take their own row when they would leave the search box too narrow. */}
         <div className="flex flex-wrap items-center gap-2 shrink-0 pb-3 mb-3 border-b border-white/[0.06]">
           {savedPacks.length > 0 && (
@@ -302,7 +302,7 @@ export function MainScreen({
                 {sortAsc ? '↑' : '↓'}
               </button>
 
-              <div className="flex-[1_1_7rem] min-w-0 relative">
+              <div className="flex-[1_1_11.25rem] min-w-0 relative">
                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/25 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
@@ -325,17 +325,17 @@ export function MainScreen({
             </>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-1.5 md:gap-2 ml-auto">
             {savedPacks.length > 0 && <div className="hidden lg:block w-px h-5 bg-white/[0.08] shrink-0" />}
 
             <button
-              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-accent/20 text-xs text-white/50 transition-colors border border-transparent"
+              className="px-2 md:px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-accent/20 text-xs text-white/50 transition-colors border border-transparent"
               onClick={onImportTheme}
             >
               {t('theme')}
             </button>
             <button
-              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-secondary/20 text-xs text-white/50 transition-all border border-transparent relative group"
+              className="px-2 md:px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:border-secondary/20 text-xs text-white/50 transition-all border border-transparent relative group"
               onClick={onOpenStore}
             >
               {t('store')}
@@ -369,7 +369,7 @@ export function MainScreen({
 
         {/* Pack List: this minimum, added to the rows above and below it, sizes the panel, so a wrapped
             button row takes its height from the details and not from the first pack. */}
-        <div className="grow basis-0 overflow-y-auto overflow-x-hidden min-h-24 md:min-h-0 rounded-xl">
+        <div className="grow basis-0 overflow-y-auto overflow-x-hidden min-h-[72px] md:min-h-0 rounded-xl">
           {filteredAndSortedPacks.length === 0 ? (
             searchQuery.trim() ? (
               <NoResults query={searchQuery.trim()} onClear={() => setSearchQuery('')} />
@@ -402,7 +402,7 @@ export function MainScreen({
         </div>
 
         {savedPacks.length > 0 && (
-        <div className="shrink-0 px-4 py-3 text-[10px] text-white/20 flex items-center justify-center gap-4 border-t border-white/[0.04]">
+        <div className="shrink-0 px-4 py-3 text-[10px] text-white/20 hidden md:flex items-center justify-center gap-4 border-t border-white/[0.04]">
           <KeyHint keys="↑↓" label={t('keyHintSelect')} />
           <KeyHint keys="Enter" label={t('keyHintPlay')} />
           <KeyHint keys="Del" label={t('keyHintDelete')} />
@@ -607,11 +607,35 @@ function PackDetailPanel({
   const openCount = pack.openCount ?? 0;
 
   return (
-    <div className="w-full shrink-0 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-5 text-white overflow-hidden relative transition-all hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
+    <div className="w-full shrink-0 rounded-2xl bg-white/[0.03] backdrop-blur-md border border-white/[0.08] flex flex-col items-center p-3 md:p-5 text-white overflow-hidden relative transition-all hover:shadow-[0_0_40px_-10px_rgba(255,143,0,0.1)]">
         {/* Ambient glow */}
         <div className="absolute top-[-50px] left-1/2 -translate-x-1/2 w-64 h-64 rounded-full opacity-10 blur-[80px] pointer-events-none"
           style={{ background: 'radial-gradient(circle, var(--accent), transparent)' }}
         />
+
+        {/* Play button */}
+        <div className="mb-3 w-full flex gap-2">
+        <button
+          className="relative flex-1 py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] group"
+          style={{ background: 'var(--accent)' }}
+          onClick={onPlay}
+        >
+          <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-50 blur-sm -z-10 group-hover:opacity-70 transition-opacity" />
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          {tCommon('play')}
+        </button>
+        <button
+          className="w-14 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-red-500/10 hover:border-red-500/20 text-white/25 hover:text-red-400 transition-all flex items-center justify-center"
+          onClick={onDelete}
+          aria-label={t('deleteUniPack')}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+        </div>
 
         {/* Bookmark toggle */}
         <div className="w-full flex justify-end mb-1">
@@ -672,30 +696,6 @@ function PackDetailPanel({
           <span>{addedDate}</span>
           <span className="text-white/10">·</span>
           <span>{lastOpened}</span>
-        </div>
-
-        {/* Play button */}
-        <div className="mt-4 w-full flex gap-2">
-        <button
-          className="relative flex-1 py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] group"
-          style={{ background: 'var(--accent)' }}
-          onClick={onPlay}
-        >
-          <span className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-accent via-secondary to-accent opacity-50 blur-sm -z-10 group-hover:opacity-70 transition-opacity" />
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-          {tCommon('play')}
-        </button>
-        <button
-          className="w-14 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-red-500/10 hover:border-red-500/20 text-white/25 hover:text-red-400 transition-all flex items-center justify-center"
-          onClick={onDelete}
-          aria-label={t('deleteUniPack')}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
         </div>
 
         {/* Links */}
