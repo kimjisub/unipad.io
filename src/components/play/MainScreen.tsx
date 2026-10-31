@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
@@ -52,6 +52,7 @@ export function MainScreen({
   const reduceMotion = useReducedMotion();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const packListRef = useRef<HTMLDivElement | null>(null);
+  const detailsPanelRef = useRef<HTMLDivElement | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +91,11 @@ export function MainScreen({
     });
   }, [savedPacks, searchQuery, sortMethod, sortAsc]);
   const selectedPack = filteredAndSortedPacks.find((p) => p.id === selectedId) ?? null;
+  // Reset scrolling without replacing controls that may hold keyboard focus.
+  useLayoutEffect(() => {
+    if (detailsPanelRef.current) detailsPanelRef.current.scrollTop = 0;
+  }, [selectedPack?.id]);
+
   // Only one row is in the Tab order: the selected pack, or the first one when none is selected.
   const tabStopId = selectedPack?.id ?? filteredAndSortedPacks[0]?.id ?? null;
 
@@ -237,8 +243,7 @@ export function MainScreen({
         }} />
       </div>
 
-      {/* Reset scrolling for each selection so its playback action starts in view. */}
-      <div key={selectedPack?.id ?? 'summary'} className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-3 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
+      <div ref={detailsPanelRef} className="w-full md:w-2/5 md:min-w-[280px] md:max-w-[380px] p-3 md:p-5 md:pt-8 flex flex-col items-center min-h-0 overflow-y-auto relative z-10">
         {selectedPack ? (
           <PackDetailPanel
             pack={selectedPack}
