@@ -55,6 +55,9 @@
         "CVE-2026-101915",
         "CVE-2026-101916"
       ]
+    },
+    "overrides": {
+      "@tailwindcss/typography>postcss-selector-parser": "6.1.5"
     }
   }
 }
