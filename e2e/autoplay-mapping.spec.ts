@@ -54,12 +54,34 @@ async function openMenu(page: Page) {
 async function confirm(page: Page, dialogName: string, action: string, message: string) {
   const dialog = page.getByRole('alertdialog', { name: dialogName, exact: true });
   await expect(dialog).toBeVisible();
-  // The toast lasts 2 s; observe it while clicking, before waiting for the dialog's exit.
-  await Promise.all([
-    expect(page.getByText(message, { exact: true })).toBeVisible(),
-    dialog.getByRole('button', { name: action, exact: true }).click(),
-  ]);
-  await expect(dialog).toHaveCount(0);
+  // Retain a visible 2 s toast even if the click response or dialog exit arrives later.
+  // Arm this before clicking, but give the action its own time before the usual assertion budget.
+  const notice = await page.evaluateHandle(message => {
+    const observation = { visible: false, disconnect: () => observer.disconnect() };
+    const observer = new MutationObserver(() => {
+      observation.visible = Array.from(document.querySelectorAll('*')).some(element => {
+        if (element.textContent !== message || getComputedStyle(element).visibility !== 'visible') return false;
+        if (Array.from(element.children).some(child => child.textContent === message)) return false;
+        if (!element.checkVisibility()) return false;
+        const { width, height } = element.getBoundingClientRect();
+        return width > 0 && height > 0;
+      });
+      if (observation.visible) observer.disconnect();
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    return observation;
+  }, message);
+  try {
+    await dialog.getByRole('button', { name: action, exact: true }).click();
+    await expect.poll(() => notice.evaluate(observation => observation.visible), {
+      message: `completion notice was not visible: ${message}`,
+    }).toBe(true);
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    // Preserve the action's failure if it already closed or crashed the page.
+    await notice.evaluate(observation => observation.disconnect()).catch(() => undefined);
+    await notice.dispose().catch(() => undefined);
+  }
 }
 
 async function mapAndSave(page: Page, imported: StoredPack) {
