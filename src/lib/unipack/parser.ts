@@ -17,6 +17,11 @@ const ROUND_TOKENS = new Set(['*', 'mc']);
 const LOGO_TOKEN = 'l';
 const AUTO_TOKENS = new Set(['auto', 'a']);
 
+// JSZip 3.10 exposes this streaming API, but its bundled JSZipObject types omit it.
+interface StreamingZipObject extends JSZip.JSZipObject {
+  internalStream(type: 'uint8array'): JSZip.JSZipStreamHelper<Uint8Array>;
+}
+
 /**
  * `mc 1`..`mc 32` as a round LED index, or null. Any other 32-bit integer is dropped without a warning, as
  * Android's drivers dropped it before; index 32 would otherwise light the logo. A non-number or a value
@@ -41,8 +46,22 @@ function logoColorTokens(split: string[]): string[] {
   }
 }
 
-export async function parseUniPack(
+/** Library fields share the player's parsing and archive validation without retaining sound bytes. */
+export type UniPackMetadata = Pick<UniPackData,
+  'info' | 'keyLedExist' | 'autoPlayExist' | 'soundCount' | 'ledCount'>;
+
+export async function readUniPackMetadata(zipData: ArrayBuffer): Promise<UniPackMetadata> {
+  const { info, keyLedExist, autoPlayExist, soundCount, ledCount } = await parseArchive(zipData, false);
+  return { info, keyLedExist, autoPlayExist, soundCount, ledCount };
+}
+
+export function parseUniPack(zipData: ArrayBuffer, onPhase?: (phase: string) => void): Promise<UniPackData> {
+  return parseArchive(zipData, true, onPhase);
+}
+
+async function parseArchive(
   zipData: ArrayBuffer,
+  extractSounds: boolean,
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
@@ -69,6 +88,7 @@ export async function parseUniPack(
     rootPrefix,
     info,
     errors,
+    extractSounds,
   );
   onPhase?.('Loading LEDs...');
   const ledAnimationTable = await parseKeyLed(zip, rootPrefix, info, errors);
@@ -241,6 +261,7 @@ async function parseKeySound(
   prefix: string,
   info: UniPackInfo,
   errors: string[],
+  extractSounds: boolean,
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const table: (Sound[] | null)[][][] = Array.from({ length: info.chain }, () =>
     Array.from({ length: info.buttonX }, () =>
@@ -257,9 +278,9 @@ async function parseKeySound(
       // pad silent and one warning.
       throw new Error("Invalid UniPack: keySound doesn't exist");
     }
-    return parseKeySoundFromFile(keySoundLower, zip, prefix, info, table, soundFiles, errors);
+    return parseKeySoundFromFile(keySoundLower, zip, prefix, info, table, soundFiles, errors, extractSounds);
   }
-  return parseKeySoundFromFile(keySoundFile, zip, prefix, info, table, soundFiles, errors);
+  return parseKeySoundFromFile(keySoundFile, zip, prefix, info, table, soundFiles, errors, extractSounds);
 }
 
 async function parseKeySoundFromFile(
@@ -270,9 +291,11 @@ async function parseKeySoundFromFile(
   table: (Sound[] | null)[][][],
   soundFiles: Map<string, ArrayBuffer>,
   errors: string[],
+  extractSounds: boolean,
 ): Promise<{ soundTable: (Sound[] | null)[][][]; soundFiles: Map<string, ArrayBuffer> }> {
   const text = await readText(file);
   const findSoundFile = soundFileFinder(zip, prefix);
+  const readSounds = new Set<string>();
 
   for (const line of splitLines(text)) {
     const trimmed = line.trim();
@@ -323,9 +346,21 @@ async function parseKeySoundFromFile(
       continue;
     }
 
-    if (!soundFiles.has(soundPath)) {
-      const data = await zip.files[soundPath].async('arraybuffer');
-      soundFiles.set(soundPath, data);
+    if (!readSounds.has(soundPath)) {
+      if (extractSounds) {
+        const data = await zip.files[soundPath].async('arraybuffer');
+        soundFiles.set(soundPath, data);
+      } else {
+        // Draining the same decompressor preserves the player's archive error checks. Do not
+        // accumulate its chunks: metadata needs neither a complete sound buffer nor a copy.
+        await new Promise<void>((resolve, reject) => {
+          (zip.files[soundPath] as StreamingZipObject).internalStream('uint8array')
+            .on('error', reject)
+            .on('end', resolve)
+            .resume();
+        });
+      }
+      readSounds.add(soundPath);
     }
 
     const sound: Sound = {

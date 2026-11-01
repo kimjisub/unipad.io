@@ -110,7 +110,7 @@ const key = async (key, code, virtualKey) => {
 };
 const quit = async () => {
   await until(`document.querySelectorAll('[data-pad]').length === 64 && location.search.includes('pack=')`);
-  if (await run(`innerWidth < 768 && innerWidth < innerHeight`)) {
+  if (await run(`innerWidth < 600 && innerWidth < innerHeight`)) {
     assert.equal(await run(`document.body.textContent.includes('Rotate to landscape')`), true, 'Existing portrait rotation prompt remains');
     await command('Page.navigate', { url });
     await until(`!!${row} && !document.querySelector('[data-pad]')`);

@@ -442,6 +442,23 @@
       "autoPlaySaved": "자동 연주를 저장했습니다. 메뉴에서 이전 것으로 복원할 수 있어요",
       "autoPlayRestored": "이전 자동 연주로 복원했습니다",
       "autoPlaySaveFailed": "저장하지 못했습니다. 기존 자동 연주는 그대로입니다"
+    },
+    "soundLoad": {
+      "limit": "너무 길거나 큰 소리 {count}개는 재생하지 않습니다",
+      "unreadable": "소리 {count}개의 파일을 읽을 수 없습니다",
+      "decode": "소리 {count}개를 재생할 수 없습니다",
+      "memory": "기기 메모리가 부족해 소리 {count}개를 불러오지 못했습니다. 다른 앱을 닫고 팩을 다시 열어 보세요",
+      "failedTitle": "이 팩의 소리를 열 수 없습니다",
+      "details": "자세히 보기",
+      "close": "닫기",
+      "retry": "다시 시도",
+      "packList": "팩 목록",
+      "reason": {
+        "limit": "너무 길거나 큰 소리",
+        "unreadable": "파일을 읽을 수 없습니다",
+        "decode": "재생할 수 없습니다",
+        "memory": "기기 메모리 부족"
+      }
     }
   }
 }

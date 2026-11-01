@@ -2,9 +2,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, stateTimeout } from './browser';
+import { resize } from './layout';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
+import { rotatePrompt, showsRotatePrompt } from './touch';
 
 // Newest first: the list sorts by the date a pack was added.
 const packs = [
@@ -26,7 +28,7 @@ async function openList(page: Page, files: readonly PackFile[]) {
       await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
       await expectPads(page);
       // The import shows the pads before it saves the pack; the URL changes once it is saved.
-      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
       // Setup needs the buttons' actions, not pointer hit testing during their animations.
       // Keep the page alive and return to the list before the next import.
       await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
@@ -58,15 +60,19 @@ for (const [method, ascending, titles] of sortCases) {
         request.onerror = () => reject(request.error);
       });
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+        const tx = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
         const store = tx.objectStore('unipackMetadata');
         const archive = tx.objectStore('unipacks').getAll();
+        const chunks = tx.objectStore('unipackChunks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
           const records = request.result;
           const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
           records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
           tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
+          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
+            tx.objectStore('unipackChunks').put({ ...chunk, packId: 'favorite' });
+          }
           store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
@@ -126,7 +132,7 @@ async function expectActive(page: Page, name: string) {
   await expect(list(page).locator('[aria-selected="true"]')).toHaveCount(1);
 }
 
-test('the pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
+test('a short pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
   await openListWithThreePacks(page);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
   await option(page, middle).click();
@@ -150,9 +156,19 @@ test('the pack list is one Tab stop and arrow, Home and End keys move focus and 
   await expectActive(page, first);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
 
+  // Test the list's Tab order within the page. Headless Firefox keeps the last element
+  // focused when Tab would enter browser chrome, so provide an explicit next stop.
+  await page.evaluate(() => {
+    const next = document.createElement('button');
+    next.id = 'after-pack-list';
+    // WebKit's default Tab navigation requires buttons to opt in explicitly.
+    next.tabIndex = 0;
+    next.textContent = 'After pack list';
+    document.body.append(next);
+  });
   // Tab leaves the list instead of walking through every row.
   await page.keyboard.press('Tab');
-  await expect(list(page).getByRole('option').and(page.locator(':focus'))).toHaveCount(0);
+  await expect(page.locator('#after-pack-list')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(option(page, first)).toBeFocused();
 });
@@ -302,7 +318,7 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 // Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
 async function openLongList(page: Page, square: boolean) {
   await loadInputPack(page, 8, 8, square);
-  await expect(page).toHaveURL(/pack=/);
+  await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('unipad');
@@ -310,9 +326,10 @@ async function openLongList(page: Page, square: boolean) {
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(['unipacks', 'unipackMetadata'], 'readwrite');
+      const transaction = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
       const store = transaction.objectStore('unipackMetadata');
       const archive = transaction.objectStore('unipacks').getAll();
+      const chunks = transaction.objectStore('unipackChunks').getAll();
       const request = store.getAll();
       request.onsuccess = () => {
         const template = request.result[0];
@@ -323,6 +340,9 @@ async function openLongList(page: Page, square: boolean) {
         }
         for (let index = 0; index < 12; index++) {
           transaction.objectStore('unipacks').put({ ...archive.result[0], id: `local-${index}` });
+          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
+            transaction.objectStore('unipackChunks').put({ ...chunk, packId: `local-${index}` });
+          }
           store.put({ ...template, id: `local-${index}`, title: `Local pack ${index}`, addedAt: index });
         }
       };
@@ -335,40 +355,50 @@ async function openLongList(page: Page, square: boolean) {
   await expect(list(page).getByRole('option')).toHaveCount(13);
 }
 
-// A resized page lays out at once but reaches the screen later; WebKit can drop a wheel sent before
-// the new layout is drawn. Wait until the page has the new size, then for two drawn frames.
-async function resize(page: Page, viewport: { width: number; height: number }) {
-  await page.setViewportSize(viewport);
-  await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport);
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-}
-
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
-  const scroll = await target.evaluate(element => {
+  const readScroll = () => target.evaluate(element => {
     const targetRect = element.getBoundingClientRect();
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (getComputedStyle(parent).overflowY === 'auto' && parent.scrollHeight > parent.clientHeight) {
         const rect = parent.getBoundingClientRect();
-        const delta = targetRect.top < rect.top ? -2000 : targetRect.bottom > rect.bottom ? 2000 : 0;
-        if (delta) return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, delta };
+        // Stop within the final assertion's existing 0.99 ratio: integer scroll offsets can
+        // leave a fractional sliver clipped at the end of a fractional-height scrollport.
+        const tolerance = targetRect.height * 0.01;
+        const direction = targetRect.top < rect.top - tolerance ? -1 : targetRect.bottom > rect.bottom + tolerance ? 1 : 0;
+        if (direction) return {
+          x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+          top: parent.scrollTop, delta: direction * 2000,
+          // Bound the gesture sequence by the content size, including one partial final step.
+          steps: Math.ceil(parent.scrollHeight / (parent.clientHeight / 2)) + 1,
+        };
       }
     }
     return null;
   });
-  if (scroll) {
+  const initial = await readScroll();
+  // Firefox limits a large wheel event to less than one scrollport. Send a sequence of
+  // wheel gestures and require movement after each one, rather than assuming deltaY
+  // equals the distance scrolled or silently retrying the final visibility assertion.
+  for (let remaining = initial?.steps ?? 0; remaining > 0; remaining--) {
+    const scroll = await readScroll();
+    if (!scroll) break;
     await page.mouse.move(scroll.x, scroll.y);
     await page.mouse.wheel(0, scroll.delta);
+    await expect.poll(async () => {
+      const next = await readScroll();
+      return !next || next.top !== scroll.top;
+    }, { message: 'Wheel input must move the target scroll container' }).toBe(true);
   }
   // Fractional scroll offsets can leave less than one CSS pixel clipped.
   await expect(target).toBeInViewport({ ratio: 0.99 });
 }
 
 async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
-  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
+  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/, { timeout: stateTimeout });
   await expectPads(page);
-  if (viewport.width < viewport.height) {
-    await expect(page.getByText('Rotate to landscape', { exact: true })).toBeVisible();
+  if (showsRotatePrompt(viewport)) {
+    await expect(rotatePrompt(page)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
   }
   const pad = page.locator('[data-pad="7,7"]');
@@ -395,10 +425,55 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   await resize(page, viewport);
 }
 
+function holdNextPackSetting() {
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args);
+    if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+      // Finish the native write but hold the Promise that gates the pack URL.
+      request.addEventListener('success', event => {
+        event.stopImmediatePropagation();
+        document.documentElement.dataset.heldPackSetting = 'true';
+        window.addEventListener('release-pack-setting', () => request.onsuccess?.call(request, event), { once: true });
+      }, { once: true });
+      IDBObjectStore.prototype.put = put;
+    }
+    return request;
+  };
+}
+
+test('saved pack import waits for delayed settings completion', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await page.addInitScript(holdNextPackSetting);
+  const imported = openList(page, [packs[0][0]]).catch(error => error);
+  await page.waitForURL(/\/play$/);
+  await expectPads(page);
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true', { timeout: stateTimeout });
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
+  expect(await imported).toBeUndefined();
+});
+
+test('saved pack playback waits for delayed settings completion', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await openLongList(page, true);
+  await option(page, 'Local pack 0 by UniPad Tests').click();
+  await page.evaluate(holdNextPackSetting);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expectPads(page);
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true');
+  const playback = playAndReturn(page, { width: 1280, height: 800 }).catch(error => error);
+  // Keep this response pending beyond the default five-second URL assertion.
+  await page.waitForTimeout(6000);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
+  expect(await playback).toBeUndefined();
+});
+
 for (const square of [true, false]) {
-  for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [1280, 800]]) {
+  for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
-      test.setTimeout(60_000);
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
       await openLongList(page, square);
       const viewport = { width, height };
       await resize(page, viewport);
@@ -457,7 +532,7 @@ for (const action of ['opening', 'bookmarking'] as const) {
       if (action === 'opening') {
         await page.getByRole('button', { name: 'Play', exact: true }).click();
         await expectPads(page);
-        await expect(page).toHaveURL(/\/play\?pack=.+/);
+        await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
         const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
         await page.locator('[data-pad="0,0"]').click();
         await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);

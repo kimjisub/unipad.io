@@ -24,6 +24,18 @@ test('pack_load tells success and failure apart', () => {
   ]);
 });
 
+test('a pack that plays with some sounds failed is a failed load whose presses still count', () => {
+  const { tracker, events } = recordingTracker();
+  tracker.packLoadPartlyFailed();
+  tracker.padPressed('screen');
+  tracker.autoplayStarted();
+  assert.deepEqual(events, [
+    { name: 'pack_load', params: { result: 'failure' } },
+    { name: 'pad_press', params: { input_source: 'screen' } },
+    { name: 'autoplay_start', params: undefined },
+  ]);
+});
+
 test('pad_press is sent once per loaded pack', () => {
   const { tracker, events } = recordingTracker();
   tracker.packLoadSucceeded();
