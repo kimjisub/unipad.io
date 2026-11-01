@@ -372,7 +372,9 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
 });
 
 test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
-  await loadPack(page);
+  // This case needs a saved fixture; detailed import checks belong to the import tests.
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(pack);
   await expectSavedPlaybackPack(page);
   const savedUrl = page.url();
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
@@ -410,7 +412,9 @@ test('a file still enters the library when another pack replaces its pending rea
 });
 
 test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
-  await loadPack(page);
+  // This case needs a saved fixture; detailed import checks belong to the import tests.
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(pack);
   await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
@@ -437,11 +441,15 @@ test('restoration waits for a delayed storage result past the temporary pack lis
   await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
   await expect(page.locator('[data-pad]')).toHaveCount(0);
-  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
   const restored = expectLoadedPack(page).catch(error => error);
-  // Keep the actual storage result pending beyond the former five-second assertion.
-  await page.waitForTimeout(6000);
-  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  // Keep the actual result pending beyond the former five-second assertion. Release it in
+  // the browser so a slow screenshot or driver round trip cannot prolong the held read.
+  await Promise.all([
+    page.evaluate(() => new Promise<void>(resolve => {
+      setTimeout(() => { window.dispatchEvent(new Event('release-pack-read')); resolve(); }, 6000);
+    })),
+    page.screenshot().then(body => testInfo.attach('temporary-pack-list', { body, contentType: 'image/png' })),
+  ]);
   expect(await restored).toBeUndefined();
 });
 
