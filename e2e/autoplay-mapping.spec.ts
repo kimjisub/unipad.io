@@ -51,11 +51,50 @@ async function openMenu(page: Page) {
   await expect(menu(page)).toBeVisible();
 }
 
-async function confirm(page: Page, dialogName: string, action: string) {
+async function confirm(page: Page, dialogName: string, action: string, message: string) {
   const dialog = page.getByRole('alertdialog', { name: dialogName, exact: true });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: action, exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  // Retain a visible 2 s toast even if the click response or dialog exit arrives later.
+  // Arm this before clicking, but give the action its own time before the usual assertion budget.
+  const notice = await page.evaluateHandle(message => {
+    const observation = { visible: false, disconnect: () => observer.disconnect() };
+    const observer = new MutationObserver(() => {
+      observation.visible = Array.from(document.querySelectorAll('*')).some(element => {
+        if (element.textContent !== message || getComputedStyle(element).visibility !== 'visible') return false;
+        if (Array.from(element.children).some(child => child.textContent === message)) return false;
+        if (!element.checkVisibility()) return false;
+        const { width, height } = element.getBoundingClientRect();
+        return width > 0 && height > 0;
+      });
+      if (observation.visible) observer.disconnect();
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    return observation;
+  }, message);
+  try {
+    await dialog.getByRole('button', { name: action, exact: true }).click();
+    await expect.poll(() => notice.evaluate(observation => observation.visible), {
+      message: `completion notice was not visible: ${message}`,
+    }).toBe(true);
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    // Preserve the action's failure if it already closed or crashed the page.
+    await notice.evaluate(observation => observation.disconnect()).catch(() => undefined);
+    await notice.dispose().catch(() => undefined);
+  }
+}
+
+async function mapAndSave(page: Page, imported: StoredPack) {
+  await autoMapping(page).click();
+  await confirm(page, 'Confirm auto mapping', 'Map', 'Saved the AutoPlay. You can restore the previous one from the menu.');
+  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL } }]);
+  await expect(restore(page)).toBeEnabled();
+}
+
+async function reopenPack(page: Page) {
+  await page.reload();
+  await expectPads(page);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
 }
 
 /** Plays autoPlay from the start and waits for its three presses; the archive's takes over 7 s. */
@@ -65,7 +104,8 @@ async function expectMappedTiming(page: Page) {
   await expect.poll(async () => (await page.evaluate(() => window.browserProbe.audio.starts.length)) - before, { timeout: 6500 }).toBe(3);
 }
 
-test('auto mapping saves its result beside the untouched archive, survives a reload and can be restored', async ({ page }, testInfo) => {
+// Each lifecycle starts with a fresh pack instead of sharing cancellation, playback and restore's budget.
+test('cancelling auto mapping leaves the archive and stored autoPlay untouched', async ({ page }, testInfo) => {
   const imported = await importBasicPack(page);
   await openMenu(page);
   await expect(restore(page)).toBeDisabled();
@@ -78,24 +118,31 @@ test('auto mapping saves its result beside the untouched archive, survives a rel
   await question.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(question).toHaveCount(0);
   expect(await storedPack(page)).toEqual([imported]);
+  await expect(restore(page)).toBeDisabled();
+  // Cancelling must also leave the next mapping usable.
+  await mapAndSave(page, imported);
+});
 
-  await autoMapping(page).click();
-  await confirm(page, 'Confirm auto mapping', 'Map');
-  await expect(page.getByText('Saved the AutoPlay. You can restore the previous one from the menu.')).toBeVisible();
+test('auto mapping saves its result beside the untouched archive and plays it after a reload', async ({ page }, testInfo) => {
+  const imported = await importBasicPack(page);
+  await openMenu(page);
+  await mapAndSave(page, imported);
   await testInfo.attach('auto-mapping-saved', { body: await page.screenshot(), contentType: 'image/png' });
-  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL } }]);
-  await expect(restore(page)).toBeEnabled();
 
-  await page.reload();
-  await expectPads(page);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+  await reopenPack(page);
   await expectMappedTiming(page);
+  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL } }]);
+});
 
+test('restoring autoPlay after a reload swaps the saved mapping and backup without changing the archive', async ({ page }) => {
+  const imported = await importBasicPack(page);
+  await openMenu(page);
+  await mapAndSave(page, imported);
+  await reopenPack(page);
   await openMenu(page);
   await expect(restore(page)).toBeEnabled();
   await restore(page).click();
-  await confirm(page, 'Confirm restoring the AutoPlay', 'Restore');
-  await expect(page.getByText('Restored the previous AutoPlay.')).toBeVisible();
+  await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
   expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: ORIGINAL, backup: MAPPED } }]);
   // Restoring swaps the two, so the mapped autoPlay can be brought back.
   await expect(restore(page)).toBeEnabled();
@@ -114,8 +161,7 @@ test('a failed save keeps the stored autoPlay and does not report success', asyn
   });
   await openMenu(page);
   await autoMapping(page).click();
-  await confirm(page, 'Confirm auto mapping', 'Map');
-  await expect(page.getByText('Couldn’t save. The AutoPlay is unchanged.')).toBeVisible();
+  await confirm(page, 'Confirm auto mapping', 'Map', 'Couldn’t save. The AutoPlay is unchanged.');
   await testInfo.attach('auto-mapping-failed', { body: await page.screenshot(), contentType: 'image/png' });
   await expect(page.getByText('Saved the AutoPlay. You can restore the previous one from the menu.')).toHaveCount(0);
   expect(await storedPack(page)).toEqual([imported]);

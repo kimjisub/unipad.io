@@ -21,12 +21,14 @@ const option = (page: Page, name: string) => list(page).getByRole('option', { na
 
 type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
 
-async function openList(page: Page, files: readonly PackFile[]) {
+async function openList(page: Page, files: readonly PackFile[], beforeSavedUrl?: () => Promise<void>) {
   await test.step('Prepare saved pack list', async () => {
     await page.goto('/play');
     for (const [index, file] of files.entries()) {
       await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
       await expectPads(page);
+      // Finish controlled-delay setup before starting the saved URL assertion's clock.
+      await beforeSavedUrl?.();
       // The import shows the pads before it saves the pack; the URL changes once it is saved.
       await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
       // Setup needs the buttons' actions, not pointer hit testing during their animations.
@@ -357,7 +359,7 @@ async function openLongList(page: Page, square: boolean) {
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
-  const readScroll = () => target.evaluate(element => {
+  const readScroll = () => target.evaluateHandle(element => {
     const targetRect = element.getBoundingClientRect();
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (getComputedStyle(parent).overflowY === 'auto' && parent.scrollHeight > parent.clientHeight) {
@@ -367,6 +369,7 @@ async function wheelTo(page: Page, target: Locator) {
         const tolerance = targetRect.height * 0.01;
         const direction = targetRect.top < rect.top - tolerance ? -1 : targetRect.bottom > rect.bottom + tolerance ? 1 : 0;
         if (direction) return {
+          element: parent,
           x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
           top: parent.scrollTop, delta: direction * 2000,
           // Bound the gesture sequence by the content size, including one partial final step.
@@ -376,19 +379,31 @@ async function wheelTo(page: Page, target: Locator) {
     }
     return null;
   });
-  const initial = await readScroll();
   // Firefox limits a large wheel event to less than one scrollport. Send a sequence of
   // wheel gestures and require movement after each one, rather than assuming deltaY
   // equals the distance scrolled or silently retrying the final visibility assertion.
-  for (let remaining = initial?.steps ?? 0; remaining > 0; remaining--) {
-    const scroll = await readScroll();
-    if (!scroll) break;
-    await page.mouse.move(scroll.x, scroll.y);
-    await page.mouse.wheel(0, scroll.delta);
-    await expect.poll(async () => {
-      const next = await readScroll();
-      return !next || next.top !== scroll.top;
-    }, { message: 'Wheel input must move the target scroll container' }).toBe(true);
+  let remaining: number | undefined;
+  while (remaining === undefined || remaining > 0) {
+    const observation = await readScroll();
+    try {
+      const scroll = await observation.evaluate(value => value && {
+        x: value.x, y: value.y, delta: value.delta, steps: value.steps,
+      });
+      if (!scroll) break;
+      remaining = (remaining ?? scroll.steps) - 1;
+      await page.mouse.move(scroll.x, scroll.y);
+      await page.mouse.wheel(0, scroll.delta);
+      // Observe the same element inside the browser. A driver-side poll can spend its
+      // entire deadline resolving the locator again, even when the wheel has moved it.
+      await test.step('Wheel input must move the target scroll container', async () => {
+        const moved = await page.waitForFunction(scroll => scroll && scroll.element.isConnected
+          && (scroll.delta > 0 ? scroll.element.scrollTop > scroll.top : scroll.element.scrollTop < scroll.top),
+        observation, { timeout: 5000 });
+        await moved.dispose();
+      });
+    } finally {
+      await observation.dispose();
+    }
   }
   // Fractional scroll offsets can leave less than one CSS pixel clipped.
   await expect(target).toBeInViewport({ ratio: 0.99 });
@@ -425,7 +440,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   await resize(page, viewport);
 }
 
-function holdNextPackSetting() {
+function delayNextPackSetting() {
   const put = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function (...args) {
     const request = put.apply(this, args);
@@ -434,7 +449,14 @@ function holdNextPackSetting() {
       request.addEventListener('success', event => {
         event.stopImmediatePropagation();
         document.documentElement.dataset.heldPackSetting = 'true';
-        window.addEventListener('release-pack-setting', () => request.onsuccess?.call(request, event), { once: true });
+        window.addEventListener('start-pack-setting-delay', () => {
+          const heldAt = performance.now();
+          // Release in the browser, independent of how long the driver takes to observe it.
+          setTimeout(() => {
+            document.documentElement.dataset.packSettingDelay = String(performance.now() - heldAt);
+            request.onsuccess?.call(request, event);
+          }, 6000);
+        }, { once: true });
       }, { once: true });
       IDBObjectStore.prototype.put = put;
     }
@@ -442,31 +464,62 @@ function holdNextPackSetting() {
   };
 }
 
-test('saved pack import waits for delayed settings completion', async ({ page }, info) => {
-  test.setTimeout(Math.max(info.project.timeout, 60_000));
-  await page.addInitScript(holdNextPackSetting);
-  const imported = openList(page, [packs[0][0]]).catch(error => error);
-  await page.waitForURL(/\/play$/);
-  await expectPads(page);
+async function startPackSettingDelay(page: Page, observerDelay = 0) {
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true', { timeout: stateTimeout });
-  await page.waitForTimeout(6000);
-  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
-  expect(await imported).toBeUndefined();
+  // A slow observer must not consume the URL assertion's budget before its controlled delay starts.
+  if (observerDelay) await page.waitForTimeout(observerDelay);
+  await page.evaluate(() => window.dispatchEvent(new Event('start-pack-setting-delay')));
+}
+
+for (const observerDelay of [0, 10_000]) {
+  test(`saved pack import waits for delayed settings completion${observerDelay ? ' with a delayed observer' : ''}`, async ({ page }, info) => {
+    test.setTimeout(Math.max(info.project.timeout, 60_000));
+    await page.addInitScript(delayNextPackSetting);
+    await openList(page, [packs[0][0]], () => startPackSettingDelay(page, observerDelay));
+    expect(Number(await page.locator('html').getAttribute('data-pack-setting-delay'))).toBeGreaterThan(5000);
+  });
+}
+
+test('wheel movement survives a delayed driver observation', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  const target = page.getByRole('button', { name: 'Tail' });
+  const evaluate = target.evaluate.bind(target);
+  const wheel = page.mouse.wheel.bind(page.mouse);
+  let wheelSent = false;
+  page.mouse.wheel = async (...args) => { await wheel(...args); wheelSent = true; };
+  target.evaluate = async (...args) => {
+    const result = await evaluate(...args);
+    // The real browser moves; only returning its observation to the driver stalls.
+    if (wheelSent) { wheelSent = false; await new Promise(resolve => setTimeout(resolve, 5200)); }
+    return result;
+  };
+  page.waitForFunction = new Proxy(page.waitForFunction, {
+    async apply(waitForFunction, receiver, args) {
+      const result = await Reflect.apply(waitForFunction, receiver, args);
+      if (wheelSent) { wheelSent = false; await new Promise(resolve => setTimeout(resolve, 5200)); }
+      return result;
+    },
+  });
+  await wheelTo(page, target);
+});
+
+test('wheel movement still fails when wheel input is prevented', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  await page.evaluate(() => document.addEventListener('wheel', event => event.preventDefault(), { passive: false }));
+  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 5000ms/);
+  expect(await page.locator('div').first().evaluate(element => element.scrollTop)).toBe(0);
 });
 
 test('saved pack playback waits for delayed settings completion', async ({ page }, info) => {
   test.setTimeout(Math.max(info.project.timeout, 60_000));
   await openLongList(page, true);
   await option(page, 'Local pack 0 by UniPad Tests').click();
-  await page.evaluate(holdNextPackSetting);
+  await page.evaluate(delayNextPackSetting);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expectPads(page);
-  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true');
-  const playback = playAndReturn(page, { width: 1280, height: 800 }).catch(error => error);
-  // Keep this response pending beyond the default five-second URL assertion.
-  await page.waitForTimeout(6000);
-  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-setting')));
-  expect(await playback).toBeUndefined();
+  await startPackSettingDelay(page);
+  await playAndReturn(page, { width: 1280, height: 800 });
+  expect(Number(await page.locator('html').getAttribute('data-pack-setting-delay'))).toBeGreaterThan(5000);
 });
 
 for (const square of [true, false]) {
