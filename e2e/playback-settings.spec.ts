@@ -1,7 +1,7 @@
 import { rm, readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test as restartTest, type BrowserContext, type BrowserType, type Page, type TestInfo } from '@playwright/test';
-import { test, expect, expectAudioOutputRunning, expectPads, stateTimeout, installBrowserProbe, installationResponse } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack, installBrowserProbe, installationResponse } from './browser';
 
 const pressed = (page: Page, position: string) => page.locator(`[data-pad="${position}"] img[src="/theme/btn_.png"]`);
 
@@ -56,15 +56,6 @@ async function expectFeedback(page: Page, enabled: boolean, stored: string | nul
   try { await expect(pressed(page, '1,0')).toHaveCount(enabled ? 1 : 0); }
   finally { await page.keyboard.up('q'); }
   await expect.poll(async () => (await playbackSettings(page)).feedbackLight).toBe(stored);
-}
-
-async function expectSavedPlaybackPack(page: Page) {
-  // Pads appear before persistence finishes. Observe both within the existing pad-state budget,
-  // rather than starting a separate, shorter URL deadline as soon as the pads appear.
-  await expect.poll(() => page.evaluate(() => ({
-    pads: document.querySelectorAll('[data-pad]').length,
-    saved: Boolean(new URL(location.href).searchParams.get('pack')),
-  })), { timeout: stateTimeout }).toEqual({ pads: 64, saved: true });
 }
 
 async function openFeedbackModePack(page: Page, leds: boolean, saved: string | null, short = false) {
