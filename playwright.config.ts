@@ -3,7 +3,7 @@ import { serverCommand, serverReady } from './e2e/server';
 
 export const windowsPlaybackTests = ['play.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'home.spec.ts'];
 
-const portableTests = ['storage-migration.spec.ts', 'import-compatibility.spec.ts', 'audio-visibility.spec.ts', 'docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts', 'store-keyboard.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'sound-loading.spec.ts'];
+const portableTests = ['storage-migration.spec.ts', 'page-errors.spec.ts', 'import-compatibility.spec.ts', 'audio-visibility.spec.ts', 'docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts', 'store-keyboard.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'sound-loading.spec.ts'];
 
 export default defineConfig({
   testDir: './e2e',
