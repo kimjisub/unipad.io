@@ -36,9 +36,12 @@ async function expectPlaybackSettings(page: Page, feedback: boolean, stored: str
   await expectPads(page);
   await expect.poll(() => playbackSettings(page)).toEqual({ feedbackLight: stored, watermark: 'false', volumeLevel: '2' });
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Feedback Light', exact: true }).locator('div.absolute')).toHaveCSS('left', feedback ? '18px' : '2px');
-  await expect(page.getByRole('button', { name: 'Watermark', exact: true }).locator('div.absolute')).toHaveCSS('left', '2px');
-  await expect(page.locator('input[type=range][max="7"]')).toHaveValue('2');
+  // These reads share the same open menu; avoid serializing their browser round trips.
+  await Promise.all([
+    expect(page.getByRole('button', { name: 'Feedback Light', exact: true }).locator('div.absolute')).toHaveCSS('left', feedback ? '18px' : '2px'),
+    expect(page.getByRole('button', { name: 'Watermark', exact: true }).locator('div.absolute')).toHaveCSS('left', '2px'),
+    expect(page.locator('input[type=range][max="7"]')).toHaveValue('2'),
+  ]);
   await page.getByRole('button', { name: 'Close menu', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Menu', exact: true })).toHaveCount(0);
   // The actual press overlay uses feedbackLightRef, while the switch uses React state.
