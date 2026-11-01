@@ -265,6 +265,7 @@ async function watchLight(page: Page, position: string) {
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
@@ -283,6 +284,7 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
     };
   });
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.reload();
   await expectLoadedPack(page);
@@ -394,7 +396,7 @@ test('a file still enters the library when another pack replaces its pending rea
   });
   await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(savedUrl);
   await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
   await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
@@ -409,6 +411,7 @@ test('a file still enters the library when another pack replaces its pending rea
 
 test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
     const get = IDBObjectStore.prototype.get;
