@@ -542,6 +542,7 @@ for (const square of [true, false]) {
       await info.attach('detail-play-reachable', { body: await page.screenshot(), contentType: 'image/png' });
       await detailPlay.click();
       await playAndReturn(page, viewport);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
     });
 
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays again from its row after returning`, async ({ page }, info) => {
