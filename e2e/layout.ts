@@ -8,14 +8,26 @@ export async function resize(page: Page, viewport: { width: number; height: numb
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
+/** Read all rectangles and centre hit tests in one browser turn, without waiting for animations. */
+export async function measureReachability(targets: Locator[]) {
+  const elements = await Promise.all(targets.map(target => target.elementHandle()));
+  try {
+    return await targets[0].page().evaluate(elements => elements.map(element => {
+      const box = element!.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {
+        box: { x: box.x, y: box.y, width: box.width, height: box.height },
+        inside: box.left >= 0 && box.right <= document.documentElement.clientWidth && box.top >= 0 && box.bottom <= innerHeight,
+        pressable: !!hit && element!.contains(hit),
+      };
+    }), elements);
+  } finally {
+    await Promise.all(elements.map(element => element?.dispose()));
+  }
+}
+
 /** Whether the whole element is inside the viewport and a press at its centre reaches it. */
-export function reachable(target: Locator) {
-  return target.evaluate(element => {
-    const box = element.getBoundingClientRect();
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return {
-      inside: box.left >= 0 && box.right <= document.documentElement.clientWidth && box.top >= 0 && box.bottom <= innerHeight,
-      pressable: !!hit && element.contains(hit),
-    };
-  });
+export async function reachable(target: Locator) {
+  const [{ inside, pressable }] = await measureReachability([target]);
+  return { inside, pressable };
 }
