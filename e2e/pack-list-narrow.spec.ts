@@ -1,7 +1,7 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect } from './browser';
 import { connectStore } from './database';
-import { reachable, resize } from './layout';
+import { resize } from './layout';
 import { importSavedPack } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
@@ -44,16 +44,39 @@ async function showStoreCount(page: Page, context: BrowserContext, text: (typeof
 /** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
 async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
   const named = Object.entries(controls);
-  const [states, boxes] = await Promise.all([
-    Promise.all(named.map(([, control]) => reachable(control))),
-    Promise.all(named.map(([, control]) => control.boundingBox())),
-  ]);
+  const elements = await Promise.all(named.map(([, control]) => control.elementHandle()));
+  let measurements;
+  try {
+    measurements = await named[0][1].page().evaluate(async elements => {
+      // Font changes start CSS size transitions. Wait for those actual transitions, not a delay
+      // or a retry of the assertions. The store badge's repeating animation must keep running.
+      document.documentElement.getBoundingClientRect();
+      await document.fonts.ready;
+      document.documentElement.getBoundingClientRect();
+      await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition)
+        .map(animation => animation.finished.catch(error => {
+          if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
+        })));
+      // Every rectangle and hit test belongs to one layout in one browser turn.
+      return elements.map(element => {
+        const box = element!.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return {
+          box: { x: box.x, y: box.y, width: box.width, height: box.height },
+          inside: box.left >= 0 && box.right <= document.documentElement.clientWidth && box.top >= 0 && box.bottom <= innerHeight,
+          pressable: !!hit && element!.contains(hit),
+        };
+      });
+    }, elements);
+  } finally {
+    await Promise.all(elements.map(element => element?.dispose()));
+  }
   for (const [index, [name]] of named.entries()) {
-    expect(states[index], name).toEqual({ inside: true, pressable: true });
-    const box = boxes[index]!;
+    const { box, inside, pressable } = measurements[index];
+    expect({ inside, pressable }, name).toEqual({ inside: true, pressable: true });
     for (const [otherIndex, [otherName]] of named.entries()) {
       if (otherIndex <= index) continue;
-      const other = boxes[otherIndex]!;
+      const other = measurements[otherIndex].box;
       const overlaps = box.x < other.x + other.width && other.x < box.x + box.width
         && box.y < other.y + other.height && other.y < box.y + box.height;
       expect(overlaps, `${name} overlaps ${otherName}`).toBe(false);
@@ -74,6 +97,55 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
+
+test('reachability reads moving controls in the same browser turn', async ({ page }) => {
+  await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
+  await page.evaluate(() => {
+    const hitTest = document.elementFromPoint.bind(document);
+    const turns: number[] = [];
+    let turn = 0;
+    Object.assign(window, { measurementTurns: turns });
+    document.elementFromPoint = (x, y) => {
+      turns.push(turn);
+      // Real layout changes between browser tasks, while both buttons remain separated.
+      queueMicrotask(() => {
+        document.querySelector('div')!.style.marginLeft = `${++turn * 10}px`;
+      });
+      return hitTest(x, y);
+    };
+  });
+  await expectAllReachable({ theme: page.getByRole('button', { name: 'Theme' }), import: page.getByRole('button', { name: '+ Import' }) });
+  const turns = await page.evaluate(() => (window as unknown as { measurementTurns: number[] }).measurementTurns);
+  expect(turns).toEqual([0, 0]);
+});
+
+test('reachability waits for the native size transition before measuring', async ({ page }) => {
+  await page.setContent(`<style>button { font-size: 12px; transition: font-size 150ms; } div { display: flex; gap: 20px; }</style>
+    <div><button>Theme</button><button>+ Import</button></div>`);
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('button')];
+    buttons.forEach(button => button.getBoundingClientRect());
+    buttons.forEach(button => { button.style.fontSize = '24px'; });
+    const animations = document.getAnimations();
+    if (animations.length !== 2) throw new Error(`Expected two native transitions, got ${animations.length}`);
+    animations.forEach(animation => { animation.pause(); animation.currentTime = 75; });
+    const probe = { started: false, earlyReads: 0 };
+    Object.assign(window, { transitionProbe: probe });
+    const getAnimations = document.getAnimations.bind(document);
+    document.getAnimations = () => { probe.started = true; return getAnimations(); };
+    const hitTest = document.elementFromPoint.bind(document);
+    document.elementFromPoint = (x, y) => {
+      probe.started = true;
+      if (animations.some(animation => animation.playState !== 'finished')) probe.earlyReads++;
+      return hitTest(x, y);
+    };
+  });
+  const measured = expectAllReachable({ theme: page.getByRole('button', { name: 'Theme' }), import: page.getByRole('button', { name: '+ Import' }) });
+  await page.waitForFunction(() => (window as unknown as { transitionProbe: { started: boolean } }).transitionProbe.started);
+  await page.evaluate(() => document.getAnimations().forEach(animation => animation.finish()));
+  await measured;
+  expect(await page.evaluate(() => (window as unknown as { transitionProbe: { earlyReads: number } }).transitionProbe.earlyReads)).toBe(0);
+});
 
 for (const text of locales) {
   test.describe(text.locale, () => {
