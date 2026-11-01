@@ -319,7 +319,7 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 
 // Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
 async function openLongList(page: Page, square: boolean) {
-  await loadInputPack(page, 8, 8, square);
+  await loadInputPack(page, 8, 8, square, '7,7');
   await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -390,8 +390,9 @@ async function wheelTo(page: Page, target: Locator) {
         x: value.x, y: value.y, delta: value.delta, steps: value.steps,
       });
       if (!scroll) break;
+      // The scrollport stays put, so the pointer stays over it after the first gesture.
+      if (remaining === undefined) await page.mouse.move(scroll.x, scroll.y);
       remaining = (remaining ?? scroll.steps) - 1;
-      await page.mouse.move(scroll.x, scroll.y);
       await page.mouse.wheel(0, scroll.delta);
       // Observe the same element inside the browser. A driver-side poll can spend its
       // entire deadline resolving the locator again, even when the wheel has moved it.
@@ -541,6 +542,17 @@ for (const square of [true, false]) {
       await info.attach('detail-play-reachable', { body: await page.screenshot(), contentType: 'image/png' });
       await detailPlay.click();
       await playAndReturn(page, viewport);
+    });
+
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays again from its row after returning`, async ({ page }, info) => {
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
+      await openLongList(page, square);
+      const viewport = { width, height };
+      await resize(page, viewport);
+      await page.goto('/play?pack=local-0');
+      await playAndReturn(page, viewport);
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
       await expect(tail).toHaveAttribute('aria-selected', 'true');
       await tail.locator(':scope > [aria-hidden="true"]').click();
