@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { basicTone, openBasicWith, undecodablePack } from './basic-pack';
 import { test, expect, expectSavedPlaybackPack } from './browser';
-import { savedRecords } from './saved-packs';
+import { savedRecords, expectSavedPackCount } from './saved-packs';
 import { pad } from './touch';
 import { formatAudio, observeFormatBuffers } from './sound-format-probe';
 
@@ -138,6 +138,7 @@ test('a saved pack none of whose sounds can be read opens once from the list and
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
+  await expectSavedPackCount(page, 1);
   await page.goto('/play');
   const count = countLoadFailures(page);
   const option = page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option');
@@ -161,6 +162,7 @@ test('an address naming a saved pack none of whose sounds can be read opens it o
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
+  await expectSavedPackCount(page, 1);
   const [{ id }] = await savedRecords(page);
   const count = countLoadFailures(page);
   await page.goto(`/play?pack=${encodeURIComponent(id)}`);
