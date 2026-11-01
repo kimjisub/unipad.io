@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { storedPackRecords } from './saved-packs';
+import { storedPackRecords, expectSavedPackCount } from './saved-packs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
@@ -37,7 +37,7 @@ async function importBasicPack(page: Page): Promise<StoredPack> {
   await page.goto('/play');
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
-  await expect.poll(async () => (await storedPack(page)).length).toBe(1);
+  await expectSavedPackCount(page, 1);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
   return (await storedPack(page))[0];
 }
