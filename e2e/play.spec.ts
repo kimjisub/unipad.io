@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectAudioOutputRunning, expectPads } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
@@ -265,6 +265,7 @@ async function watchLight(page: Page, position: string) {
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
@@ -283,6 +284,7 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
     };
   });
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.reload();
   await expectLoadedPack(page);
@@ -303,7 +305,7 @@ test('a missing saved pack fails the pad value check after restoration ends', as
 
 test('a delayed earlier storage read cannot replace the last pack selected', async ({ page }, info) => {
   await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await expectSavedPlaybackPack(page);
   const zip = await JSZip.loadAsync(await readFile(pack));
   zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Earlier Pack'));
   const bytes = Array.from(await zip.generateAsync({ type: 'uint8array' }));
@@ -346,9 +348,8 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
   await page.getByRole('option', { name: 'Earlier Pack by UniPad Tests', exact: true }).dblclick();
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
-  await expect(page).toHaveURL(/pack=.+/);
   const latestUrl = page.url();
   // The unit tests hold every await deterministically. This browser observation also keeps a
   // record of any transient wrong title after releasing the native IndexedDB result.
@@ -372,7 +373,7 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
 
 test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
   await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await expectSavedPlaybackPack(page);
   const savedUrl = page.url();
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
@@ -395,7 +396,7 @@ test('a file still enters the library when another pack replaces its pending rea
   });
   await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(savedUrl);
   await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
   await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
@@ -410,6 +411,7 @@ test('a file still enters the library when another pack replaces its pending rea
 
 test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
     const get = IDBObjectStore.prototype.get;
