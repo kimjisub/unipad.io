@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { basicTone, openBasicWith, undecodablePack } from './basic-pack';
-import { test, expect } from './browser';
+import { test, expect, expectSavedPlaybackPack } from './browser';
 import { savedRecords } from './saved-packs';
 import { pad } from './touch';
 import { formatAudio, observeFormatBuffers } from './sound-format-probe';
@@ -178,7 +178,7 @@ test('an address naming a saved pack none of whose sounds can be read opens it o
 
 test('a pack none of whose sounds can be read, dropped over a playing pack, keeps its reason and leaves the address', async ({ page }, info) => {
   await loadPack(page, {});
-  await expect(page).toHaveURL(/[?&]pack=/);
+  await expectSavedPlaybackPack(page);
   const count = countLoadFailures(page);
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
   await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
@@ -193,7 +193,7 @@ test('a pack none of whose sounds can be read, dropped over a playing pack, keep
 
 test('an archive that cannot be read, dropped over a playing pack, shows the reason and leaves the address', async ({ page }, info) => {
   await loadPack(page, {});
-  await expect(page).toHaveURL(/[?&]pack=/);
+  await expectSavedPlaybackPack(page);
   const count = countLoadFailures(page);
   await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
     name: 'broken.uni', mimeType: 'application/zip', buffer: Buffer.from('not a zip archive'),

@@ -83,6 +83,15 @@ export const stateTimeout = 15_000;
 export const expectPads = (page: Page, count = 64) =>
   expect(page.locator('[data-pad]')).toHaveCount(count, { timeout: stateTimeout });
 
+export async function expectSavedPlaybackPack(page: Page) {
+  // Pads appear before persistence finishes. Observe both within the existing pad-state budget,
+  // rather than starting a separate, shorter URL deadline as soon as the pads appear.
+  await expect.poll(() => page.evaluate(() => ({
+    pads: document.querySelectorAll('[data-pad]').length,
+    saved: Boolean(new URL(location.href).searchParams.get('pack')),
+  })), { timeout: stateTimeout }).toEqual({ pads: 64, saved: true });
+}
+
 /**
  * Playback starts only once the browser runs the audio output. When the device never opens, a mode
  * button stays off; this names the device instead of the app state.
