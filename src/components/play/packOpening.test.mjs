@@ -155,6 +155,18 @@ for (const leave of ['quit', 'unmount']) {
   });
 }
 
+// A restrictive extension list makes iPadOS disable unregistered .uni files
+// before our byte-based importer can see them. Check both rendered entry points.
+for (const playing of [false, true]) {
+  test(`the ${playing ? 'player' : 'library'} picker leaves unknown file types selectable`, async () => {
+    const view = await mount();
+    if (playing) await flush(() => main.onPlay('A'));
+    const [packInput, themeInput] = view.container.querySelectorAll('input[type=file]');
+    assert.equal(packInput.accept, '', 'the native picker must not filter out .uni files');
+    assert.equal(themeInput.accept, '.zip');
+  });
+}
+
 test('a saved open passes its stored autoPlay to the player', async () => {
   await mount();
   await flush(() => main.onPlay('B'));

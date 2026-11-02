@@ -1154,7 +1154,8 @@ export function PlayPage() {
           </div>
         )}
 
-        <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
+        {/* iPadOS filters out unregistered .uni files; the web importer validates archive bytes. */}
+        <input ref={fileInputRef} type="file" data-unipack-import="" className="hidden" onChange={handleFileInput} />
         <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
       </div>
     );
@@ -1757,7 +1758,8 @@ export function PlayPage() {
         <p className="text-sm text-white/70">{t('rotateToLandscape')}</p>
       </div>
 
-      <input ref={fileInputRef} type="file" accept=".zip,.uni" className="hidden" onChange={handleFileInput} />
+      {/* iPadOS filters out unregistered .uni files; the web importer validates archive bytes. */}
+      <input ref={fileInputRef} type="file" data-unipack-import="" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
     </div>
   );

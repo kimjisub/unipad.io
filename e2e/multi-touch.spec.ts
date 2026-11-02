@@ -19,7 +19,7 @@ const sortedStops = async (page: Page) => (await stops(page)).sort((a, b) => a -
 
 async function load(page: Page) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
   await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(1);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
