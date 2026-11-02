@@ -4,8 +4,9 @@ import { reachable } from './layout';
 
 test.use({ locale: 'ko-KR' });
 
-/** Sets the browser's default font size to 200%, as the Chrome text size setting does. */
+/** Firefox receives its default sizes at launch; Chromium supports a per-page setting. */
 async function useLargeText(page: Page) {
+  if (page.context().browser()!.browserType().name() === 'firefox') return;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
 }
@@ -156,7 +157,25 @@ test.describe('scroll button settling', () => {
 });
 
 test.describe('with 200% text', () => {
-  test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium can set the default font size');
+  test.skip(({ browserName }) => browserName === 'webkit', 'WebKit does not expose a browser default font size setting');
+  test.use({ launchOptions: { firefoxUserPrefs: {
+    'media.volume_scale': '0.0',
+    'font.size.variable.x-western': 32,
+    'font.size.monospace.x-western': 26,
+    'font.size.variable.ko': 32,
+    'font.size.monospace.ko': 26,
+  } } });
+
+  test('the browser default grows text and em media queries in Korean and English', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 800 });
+    await useLargeText(page);
+    for (const lang of ['ko', 'en']) {
+      await page.setContent(`<html lang="${lang}"><body>Default text</body></html>`);
+      expect(await page.locator('html').evaluate(el => getComputedStyle(el).fontSize), lang).toBe('32px');
+      // Root CSS injection cannot change this initial-font-size media query.
+      expect(await page.evaluate(() => matchMedia('(min-width: 20em)').matches), lang).toBe(false);
+    }
+  });
 
   for (const width of [320, 390, 680, 768]) {
     test(`the footer web and install links are on screen and pressable at ${width}px`, async ({ page }) => {
