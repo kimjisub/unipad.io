@@ -7,6 +7,7 @@ export interface InputEventRecord { type: string; pointerType: string; pointerId
 declare global { interface Window { inputBoundaryEvents: InputEventRecord[] } }
 
 // Reuse the original fixture tone, with a distinct duration for every pad and chain.
+// soundPad limits the fixture to that pad on the first chain when only one sound is needed.
 // No keyLED scripts: each held pad has the existing press overlay until release.
 export const duration = (rows: number, cols: number, position: string, chain = 1) => {
   const [row, col] = position.split(',').map(Number);
