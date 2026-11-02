@@ -141,6 +141,8 @@ for (const entry of ['library', 'player'] as const) {
       await expectPads(page);
       await expectSavedPackCount(page, 1);
     }
+    // A premature unversioned open would create an empty database before the app initializes it.
+    await expect.poll(() => page.evaluate(async () => (await indexedDB.databases()).map(db => db.name))).toContain('unipad');
     const before = await storedPackRecords(page);
     await page.locator('input[data-unipack-import]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('This is not a UniPack archive.') });
     await expect(page.getByRole('alertdialog', { name: 'Error', exact: true })).toBeVisible();
