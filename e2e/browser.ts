@@ -17,10 +17,43 @@ export function installationResponse(url: URL) {
     : { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken };
 }
 
-export const test = base.extend<{ checkedPage: void }>({
+export interface PageErrors {
+  /** Fail the test unless it empties this list itself. */
+  errors: string[];
+  /** Firebase fetches cut off while their page was being replaced. */
+  ignored: string[];
+}
+
+// WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
+// text at the URL's first colon. The fetch's own rejection is a separate error, so ignoring the line hides no exception.
+const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
+  && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
+
+/**
+ * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
+ * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
+ */
+function collectPageErrors(page: Page): PageErrors {
+  const collected: PageErrors = { errors: [], ignored: [] };
+  let leaving = false;
+  page.on('pageerror', error => (leaving && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
+  page.on('framenavigated', frame => {
+    if (frame === page.mainFrame()) leaving = false;
+  });
+  const whileLeaving = <T>(navigation: () => Promise<T>) => {
+    leaving = true;
+    return navigation().finally(() => { leaving = false; });
+  };
+  const goto = page.goto.bind(page);
+  const reload = page.reload.bind(page);
+  page.goto = (url, options) => whileLeaving(() => goto(url, options));
+  page.reload = options => whileLeaving(() => reload(options));
+  return collected;
+}
+
+export const test = base.extend<{ checkedPage: PageErrors }>({
   checkedPage: [async ({ page, context, baseURL }, use) => {
-    const errors: string[] = [];
-    page.on('pageerror', error => errors.push(error.message));
+    const collected = collectPageErrors(page);
     // Firebase analytics receives inert local responses so its installation
     // promise does not reject when networking is blocked. No requests leave CI.
     await context.route('**/*', route => {
@@ -35,8 +68,8 @@ export const test = base.extend<{ checkedPage: void }>({
     });
     await context.routeWebSocket(/.*/, socket => socket.close());
     await installBrowserProbe(page);
-    await use();
-    expect(errors, 'uncaught browser errors').toEqual([]);
+    await use(collected);
+    expect(collected.errors, 'uncaught browser errors').toEqual([]);
   }, { auto: true }],
 });
 
@@ -49,6 +82,23 @@ export const stateTimeout = 15_000;
 /** Waits for the pads of the pack just opened on /play: 64 for an 8x8 pack. */
 export const expectPads = (page: Page, count = 64) =>
   expect(page.locator('[data-pad]')).toHaveCount(count, { timeout: stateTimeout });
+
+export async function expectSavedPlaybackPack(page: Page) {
+  // Pads appear before persistence finishes. Observe both within the existing pad-state budget,
+  // rather than starting a separate, shorter URL deadline as soon as the pads appear.
+  let lastUrl = page.url();
+  await expect.poll(async () => {
+    const state = await page.evaluate(() => ({
+      url: location.href,
+      pads: document.querySelectorAll('[data-pad]').length,
+      saved: Boolean(new URL(location.href).searchParams.get('pack')),
+    }));
+    lastUrl = state.url;
+    return { pads: state.pads, saved: state.saved };
+  }, { timeout: stateTimeout }).toEqual({ pads: 64, saved: true }).catch(error => {
+    throw new Error(`${error.message}\nLast observed playback URL: ${lastUrl}`, { cause: error });
+  });
+}
 
 /**
  * Playback starts only once the browser runs the audio output. When the device never opens, a mode

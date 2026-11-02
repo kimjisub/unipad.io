@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
 import { storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
@@ -21,14 +21,16 @@ const option = (page: Page, name: string) => list(page).getByRole('option', { na
 
 type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
 
-async function openList(page: Page, files: readonly PackFile[]) {
+async function openList(page: Page, files: readonly PackFile[], beforeSavedUrl?: () => Promise<void>) {
   await test.step('Prepare saved pack list', async () => {
     await page.goto('/play');
     for (const [index, file] of files.entries()) {
       await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
       await expectPads(page);
+      // Finish controlled-delay setup before starting the saved URL assertion's clock.
+      await beforeSavedUrl?.();
       // The import shows the pads before it saves the pack; the URL changes once it is saved.
-      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
       // Setup needs the buttons' actions, not pointer hit testing during their animations.
       // Keep the page alive and return to the list before the next import.
       await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
@@ -132,7 +134,7 @@ async function expectActive(page: Page, name: string) {
   await expect(list(page).locator('[aria-selected="true"]')).toHaveCount(1);
 }
 
-test('the pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
+test('a short pack list is one Tab stop and arrow, Home and End keys move focus and selection', async ({ page }) => {
   await openListWithThreePacks(page);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
   await option(page, middle).click();
@@ -156,9 +158,19 @@ test('the pack list is one Tab stop and arrow, Home and End keys move focus and 
   await expectActive(page, first);
   await expect(list(page).locator('[tabindex="0"]')).toHaveCount(1);
 
+  // Test the list's Tab order within the page. Headless Firefox keeps the last element
+  // focused when Tab would enter browser chrome, so provide an explicit next stop.
+  await page.evaluate(() => {
+    const next = document.createElement('button');
+    next.id = 'after-pack-list';
+    // WebKit's default Tab navigation requires buttons to opt in explicitly.
+    next.tabIndex = 0;
+    next.textContent = 'After pack list';
+    document.body.append(next);
+  });
   // Tab leaves the list instead of walking through every row.
   await page.keyboard.press('Tab');
-  await expect(list(page).getByRole('option').and(page.locator(':focus'))).toHaveCount(0);
+  await expect(page.locator('#after-pack-list')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(option(page, first)).toBeFocused();
 });
@@ -307,8 +319,8 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 
 // Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
 async function openLongList(page: Page, square: boolean) {
-  await loadInputPack(page, 8, 8, square);
-  await expect(page).toHaveURL(/pack=/);
+  await loadInputPack(page, 8, 8, square, '7,7');
+  await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('unipad');
@@ -347,27 +359,59 @@ async function openLongList(page: Page, square: boolean) {
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
 async function wheelTo(page: Page, target: Locator) {
-  const scroll = await target.evaluate(element => {
+  const readScroll = () => target.evaluateHandle(element => {
     const targetRect = element.getBoundingClientRect();
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (getComputedStyle(parent).overflowY === 'auto' && parent.scrollHeight > parent.clientHeight) {
         const rect = parent.getBoundingClientRect();
-        const delta = targetRect.top < rect.top ? -2000 : targetRect.bottom > rect.bottom ? 2000 : 0;
-        if (delta) return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, delta };
+        // Stop within the final assertion's existing 0.99 ratio: integer scroll offsets can
+        // leave a fractional sliver clipped at the end of a fractional-height scrollport.
+        const tolerance = targetRect.height * 0.01;
+        const direction = targetRect.top < rect.top - tolerance ? -1 : targetRect.bottom > rect.bottom + tolerance ? 1 : 0;
+        if (direction) return {
+          element: parent,
+          x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+          top: parent.scrollTop, delta: direction * 2000,
+          // Bound the gesture sequence by the content size, including one partial final step.
+          steps: Math.ceil(parent.scrollHeight / (parent.clientHeight / 2)) + 1,
+        };
       }
     }
     return null;
   });
-  if (scroll) {
-    await page.mouse.move(scroll.x, scroll.y);
-    await page.mouse.wheel(0, scroll.delta);
+  // Firefox limits a large wheel event to less than one scrollport. Send a sequence of
+  // wheel gestures and require movement after each one, rather than assuming deltaY
+  // equals the distance scrolled or silently retrying the final visibility assertion.
+  let remaining: number | undefined;
+  while (remaining === undefined || remaining > 0) {
+    const observation = await readScroll();
+    try {
+      const scroll = await observation.evaluate(value => value && {
+        x: value.x, y: value.y, delta: value.delta, steps: value.steps,
+      });
+      if (!scroll) break;
+      // The scrollport stays put, so the pointer stays over it after the first gesture.
+      if (remaining === undefined) await page.mouse.move(scroll.x, scroll.y);
+      remaining = (remaining ?? scroll.steps) - 1;
+      await page.mouse.wheel(0, scroll.delta);
+      // Observe the same element inside the browser. A driver-side poll can spend its
+      // entire deadline resolving the locator again, even when the wheel has moved it.
+      await test.step('Wheel input must move the target scroll container', async () => {
+        const moved = await page.waitForFunction(scroll => scroll && scroll.element.isConnected
+          && (scroll.delta > 0 ? scroll.element.scrollTop > scroll.top : scroll.element.scrollTop < scroll.top),
+        observation, { timeout: 5000 });
+        await moved.dispose();
+      });
+    } finally {
+      await observation.dispose();
+    }
   }
   // Fractional scroll offsets can leave less than one CSS pixel clipped.
   await expect(target).toBeInViewport({ ratio: 0.99 });
 }
 
 async function playAndReturn(page: Page, viewport: { width: number; height: number }) {
-  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/);
+  await expect(page).toHaveURL(/[?&]pack=local-0(?:&|$)/, { timeout: stateTimeout });
   await expectPads(page);
   if (showsRotatePrompt(viewport)) {
     await expect(rotatePrompt(page)).toBeVisible();
@@ -397,10 +441,93 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
   await resize(page, viewport);
 }
 
+function delayNextPackSetting() {
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args);
+    if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+      // Finish the native write but hold the Promise that gates the pack URL.
+      request.addEventListener('success', event => {
+        event.stopImmediatePropagation();
+        document.documentElement.dataset.heldPackSetting = 'true';
+        window.addEventListener('start-pack-setting-delay', () => {
+          const heldAt = performance.now();
+          // Release in the browser, independent of how long the driver takes to observe it.
+          setTimeout(() => {
+            document.documentElement.dataset.packSettingDelay = String(performance.now() - heldAt);
+            request.onsuccess?.call(request, event);
+          }, 6000);
+        }, { once: true });
+      }, { once: true });
+      IDBObjectStore.prototype.put = put;
+    }
+    return request;
+  };
+}
+
+async function startPackSettingDelay(page: Page, observerDelay = 0) {
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-setting', 'true', { timeout: stateTimeout });
+  // A slow observer must not consume the URL assertion's budget before its controlled delay starts.
+  if (observerDelay) await page.waitForTimeout(observerDelay);
+  await page.evaluate(() => window.dispatchEvent(new Event('start-pack-setting-delay')));
+}
+
+for (const observerDelay of [0, 10_000]) {
+  test(`saved pack import waits for delayed settings completion${observerDelay ? ' with a delayed observer' : ''}`, async ({ page }, info) => {
+    test.setTimeout(Math.max(info.project.timeout, 60_000));
+    await page.addInitScript(delayNextPackSetting);
+    await openList(page, [packs[0][0]], () => startPackSettingDelay(page, observerDelay));
+    expect(Number(await page.locator('html').getAttribute('data-pack-setting-delay'))).toBeGreaterThan(5000);
+  });
+}
+
+test('wheel movement survives a delayed driver observation', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  const target = page.getByRole('button', { name: 'Tail' });
+  const evaluate = target.evaluate.bind(target);
+  const wheel = page.mouse.wheel.bind(page.mouse);
+  let wheelSent = false;
+  page.mouse.wheel = async (...args) => { await wheel(...args); wheelSent = true; };
+  target.evaluate = async (...args) => {
+    const result = await evaluate(...args);
+    // The real browser moves; only returning its observation to the driver stalls.
+    if (wheelSent) { wheelSent = false; await new Promise(resolve => setTimeout(resolve, 5200)); }
+    return result;
+  };
+  page.waitForFunction = new Proxy(page.waitForFunction, {
+    async apply(waitForFunction, receiver, args) {
+      const result = await Reflect.apply(waitForFunction, receiver, args);
+      if (wheelSent) { wheelSent = false; await new Promise(resolve => setTimeout(resolve, 5200)); }
+      return result;
+    },
+  });
+  await wheelTo(page, target);
+});
+
+test('wheel movement still fails when wheel input is prevented', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  await page.evaluate(() => document.addEventListener('wheel', event => event.preventDefault(), { passive: false }));
+  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 5000ms/);
+  expect(await page.locator('div').first().evaluate(element => element.scrollTop)).toBe(0);
+});
+
+test('saved pack playback waits for delayed settings completion', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await openLongList(page, true);
+  await option(page, 'Local pack 0 by UniPad Tests').click();
+  await page.evaluate(delayNextPackSetting);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expectPads(page);
+  await startPackSettingDelay(page);
+  await playAndReturn(page, { width: 1280, height: 800 });
+  expect(Number(await page.locator('html').getAttribute('data-pack-setting-delay'))).toBeGreaterThan(5000);
+});
+
 for (const square of [true, false]) {
   for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
-      test.setTimeout(60_000);
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
       await openLongList(page, square);
       const viewport = { width, height };
       await resize(page, viewport);
@@ -415,6 +542,18 @@ for (const square of [true, false]) {
       await info.attach('detail-play-reachable', { body: await page.screenshot(), contentType: 'image/png' });
       await detailPlay.click();
       await playAndReturn(page, viewport);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays again from its row after returning`, async ({ page }, info) => {
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
+      await openLongList(page, square);
+      const viewport = { width, height };
+      await resize(page, viewport);
+      await page.goto('/play?pack=local-0');
+      await playAndReturn(page, viewport);
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
       await expect(tail).toHaveAttribute('aria-selected', 'true');
       await tail.locator(':scope > [aria-hidden="true"]').click();
@@ -459,7 +598,7 @@ for (const action of ['opening', 'bookmarking'] as const) {
       if (action === 'opening') {
         await page.getByRole('button', { name: 'Play', exact: true }).click();
         await expectPads(page);
-        await expect(page).toHaveURL(/\/play\?pack=.+/);
+        await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
         const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
         await page.locator('[data-pad="0,0"]').click();
         await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
