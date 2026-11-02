@@ -99,6 +99,9 @@ for (const condition of ['ordinary', 'webdriver', 'marker'] as const) {
     await page.evaluate(() => {
       (window as unknown as { gtag: (...args: unknown[]) => void }).gtag('event', 'close_probe');
     });
+    // Firebase's public gtag wrapper waits for initialization even after it has
+    // completed. Do not destroy the document before that async wrapper queues it.
+    await expect.poll(async () => (await queued(page)).some(([cmd, name]) => cmd === 'event' && name === 'close_probe')).toBe(true);
     await page.close();
     // Page teardown requests bypass Playwright routing in some engines; the HTTP
     // server remains alive and observes those native beacon/keepalive deliveries.
