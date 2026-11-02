@@ -140,6 +140,10 @@ for (const { value: profile } of LAUNCHPAD_PROFILE_OPTIONS) {
     await dialog.locator('select').selectOption(profile);
     await expect(dialog).toContainText(`Resolved Type: ${profile === 'auto' ? 'launchpad_x' : profile}`);
     await info.attach('selected-model', { body: await page.screenshot(), contentType: 'image/png' });
+    // The pads and the dialog update before the pack and the choice are saved, and the address
+    // names the pack only after its save; a reload before then reopens the list or drops the choice.
+    await expect(page).toHaveURL(/pack=.+/);
+    await expect.poll(() => storedSetting(page, 'midiProfile')).toBe(profile);
     await page.reload();
     await expectPads(page);
     await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
@@ -210,6 +214,17 @@ async function expectLoadedPack(page: Page) {
   const supportsMidi = await hasWebMidi(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
 }
+
+const storedSetting = (page: Page, key: string) => page.evaluate(key => new Promise<string | null>((resolve, reject) => {
+  const open = indexedDB.open('unipad');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result;
+    const request = db.transaction('settings').objectStore('settings').get(key);
+    request.onsuccess = () => { db.close(); resolve(request.result?.value ?? null); };
+    request.onerror = () => { db.close(); reject(request.error); };
+  };
+}), key);
 
 // Launchpad tests need the browser's own Web MIDI API (WebKit has none); there they are
 // skipped as not applicable so the skip shows in the results instead of a failure.
