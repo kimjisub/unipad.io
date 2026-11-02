@@ -389,7 +389,9 @@ an unused test measurement ID, so running this file requires access to the tag
 script host. Firebase replies are local, and the tag's collection transport points
 to a local HTTP server that stays alive through page close. The ordinary-visit
 control shadows only `navigator.webdriver` before application code, and must
-produce page-view and close-probe deliveries with the same tag and collector.
+produce page-view deliveries with the same tag and collector. Independent native
+`pagehide` beacon and keepalive probes must reach that collector when the page
+closes, proving that the observation path remains alive during teardown.
 Both opt-out conditions must deliver zero requests, including after full
 navigation without the marker. This checks real tag execution rather than
 counting requests blocked by Playwright routing. Vercel Analytics and Firebase

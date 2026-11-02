@@ -54,6 +54,15 @@ async function prepare(context: BrowserContext, baseURL: string, ordinary: boole
     // shadow the navigator getter before application code to model ordinary Safari.
     if (ordinary) Object.defineProperty(navigator, 'webdriver', { get: () => false });
     const state = window as unknown as { dataLayer: IArguments[]; gtag: (...args: unknown[]) => void };
+    // Independent native tail probes prove this collector sees requests made
+    // while a document leaves, beyond Playwright's routing lifetime.
+    addEventListener('pagehide', () => {
+      const path = encodeURIComponent(location.pathname);
+      navigator.sendBeacon(`${collectorURL}/tail?kind=beacon&path=${path}`, 'tail');
+      void fetch(`${collectorURL}/tail?kind=keepalive&path=${path}`, {
+        method: 'POST', body: 'tail', keepalive: true, mode: 'no-cors',
+      }).catch(() => {});
+    });
     state.dataLayer = [];
     state.gtag = function (...args: unknown[]) {
       if (args[0] === 'config') {
@@ -96,24 +105,20 @@ for (const condition of ['ordinary', 'webdriver', 'marker'] as const) {
       // Let the actual tag's event batching/engagement timers run before leaving.
       await page.waitForTimeout(1_200);
     }
-    await page.evaluate(() => {
-      (window as unknown as { gtag: (...args: unknown[]) => void }).gtag('event', 'close_probe');
-    });
-    // Firebase's public gtag wrapper waits for initialization even after it has
-    // completed. Do not destroy the document before that async wrapper queues it.
-    await expect.poll(async () => (await queued(page)).some(([cmd, name]) => cmd === 'event' && name === 'close_probe')).toBe(true);
     await page.close();
     // Page teardown requests bypass Playwright routing in some engines; the HTTP
     // server remains alive and observes those native beacon/keepalive deliveries.
     await new Promise(resolve => setTimeout(resolve, 1_200));
     await testInfo.attach('collection', { body: JSON.stringify({ condition, observations, received }, null, 2), contentType: 'application/json' });
     expect(errors).toEqual([]);
+    for (const kind of ['beacon', 'keepalive']) {
+      expect(received.some(hit => hit.url === `/tail?kind=${kind}&path=%2Fdocs`), `native ${kind} on page close`).toBe(true);
+    }
     if (condition === 'ordinary') {
       expect(hits().length).toBeGreaterThan(0);
       expect(hits().some(hit => (hit.url + hit.body).includes('en=page_view'))).toBe(true);
-      expect(hits().some(hit => (hit.url + hit.body).includes('en=close_probe'))).toBe(true);
     } else {
-      expect(received).toEqual([]);
+      expect(received.filter(hit => !hit.url.startsWith('/tail?'))).toEqual([]);
       expect(observations.every(state => state.disabled)).toBe(true);
     }
   });
