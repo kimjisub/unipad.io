@@ -53,8 +53,10 @@ const sortCases = [
 
 for (const [method, ascending, titles] of sortCases) {
   test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
-    await openListWithThreePacks(page);
-    // Keep the real imported ZIP data; give the saved rows distinct, hand-checked sort keys.
+    // Sorting needs distinct saved rows, not three rounds of decoding and playing.
+    // Import once through the real UI, then copy its archive and chunks along with
+    // the metadata. Other list tests still import and open the three distinct packs.
+    await openList(page, [packs[0][0]]);
     await page.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('unipad');
@@ -68,14 +70,20 @@ for (const [method, ascending, titles] of sortCases) {
         const chunks = tx.objectStore('unipackChunks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
-          const records = request.result;
-          const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
-          records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
-          tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
-          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
-            tx.objectStore('unipackChunks').put({ ...chunk, packId: 'favorite' });
+          const record = request.result[0];
+          const source = archive.result[0];
+          const sourceChunks = chunks.result.filter(chunk => chunk.packId === source.id);
+          const keys = [
+            [record.id, 'Alpha', 'Charlie', 20, false],
+            ['bravo', 'Bravo', 'Alpha', 30, false],
+            ['charlie', 'Charlie', 'Bravo', 10, false],
+            ['favorite', 'Favorite', 'Zulu', 40, true],
+          ] as const;
+          for (const [id, title, producerName, addedAt, bookmark] of keys) {
+            tx.objectStore('unipacks').put({ ...source, id });
+            for (const chunk of sourceChunks) tx.objectStore('unipackChunks').put({ ...chunk, packId: id });
+            store.put({ ...record, id, title, producerName, addedAt, bookmark });
           }
-          store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(tx.error);
