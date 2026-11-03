@@ -53,8 +53,10 @@ const sortCases = [
 
 for (const [method, ascending, titles] of sortCases) {
   test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
-    await openListWithThreePacks(page);
-    // Keep the real imported ZIP data; give the saved rows distinct, hand-checked sort keys.
+    // Sorting needs distinct saved rows, not three rounds of decoding and playing.
+    // Import once through the real UI, then copy its archive and chunks along with
+    // the metadata. Other list tests still import and open the three distinct packs.
+    await openList(page, [packs[0][0]]);
     await page.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('unipad');
@@ -68,14 +70,20 @@ for (const [method, ascending, titles] of sortCases) {
         const chunks = tx.objectStore('unipackChunks').getAll();
         const request = store.getAll();
         request.onsuccess = () => {
-          const records = request.result;
-          const keys = [['Alpha', 'Charlie', 20], ['Bravo', 'Alpha', 30], ['Charlie', 'Bravo', 10]] as const;
-          records.forEach((record, index) => store.put({ ...record, title: keys[index][0], producerName: keys[index][1], addedAt: keys[index][2] }));
-          tx.objectStore('unipacks').put({ ...archive.result[0], id: 'favorite' });
-          for (const chunk of chunks.result.filter(chunk => chunk.packId === archive.result[0].id)) {
-            tx.objectStore('unipackChunks').put({ ...chunk, packId: 'favorite' });
+          const record = request.result[0];
+          const source = archive.result[0];
+          const sourceChunks = chunks.result.filter(chunk => chunk.packId === source.id);
+          const keys = [
+            [record.id, 'Alpha', 'Charlie', 20, false],
+            ['bravo', 'Bravo', 'Alpha', 30, false],
+            ['charlie', 'Charlie', 'Bravo', 10, false],
+            ['favorite', 'Favorite', 'Zulu', 40, true],
+          ] as const;
+          for (const [id, title, producerName, addedAt, bookmark] of keys) {
+            tx.objectStore('unipacks').put({ ...source, id });
+            for (const chunk of sourceChunks) tx.objectStore('unipackChunks').put({ ...chunk, packId: id });
+            store.put({ ...record, id, title, producerName, addedAt, bookmark });
           }
-          store.put({ ...records[0], id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true });
         };
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(tx.error);
@@ -317,9 +325,11 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
   await expect(option(page, first)).toBeVisible();
 });
 
-// Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
-async function openLongList(page: Page, square: boolean) {
-  await loadInputPack(page, 8, 8, square, '7,7');
+const tailSoundPad = '7,7';
+
+// Import a real pack with one looping sound, then clone its saved archive and metadata.
+async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list') {
+  await loadInputPack(page, 8, 8, square, tailSoundPad);
   await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -353,8 +363,16 @@ async function openLongList(page: Page, square: boolean) {
     });
     db.close();
   });
-  await page.goto('/play');
-  await expect(list(page).getByRole('option')).toHaveCount(13);
+  if (entry === 'url') {
+    // Open the saved address directly instead of loading an unused list first.
+    await page.goto('/play?pack=local-0');
+  } else {
+    // Quit refreshes the saved rows without opening a second document during setup.
+    // Real pointer input remains in the playback and return actions under test.
+    await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+    await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
+    await expect(list(page).getByRole('option')).toHaveCount(13);
+  }
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
@@ -417,7 +435,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
     await expect(rotatePrompt(page)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
   }
-  const pad = page.locator('[data-pad="7,7"]');
+  const pad = page.locator(`[data-pad="${tailSoundPad}"]`);
   const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
   // Wait for the grid's resized layout before sending real pointer input to this pad.
   await pad.hover();
@@ -426,7 +444,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
     const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
     expect(source.loop).toBe(true);
-    expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
+    expect(source.duration).toBeCloseTo(duration(8, 8, tailSoundPad), 4);
     expect(await page.evaluate(() => window.browserProbe.audio.stops)).not.toContain(source.id);
   } finally {
     await page.mouse.up();
@@ -527,8 +545,7 @@ for (const square of [true, false]) {
   for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
       test.setTimeout(Math.max(info.project.timeout, 60_000));
-      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
-      await openLongList(page, square);
+      await test.step('Prepare long saved list', () => openLongList(page, square));
       const viewport = { width, height };
       await resize(page, viewport);
       await info.attach('list-before-scroll', { body: await page.screenshot(), contentType: 'image/png' });
@@ -545,19 +562,31 @@ for (const square of [true, false]) {
       await expect(tail).toHaveAttribute('aria-selected', 'true');
     });
 
-    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays again from its row after returning`, async ({ page }, info) => {
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} returns from its saved address`, async ({ page }, info) => {
       test.setTimeout(Math.max(info.project.timeout, 60_000));
-      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
-      await openLongList(page, square);
       const viewport = { width, height };
-      await resize(page, viewport);
-      await page.goto('/play?pack=local-0');
+      await page.setViewportSize(viewport);
+      await test.step('Prepare saved address', () => openLongList(page, square, 'url'));
       await playAndReturn(page, viewport);
       const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
       await expect(tail).toHaveAttribute('aria-selected', 'true');
+      await info.attach('saved-address-return', { body: await page.screenshot(), contentType: 'image/png' });
+    });
+
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays from its row`, async ({ page }, info) => {
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      await test.step('Prepare long saved list', () => openLongList(page, square));
+      const viewport = { width, height };
+      await resize(page, viewport);
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
+      await wheelTo(page, tail);
+      await tail.click();
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
       await tail.locator(':scope > [aria-hidden="true"]').click();
       await playAndReturn(page, viewport);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+      await info.attach('row-playback-return', { body: await page.screenshot(), contentType: 'image/png' });
     });
   }
 }

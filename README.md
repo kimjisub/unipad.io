@@ -229,8 +229,9 @@ rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
 a held native storage response covers that transition. A deliberately delayed native
 decode checks that opening still works beyond the former five-second assertion.
-Native multi-touch CDP tests remain Chromium-only. The same A–I assertions also
-run in a separately labeled `DOM pointer supplement` group on every engine.
+Native multi-touch CDP tests remain Chromium-only. The same A–G and I assertions
+also run in a separately labeled `DOM pointer supplement` group on every engine.
+Item H remains in the Chromium-only `chain-release.spec.ts` browser-touch tests.
 `e2e/pointer-touch.ts` dispatches untrusted PointerEvents to the original hit-test
 target, retaining that target for moves and releases to model capture. This checks
 the actual application listeners, pad lights and native Web Audio start/stop calls.
