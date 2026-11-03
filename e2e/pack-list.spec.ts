@@ -325,9 +325,11 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
   await expect(option(page, first)).toBeVisible();
 });
 
-// Import a real two-chain pack, then duplicate only its persisted metadata, as a long saved list.
-async function openLongList(page: Page, square: boolean) {
-  await loadInputPack(page, 8, 8, square);
+const tailSoundPad = '7,7';
+
+// Import a real pack with one looping sound, then clone its saved archive and metadata.
+async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list') {
+  await loadInputPack(page, 8, 8, square, tailSoundPad);
   await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -361,8 +363,16 @@ async function openLongList(page: Page, square: boolean) {
     });
     db.close();
   });
-  await page.goto('/play');
-  await expect(list(page).getByRole('option')).toHaveCount(13);
+  if (entry === 'url') {
+    // Open the saved address directly instead of loading an unused list first.
+    await page.goto('/play?pack=local-0');
+  } else {
+    // Quit refreshes the saved rows without opening a second document during setup.
+    // Real pointer input remains in the playback and return actions under test.
+    await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+    await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
+    await expect(list(page).getByRole('option')).toHaveCount(13);
+  }
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
@@ -398,8 +408,9 @@ async function wheelTo(page: Page, target: Locator) {
         x: value.x, y: value.y, delta: value.delta, steps: value.steps,
       });
       if (!scroll) break;
+      // The scrollport stays put, so the pointer stays over it after the first gesture.
+      if (remaining === undefined) await page.mouse.move(scroll.x, scroll.y);
       remaining = (remaining ?? scroll.steps) - 1;
-      await page.mouse.move(scroll.x, scroll.y);
       await page.mouse.wheel(0, scroll.delta);
       // Observe the same element inside the browser. A driver-side poll can spend its
       // entire deadline resolving the locator again, even when the wheel has moved it.
@@ -424,7 +435,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
     await expect(rotatePrompt(page)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
   }
-  const pad = page.locator('[data-pad="7,7"]');
+  const pad = page.locator(`[data-pad="${tailSoundPad}"]`);
   const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
   // Wait for the grid's resized layout before sending real pointer input to this pad.
   await pad.hover();
@@ -433,7 +444,7 @@ async function playAndReturn(page: Page, viewport: { width: number; height: numb
     await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts + 1);
     const source = await page.evaluate(() => window.browserProbe.audio.starts.at(-1)!);
     expect(source.loop).toBe(true);
-    expect(source.duration).toBeCloseTo(duration(8, 8, '7,7'), 4);
+    expect(source.duration).toBeCloseTo(duration(8, 8, tailSoundPad), 4);
     expect(await page.evaluate(() => window.browserProbe.audio.stops)).not.toContain(source.id);
   } finally {
     await page.mouse.up();
@@ -534,8 +545,7 @@ for (const square of [true, false]) {
   for (const [width, height] of [[594, 368], [594, 406], [385, 571], [385, 609], [669, 867], [669, 902], [768, 800], [834, 1210], [1280, 800]]) {
     test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height}`, async ({ page }, info) => {
       test.setTimeout(Math.max(info.project.timeout, 60_000));
-      expect(info.timeout, 'Long-list setup must retain the browser project timeout').toBeGreaterThanOrEqual(info.project.timeout);
-      await openLongList(page, square);
+      await test.step('Prepare long saved list', () => openLongList(page, square));
       const viewport = { width, height };
       await resize(page, viewport);
       await info.attach('list-before-scroll', { body: await page.screenshot(), contentType: 'image/png' });
@@ -549,10 +559,34 @@ for (const square of [true, false]) {
       await info.attach('detail-play-reachable', { body: await page.screenshot(), contentType: 'image/png' });
       await detailPlay.click();
       await playAndReturn(page, viewport);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} returns from its saved address`, async ({ page }, info) => {
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      const viewport = { width, height };
+      await page.setViewportSize(viewport);
+      await test.step('Prepare saved address', () => openLongList(page, square, 'url'));
+      await playAndReturn(page, viewport);
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
       await wheelTo(page, tail);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+      await info.attach('saved-address-return', { body: await page.screenshot(), contentType: 'image/png' });
+    });
+
+    test(`saved pack tail ${square ? 'square' : 'rectangular'} ${width}x${height} plays from its row`, async ({ page }, info) => {
+      test.setTimeout(Math.max(info.project.timeout, 60_000));
+      await test.step('Prepare long saved list', () => openLongList(page, square));
+      const viewport = { width, height };
+      await resize(page, viewport);
+      const tail = option(page, 'Local pack 0 by UniPad Tests');
+      await wheelTo(page, tail);
+      await tail.click();
       await expect(tail).toHaveAttribute('aria-selected', 'true');
       await tail.locator(':scope > [aria-hidden="true"]').click();
       await playAndReturn(page, viewport);
+      await expect(tail).toHaveAttribute('aria-selected', 'true');
+      await info.attach('row-playback-return', { body: await page.screenshot(), contentType: 'image/png' });
     });
   }
 }
