@@ -258,6 +258,10 @@ test.describe('the scroll-to-top button', () => {
     await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
     expect(await page.evaluate(() => scrollY)).toBeGreaterThan(600);
     startScripts();
+    // Releasing requests starts downloading and executing the scripts. Keep that
+    // preparation out of the button assertion, without scrolling again after hydration.
+    await page.waitForLoadState('load');
+    expect(await page.evaluate(() => scrollY), 'the pre-script scroll position survives loading').toBeGreaterThan(600);
     await expect(page.getByRole('button', { name: 'Scroll to top' })).toBeVisible();
   });
 
