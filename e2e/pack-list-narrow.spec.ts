@@ -1,7 +1,7 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect } from './browser';
 import { connectStore } from './database';
-import { reachable, resize } from './layout';
+import { measureReachability, resize } from './layout';
 import { importSavedPack } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
@@ -41,19 +41,31 @@ async function showStoreCount(page: Page, context: BrowserContext, text: (typeof
   await expect(bar(page, text).store).toContainText(String(storeCount));
 }
 
+/** Font changes start CSS size transitions; keep this wait separate from layout measurement. */
+async function waitForControlLayout(page: Page) {
+  await page.evaluate(async () => {
+    document.documentElement.getBoundingClientRect();
+    await document.fonts.ready;
+    document.documentElement.getBoundingClientRect();
+    // Wait for actual transitions, not a delay or an assertion retry. The repeating badge keeps running.
+    await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition)
+      .map(animation => animation.finished.catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
+      })));
+  });
+}
+
 /** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
 async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
   const named = Object.entries(controls);
-  const [states, boxes] = await Promise.all([
-    Promise.all(named.map(([, control]) => reachable(control))),
-    Promise.all(named.map(([, control]) => control.boundingBox())),
-  ]);
+  await waitForControlLayout(named[0][1].page());
+  const measurements = await measureReachability(named.map(([, control]) => control));
   for (const [index, [name]] of named.entries()) {
-    expect(states[index], name).toEqual({ inside: true, pressable: true });
-    const box = boxes[index]!;
+    const { box, inside, pressable } = measurements[index];
+    expect({ inside, pressable }, name).toEqual({ inside: true, pressable: true });
     for (const [otherIndex, [otherName]] of named.entries()) {
       if (otherIndex <= index) continue;
-      const other = boxes[otherIndex]!;
+      const other = measurements[otherIndex].box;
       const overlaps = box.x < other.x + other.width && other.x < box.x + box.width
         && box.y < other.y + other.height && other.y < box.y + box.height;
       expect(overlaps, `${name} overlaps ${otherName}`).toBe(false);
@@ -74,6 +86,77 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
+
+test('reachability reads moving controls in the same browser turn', async ({ page }) => {
+  await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
+  await page.evaluate(() => {
+    const hitTest = document.elementFromPoint.bind(document);
+    const turns: number[] = [];
+    let turn = 0;
+    Object.assign(window, { measurementTurns: turns });
+    document.elementFromPoint = (x, y) => {
+      turns.push(turn);
+      // The microtask moves the layout after this synchronous browser evaluation finishes.
+      queueMicrotask(() => {
+        document.querySelector('div')!.style.marginLeft = `${++turn * 10}px`;
+      });
+      return hitTest(x, y);
+    };
+  });
+  await expectAllReachable({ theme: page.getByRole('button', { name: 'Theme' }), import: page.getByRole('button', { name: '+ Import' }) });
+  const turns = await page.evaluate(() => (window as unknown as { measurementTurns: number[] }).measurementTurns);
+  expect(turns).toEqual([0, 0]);
+});
+
+test('reachability never combines rectangles from different layouts', async ({ page }) => {
+  await page.setContent(`<style>
+    div { display: flex; gap: 80px; width: 240px; }
+    button { width: 80px; height: 40px; flex-shrink: 0; }
+  </style><div><button>Theme</button><button>+ Import</button></div>`);
+  await page.evaluate(() => {
+    const row = document.querySelector('div')!;
+    // Each layout has two disjoint 80px buttons, 80px apart. Swapping both in one task
+    // keeps them disjoint, but rectangles read on opposite sides of a swap overlap.
+    let reversed = false;
+    setInterval(() => {
+      reversed = !reversed;
+      row.style.flexDirection = reversed ? 'row-reverse' : 'row';
+    }, 0);
+  });
+  const controls = { theme: page.getByRole('button', { name: 'Theme' }), import: page.getByRole('button', { name: '+ Import' }) };
+  for (let sample = 0; sample < 40; sample++) await expectAllReachable(controls);
+});
+
+test('reachability waits for the native size transition before measuring', async ({ page }) => {
+  await page.setContent(`<style>button { font-size: 12px; transition: font-size 150ms; } div { display: flex; gap: 20px; }</style>
+    <div><button>Theme</button><button>+ Import</button></div>`);
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('button')];
+    buttons.forEach(button => button.getBoundingClientRect());
+    buttons.forEach(button => { button.style.fontSize = '24px'; });
+    const animations = document.getAnimations();
+    if (animations.length !== 2) throw new Error(`Expected two native transitions, got ${animations.length}`);
+    animations.forEach(animation => { animation.pause(); animation.currentTime = 75; });
+    const probe = { started: false, earlyReads: 0 };
+    Object.assign(window, { transitionProbe: probe });
+    const getAnimations = document.getAnimations.bind(document);
+    document.getAnimations = () => { probe.started = true; return getAnimations(); };
+    const hitTest = document.elementFromPoint.bind(document);
+    document.elementFromPoint = (x, y) => {
+      probe.started = true;
+      if (animations.some(animation => animation.playState !== 'finished')) probe.earlyReads++;
+      return hitTest(x, y);
+    };
+  });
+  await Promise.all([
+    expectAllReachable({ theme: page.getByRole('button', { name: 'Theme' }), import: page.getByRole('button', { name: '+ Import' }) }),
+    (async () => {
+      await page.waitForFunction(() => (window as unknown as { transitionProbe: { started: boolean } }).transitionProbe.started);
+      await page.evaluate(() => document.getAnimations().forEach(animation => animation.finish()));
+    })(),
+  ]);
+  expect(await page.evaluate(() => (window as unknown as { transitionProbe: { earlyReads: number } }).transitionProbe.earlyReads)).toBe(0);
+});
 
 for (const text of locales) {
   test.describe(text.locale, () => {
