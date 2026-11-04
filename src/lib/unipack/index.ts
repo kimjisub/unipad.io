@@ -1,4 +1,4 @@
-export { parseUniPack } from './parser';
+export { parseUniPack, readUniPackMetadata } from './parser';
 export { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 export { LedRunner } from './LedRunner';
 export type { LedRunnerListener } from './LedRunner';

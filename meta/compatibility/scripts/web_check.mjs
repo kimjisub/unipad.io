@@ -230,7 +230,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
     await page.waitForTimeout(800);
     const hintRotated = await hintVisible(page);
     const padsRotated = await readPads(page);
-    // The portrait hint covers the pads; after rotating, observe sound and lights independently again.
+    // Below the tablet width the portrait hint covers the pads; after rotating, observe sound and lights independently again.
     const startsBefore = (await readAudio(page)).starts;
     const foundAfter = hintRotated ? null : await findSoundingPad(page, cdp, profile.input);
     const audioAfterRotate = await readAudio(page);

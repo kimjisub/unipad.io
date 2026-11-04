@@ -1,5 +1,28 @@
 # Results
 
+## Android copy reference moved to the current corpus (2026-10-31)
+
+`copies.json` now selects Android merge `42d01b37ec81facfa6f4acacec48fcccc19de07a`
+([unipad-android#335](https://github.com/kimjisub/unipad-android/pull/335)) as a plain commit hash.
+Its copy is byte-identical to the 391-case canonical corpus, SHA256
+`13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`, and
+`sync.mjs --check --require-current --android` accepts it.
+
+iOS still selects merge `e8ac34d11373b3ed071535e365ddc382c1929496` with its historical 214-case
+copy, SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`. The copy comparison
+still warns that it is behind canonical, and the strict check for both apps still refuses it. No
+corpus input, expected value or failure observation changes, and no app result is counted here.
+
+## Shared audio admission revision 4 (2026-10-28)
+
+Nine `INVALID_FORMAT` inputs join the shared audio admission corpus: PCM AIFF and CAF from
+`tone.wav`, AIFF with `SSND` before `COMM`, mu-law AIFF-C, IMA4/AAC/ALAC CAF, an AIFF named
+`.mp3`, and `tone.mp3` behind five chained frame headers that change rate and MPEG version.
+They become SAFE-F077 to SAFE-F085; earlier inputs and expectations are unchanged, and the web
+inspector already rejects all nine without a code change. Regenerating produces 391 cases with
+SHA256 `13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`.
+Native app copy declarations remain historical; the apps copy this revision separately.
+
 ## Combined auto mapping and native observation corpus (2026-10-25)
 
 Integrating [unipad.io#192](https://github.com/kimjisub/unipad.io/pull/192) and

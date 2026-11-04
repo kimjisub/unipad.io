@@ -3,11 +3,11 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectAudioOutputRunning, expectPads } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
-import { savedRecords } from './saved-packs';
+import { savedRecords, expectSavedPackCount } from './saved-packs';
 import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
@@ -198,6 +198,13 @@ async function loadPack(page: Page, file: string | { name: string; mimeType: str
   await expectLoadedPack(page);
 }
 
+async function loadSavedFixture(page: Page) {
+  // These cases need a saved fixture; detailed import checks belong to the import tests.
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(pack);
+  await expectSavedPlaybackPack(page);
+}
+
 async function expectLoadedPack(page: Page) {
   await expectPads(page);
   await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toBeVisible();
@@ -280,6 +287,7 @@ async function watchLight(page: Page, position: string) {
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
@@ -298,6 +306,7 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
     };
   });
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.reload();
   await expectLoadedPack(page);
@@ -318,7 +327,7 @@ test('a missing saved pack fails the pad value check after restoration ends', as
 
 test('a delayed earlier storage read cannot replace the last pack selected', async ({ page }, info) => {
   await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await expectSavedPlaybackPack(page);
   const zip = await JSZip.loadAsync(await readFile(pack));
   zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Earlier Pack'));
   const bytes = Array.from(await zip.generateAsync({ type: 'uint8array' }));
@@ -345,10 +354,12 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
       const request = get.call(this, query);
       if (this.name === 'unipacks' && query === 'earlier-pack' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Delay the assembled result, not native request dispatch: chunk reads need an active transaction.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
           document.documentElement.dataset.heldPackRead = 'true';
-          window.addEventListener('release-earlier-pack', () => request.onsuccess?.call(request, event), { once: true });
+          window.addEventListener('release-earlier-pack', () => transaction.oncomplete?.call(transaction, event), { once: true });
         }, { once: true });
       }
       return request;
@@ -359,9 +370,8 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
   await page.getByRole('option', { name: 'Earlier Pack by UniPad Tests', exact: true }).dblclick();
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
-  await expect(page).toHaveURL(/pack=.+/);
   const latestUrl = page.url();
   // The unit tests hold every await deterministically. This browser observation also keeps a
   // record of any transient wrong title after releasing the native IndexedDB result.
@@ -384,8 +394,7 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
 });
 
 test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
-  await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await loadSavedFixture(page);
   const savedUrl = page.url();
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
@@ -408,10 +417,10 @@ test('a file still enters the library when another pack replaces its pending rea
   });
   await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(savedUrl);
   await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
-  await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
+  await expectSavedPackCount(page, 2);
   await info.attach('import-kept-after-replacement', { body: JSON.stringify({ saved: await savedRecords(page), observedUrl: page.url(), title: await page.title() }), contentType: 'application/json' });
   await expect(page).toHaveURL(savedUrl);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
@@ -421,8 +430,8 @@ test('a file still enters the library when another pack replaces its pending rea
   await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
-  await loadPack(page);
+test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
+  await loadSavedFixture(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
     const get = IDBObjectStore.prototype.get;
@@ -433,9 +442,12 @@ test('restoration waits past the temporary pack list before reading a saved pack
       const request = get.call(this, query);
       if (this.name === 'unipacks' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Let native reads finish and release their locks; hold only the storage Promise's result.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
-          void released.then(() => request.onsuccess?.call(request, event));
+          document.documentElement.dataset.heldPackRead = 'true';
+          void released.then(() => transaction.oncomplete?.call(transaction, event));
         }, { once: true });
       }
       return request;
@@ -443,11 +455,18 @@ test('restoration waits past the temporary pack list before reading a saved pack
   });
   await page.reload();
   await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
-  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
   const restored = expectLoadedPack(page).catch(error => error);
-  // Keep the actual storage result pending beyond the former five-second assertion.
-  await page.waitForTimeout(6000);
-  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  // Keep the actual result pending beyond the former five-second assertion. Release it in
+  // the browser: once scheduled, the hold overlaps the screenshot and needs no second
+  // driver round trip to release. Scheduling the timer can still be delayed by the driver.
+  await Promise.all([
+    page.evaluate(() => new Promise<void>(resolve => {
+      setTimeout(() => { window.dispatchEvent(new Event('release-pack-read')); resolve(); }, 6000);
+    })),
+    page.screenshot().then(body => testInfo.attach('temporary-pack-list', { body, contentType: 'image/png' })),
+  ]);
   expect(await restored).toBeUndefined();
 });
 

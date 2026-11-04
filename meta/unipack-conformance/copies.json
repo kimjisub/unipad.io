@@ -1,8 +1,5 @@
 {
-  "android": {
-    "commit": "777cc4a37a997afb327756dd239f167adf155c50",
-    "corpusSha256": "18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97"
-  },
+  "android": "42d01b37ec81facfa6f4acacec48fcccc19de07a",
   "ios": {
     "commit": "e8ac34d11373b3ed071535e365ddc382c1929496",
     "corpusSha256": "18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97"

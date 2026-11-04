@@ -7,6 +7,7 @@ export interface InputEventRecord { type: string; pointerType: string; pointerId
 declare global { interface Window { inputBoundaryEvents: InputEventRecord[] } }
 
 // Reuse the original fixture tone, with a distinct duration for every pad and chain.
+// soundPad limits the fixture to that pad on the first chain when only one sound is needed.
 // No keyLED scripts: each held pad has the existing press overlay until release.
 export const duration = (rows: number, cols: number, position: string, chain = 1) => {
   const [row, col] = position.split(',').map(Number);
@@ -15,7 +16,7 @@ export const duration = (rows: number, cols: number, position: string, chain = 1
 
 const observedPages = new WeakSet<Page>();
 
-export async function loadInputPack(page: Page, rows = 8, cols = 8, square = true) {
+export async function loadInputPack(page: Page, rows = 8, cols = 8, square = true, soundPad?: string) {
   const original = await JSZip.loadAsync(await readFile('e2e/fixtures/multi-touch.uni'));
   const tone = await original.file('sounds/tone.wav')!.async('nodebuffer');
   const zip = new JSZip();
@@ -25,6 +26,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
   for (let chain = 1; chain <= 2; chain++) {
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
+        if (soundPad && (chain !== 1 || `${row},${col}` !== soundPad)) continue;
         const index = (chain - 1) * rows * cols + row * cols + col;
         const count = Math.round((100 + index) * 44100 / 1000);
         const wav = Buffer.alloc(44 + count * 2);
@@ -61,6 +63,6 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
   });
   await expectPads(page, rows * cols);
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length), { timeout: stateTimeout }).toBe(rows * cols * 2);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length), { timeout: stateTimeout }).toBe(soundPad ? 1 : rows * cols * 2);
   await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: stateTimeout });
 }

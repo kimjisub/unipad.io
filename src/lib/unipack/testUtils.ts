@@ -10,7 +10,19 @@ import type { UniPackData } from './types';
 
 export const INFO_2X2_2CHAIN = 'title=Test\nproducerName=Tester\nbuttonX=2\nbuttonY=2\nchain=2\nsquareButton=true';
 export const KEYSOUND_1_1_1 = '1 1 1 a.wav';
-export const SILENT_WAV = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+/** One silent frame of 16-bit mono PCM at 44.1 kHz: the smallest file a pack opens as a sound. */
+export const SILENT_WAV = silentWave();
+
+function silentWave(): Uint8Array {
+  const bytes = new Uint8Array(46);
+  const view = new DataView(bytes.buffer);
+  const text = (at: number, value: string) => [...value].forEach((ch, i) => { bytes[at + i] = ch.charCodeAt(0); });
+  text(0, 'RIFF'); view.setUint32(4, 38, true); text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 44100, true); view.setUint32(28, 88200, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, 'data'); view.setUint32(40, 2, true);
+  return bytes;
+}
 
 /** Builds a pack in memory with the given `path -> content` entries, the way a .zip upload reaches parseUniPack. */
 export async function packZip(files: Record<string, string | Uint8Array>): Promise<ArrayBuffer> {

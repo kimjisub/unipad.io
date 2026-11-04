@@ -8,9 +8,39 @@ runs:
         node-version: 24.15.0
     # Installs the pnpm version pinned in package.json's packageManager field. A global npm
     # install keeps pnpm under node_modules, where Node does not flag its url.parse() use.
+    # On Windows runners this step has rarely ended within a second with exit code 127 and no
+    # output, cause unknown. Each command is named with its output and exit code when it fails,
+    # and a failed first attempt stays visible as a warning before the same install runs once more.
     - name: Set up pnpm
       shell: bash
-      run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      run: |
+        run() {
+          echo "+ $*"
+          out=$("$@" 2>&1)
+          status=$?
+          [ -z "$out" ] || printf '%s\n' "$out"
+          [ "$status" -eq 0 ] || failed="$* exited with $status"
+          return "$status"
+        }
+        annotation() {
+          local text=$failed
+          [ -z "$out" ] || text+=$'\n'"$(tail -n 20 <<<"$out")"
+          text=${text//'%'/%25}; text=${text//$'\r'/%0D}; text=${text//$'\n'/%0A}
+          printf '%s\n' "$text"
+        }
+        for attempt in 1 2; do
+          if run command -v node npm && run node --version && run npm --version &&
+            run node -p 'require("./package.json").packageManager' && spec=$out &&
+            run npm install --global "$spec"; then
+            exit 0
+          fi
+          if [ "$attempt" -eq 1 ]; then
+            echo "::warning title=pnpm setup failed on the first attempt::$(annotation)"
+            sleep 5
+          fi
+        done
+        echo "::error title=pnpm setup failed twice::$(annotation)"
+        exit "$status"
     - name: Locate pnpm store
       id: pnpm-store
       shell: bash

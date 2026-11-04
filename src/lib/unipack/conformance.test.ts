@@ -233,7 +233,7 @@ describe('the checks can fail', () => {
       window: (globalThis as { window?: unknown }).window, hadWindow: 'window' in globalThis,
       audio: (globalThis as { AudioContext?: unknown }).AudioContext };
     class BrokenSoundEngine extends SoundEngine {
-      async load(): Promise<string[]> { throw new Error('scenario preparation failed'); }
+      async load(): Promise<never> { throw new Error('scenario preparation failed'); }
     }
     try {
       await assert.rejects(actualFor(byId('RUN-S-001'), corpus, { ...REAL, SoundEngine: BrokenSoundEngine }), /scenario preparation failed/);
