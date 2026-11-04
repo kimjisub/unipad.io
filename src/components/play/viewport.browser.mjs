@@ -3,10 +3,13 @@
 // CDP_URL=http://127.0.0.1:19390 PLAYER_URL=http://localhost:3190/play \
 //   node src/components/play/viewport.browser.mjs
 // MATRIX=1 also checks portrait, desktop and rotation back to landscape.
+// SCREENSHOT_DIR keeps screenshots, and for a control that cannot be hit, its
+// unreachable-N.json record and screenshot (see hitTarget.testUtils.mjs).
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertReachable, hitReport } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -66,7 +69,7 @@ const until = async expression => {
 // Require a real hit target after scrolling, rather than a programmatic click on
 // an invisible/clipped button. This catches both overflow and covering overlays.
 const tap = async expression => {
-  const point = await run(`(() => {
+  const report = await run(`(() => {
     const e = ${expression}; if (!e) throw Error('Target missing');
     // Scroll only areas the user can scroll. scrollIntoView would also scroll
     // overflow:hidden ancestors and conceal the original store clipping bug.
@@ -76,11 +79,10 @@ const tap = async expression => {
       if (r.bottom>bounds.bottom) parent.scrollTop+=r.bottom-bounds.bottom;
       if (r.top<bounds.top) parent.scrollTop-=bounds.top-r.top;
     }
-    const r=e.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2;
-    const hit=document.elementFromPoint(x,y);
-    if (!hit || !(e===hit || e.contains(hit))) throw Error('Target clipped or covered: '+e.textContent);
-    return {x,y};
+    return ${hitReport('e')};
   })()`);
+  await assertReachable({ report, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
+  const { point } = report;
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
   await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
 };
