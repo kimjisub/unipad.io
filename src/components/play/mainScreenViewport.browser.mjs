@@ -3,10 +3,12 @@
 // CDP_URL=http://localhost:9222 PLAYER_URL=http://localhost:3000/play \
 // SCREENSHOT_DIR=/path/to/evidence node src/components/play/mainScreenViewport.browser.mjs
 // Uses only the existing jszip dependency and Node's native WebSocket.
+// A control that cannot be hit leaves unreachable-N.json and a screenshot in SCREENSHOT_DIR.
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertReachable, hitReport } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -70,16 +72,21 @@ const geometry = expression => run(`(() => {
     if (s.overflowY !== 'visible') { top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom); }
     if (s.overflowX !== 'visible') { left = Math.max(left, b.left); right = Math.min(right, b.right); }
   }
-  const x = r.left + r.width / 2, y = r.top + r.height / 2;
-  const hit = document.elementFromPoint(x, y);
-  return { reachable: r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1 && !!hit && (e === hit || e.contains(hit)), rect: r.toJSON(), x, y };
+  const clip = { top, bottom, left, right };
+  const inside = r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1;
+  const hit = ${hitReport('e')};
+  return { ...hit, reachable: inside && hit.reachable, inside, clip, rect: r.toJSON(), ...hit.point };
 })()`);
 // Only real wheel input at the nearest user-scrollable area is allowed.
 // Never use click(), force, focus(), scrollIntoView or scroll hidden ancestors.
+// A control that is in view but covered, as by a dialog still fading out, is waited for and
+// never scrolled: the wheel would land once the cover is gone and move the control away
+// between press and release, sending the click to the panel instead.
 const reach = async expression => {
   for (let i = 0; i < 12; i++) {
     const g = await geometry(expression);
     if (g.reachable) return g;
+    if (g.inside) { await wait(120); continue; }
     const scroll = await run(`(() => {
       const e = ${expression}; if (!e) return null;
       for (let p = e.parentElement; p; p = p.parentElement) {
@@ -94,7 +101,7 @@ const reach = async expression => {
     await wait(120);
   }
   const g = await geometry(expression);
-  assert.equal(g.reachable, true, `Target clipped or covered: ${expression} ${JSON.stringify(g)}`);
+  await assertReachable({ report: g, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
   return g;
 };
 const tap = async expression => {
@@ -133,14 +140,18 @@ try {
   await command('Network.setCookie', { name: 'NEXT_LOCALE', value: 'en', url: origin });
   await command('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(navigator, 'requestMIDIAccess', {value:undefined, configurable:true});" });
   await command('Emulation.setDeviceMetricsOverride', { width: 800, height: 300, deviceScaleFactor: 1, mobile: false });
+  // Clear storage with no document of the origin open: force-closing the open page's database
+  // connections rejects its pending requests, which would count as the page's own errors.
+  await command('Page.navigate', { url: 'about:blank' });
+  await until(`location.href === 'about:blank'`);
   await command('Storage.clearDataForOrigin', { origin, storageTypes: 'indexeddb,local_storage' });
   await command('Page.navigate', { url });
-  await until(`!!document.querySelector('input[accept=".zip,.uni"]')`);
+  await until(`!!document.querySelector('input[data-unipack-import]')`);
   // Populate the native file input; every interaction after import is real input.
   await run(`(() => {
     const dt = new DataTransfer();
     dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(pack)}), c => c.charCodeAt(0))], 'viewport.uni'));
-    const input = document.querySelector('input[accept=".zip,.uni"]'); input.files = dt.files;
+    const input = document.querySelector('input[data-unipack-import]'); input.files = dt.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   await quit();

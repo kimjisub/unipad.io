@@ -229,7 +229,28 @@ rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
 a held native storage response covers that transition. A deliberately delayed native
 decode checks that opening still works beyond the former five-second assertion.
-Native multi-touch CDP tests remain Chromium-only.
+Native multi-touch CDP tests remain Chromium-only. The same A–G and I assertions
+also run in a separately labeled `DOM pointer supplement` group on every engine.
+Item H remains in the Chromium-only `chain-release.spec.ts` browser-touch tests.
+`e2e/pointer-touch.ts` dispatches untrusted PointerEvents to the original hit-test
+target, retaining that target for moves and releases to model capture. This checks
+the actual application listeners, pad lights and native Web Audio start/stop calls.
+It bypasses the browser's touch-to-pointer conversion, native capture, gesture
+arbitration and user activation. Multiple events run sequentially in one page task;
+they are not simultaneous hardware contacts. Unsupported browser-touch cases stay
+skipped in WebKit and Firefox; supplemental passes do not replace them or establish
+complete input compatibility. Each result records its input-evidence annotation.
+
+The seven `with 200% text` layout cases run in Chromium via `Page.setFontSizes` and
+in Firefox via launch preferences for both Korean and Western variable/monospace
+fonts. A separate probe requires a 32px initial font and an em media query based on
+that font, in Korean and English. Changing the root CSS alone would fail the latter.
+Only that test group changes Firefox's defaults; the default-text and scroll sweeps
+retain their existing settings. WebKit's browser-default-font cases stay skipped:
+Playwright exposes neither CDP nor an equivalent font preference for that engine.
+The existing root-CSS enlargement checks remain supplemental. Safari's mobile page
+zoom changes the page presentation on an iOS device; it is not evidence for Mac
+Safari default-font behavior at the specified desktop viewport sizes.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
@@ -368,3 +389,36 @@ it normally, then compares opening with recent-history writes enabled or disable
 three times each. Attachments include sampled CDP backing-store/heap sizes and
 renderer RSS from `ps`; the maximum is a sampled peak, not a memory limit or a
 measurement on a physical phone. The normal suite skips this diagnostic.
+
+### Excluding browser tests from Google Analytics
+
+Google Analytics collection is disabled when `navigator.webdriver` is true or a
+visit starts with `?no_analytics=1` (use `&no_analytics=1` after other parameters).
+The marker is remembered in `sessionStorage` for that tab, including full document
+navigation to URLs without the marker, for the lifetime of that page session. If
+the browser denies session storage, the marker still works on the current document;
+keep the marker on subsequent URLs in that case. Existing independent tabs and
+ordinary visits are unaffected. Duplicating the marked tab or opening a new tab
+from it can copy the session storage and its opt-out. Events remain queued in
+`dataLayer` for playback checks, while `ga-disable-<measurement ID>` prevents
+transmission before the first config,
+including when Firebase returns a different measurement ID from the build config.
+The initial marked URL and its queued page path keep the marker; those events are
+not transmitted. Subsequent internal URLs need not carry it.
+
+`e2e/analytics-collection.spec.ts` runs on Chromium, Firefox and WebKit. Unlike the
+common browser fixture, it downloads and executes Google's actual tag script for
+an unused test measurement ID, so running this file requires access to the tag
+script host. Firebase replies are local, and the tag's collection transport points
+to a separate local HTTP server per test that stays alive through page and context
+close. Late requests from an earlier test cannot enter another test's collector.
+The ordinary-visit control shadows only `navigator.webdriver` before application code, and must
+produce page-view deliveries with the same tag and collector. Independent native
+`pagehide` probes prove that the observation path remains alive during navigation
+and page close. The test polls for both beacon and keepalive deliveries on Firefox
+and WebKit. Chromium can drop the beacon on page close, so its required signal is
+the keepalive delivery; both probe results remain in every test's attachment.
+Both opt-out conditions must deliver zero requests, including after full
+navigation without the marker. This checks real tag execution rather than
+counting requests blocked by Playwright routing. Vercel Analytics and Firebase
+Performance are unaffected by this Google Analytics policy.

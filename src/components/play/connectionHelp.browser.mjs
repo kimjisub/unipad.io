@@ -2,10 +2,24 @@
 // Start a production server on a port the OS picks and note the address it prints, then stop it after:
 //   node node_modules/next/dist/bin/next start --hostname localhost --port 0 &  # prints "- Local: http://localhost:<port>"
 //   PLAYER_URL=http://localhost:<port> SCREENSHOT_DIR=<run scratch> BASELINE=1 node ...; kill %1
+// REGRESSION_CASE=tab-return checks the lights after the page is really hidden and shown again;
+// it fails, rather than passes, when the browser never reports the page as hidden.
 import { chromium, expect } from '@playwright/test';
 import { resolve, join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 const url = process.env.PLAYER_URL;
+// One full light redraw (syncMidiStateToDevice) on a Mini MK3: every pad note 11..88 and the logo CC 99.
+const PAD_NOTES = Array.from({ length: 64 }, (_, i) => (8 - Math.floor(i / 8)) * 10 + i % 8 + 1);
+const redrawnSince = (messages, start) => {
+  const later = messages.slice(start);
+  const notes = new Set(later.filter(([status]) => (status & 0xf0) === 0x90).map(([, note]) => note));
+  return PAD_NOTES.every(note => notes.has(note)) && later.some(([status, cc]) => status === 0xb0 && cc === 99);
+};
+// Lights wait while a model's mode-switch SysEx settles; once ready, the app redraws them all.
+const setupFinishedSince = (messages, start) => {
+  const lastSysEx = messages.findLastIndex(([status]) => status === 0xf0);
+  return lastSysEx >= start && redrawnSince(messages, lastSysEx + 1);
+};
 if (!url || !['localhost', '127.0.0.1'].includes(new URL(url).hostname)) throw Error('Use a local PLAYER_URL');
 const captures = process.env.SCREENSHOT_DIR;
 if (captures) await mkdir(captures, { recursive: true });
@@ -33,13 +47,15 @@ try {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'requestMIDIAccess', { value: undefined, configurable: true });
       window.helpWrites = [];
+      window.helpVisibility = [];
+      document.addEventListener('visibilitychange', () => window.helpVisibility.push({ hidden: document.hidden, messages: window.helpMidi?.messages.length ?? 0 }));
       const setItem = Storage.prototype.setItem;
       Storage.prototype.setItem = function (...args) { window.helpWrites.push(args); return setItem.apply(this, args); };
     });
     await context.addCookies([{ name: 'NEXT_LOCALE', value: locale, url: new URL(url).origin }]);
     if (['double-close', 'repeat-escape'].includes(process.env.REGRESSION_CASE)) await page.goto(new URL(url).origin);
     await page.goto(url);
-    await page.locator('input[accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+    await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
     await expect(page.locator('[data-pad]')).toHaveCount(64);
     await page.getByRole('button', { name: locale === 'en' ? 'Open menu' : '메뉴 열기', exact: true }).click();
     const settingsName = locale === 'en' ? 'Launchpad Settings' : '런치패드 설정';
@@ -205,7 +221,7 @@ try {
       await page.goBack();
       await expect(help).toHaveCount(0);
       await expect(entry).toBeFocused();
-      if (locale === 'en' && width === 1440) {
+      if (process.env.REGRESSION_CASE ? process.env.REGRESSION_CASE === 'tab-return' : locale === 'en' && width === 1440) {
         // Connect only on an explicit user click, using inert browser MIDI.
         await page.evaluate(() => {
           window.helpMidi = { requests: 0, messages: [] };
@@ -217,26 +233,44 @@ try {
         await settings.getByRole('button', { name: 'Connect', exact: true }).click();
         await expect(settings.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
         await expect(settings.getByRole('button', { name: 'Reconnect', exact: true })).toBeVisible();
+        const messages = () => page.evaluate(() => window.helpMidi.messages);
+        const modelChange = (await messages()).length;
         await settings.getByRole('combobox').selectOption('auto');
         await expect(settings).toContainText('Resolved Type: launchpad_mini_mk3');
-        // Existing explicit model selection sends delayed init bytes; let those
-        // finish before comparing the help-only interval.
-        await page.waitForTimeout(250);
-        const before = await page.evaluate(() => JSON.stringify({ midi: window.helpMidi, storage: { ...localStorage }, writes: window.helpWrites }));
-        await entry.click();
-        await expect(help).toContainText('Selected model: Auto Detect');
-        await expect(help).not.toContainText('In Programmer mode');
-        const otherPage = await context.newPage();
-        await otherPage.goto('about:blank');
-        await page.bringToFront();
-        await expect(help).toBeVisible();
-        await otherPage.close();
-        await close.focus();
-        await page.keyboard.press('Space');
-        await expect(help).toHaveCount(0);
-        await expect(entry).toBeFocused();
-        expect(await page.evaluate(() => JSON.stringify({ midi: window.helpMidi, storage: { ...localStorage }, writes: window.helpWrites }))).toBe(before);
-        console.log('PASS connected auto resolving to Mini: no new MIDI request/message/storage write; tab return preserves help');
+        await expect.poll(async () => setupFinishedSince(await messages(), modelChange), { message: 'the model change must finish its mode switch and redraw every light' }).toBe(true);
+        const snapshot = () => page.evaluate(() => JSON.stringify({ midi: window.helpMidi, storage: { ...localStorage }, writes: window.helpWrites }));
+        if (process.env.REGRESSION_CASE !== 'tab-return') {
+          const before = await snapshot();
+          await entry.click();
+          await expect(help).toContainText('Selected model: Auto Detect');
+          await expect(help).not.toContainText('In Programmer mode');
+          await close.focus();
+          await page.keyboard.press('Space');
+          await expect(help).toHaveCount(0);
+          await expect(entry).toBeFocused();
+          expect(await snapshot(), 'opening and closing the help must not request MIDI, send a message or write storage').toBe(before);
+          console.log('PASS connected auto resolving to Mini: help adds no MIDI request, message or storage write');
+        } else {
+          await entry.click();
+          await expect(help).toContainText('Selected model: Auto Detect');
+          const kept = () => page.evaluate(() => JSON.stringify({ requests: window.helpMidi.requests, storage: { ...localStorage }, writes: window.helpWrites }));
+          const before = await kept();
+          const changes = () => page.evaluate(() => window.helpVisibility);
+          const otherPage = await context.newPage();
+          await otherPage.goto('about:blank');
+          await otherPage.bringToFront();
+          await expect.poll(async () => (await changes()).some(change => change.hidden), { message: 'another page in front must really hide the player; without that this check cannot pass' }).toBe(true);
+          await page.bringToFront();
+          await otherPage.close();
+          await expect.poll(async () => (await changes()).at(-1)?.hidden, { message: 'the player must become visible again' }).toBe(false);
+          const shown = (await changes()).at(-1).messages;
+          await expect.poll(async () => redrawnSince(await messages(), shown), { message: 'returning must redraw every light on the controller' }).toBe(true);
+          await expect(help).toBeVisible();
+          expect(await kept(), 'leaving and returning must not request MIDI or write storage').toBe(before);
+          console.log('PASS tab-return: real hide and return keeps the help open and redraws every light');
+          await context.close();
+          continue;
+        }
       }
       await settings.getByRole('button', { name: locale === 'en' ? 'Close' : '닫기', exact: true }).click();
       await expect(page.locator('[data-pad]')).toHaveCount(64);
