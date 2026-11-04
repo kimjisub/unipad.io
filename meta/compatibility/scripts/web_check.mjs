@@ -200,7 +200,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
   const result = { profile: profile.id, kind: profile.kind, input: profile.input, steps: {} };
   const shot = (name) => (SCREENSHOTS ? page.screenshot({ path: path.join(OUT, `${profile.id}-${name}.png`) }) : null);
   await page.goto(`${BASE}/${LOCALE}/play`, { waitUntil: 'networkidle' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(PACK);
+  await page.locator('input[data-unipack-import]').first().setInputFiles(PACK);
   await page.waitForSelector('[data-pad]', { timeout: 60000 });
   await page.waitForTimeout(1500);
   result.steps.packOpened = await readPads(page);
