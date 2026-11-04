@@ -1,5 +1,20 @@
 # Results
 
+## iOS copy reference moved to the current corpus (2026-11-04)
+
+`copies.json` now selects iOS merge `1754b9a3d3fc9a43b92b559d5e307e2468d0f7c5`
+([unipad-ios#250](https://github.com/kimjisub/unipad-ios/pull/250)) as a plain commit hash, replacing
+the historical object for merge `e8ac34d11373b3ed071535e365ddc382c1929496`. Its copy is
+byte-identical to the 391-case canonical corpus, SHA256
+`13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`. With Android merge
+`42d01b37ec81facfa6f4acacec48fcccc19de07a` unchanged, `sync.mjs --check --require-current` accepts
+both app copies, and the copy comparison no longer warns that iOS is behind canonical.
+
+That iOS commit runs all 391 cases through its own code and reports them all passing. The eight
+`screenInputs` cases drive the play screen's view model input path rather than real touches; real
+touches are covered by the iOS playback UI tests. No corpus input, expected value or failure
+observation changes here.
+
 ## Android copy reference moved to the current corpus (2026-10-31)
 
 `copies.json` now selects Android merge `42d01b37ec81facfa6f4acacec48fcccc19de07a`
