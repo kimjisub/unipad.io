@@ -47,9 +47,10 @@ export const hitReport = target => `(() => {
 })()`;
 
 /**
- * A page expression that is true once `target` exists and neither it nor any ancestor has an
- * animation running or waiting to start, e.g. once a sliding menu has come to rest. Animations
- * inside the target (a spinner) do not count: they do not move the target itself.
+ * A page expression that is true once `target` exists and neither it nor any ancestor has a CSS
+ * or Web Animations animation running or waiting to start, e.g. once a sliding menu has come to
+ * rest. Movement driven by script frame by frame is not seen. Animations inside the target (a
+ * spinner) do not count: they do not move the target itself.
  * @param {string} target
  */
 export const settled = target => `(() => {

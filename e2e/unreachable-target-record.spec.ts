@@ -113,13 +113,16 @@ const slidingMenu = (duration: string, inner = '') => `<body style="margin:0">
   </div></body>`;
 
 test('a control is not settled while its menu is still sliding in, and is once the slide ends', async ({ page }) => {
-  await page.setContent(slidingMenu('1500ms'));
+  // A slide far longer than the test's own time limit, so every reading below happens mid-slide
+  // however slowly the page runs; the test then ends the slide itself instead of waiting for it.
+  await page.setContent(slidingMenu('600s'));
   expect(await page.evaluate(settled(quit))).toBe(false);
   // A press now would miss: the centre is still off to the right of where the button comes to rest.
   const moving = await page.evaluate(hitReport(quit)) as { point: { x: number } };
-  expect(moving.point.x).toBeGreaterThan(660.5);
+  expect(moving.point.x).toBeGreaterThan(620.5);
 
-  await expect.poll(() => page.evaluate(settled(quit)), { timeout: 5000 }).toBe(true);
+  await page.evaluate(() => document.getAnimations().forEach(animation => animation.finish()));
+  expect(await page.evaluate(settled(quit))).toBe(true);
   expect(await page.evaluate(hitReport(quit))).toMatchObject({ reachable: true, point: { x: 620.5, y: 252 } });
 });
 
