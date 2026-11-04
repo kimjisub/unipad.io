@@ -115,6 +115,10 @@ async function mount(url = '/play', prepare = noop) {
   return view;
 }
 afterEach(cleanup);
+const importFile = (arrayBuffer = async () => new ArrayBuffer(0)) => ({
+  arrayBuffer, size: 22,
+  slice: () => ({ arrayBuffer: () => step('footer', () => new Uint8Array([0x50, 0x4b, 0x05, 0x06]).buffer) }),
+});
 const currentUrlPack = () => new URL(window.location.href).searchParams.get('pack');
 
 for (const phase of ['resume', 'read']) {
@@ -252,7 +256,7 @@ test('an imported pack replaced during decoding is saved without erasing the new
   const view = await mount();
   const waiting = hold('load');
   await flush(() => {
-    fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ arrayBuffer: async () => new ArrayBuffer(0) }] } });
+    fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [importFile()] } });
     return waiting.entered.promise;
   });
   await flush(() => main.onPlay('B'));
@@ -317,7 +321,7 @@ for (const result of [null, false]) {
         window.history.replaceState(null, '', '/play?pack=Previous');
         if (source === 'saved') await flush(() => main.onPlay('A'));
         else await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
-          target: { files: [{ arrayBuffer: async () => new ArrayBuffer(0) }] },
+          target: { files: [importFile()] },
         }));
       }
       assert.equal(currentUrlPack(), result === false ? null : 'Replacement');
@@ -326,12 +330,12 @@ for (const result of [null, false]) {
 }
 
 
-for (const phase of ['resume', 'file', 'load', 'save']) {
+for (const phase of ['footer', 'resume', 'file', 'load', 'save']) {
   for (const action of ['quit', 'replace', 'leave']) {
     test(`an import interrupted during ${phase} by ${action} still reaches the saved list`, async () => {
       const view = await mount();
       const waiting = hold(phase);
-      const file = { arrayBuffer: () => step('file', () => new ArrayBuffer(0)) };
+      const file = importFile(() => step('file', () => new ArrayBuffer(0)));
       await flush(() => {
         fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [file] } });
         return waiting.entered.promise;
@@ -377,7 +381,7 @@ for (const phase of ['file', 'load', 'failed']) {
     const waiting = phase === 'failed' ? null : hold(phase);
     if (phase === 'failed') nextResult = false;
     await flush(() => {
-      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ arrayBuffer: () => step('file', () => bytes) }] } });
+      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [importFile(() => step('file', () => bytes))] } });
       return waiting?.entered.promise;
     });
     if (waiting) {
@@ -399,7 +403,7 @@ test('an imported archive with damaged compressed sound bytes is never saved', a
   const view = await mount();
   nextResult = false;
   await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
-    target: { files: [{ arrayBuffer: async () => bytes }] },
+    target: { files: [importFile(async () => bytes)] },
   }));
   await flush(() => metadataRead.promise);
   assert.equal(savedImports.length, 0);
@@ -419,4 +423,23 @@ test('a damaged store archive is rejected before replacing a saved copy or recor
   assert.equal(store.downloadingCode, null);
   assert.equal(analytics.some(event => event.name === 'store_download_success'), false);
   assert.ok(analytics.some(event => event.name === 'store_download_fail' && event.params.error_type === 'invalid_pack'));
+});
+
+
+test('footer reads finishing in reverse order only open the last selected import', async () => {
+  const view = await mount();
+  const waiting = hold('footer');
+  await flush(() => {
+    fireEvent.change(view.container.querySelector('input[type=file]'), {
+      target: { files: [importFile(async () => 'First')] },
+    });
+    return waiting.entered.promise;
+  });
+  await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
+    target: { files: [importFile(async () => 'Second')] },
+  }));
+  await flush(() => waiting.resolve());
+  assert.deepEqual(loads, ['Second']);
+  assert.equal(engine.state.unipack.id, 'Second');
+  assert.equal(savedImports.length, 2, 'both readable imports still reach the library');
 });
