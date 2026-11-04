@@ -1154,8 +1154,8 @@ export function PlayPage() {
           </div>
         )}
 
-        {/* iPadOS filters out unregistered .uni files; the web importer validates archive bytes. */}
-        <input ref={fileInputRef} type="file" data-unipack-import="" className="hidden" onChange={handleFileInput} />
+        {/* Binary document types enable unregistered .uni files on iPadOS without a media-source menu; archive bytes are validated on import. */}
+        <input ref={fileInputRef} type="file" accept=".zip,.uni,application/zip,application/octet-stream" data-unipack-import="" className="hidden" onChange={handleFileInput} />
         <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
       </div>
     );
@@ -1758,8 +1758,8 @@ export function PlayPage() {
         <p className="text-sm text-white/70">{t('rotateToLandscape')}</p>
       </div>
 
-      {/* iPadOS filters out unregistered .uni files; the web importer validates archive bytes. */}
-      <input ref={fileInputRef} type="file" data-unipack-import="" className="hidden" onChange={handleFileInput} />
+      {/* Binary document types enable unregistered .uni files on iPadOS without a media-source menu; archive bytes are validated on import. */}
+      <input ref={fileInputRef} type="file" accept=".zip,.uni,application/zip,application/octet-stream" data-unipack-import="" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
     </div>
   );
