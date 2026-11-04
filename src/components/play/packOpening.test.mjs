@@ -155,6 +155,23 @@ for (const leave of ['quit', 'unmount']) {
   });
 }
 
+// iPadOS needs binary document types to enable unregistered .uni files.
+// A document filter also avoids the media-source menu of an unrestricted input.
+for (const playing of [false, true]) {
+  test(`the ${playing ? 'player' : 'library'} picker requests archive and binary document types`, async () => {
+    const view = await mount();
+    if (playing) await flush(() => main.onPlay('A'));
+    const packInput = view.container.querySelector('input[data-unipack-import]');
+    const themeInput = view.container.querySelector('input[type=file]:not([data-unipack-import])');
+    const types = packInput.accept.split(',');
+    assert.ok(types.includes('application/octet-stream'), 'unregistered .uni files need a binary document type');
+    assert.ok(types.includes('application/zip'), 'ZIP archives remain a document type');
+    assert.ok(types.includes('.uni'));
+    assert.ok(types.includes('.zip'));
+    assert.equal(themeInput.accept, '.zip');
+  });
+}
+
 test('a saved open passes its stored autoPlay to the player', async () => {
   await mount();
   await flush(() => main.onPlay('B'));

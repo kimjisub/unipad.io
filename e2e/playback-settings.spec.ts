@@ -60,12 +60,12 @@ async function expectFeedback(page: Page, enabled: boolean, stored: string | nul
 
 async function openFeedbackModePack(page: Page, leds: boolean, saved: string | null, short = false) {
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+  await page.locator('input[data-unipack-import]').waitFor({ state: 'attached' });
   await playbackSettings(page, { feedbackLight: saved, watermark: 'false', volumeLevel: '2' });
   const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
   if (!leds) zip.remove('keyLED');
   zip.file('autoPlay', short ? 'd 1000\no 1 1\nd 50\nf 1 1\n' : 'd 1000\no 1 1\nd 50\nf 1 1\n'.repeat(30));
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'feedback.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'feedback.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectSavedPlaybackPack(page);
   await expectAudioOutputRunning(page);
 }
@@ -144,7 +144,7 @@ for (const leds of [true, false]) for (const saved of [null, 'true', 'false']) {
 async function importPlaybackPack(page: Page, keyLedExist: boolean) {
   const zip = await JSZip.loadAsync(await readFile(`e2e/fixtures/${keyLedExist ? 'basic' : 'multi-touch'}.uni`));
   if (!keyLedExist) zip.file('autoPlay', 'd 1000\no 1 1\nd 50\nf 1 1\n'.repeat(10));
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'settings.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'settings.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   // Loading and persistence share one readiness check; neither alone prepares a reload.
   await expectSavedPlaybackPack(page);
   return page.url();
@@ -153,7 +153,7 @@ async function importPlaybackPack(page: Page, keyLedExist: boolean) {
 for (const order of [[true, false], [false, true]]) {
   test(`absent feedback preference follows each pack in order ${order}`, async ({ page }, info) => {
     await page.goto('/play', { waitUntil: 'domcontentloaded' });
-    await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+    await page.locator('input[data-unipack-import]').waitFor({ state: 'attached' });
     await playbackSettings(page, { feedbackLight: null });
     for (const leds of order) {
       await importPlaybackPack(page, leds);
@@ -176,7 +176,7 @@ test('settings import waits for native audio decoding before checking the saved 
     };
   });
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+  await page.locator('input[data-unipack-import]').waitFor({ state: 'attached' });
   await playbackSettings(page, { feedbackLight: 'false', watermark: 'false', volumeLevel: '2' });
   await importPlaybackPack(page, true);
   await expectPlaybackSettings(page, false);
@@ -208,7 +208,7 @@ for (const preparation of ['settings', 'mode'] as const) {
       await openFeedbackModePack(page, true, null);
     } else {
       await page.goto('/play', { waitUntil: 'domcontentloaded' });
-      await page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+      await page.locator('input[data-unipack-import]').waitFor({ state: 'attached' });
       await playbackSettings(page, { feedbackLight: null });
       await importPlaybackPack(page, true);
     }
@@ -332,7 +332,7 @@ for (const keyLedExist of [true, false]) {
     for (const lifecycle of ['direct', 'reload', 'reopen', 'changed'] as const) {
       test(`saved feedback ${saved ?? 'default'} gives way to the pack rule after ${lifecycle} with pack LEDs ${keyLedExist}`, async ({ page }, info) => {
         await page.goto('/play', { waitUntil: 'domcontentloaded' });
-        const input = page.locator('input[type=file][accept=".zip,.uni"]');
+        const input = page.locator('input[data-unipack-import]');
         await input.waitFor({ state: 'attached' });
         await playbackSettings(page, { feedbackLight: saved, watermark: 'false', volumeLevel: '2' });
         const url = await importPlaybackPack(page, keyLedExist);
@@ -388,7 +388,7 @@ for (const keyLedExist of [true, false]) {
       });
       profileTest('imports and saves the starting profile', async ({ current, baseURL }, info) => {
         await current.page.goto(`${baseURL}/play`, { waitUntil: 'domcontentloaded' });
-        await current.page.locator('input[type=file][accept=".zip,.uni"]').waitFor({ state: 'attached' });
+        await current.page.locator('input[data-unipack-import]').waitFor({ state: 'attached' });
         await playbackSettings(current.page, { feedbackLight: enabled, watermark: 'false', volumeLevel: '2' });
         url = await importPlaybackPack(current.page, keyLedExist);
         await expectPlaybackSettings(current.page, !keyLedExist, enabled);

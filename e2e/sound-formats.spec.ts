@@ -118,7 +118,7 @@ async function quitLoadError(page: Page) {
 test('a pack none of whose sounds can be read ends loading with the reason and a way back to the list', async ({ page }, info) => {
   const count = countLoadFailures(page);
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await page.locator('input[data-unipack-import]').setInputFiles(await undecodablePack());
   try {
     await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
     await expect(page.getByText(/Loading audio/)).toHaveCount(0);
@@ -136,7 +136,7 @@ test('a pack none of whose sounds can be read ends loading with the reason and a
 
 test('a saved pack none of whose sounds can be read opens once from the list and counts one play', async ({ page }, info) => {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await page.locator('input[data-unipack-import]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
   await expectSavedPackCount(page, 1);
   await page.goto('/play');
@@ -160,7 +160,7 @@ test('a saved pack none of whose sounds can be read opens once from the list and
 
 test('an address naming a saved pack none of whose sounds can be read opens it once and drops the pack', async ({ page }, info) => {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await page.locator('input[data-unipack-import]').setInputFiles(await undecodablePack());
   await quitLoadError(page);
   await expectSavedPackCount(page, 1);
   const [{ id }] = await savedRecords(page);
@@ -182,7 +182,7 @@ test('a pack none of whose sounds can be read, dropped over a playing pack, keep
   await loadPack(page, {});
   await expectSavedPlaybackPack(page);
   const count = countLoadFailures(page);
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await page.locator('input[data-unipack-import]').setInputFiles(await undecodablePack());
   await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   // The playing pack closed when the new one began to open; its address would open it over the reason.
   await expect(page).not.toHaveURL(/[?&]pack=/);
@@ -197,7 +197,7 @@ test('an archive that cannot be read, dropped over a playing pack, shows the rea
   await loadPack(page, {});
   await expectSavedPlaybackPack(page);
   const count = countLoadFailures(page);
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'broken.uni', mimeType: 'application/zip', buffer: Buffer.from('not a zip archive'),
   });
   try {
@@ -228,7 +228,7 @@ test('a pack none of whose sounds can be read closes its audio when loading ends
     };
   });
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await undecodablePack());
+  await page.locator('input[data-unipack-import]').setInputFiles(await undecodablePack());
   await expect(soundFailure(page)).toContainText('1 sound file cannot be read');
   // A pack left behind would keep its audio and could hold the screen awake while the reason is shown.
   await expect.poll(() => page.evaluate(() =>

@@ -5,6 +5,7 @@ import { getRemoteConfig, fetchAndActivate, RemoteConfig } from 'firebase/remote
 import { Database, getDatabase } from 'firebase/database';
 import { Messaging, getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging';
 import { dropSocketFailureRecordedWhileLeaving } from './firebaseSocket';
+import { prepareAnalyticsCollection } from './analytics/collectionPolicy';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -63,6 +64,7 @@ export function initFirebaseAnalytics(): Promise<Analytics | null> {
         return null;
       }
 
+      prepareAnalyticsCollection(window, app.options.measurementId);
       return getAnalytics(app);
     })();
   }
