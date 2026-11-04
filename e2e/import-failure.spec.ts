@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectSavedPlaybackPack } from './browser';
 
-const packInput = 'input[type=file][accept=".zip,.uni"]';
+const packInput = 'input[data-unipack-import]';
 const themeInput = 'input[type=file][accept=".zip"]';
 const fixture = path.resolve('e2e/fixtures/basic.uni');
 const invalidMessage = 'This is not a UniPack (.zip, .uni) file.';

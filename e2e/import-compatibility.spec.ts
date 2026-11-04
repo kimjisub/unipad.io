@@ -149,11 +149,12 @@ for (const entry of ['library', 'player'] as const) {
     await expect.poll(() => page.evaluate(async () => (await indexedDB.databases()).map(db => db.name))).toContain('unipad');
     const before = await storedPackRecords(page);
     await page.locator('input[data-unipack-import]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('This is not a UniPack archive.') });
-    await expect(page.getByRole('alertdialog', { name: 'Error', exact: true })).toBeVisible();
-    await expect(page.locator('[data-pad]')).toHaveCount(0);
+    // A file without a ZIP end record is turned away before the playing pack closes.
+    await expect(page.getByText('This is not a UniPack (.zip, .uni) file.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(page.locator('[data-pad]')).toHaveCount(entry === 'player' ? 64 : 0);
     expect((await storedPackRecords(page)).map(record => record.id)).toEqual(before.map(record => record.id));
     await capture(page, info, 'non-archive-refused');
-    await page.getByRole('button', { name: 'Quit', exact: true }).click();
     await page.locator('input[data-unipack-import]').setInputFiles({ name: 'browser-basic.uni', mimeType: 'application/octet-stream', buffer });
     await expectPads(page);
     await expectSavedPackCount(page, before.length + 1);
