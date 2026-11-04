@@ -97,3 +97,55 @@ export async function assertReachable({ report, target, label, dir, run, command
   const what = report.missing ? 'Target missing' : 'Target clipped or covered';
   throw new Error(`${what}: ${label}\n${JSON.stringify(record, null, 2)}`);
 }
+
+/**
+ * A page expression for `target` (a page expression itself, as for `hitReport`) resolving to null
+ * once it is at rest, or else to why it is not: missing, faded or animating (it or an ancestor is
+ * not fully shown, or has an animation running or waiting to start), scrolled (anything on the
+ * page scrolled meanwhile), moved, or no frame drawn. At rest also needs at least `frames` drawn
+ * frames and `ms` milliseconds over which nothing scrolled and the target kept its place.
+ * A press is only whole when the target stays under the pointer from press to release; if it
+ * moves away in between, the browser sends the click to whatever holds both points (a list row,
+ * say), not to the target. Rows fading in and a list scrolling itself to a selection both move a
+ * target with no input. A scroll the browser animates reaches the page only when a frame is drawn,
+ * so on a busy page two readings a timer apart can match while the scroll is half done; the
+ * readings here are taken at drawn frames, and any scroll event in between counts.
+ * @param {string} target
+ * @param {{ ms?: number, frames?: number }} [options]
+ */
+export const notAtRest = (target, { ms = 200, frames = 3 } = {}) => `(async () => {
+  const brief = e => e === document ? 'document' : e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + [...e.attributes]
+    .filter(a => a.name === 'role' || a.name.startsWith('data-')).map(a => '[' + a.name + '=' + JSON.stringify(a.value.slice(0, 40)) + ']').join('');
+  const place = () => {
+    const subject = ${target};
+    if (!subject) return { reason: 'missing' };
+    for (let p = subject; p; p = p.parentElement) {
+      const opacity = getComputedStyle(p).opacity;
+      if (opacity !== '1') return { reason: 'faded: ' + brief(p) + ' opacity ' + opacity };
+      if (p.getAnimations().some(a => a.pending || a.playState === 'running')) return { reason: 'animating: ' + brief(p) };
+    }
+    return { at: JSON.stringify(subject.getBoundingClientRect()) };
+  };
+  const first = place();
+  if (first.reason) return first.reason;
+  let scrolled = null;
+  const onScroll = event => { scrolled = scrolled || brief(event.target); };
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+  try {
+    const start = performance.now();
+    for (let drawn = 0; drawn < ${frames} || performance.now() - start < ${ms}; drawn++) {
+      const frame = await Promise.race([
+        new Promise(resolve => requestAnimationFrame(() => resolve(true))),
+        new Promise(resolve => setTimeout(() => resolve(false), 1000)),
+      ]);
+      if (!frame) return 'no frame drawn for 1 s';
+      if (scrolled) return 'scrolled: ' + scrolled;
+      const now = place();
+      if (now.reason) return now.reason;
+      if (now.at !== first.at) return 'moved';
+    }
+    return null;
+  } finally {
+    removeEventListener('scroll', onScroll, { capture: true });
+  }
+})()`;
