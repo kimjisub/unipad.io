@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { expectSavedPackCount, storedPackRecords } from './saved-packs';
 
 async function fixture(edit: (zip: JSZip) => Promise<void> | void) {
   const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
@@ -11,7 +12,7 @@ async function fixture(edit: (zip: JSZip) => Promise<void> | void) {
 
 async function importPack(page: Page, file: Awaited<ReturnType<typeof fixture>>) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
 }
 
 async function capture(page: Page, info: TestInfo, name: string) {
@@ -84,7 +85,7 @@ for (const [name, edit, reason] of [
     await page.getByRole('button', { name: 'Quit', exact: true }).click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(page.getByText('No UniPacks installed', { exact: true })).toBeVisible();
-    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(await fixture(() => {}));
+    await page.locator('input[data-unipack-import]').setInputFiles(await fixture(() => {}));
     await expectPads(page);
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await capture(page, info, 'recovered');
@@ -101,5 +102,62 @@ for (const [website, href] of [['unipad.io', 'https://unipad.io/'], ['https:unip
     if (href) await expect(link).toHaveAttribute('href', href);
     else await expect(link).toHaveCount(0);
     await capture(page, info, 'website');
+  });
+}
+
+// setInputFiles checks import processing; the native iPadOS picker needs a device check.
+for (const entry of ['library', 'player'] as const) {
+  for (const extension of ['uni', 'zip']) {
+    test(`imports .${extension} from the ${entry} and reopens its saved bytes`, async ({ page }, info) => {
+      const buffer = await readFile('e2e/fixtures/basic.uni');
+      await page.goto('/play');
+      if (entry === 'player') {
+        await page.locator('input[data-unipack-import]').setInputFiles({ name: 'initial.uni', mimeType: 'application/octet-stream', buffer });
+        await expectPads(page);
+        await expectSavedPackCount(page, 1);
+      }
+      await page.locator('input[data-unipack-import]').setInputFiles({ name: `browser-basic.${extension}`, mimeType: 'application/octet-stream', buffer });
+      await expectPads(page);
+      await expectSavedPackCount(page, entry === 'player' ? 2 : 1);
+      await expect(page).toHaveURL(/\/play\?pack=.+/);
+      const importedId = new URL(page.url()).searchParams.get('pack');
+      expect(importedId).not.toBeNull();
+      const saved = await storedPackRecords(page);
+      expect(saved.every(record => Buffer.from(record.zipData).equals(buffer))).toBe(true);
+      await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+      await page.getByRole('button', { name: 'Quit', exact: true }).click();
+      await page.getByRole('listbox', { name: 'UniPack list' }).locator(`[data-pack-id=${JSON.stringify(importedId)}]`).dblclick();
+      await expectPads(page);
+      await expect.poll(() => new URL(page.url()).searchParams.get('pack')).toBe(importedId);
+      await page.reload();
+      await expectPads(page);
+      await expect.poll(() => new URL(page.url()).searchParams.get('pack')).toBe(importedId);
+      await expect(page.getByRole('alertdialog')).toHaveCount(0);
+      await capture(page, info, 'reopened');
+    });
+  }
+
+  test(`a non-archive from the ${entry} is not saved and the next valid import works`, async ({ page }, info) => {
+    const buffer = await readFile('e2e/fixtures/basic.uni');
+    await page.goto('/play');
+    if (entry === 'player') {
+      await page.locator('input[data-unipack-import]').setInputFiles({ name: 'initial.uni', mimeType: 'application/octet-stream', buffer });
+      await expectPads(page);
+      await expectSavedPackCount(page, 1);
+    }
+    // A premature unversioned open would create an empty database before the app initializes it.
+    await expect.poll(() => page.evaluate(async () => (await indexedDB.databases()).map(db => db.name))).toContain('unipad');
+    const before = await storedPackRecords(page);
+    await page.locator('input[data-unipack-import]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('This is not a UniPack archive.') });
+    await expect(page.getByRole('alertdialog', { name: 'Error', exact: true })).toBeVisible();
+    await expect(page.locator('[data-pad]')).toHaveCount(0);
+    expect((await storedPackRecords(page)).map(record => record.id)).toEqual(before.map(record => record.id));
+    await capture(page, info, 'non-archive-refused');
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await page.locator('input[data-unipack-import]').setInputFiles({ name: 'browser-basic.uni', mimeType: 'application/octet-stream', buffer });
+    await expectPads(page);
+    await expectSavedPackCount(page, before.length + 1);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await capture(page, info, 'next-import-recovered');
   });
 }

@@ -58,7 +58,7 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
     });
   }
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'input-boundaries.uni', mimeType: 'application/zip',
     buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
   });

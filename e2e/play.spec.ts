@@ -194,14 +194,14 @@ test('Pro Live-mode resync redraws lights while preserving held playback', async
 
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
   await expectLoadedPack(page);
 }
 
 async function loadSavedFixture(page: Page) {
   // These cases need a saved fixture; detailed import checks belong to the import tests.
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(pack);
+  await page.locator('input[data-unipack-import]').setInputFiles(pack);
   await expectSavedPlaybackPack(page);
 }
 
@@ -412,7 +412,7 @@ test('a file still enters the library when another pack replaces its pending rea
       return buffer;
     };
   });
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'delayed-import.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
@@ -568,7 +568,7 @@ for (const screen of [{ name: 'desktop', viewport: { width: 1280, height: 800 } 
 
 test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
   await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await page.keyboard.down('1');
@@ -1049,7 +1049,7 @@ test('in Pro light mode a pack light shows on a round button and turns off when 
 test('numeric zero columns show a round light without warnings and clear it on release', async ({ page }, testInfo) => {
   const file = await roundLightPack(2, { '1 1 1 0': 'on 0 10 FF0000\nd 10000\noff 0 10\nd 10000' });
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
   await expectPads(page);
   const warning = page.getByRole('alertdialog');
   const warningCount = await warning.count();
@@ -1168,7 +1168,7 @@ for (const [name, file] of [
 ]) {
   test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
     await page.goto('/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+    await page.locator('input[data-unipack-import]').setInputFiles(file);
     await expectPads(page);
     for (const hideUI of [false, true]) {
       if (hideUI) await page.keyboard.press('Alt+h');

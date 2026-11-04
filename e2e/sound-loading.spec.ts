@@ -142,7 +142,7 @@ test('a pack whose sounds all fail stays out of the player with details, retry a
   zip.file('sounds/refused.wav', wave(8000, 800, DECODE_FAILS));
   zip.file('sounds/broken.wav', 'not audio');
   zip.remove('sounds/tone.wav');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expect(failure(page)).toContainText('1 sound file cannot be read1 sound cannot be played');

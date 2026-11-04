@@ -35,7 +35,7 @@ async function storedPack(page: Page): Promise<StoredPack[]> {
 
 async function importBasicPack(page: Page): Promise<StoredPack> {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
   await expectSavedPackCount(page, 1);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
