@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertReachable, hitReport } from './hitTarget.testUtils.mjs';
+import { assertReachable, hitReport, still } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -176,6 +176,9 @@ try {
     }
     await tap(button('Store'));
     await until(`document.querySelectorAll('[data-store-code]').length===12`);
+    // As the list appears its rows fade in and it scrolls itself to the chosen pack; a press
+    // released after the row has moved goes to the row, not to the control that was pressed.
+    await until(still(`document.querySelector('[data-store-code="viewport-11"]')`));
     await tap(`document.querySelector('[data-store-code="viewport-11"]')`);
     await wait(400);
     await tap(`document.querySelector('[role="dialog"] h3')`);
@@ -188,6 +191,7 @@ try {
     await until(`!document.querySelector('[role="dialog"]')`);
     await tap(button('Store'));
     await until(`document.querySelector('[data-store-code="viewport-11"]')?.textContent.includes('Play')`);
+    await until(still(`document.querySelector('[data-store-code="viewport-11"] button:last-child')`));
     await tap(`document.querySelector('[data-store-code="viewport-11"] button:last-child')`);
     await until(`document.querySelectorAll('[data-pad]').length===64`);
     console.log('PASS:', portrait ? 'portrait prompt and store' : '64 pad presses, controls and menu', 'store last item, detail, local download and close', size || 'native viewport');

@@ -79,3 +79,30 @@ export async function assertReachable({ report, target, label, dir, run, command
   const what = report.missing ? 'Target missing' : 'Target clipped or covered';
   throw new Error(`${what}: ${label}\n${JSON.stringify(record, null, 2)}`);
 }
+
+/**
+ * A page expression that resolves true when `target` is at rest: neither it nor an ancestor is
+ * faded or has an animation running or waiting to start, and it is at the same place in the
+ * viewport at the start and the end of `ms` milliseconds.
+ * A press is only whole when the target stays under the pointer from press to release; if it
+ * moves away in between, the browser sends the click to whatever holds both points (a list row,
+ * say), not to the target. Rows fading in and a list scrolling itself to a selection both move a
+ * target with no input. The scroll is not an animation `getAnimations` reports, so the place is
+ * read twice; the fade is required to have ended first because a busy page can hold every motion
+ * back for longer than `ms`, before any of it starts.
+ * @param {string} target
+ * @param {number} [ms]
+ */
+export const still = (target, ms = 200) => `(async () => {
+  const place = () => {
+    const subject = ${target};
+    if (!subject) return null;
+    for (let p = subject; p; p = p.parentElement)
+      if (getComputedStyle(p).opacity !== '1' || p.getAnimations().some(a => a.pending || a.playState === 'running')) return null;
+    return JSON.stringify(subject.getBoundingClientRect());
+  };
+  const before = place();
+  if (!before) return false;
+  await new Promise(resolve => setTimeout(resolve, ${ms}));
+  return place() === before;
+})()`;
