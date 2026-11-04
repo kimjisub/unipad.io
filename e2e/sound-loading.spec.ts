@@ -223,7 +223,7 @@ test('an unreadable import source keeps playing and can be imported again', asyn
   await page.mouse.down();
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
   await page.mouse.up();
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles('e2e/fixtures/basic.uni');
+  await page.locator('input[data-unipack-import]').setInputFiles('e2e/fixtures/basic.uni');
   await expect(page).toHaveURL(/pack=/);
   await page.reload();
   await expectPads(page);
