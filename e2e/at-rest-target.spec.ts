@@ -70,6 +70,8 @@ test('a button is not at rest while the browser scrolls it into view, and is onc
 test('a scroll that comes back to the same place during the wait is not rest', async ({ page }) => {
   await page.setContent(list);
   await toEnd(page);
+  // The scroll event of toEnd arrives at the next drawn frame; without this it alone would pass the test.
+  await atRest(page);
   const waiting = page.evaluate(notAtRest(play, { ms: 600, frames: 3 }));
   await page.evaluate(async () => {
     const area = document.getElementById('list')!;
