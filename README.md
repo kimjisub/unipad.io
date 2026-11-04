@@ -71,8 +71,9 @@ Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
 runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
-`e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`, `e2e/rectangular-pad-layout.spec.ts`,
-`e2e/large-text.spec.ts`, and `e2e/home.spec.ts` in Chromium on Linux; on failure it
+`e2e/socket-failure-record.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+on Linux in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
@@ -220,18 +221,45 @@ WebKit and Firefox also run the shared multi-touch and page/layout files, with
 explicit skips for unsupported test capabilities. Firefox allows
 90 seconds overall for page setup and playback. Pack-open assertions use the
 shared 15-second state limit from `expectPads`, including import and reload.
+Saved-pack tail cases retain that project's 90-second limit (60 seconds in the
+other projects), and their pack URL assertion uses the same 15-second state limit.
+Settings responses held for six seconds check the import and reopening URL waits
+without slowing the app.
+The one-Tab-stop pack-list check uses a short list; with an overflowing list,
+Firefox can focus the native scroll container before the selected row.
 A missing saved pack fails the pad-count assertion with the observed value,
 rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
 a held native storage response covers that transition. A deliberately delayed native
 decode checks that opening still works beyond the former five-second assertion.
-Native multi-touch CDP tests remain Chromium-only. Windows Firefox reports the
-same explicit skips as local Firefox for CDP touch input and default font size
-changes; skipped tests are not evidence of those capabilities.
+Native multi-touch CDP tests remain Chromium-only. The same A–G and I assertions
+also run in a separately labeled `DOM pointer supplement` group on every engine.
+Item H remains in the Chromium-only `chain-release.spec.ts` browser-touch tests.
+`e2e/pointer-touch.ts` dispatches untrusted PointerEvents to the original hit-test
+target, retaining that target for moves and releases to model capture. This checks
+the actual application listeners, pad lights and native Web Audio start/stop calls.
+It bypasses the browser's touch-to-pointer conversion, native capture, gesture
+arbitration and user activation. Multiple events run sequentially in one page task;
+they are not simultaneous hardware contacts. Unsupported browser-touch cases stay
+skipped in WebKit and Firefox; supplemental passes do not replace them or establish
+complete input compatibility. Each result records its input-evidence annotation.
+
+The seven `with 200% text` layout cases run in Chromium via `Page.setFontSizes` and
+in Firefox via launch preferences for both Korean and Western variable/monospace
+fonts. A separate probe requires a 32px initial font and an em media query based on
+that font, in Korean and English. Changing the root CSS alone would fail the latter.
+Only that test group changes Firefox's defaults; the default-text and scroll sweeps
+retain their existing settings. WebKit's browser-default-font cases stay skipped:
+Playwright exposes neither CDP nor an equivalent font preference for that engine.
+The existing root-CSS enlargement checks remain supplemental. Safari's mobile page
+zoom changes the page presentation on an iOS device; it is not evidence for Mac
+Safari default-font behavior at the specified desktop viewport sizes.
+Windows Firefox reports the same explicit browser-touch skips as local Firefox;
+skipped tests are not evidence of that capability.
 On Linux, reproduce the browser job with:
 
 ```bash
-pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts
+pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts e2e/socket-failure-record.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts
 ```
 
 On Windows, reproduce the smoke jobs with:
@@ -240,6 +268,11 @@ On Windows, reproduce the smoke jobs with:
 pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
 node scripts/playback-summary.mjs
 ```
+
+The machine needs an audio output device. GitHub's hosted Windows runners have none,
+so the workflow installs the Scream virtual sound card and starts Windows Audio first.
+Without an output, Firefox never starts Web Audio: the output-signal and auto-play
+tests then fail on "the browser did not start the audio output of the opened pack".
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,
@@ -287,11 +320,12 @@ outside this change; existing input filtering and visual release rules are kept.
 contacts at once through Chromium's native touch dispatch, so the browser's own
 pointer events reach the `PadGrid` listeners. Each item is one test named after
 its letter (A–G, I); item H is the CR tests above. Both files run on a landscape
-phone (844×390) and a landscape tablet (1180×820) screen; `e2e/touch.ts` holds
-the shared touch helpers. Headless Chromium never hides the tab or blurs the
-window by itself, so test G sends the `visibilitychange` and `blur` events a
-browser sends when the notification shade or another app takes over. These are
-synthetic-input results; real fingers on a physical device are not certified.
+phone (844×390), a landscape tablet (1180×820) and a portrait tablet (834×1210)
+screen; `e2e/touch.ts` holds the shared touch helpers. Headless Chromium never
+hides the tab or blurs the window by itself, so test G sends the
+`visibilitychange` and `blur` events a browser sends when the notification shade
+or another app takes over. These are synthetic-input results; real fingers on a
+physical device are not certified.
 
 ### Held resize and input boundary checks
 
@@ -303,12 +337,12 @@ The unchanged press overlay distinguishes held and released pads.
 
 The resize tests first prove a pad is sounding and lit at the laptop size, keep
 the input down from there through phone portrait (390×844), phone landscape
-(844×390), tablet (1180×820), back to laptop (1280×800) and on to phone
-landscape, then release in that different layout and play another pad.
-The existing grid remains mounted beneath the portrait overlay. These are
-viewport changes, not a physical device rotation test. Mouse dragging and chain
-clicks run in both Chromium and WebKit. Chromium additionally runs native CDP
-touch resizing and both mouse/touch hold orders: both inputs must succeed and
+(844×390), tablet (1180×820), portrait tablet (834×1210), back to laptop
+(1280×800) and on to phone landscape, then release in that different layout and
+play another pad. The existing grid remains mounted beneath the phone portrait
+overlay. These are viewport changes, not a physical device rotation test. Mouse
+dragging and chain clicks run in both Chromium and WebKit. Chromium additionally
+runs native CDP touch resizing and both mouse/touch hold orders: both inputs must succeed and
 remain active together, and releasing the second must preserve the first.
 
 WebKit's public Playwright touchscreen API only supports `tap()`; creating a
@@ -330,8 +364,10 @@ limitation. Pointer records observe browser events, including their trusted
 flag and input type; they do not call input handlers.
 
 `squareButton=true` and `false` packs, in 4-column/3-row and 8×8 shapes, are
-covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen and
-the bottom and right edges play the mapped pad at four screen sizes.
+covered by `rectangular-pad-layout.spec.ts`: every cell fits the screen at
+eight screen sizes. The bottom and right edges play the mapped pad at the four
+phone, landscape tablet and laptop sizes, and every pad plays at the four
+portrait tablet sizes.
 
 Focused command: `pnpm test:e2e e2e/input-boundaries.spec.ts` after the build.
 The default suite includes all these cases; the GitHub workflow is unchanged.
@@ -364,3 +400,36 @@ it normally, then compares opening with recent-history writes enabled or disable
 three times each. Attachments include sampled CDP backing-store/heap sizes and
 renderer RSS from `ps`; the maximum is a sampled peak, not a memory limit or a
 measurement on a physical phone. The normal suite skips this diagnostic.
+
+### Excluding browser tests from Google Analytics
+
+Google Analytics collection is disabled when `navigator.webdriver` is true or a
+visit starts with `?no_analytics=1` (use `&no_analytics=1` after other parameters).
+The marker is remembered in `sessionStorage` for that tab, including full document
+navigation to URLs without the marker, for the lifetime of that page session. If
+the browser denies session storage, the marker still works on the current document;
+keep the marker on subsequent URLs in that case. Existing independent tabs and
+ordinary visits are unaffected. Duplicating the marked tab or opening a new tab
+from it can copy the session storage and its opt-out. Events remain queued in
+`dataLayer` for playback checks, while `ga-disable-<measurement ID>` prevents
+transmission before the first config,
+including when Firebase returns a different measurement ID from the build config.
+The initial marked URL and its queued page path keep the marker; those events are
+not transmitted. Subsequent internal URLs need not carry it.
+
+`e2e/analytics-collection.spec.ts` runs on Chromium, Firefox and WebKit. Unlike the
+common browser fixture, it downloads and executes Google's actual tag script for
+an unused test measurement ID, so running this file requires access to the tag
+script host. Firebase replies are local, and the tag's collection transport points
+to a separate local HTTP server per test that stays alive through page and context
+close. Late requests from an earlier test cannot enter another test's collector.
+The ordinary-visit control shadows only `navigator.webdriver` before application code, and must
+produce page-view deliveries with the same tag and collector. Independent native
+`pagehide` probes prove that the observation path remains alive during navigation
+and page close. The test polls for both beacon and keepalive deliveries on Firefox
+and WebKit. Chromium can drop the beacon on page close, so its required signal is
+the keepalive delivery; both probe results remain in every test's attachment.
+Both opt-out conditions must deliver zero requests, including after full
+navigation without the marker. This checks real tag execution rather than
+counting requests blocked by Playwright routing. Vercel Analytics and Firebase
+Performance are unaffected by this Google Analytics policy.

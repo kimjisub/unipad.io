@@ -27,7 +27,7 @@ stub('../../lib/unipack/index.ts', { ...real,
     context = { state: 'running' };
     constructor(_unipack, getChain) { this.getChain = getChain; sounds.engine = this; }
     async setSuspended(suspended) { this.context.state = suspended ? 'suspended' : 'running'; }
-    async load() { return []; }
+    async load() { return { usedFiles: 0, loadedFiles: 0, failures: [], reservedCost: 0n }; }
     setVolume(level) { sounds.volume = level; }
     soundOn(x, y) { sounds.played.push(`chain ${this.getChain() + 1} pad ${x},${y}`); }
     soundPushToNum() {} soundOff() {} stopAll() {} destroy() {} resume() {} cancelPendingChainChanges() {}

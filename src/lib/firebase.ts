@@ -4,6 +4,8 @@ import { getPerformance } from 'firebase/performance';
 import { getRemoteConfig, fetchAndActivate, RemoteConfig } from 'firebase/remote-config';
 import { Database, getDatabase } from 'firebase/database';
 import { Messaging, getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging';
+import { dropSocketFailureRecordedWhileLeaving } from './firebaseSocket';
+import { prepareAnalyticsCollection } from './analytics/collectionPolicy';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -62,6 +64,7 @@ export function initFirebaseAnalytics(): Promise<Analytics | null> {
         return null;
       }
 
+      prepareAnalyticsCollection(window, app.options.measurementId);
       return getAnalytics(app);
     })();
   }
@@ -105,6 +108,7 @@ export function initFirebaseServices(): Promise<FirebaseServices | null> {
 
       let database: Database | null = null;
       try {
+        dropSocketFailureRecordedWhileLeaving();
         database = getDatabase(app);
       } catch {
         database = null;

@@ -17,13 +17,13 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
   for (const path of remove) zip.remove(path);
   for (const [path, content] of Object.entries(files)) zip.file(path, content, { date });
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expectPads(page);
 }
 
-/** basic.uni with its only sound replaced by bytes no browser decodes, as a file to choose. */
+/** basic.uni with its only sound replaced by bytes that are no audio file, as a file to choose. */
 export async function undecodablePack() {
   const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
   zip.file('sounds/tone.wav', 'not audio');

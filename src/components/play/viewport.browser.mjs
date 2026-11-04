@@ -3,10 +3,13 @@
 // CDP_URL=http://127.0.0.1:19390 PLAYER_URL=http://localhost:3190/play \
 //   node src/components/play/viewport.browser.mjs
 // MATRIX=1 also checks portrait, desktop and rotation back to landscape.
+// SCREENSHOT_DIR keeps screenshots, and for a control that cannot be hit, its
+// unreachable-N.json record and screenshot (see hitTarget.testUtils.mjs).
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertReachable, hitReport, settled } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -66,7 +69,7 @@ const until = async expression => {
 // Require a real hit target after scrolling, rather than a programmatic click on
 // an invisible/clipped button. This catches both overflow and covering overlays.
 const tap = async expression => {
-  const point = await run(`(() => {
+  const report = await run(`(() => {
     const e = ${expression}; if (!e) throw Error('Target missing');
     // Scroll only areas the user can scroll. scrollIntoView would also scroll
     // overflow:hidden ancestors and conceal the original store clipping bug.
@@ -76,11 +79,10 @@ const tap = async expression => {
       if (r.bottom>bounds.bottom) parent.scrollTop+=r.bottom-bounds.bottom;
       if (r.top<bounds.top) parent.scrollTop-=bounds.top-r.top;
     }
-    const r=e.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2;
-    const hit=document.elementFromPoint(x,y);
-    if (!hit || !(e===hit || e.contains(hit))) throw Error('Target clipped or covered: '+e.textContent);
-    return {x,y};
+    return ${hitReport('e')};
   })()`);
+  await assertReachable({ report, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
+  const { point } = report;
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
   await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
 };
@@ -108,14 +110,14 @@ try {
     }
     await command('Storage.clearDataForOrigin', { origin:new URL(url).origin, storageTypes:'indexeddb,local_storage' });
     await command('Page.navigate', { url });
-    await until(`!!document.querySelector('input[accept=".zip,.uni"]')`);
+    await until(`!!document.querySelector('input[data-unipack-import]')`);
     await run(`localStorage.setItem('store_items_cache_v1', JSON.stringify(Array.from({length:12},(_,i)=>({
       code:'viewport-'+i,title:'Local pack '+i,producerName:'CI',isLED:true,isAutoPlay:true,downloadCount:12-i
     })))); sessionStorage.removeItem('store_ui_pref_v1');`);
     await run(`(() => {
       const data=Uint8Array.from(atob(${JSON.stringify(pack)}),c=>c.charCodeAt(0));
       const dt=new DataTransfer(); dt.items.add(new File([data],'viewport.zip',{type:'application/zip'}));
-      const input=document.querySelector('input[accept=".zip,.uni"]'); input.files=dt.files;
+      const input=document.querySelector('input[data-unipack-import]'); input.files=dt.files;
       input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`);
     await until(`document.querySelectorAll('[data-pad]').length===64`);
@@ -130,11 +132,11 @@ try {
     assert.equal(geometry.fits, true, 'All 64 pads, including the last row, fit the visible viewport');
     // The existing portrait rotation prompt is intentional; returning to
     // landscape must restore every pad. Store can still be checked from the menu.
-    const portrait = size && size[0] < 768 && size[0] < size[1];
+    const portrait = size && size[0] < 600 && size[0] < size[1];
     if (portrait) {
       assert.equal(await run(`document.body.textContent.includes('Rotate to landscape')`), true, 'Existing portrait rotation prompt remains');
       await command('Page.navigate', { url });
-      await until(`!!document.querySelector('input[accept=".zip,.uni"]') && !document.querySelector('[data-pad]')`);
+      await until(`!!document.querySelector('input[data-unipack-import]') && !document.querySelector('[data-pad]')`);
     } else {
       for (let i=0;i<64;i++) await tap(`document.querySelectorAll('[data-pad]')[${i}]`);
       for (const label of ['Feedback', 'LED', 'Trace', 'Rec']) {
@@ -168,7 +170,8 @@ try {
       await wait(300);
       await tap(`document.querySelector('button[aria-label="Open menu"]')`);
       await until(`!!document.querySelector('[role="dialog"]')`);
-      await wait(400);
+      // The menu slides in; on a busy machine the slide can start late, so wait for it to end.
+      await until(settled(button('Quit')));
       await tap(button('Quit'));
       await until(`!document.querySelector('[data-pad]')`);
     }

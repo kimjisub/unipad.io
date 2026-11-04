@@ -60,6 +60,12 @@ export class PlayUsageTracker {
     this.sink(UsageEvent.packLoad, { [UsageParam.result]: 'failure' });
   }
 
+  /** The pack plays, but some of its sounds failed to load: a failed load whose presses still count. */
+  packLoadPartlyFailed(): void {
+    this.startSession(true);
+    this.sink(UsageEvent.packLoad, { [UsageParam.result]: 'failure' });
+  }
+
   padPressed(source: PadInputSource): void {
     if (!this.sessionActive || this.padPressLogged) return;
     this.padPressLogged = true;

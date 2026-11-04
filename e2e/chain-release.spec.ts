@@ -8,7 +8,7 @@ test.use({ hasTouch: true });
 
 async function load(page: Page, pack = 'manual') {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(`meta/unipack-conformance/chain-release-v1/packs/${pack}.uni`));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve(`meta/unipack-conformance/chain-release-v1/packs/${pack}.uni`));
   await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);

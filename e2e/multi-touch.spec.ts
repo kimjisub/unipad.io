@@ -1,16 +1,13 @@
 import { resolve } from 'node:path';
-import type { CDPSession, Page, TestInfo } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { lit, pad, point, slideAcrossPads, touch, touchScreens, type Contact } from './touch';
+import { lit, pad, point, slideAcrossPads, touch as browserTouch, touchScreens, type Contact } from './touch';
+import { pointerTouch, type TouchInput } from './pointer-touch';
 
 // Multi-touch items A-I. Item H (a loop held while another finger changes chain) is
 // covered by the CR tests in chain-release.spec.ts, which run on the same two screens.
 // Every pad of the pack loops until released, so a held finger is a started-not-stopped sound.
 
-// Playwright exposes native multi-contact injection through Chromium CDP only.
-// Keep these cases in every engine's report without replacing native input with DOM events.
-test.skip(({ browserName }) => browserName !== 'chromium',
-  'Native multi-contact touch injection requires Chromium CDP; WebKit and Firefox do not expose it in Playwright.');
 test.use({ hasTouch: true });
 
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
@@ -19,7 +16,7 @@ const sortedStops = async (page: Page) => (await stops(page)).sort((a, b) => a -
 
 async function load(page: Page) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/multi-touch.uni'));
   await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(1);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -45,13 +42,23 @@ async function evidence(page: Page, info: TestInfo, name: string) {
   });
 }
 
-async function session(page: Page): Promise<CDPSession> {
-  return page.context().newCDPSession(page);
-}
-
-for (const screen of touchScreens) {
-  test.describe(`${screen.name}: multi-touch`, () => {
+for (const screen of touchScreens) for (const mode of ['browser touch', 'DOM pointer supplement'] as const) {
+  test.describe(`${screen.name}: multi-touch (${mode})`, () => {
     test.use({ viewport: screen.viewport });
+    // Preserve the unsupported native cases: supplemental passes do not establish native coverage.
+    test.skip(({ browserName }) => mode === 'browser touch' && browserName !== 'chromium',
+      'Native multi-contact touch injection requires Chromium CDP; WebKit and Firefox do not expose it in Playwright.');
+    test.beforeEach(async ({}, info) => {
+      info.annotations.push({ type: 'input-evidence', description: mode === 'browser touch'
+        ? 'Browser touch-to-pointer dispatch; not physical fingers. Visibility and blur steps are synthetic.'
+        : 'Untrusted DOM PointerEvents; capture is modeled. No browser gesture, touch conversion, user activation or native capture coverage.' });
+    });
+    async function session(page: Page): Promise<TouchInput> {
+      if (mode === 'DOM pointer supplement') return pointerTouch(page);
+      const cdp = await page.context().newCDPSession(page);
+      return (type, points) => browserTouch(cdp, type, points);
+    }
+    const touch = (input: TouchInput, type: Parameters<TouchInput>[0], points: Contact[]) => input(type, points);
 
     test('A two pads pressed together both sound and light', async ({ page }) => {
       await load(page);

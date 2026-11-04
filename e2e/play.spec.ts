@@ -3,11 +3,11 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
-import { savedRecords } from './saved-packs';
+import { savedRecords, expectSavedPackCount } from './saved-packs';
 import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
@@ -140,6 +140,10 @@ for (const { value: profile } of LAUNCHPAD_PROFILE_OPTIONS) {
     await dialog.locator('select').selectOption(profile);
     await expect(dialog).toContainText(`Resolved Type: ${profile === 'auto' ? 'launchpad_x' : profile}`);
     await info.attach('selected-model', { body: await page.screenshot(), contentType: 'image/png' });
+    // The pads and the dialog update before the pack and the choice are saved; a reload before
+    // then reopens the list or drops the choice.
+    await expectSavedPlaybackPack(page);
+    await expect.poll(() => storedSetting(page, 'midiProfile')).toBe(profile);
     await page.reload();
     await expectPads(page);
     await page.getByRole('button', { name: 'Launchpad Settings', exact: true }).click();
@@ -190,8 +194,15 @@ test('Pro Live-mode resync redraws lights while preserving held playback', async
 
 async function loadPack(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer } = pack) {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
   await expectLoadedPack(page);
+}
+
+async function loadSavedFixture(page: Page) {
+  // These cases need a saved fixture; detailed import checks belong to the import tests.
+  await page.goto('/play', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[data-unipack-import]').setInputFiles(pack);
+  await expectSavedPlaybackPack(page);
 }
 
 async function expectLoadedPack(page: Page) {
@@ -203,6 +214,17 @@ async function expectLoadedPack(page: Page) {
   const supportsMidi = await hasWebMidi(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests)).toEqual(supportsMidi ? [{ sysex: true }] : []);
 }
+
+const storedSetting = (page: Page, key: string) => page.evaluate(key => new Promise<string | null>((resolve, reject) => {
+  const open = indexedDB.open('unipad');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result;
+    const request = db.transaction('settings').objectStore('settings').get(key);
+    request.onsuccess = () => { db.close(); resolve(request.result?.value ?? null); };
+    request.onerror = () => { db.close(); reject(request.error); };
+  };
+}), key);
 
 // Launchpad tests need the browser's own Web MIDI API (WebKit has none); there they are
 // skipped as not applicable so the skip shows in the results instead of a failure.
@@ -265,6 +287,7 @@ async function watchLight(page: Page, position: string) {
 
 test('imports a local pack and restores the saved pack after reload', async ({ page }) => {
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await expect.poll(() => starts(page)).toBe(0);
   await page.reload();
@@ -283,6 +306,7 @@ test('imports and restores a pack when native decoding outlasts a UI assertion',
     };
   });
   await loadPack(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.reload();
   await expectLoadedPack(page);
@@ -303,7 +327,7 @@ test('a missing saved pack fails the pad value check after restoration ends', as
 
 test('a delayed earlier storage read cannot replace the last pack selected', async ({ page }, info) => {
   await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await expectSavedPlaybackPack(page);
   const zip = await JSZip.loadAsync(await readFile(pack));
   zip.file('info', (await zip.file('info')!.async('string')).replace(/^title=.*$/m, 'title=Earlier Pack'));
   const bytes = Array.from(await zip.generateAsync({ type: 'uint8array' }));
@@ -330,10 +354,12 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
       const request = get.call(this, query);
       if (this.name === 'unipacks' && query === 'earlier-pack' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Delay the assembled result, not native request dispatch: chunk reads need an active transaction.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
           document.documentElement.dataset.heldPackRead = 'true';
-          window.addEventListener('release-earlier-pack', () => request.onsuccess?.call(request, event), { once: true });
+          window.addEventListener('release-earlier-pack', () => transaction.oncomplete?.call(transaction, event), { once: true });
         }, { once: true });
       }
       return request;
@@ -344,9 +370,8 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
   await page.getByRole('option', { name: 'Earlier Pack by UniPad Tests', exact: true }).dblclick();
   await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
-  await expect(page).toHaveURL(/pack=.+/);
   const latestUrl = page.url();
   // The unit tests hold every await deterministically. This browser observation also keeps a
   // record of any transient wrong title after releasing the native IndexedDB result.
@@ -369,8 +394,7 @@ test('a delayed earlier storage read cannot replace the last pack selected', asy
 });
 
 test('a file still enters the library when another pack replaces its pending read', async ({ page }, info) => {
-  await loadPack(page);
-  await expect(page).toHaveURL(/pack=.+/);
+  await loadSavedFixture(page);
   const savedUrl = page.url();
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
@@ -388,15 +412,15 @@ test('a file still enters the library when another pack replaces its pending rea
       return buffer;
     };
   });
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'delayed-import.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expect(page.locator('html')).toHaveAttribute('data-held-import-read', 'true');
   await page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true }).dblclick();
-  await expectPads(page);
+  await expectSavedPlaybackPack(page);
   await expect(page).toHaveURL(savedUrl);
   await page.evaluate(() => window.dispatchEvent(new Event('release-import-read')));
-  await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
+  await expectSavedPackCount(page, 2);
   await info.attach('import-kept-after-replacement', { body: JSON.stringify({ saved: await savedRecords(page), observedUrl: page.url(), title: await page.title() }), contentType: 'application/json' });
   await expect(page).toHaveURL(savedUrl);
   await expect(page).toHaveTitle(/^Browser Test Pack \|/);
@@ -406,8 +430,8 @@ test('a file still enters the library when another pack replaces its pending rea
   await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('restoration waits past the temporary pack list before reading a saved pack', async ({ page }, testInfo) => {
-  await loadPack(page);
+test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
+  await loadSavedFixture(page);
   await expect(page).toHaveURL(/\/play\?pack=.+/);
   await page.addInitScript(() => {
     const get = IDBObjectStore.prototype.get;
@@ -418,9 +442,12 @@ test('restoration waits past the temporary pack list before reading a saved pack
       const request = get.call(this, query);
       if (this.name === 'unipacks' && !held) {
         held = true;
-        request.addEventListener('success', event => {
+        // Let native reads finish and release their locks; hold only the storage Promise's result.
+        const transaction = this.transaction;
+        transaction.addEventListener('complete', event => {
           event.stopImmediatePropagation();
-          void released.then(() => request.onsuccess?.call(request, event));
+          document.documentElement.dataset.heldPackRead = 'true';
+          void released.then(() => transaction.oncomplete?.call(transaction, event));
         }, { once: true });
       }
       return request;
@@ -428,11 +455,18 @@ test('restoration waits past the temporary pack list before reading a saved pack
   });
   await page.reload();
   await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toBeVisible();
-  await testInfo.attach('temporary-pack-list', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(page.locator('html')).toHaveAttribute('data-held-pack-read', 'true');
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
   const restored = expectLoadedPack(page).catch(error => error);
-  // Keep the actual storage result pending beyond the former five-second assertion.
-  await page.waitForTimeout(6000);
-  await page.evaluate(() => window.dispatchEvent(new Event('release-pack-read')));
+  // Keep the actual result pending beyond the former five-second assertion. Release it in
+  // the browser: once scheduled, the hold overlaps the screenshot and needs no second
+  // driver round trip to release. Scheduling the timer can still be delayed by the driver.
+  await Promise.all([
+    page.evaluate(() => new Promise<void>(resolve => {
+      setTimeout(() => { window.dispatchEvent(new Event('release-pack-read')); resolve(); }, 6000);
+    })),
+    page.screenshot().then(body => testInfo.attach('temporary-pack-list', { body, contentType: 'image/png' })),
+  ]);
   expect(await restored).toBeUndefined();
 });
 
@@ -492,6 +526,8 @@ for (const screen of [{ name: 'desktop', viewport: { width: 1280, height: 800 } 
 
     test('pad audio reaches the output after volume control and becomes silent on release or mute', async ({ page, browser }, info) => {
       await loadPack(page);
+      // A stopped output also reads as silence; the idle check below means nothing until it runs.
+      await expectAudioOutputRunning(page);
       const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
       await expect.poll(rms, 'a connected, idle output must be silent').toBe(0);
       await pad(page, '0,0').hover();
@@ -532,7 +568,7 @@ for (const screen of [{ name: 'desktop', viewport: { width: 1280, height: 800 } 
 
 test('a chain change preserves the held loop until release and quit stops playback', async ({ page }) => {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
   await expectPads(page);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length)).toBe(3);
   await page.keyboard.down('1');
@@ -565,6 +601,7 @@ test('auto-play starts, pauses without advancing, resumes, and stops', async ({ 
     });
   });
   await loadPack(page);
+  await expectAudioOutputRunning(page);
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   const auto = page.getByRole('button', { name: 'Play mode: Auto', exact: true });
   await auto.click();
@@ -749,6 +786,7 @@ for (const [source, press] of Object.entries(padInputs)) {
 
 test('autoplay pressing pads is not recorded as a player pad press', async ({ page }) => {
   await loadPack(page);
+  await expectAudioOutputRunning(page);
   await expectAnalyticsOn(page);
   await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
   await expect.poll(() => starts(page)).toBeGreaterThan(0);
@@ -1011,7 +1049,7 @@ test('in Pro light mode a pack light shows on a round button and turns off when 
 test('numeric zero columns show a round light without warnings and clear it on release', async ({ page }, testInfo) => {
   const file = await roundLightPack(2, { '1 1 1 0': 'on 0 10 FF0000\nd 10000\noff 0 10\nd 10000' });
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
   await expectPads(page);
   const warning = page.getByRole('alertdialog');
   const warningCount = await warning.count();
@@ -1130,7 +1168,7 @@ for (const [name, file] of [
 ]) {
   test(`pad grid sits on the screen centre line in landscape, ${name}`, async ({ page }) => {
     await page.goto('/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+    await page.locator('input[data-unipack-import]').setInputFiles(file);
     await expectPads(page);
     for (const hideUI of [false, true]) {
       if (hideUI) await page.keyboard.press('Alt+h');

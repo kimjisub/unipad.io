@@ -21,6 +21,9 @@ const stub = (path, exports) => {
 // A step left unheld runs at once.
 let held = { parse: [], decode: [], theme: [] };
 let started = { led: 0, wake: 0, midi: 0 };
+// What the next sound load reports; every used sound loaded unless a test says otherwise.
+let soundReport = null;
+const analytics = [];
 const releasedThemes = [];
 const runners = [];
 Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
@@ -45,7 +48,7 @@ stub('../../lib/unipack/index.ts', { ...real,
   SoundEngine: class {
     context = { state: 'running' };
     async setSuspended(suspended) { this.context.state = suspended ? 'suspended' : 'running'; }
-    load() { return step('decode', () => []); }
+    load() { return step('decode', () => soundReport ?? { usedFiles: 2, loadedFiles: 2, failures: [], reservedCost: 0n }); }
     setVolume() {} soundPushToNum() {} soundOn() {} soundOff() {} stopAll() {} destroy() {} resume() {} cancelPendingChainChanges() {}
   },
   MidiConnection: class {
@@ -54,9 +57,9 @@ stub('../../lib/unipack/index.ts', { ...real,
     release() {} sendPadLed() {} sendChainLed() {} sendFunctionKeyLed() {} clearAllLeds() {}
   },
 });
-stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent() {} });
+stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push([name, params?.result]) });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; });
+afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; soundReport = null; analytics.length = 0; });
 const flush = async action => act(async () => { await action?.(); await new Promise(resolve => setTimeout(resolve, 5)); });
 const deferred = () => { let resolve; return { promise: new Promise(r => { resolve = r; }), resolve: () => resolve() }; };
 const hold = kind => {
@@ -156,4 +159,56 @@ test('an old theme decode failure cannot reset a newer applied theme', async () 
   await flush(() => result.current.loadTheme(theme));
   await flush(() => { reading.resolve(); return oldTheme; });
   assert.equal(result.current.state.theme, theme);
+});
+
+const failure = (file, reason) => ({ file, reason, exclusion: reason === 'limit' ? 'DURATION' : null });
+
+test('a pack whose used sounds all fail does not open and keeps the report for its notice', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  soundReport = { usedFiles: 2, loadedFiles: 0, failures: [failure('p/sounds/a.wav', 'decode'), failure('p/sounds/b.wav', 'limit')], reservedCost: 0n };
+  let load;
+  await flush(async () => { load = result.current.loadUniPack(await pack(true)); return load; });
+
+  assert.equal(await load, false);
+  assert.equal(result.current.state.loaded, false);
+  assert.equal(result.current.state.loading, false);
+  assert.equal(result.current.state.criticalError, false);
+  assert.deepEqual(result.current.state.soundLoadReport, soundReport);
+  assert.equal(started.led, 0, 'no lights start behind the notice');
+  assert.equal(started.wake, 0);
+  assert.deepEqual(analytics.filter(([name]) => name === 'pack_load').at(-1), ['pack_load', 'failure']);
+});
+
+test('a pack with some sounds failed opens with the report; a failed decode is not a successful load', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  soundReport = { usedFiles: 3, loadedFiles: 2, failures: [failure('p/sounds/a.wav', 'memory')], reservedCost: 0n };
+  let load;
+  await flush(async () => { load = result.current.loadUniPack(await pack(true)); return load; });
+
+  assert.equal(await load, true);
+  assert.equal(result.current.state.loaded, true);
+  assert.deepEqual(result.current.state.soundLoadReport, soundReport);
+  assert.deepEqual(result.current.state.errors, []);
+  assert.deepEqual(analytics, [['pack_load', 'failure']]);
+});
+
+test('sounds left out by the limits alone open the pack as a successful load', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  soundReport = { usedFiles: 2, loadedFiles: 1, failures: [failure('p/sounds/a.wav', 'limit')], reservedCost: 0n };
+  await flush(async () => result.current.loadUniPack(await pack(true)));
+
+  assert.equal(result.current.state.loaded, true);
+  assert.deepEqual(result.current.state.soundLoadReport, soundReport);
+  assert.deepEqual(analytics, [['pack_load', 'success']]);
+});
+
+test('a pack of lights only, with no sound to load, opens without a sound notice', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  soundReport = { usedFiles: 0, loadedFiles: 0, failures: [], reservedCost: 0n };
+  let load;
+  await flush(async () => { load = result.current.loadUniPack(await pack(true)); return load; });
+
+  assert.equal(await load, true);
+  assert.equal(result.current.state.loaded, true);
+  assert.equal(result.current.state.soundLoadReport, null);
 });

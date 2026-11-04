@@ -26,6 +26,8 @@ import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
+import { createAudioInspector } from '@/lib/unipack/audioInspectionWorker';
+import { allSoundsFailed, soundsFailedToLoad, type SoundLoadReport } from '@/lib/unipack/soundLoading';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 import type {
@@ -90,6 +92,11 @@ export interface EngineState {
   padStates: PadState[][];
   chainStates: { color: string; active: boolean; guide?: boolean }[];
   errors: string[];
+  /**
+   * The sounds the open pack could not load, by cause; null when every used sound loaded. When all of
+   * them failed the pack is not opened and this stays to explain why.
+   */
+  soundLoadReport: SoundLoadReport | null;
   midiConnected: boolean;
   midiInputName: string | null;
   midiOutputName: string | null;
@@ -195,6 +202,7 @@ export function useUniPadEngine() {
     padStates: [],
     chainStates: [],
     errors: [],
+    soundLoadReport: null,
     midiConnected: false,
     midiInputName: null,
     midiOutputName: null,
@@ -1081,6 +1089,7 @@ export function useUniPadEngine() {
         padStates: [],
         chainStates: [],
         errors: [],
+        soundLoadReport: null,
         midiConnected: false,
         midiInputName: null,
         midiOutputName: null,
@@ -1104,7 +1113,7 @@ export function useUniPadEngine() {
     const superseded = () => revision !== loadRevisionRef.current;
     const playPreferences = readPlayPreferences();
 
-    setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [] }));
+    setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [], soundLoadReport: null }));
 
     try {
       const unipack = await parseUniPack(zipData, (phase) => {
@@ -1161,15 +1170,25 @@ export function useUniPadEngine() {
         },
       );
       soundEngineRef.current = soundEngine;
-      const failedSounds = await soundEngine.load();
+      const inspector = createAudioInspector();
+      let soundReport: SoundLoadReport;
+      try {
+        soundReport = await soundEngine.load(inspector);
+      } finally {
+        inspector.close();
+      }
       if (superseded()) return null;
+      if (allSoundsFailed(soundReport)) {
+        // Nothing would sound, so the player does not open; the report says why and offers a retry.
+        console.error('Failed to load UniPack: none of its sounds loaded', soundReport.failures);
+        usageTracker.packLoadFailed();
+        releasePack();
+        setState((prev) => ({ ...prev, loading: false, soundLoadReport: soundReport }));
+        return false;
+      }
       soundEngine.setVolume(volumeLevelRef.current, MAX_VOLUME_LEVEL);
 
       soundEngine.onInterrupted = () => interruptPlaybackRef.current();
-      const soundWarnings = failedSounds.length > 0 ? [`${failedSounds.length} audio file(s) failed to decode`] : [];
-      if (failedSounds.length > 0 && failedSounds.length === unipack.soundFiles.size) {
-        throw new Error(soundWarnings[0]);
-      }
 
       const ledListener: LedRunnerListener = {
         onPadLedTurnOn: (x: number, y: number, color: number, velocity: number) => {
@@ -1348,7 +1367,8 @@ export function useUniPadEngine() {
           chain: 0,
           padStates: padStatesRef.current.map((row) => row.map((p) => ({ ...p }))),
           chainStates: chainStatesRef.current.map((c) => ({ ...c })),
-          errors: [...unipack.errors, ...soundWarnings],
+          errors: unipack.errors,
+          soundLoadReport: soundReport.failures.length > 0 ? soundReport : null,
           criticalError: false,
           traceLogSequence: traceLogSequenceRef.current.map((seq) => [...seq]),
           feedbackLight: initFeedbackLight,
@@ -1362,7 +1382,8 @@ export function useUniPadEngine() {
         };
       });
 
-      usageTracker.packLoadSucceeded();
+      if (soundsFailedToLoad(soundReport)) usageTracker.packLoadPartlyFailed();
+      else usageTracker.packLoadSucceeded();
 
       requestScreenWakeLock();
 

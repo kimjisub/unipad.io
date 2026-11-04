@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { unlink, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-import { test, expect, expectPads } from './browser';
+import { test, expect, expectPads, expectSavedPlaybackPack } from './browser';
 
 // Opt-in diagnostic: generates original PCM data, never downloads a user's pack.
 test.skip(!process.env.STORAGE_MEMORY_PROBE, 'Set STORAGE_MEMORY_PROBE=1 for the large-pack memory measurement.');
@@ -29,9 +29,8 @@ for (let round = 0; round < 3; round++) {
       await writeFile(fixture, archive);
       await page.goto('/play');
       try {
-        await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(fixture);
-        await expectPads(page);
-        await expect(page).toHaveURL(/pack=/);
+        await page.locator('input[data-unipack-import]').setInputFiles(fixture);
+        await expectSavedPlaybackPack(page);
       } finally {
         await unlink(fixture);
       }

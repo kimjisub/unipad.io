@@ -200,7 +200,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
   const result = { profile: profile.id, kind: profile.kind, input: profile.input, steps: {} };
   const shot = (name) => (SCREENSHOTS ? page.screenshot({ path: path.join(OUT, `${profile.id}-${name}.png`) }) : null);
   await page.goto(`${BASE}/${LOCALE}/play`, { waitUntil: 'networkidle' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(PACK);
+  await page.locator('input[data-unipack-import], input[accept=".zip,.uni"]').first().setInputFiles(PACK);
   await page.waitForSelector('[data-pad]', { timeout: 60000 });
   await page.waitForTimeout(1500);
   result.steps.packOpened = await readPads(page);
@@ -230,7 +230,7 @@ async function runProfile(browser, profile, blocked, requests, errors) {
     await page.waitForTimeout(800);
     const hintRotated = await hintVisible(page);
     const padsRotated = await readPads(page);
-    // The portrait hint covers the pads; after rotating, observe sound and lights independently again.
+    // Below the tablet width the portrait hint covers the pads; after rotating, observe sound and lights independently again.
     const startsBefore = (await readAudio(page)).starts;
     const foundAfter = hintRotated ? null : await findSoundingPad(page, cdp, profile.input);
     const audioAfterRotate = await readAudio(page);

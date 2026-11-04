@@ -11,6 +11,7 @@ Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, co
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { renderHook, cleanup, act } = await import('@testing-library/react');
 const require = createRequire(import.meta.url);
+const { SILENT_WAV } = require('../../lib/unipack/testUtils.ts');
 const stub = (path, exports) => {
   const id = require.resolve(path);
   require.cache[id] = { id, filename: id, loaded: true, exports };
@@ -85,7 +86,7 @@ async function mount({ autoPlay = 'd 10000\no 1 1\nf 1 1', led = 'o 1 1 a 5\nd 1
   const zip = new JSZip();
   zip.file('info', `title=Transitions\nproducerName=Test\nbuttonX=2\nbuttonY=${buttonY}\nchain=3\nsquareButton=true`);
   zip.file('keySound', keySound ?? `1 1 1 a.wav${wormhole ? ' 1 2' : ''}\n1 1 2 a.wav\n2 1 1 a.wav\n3 1 1 a.wav`);
-  zip.file('sounds/a.wav', new Uint8Array([0x52, 0x49, 0x46, 0x46]));
+  zip.file('sounds/a.wav', SILENT_WAV);
   for (const [name, content] of Object.entries(leds)) zip.file(`keyLED/${name}`, content);
   zip.file('autoPlay', autoPlay);
   const data = await zip.generateAsync({ type: 'arraybuffer' });

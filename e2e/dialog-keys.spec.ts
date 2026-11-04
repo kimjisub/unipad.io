@@ -16,7 +16,7 @@ const probe = (page: Page) => page.evaluate(() => ({
 async function load(page: Page, baseURL: string | undefined, locale: string, pack: string) {
   await page.context().addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL }]);
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve(pack));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve(pack));
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.browserProbe.midi.requests.length)).toBe(1);

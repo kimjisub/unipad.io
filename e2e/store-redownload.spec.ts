@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { connectStore } from './database';
-import { savedRecords, type SavedRecord } from './saved-packs';
+import { savedRecords, expectSavedPackCount, type SavedRecord } from './saved-packs';
 
 const STORE_CODE = 'browser-test';
 const PACK_NAME = 'Browser Test Pack by UniPad Tests';
@@ -27,9 +27,9 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
   await page.route('**/api/store/download?**', route => route.fulfill({ body: pack, contentType: 'application/zip' }));
   await page.goto('/play');
   await database.publish(1);
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
-  await expect.poll(async () => (await savedRecords(page)).length).toBe(1);
+  await expectSavedPackCount(page, 1);
   await page.goto('/play');
   await expect(page.getByRole('option', { name: PACK_NAME, exact: true })).toBeVisible();
   await page.evaluate(storeCode => new Promise<void>((resolve, reject) => {

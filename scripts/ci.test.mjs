@@ -53,13 +53,31 @@ test('Linux runs playback, offline, sound, multi-touch and layout tests in Chrom
   const workflow = read('.github/workflows/ci.yml');
   const readme = read('README.md');
   const browser = job(workflow, 'browser-playback');
+  const command = browser.split('\n').find(line => /^\s+run: pnpm test:e2e --project=chromium\s/.test(line));
+  assert.ok(command, 'Browser playback tests must have a Chromium test command');
+  const files = command.trim().split(/\s+/).slice(4);
+  assert.deepEqual(files, [
+    'e2e/play.spec.ts',
+    'e2e/offline-play.spec.ts',
+    'e2e/sound-formats.spec.ts',
+    'e2e/socket-failure-record.spec.ts',
+    ...playbackFiles.filter(file => file !== 'play.spec.ts').map(file => `e2e/${file}`),
+  ], 'Browser playback tests must run all nine spec files in order');
+  const description = readme.match(/\*\*Browser playback tests\*\* job\b([\s\S]*?)\bin Chromium;/);
+  assert.ok(description, 'README must describe the Browser playback tests job');
+  const documentedFiles = [...description[1].matchAll(/`(e2e\/[^`]+\.spec\.ts)`/g)].map(match => match[1]);
+  assert.deepEqual(documentedFiles, files, 'README must list the Browser playback tests spec files in execution order');
+  for (const spec of files) assert.ok(read(spec), `${spec} must exist`);
   assert.doesNotMatch(job(workflow, 'checks'), /playwright|test:e2e/);
+  assert.match(browser, /runs-on: ubuntu-24\.04/);
+  assert.match(browser, /timeout-minutes: 20/);
+  assert.doesNotMatch(browser, /--with-deps|install-deps|apt-get|apt install/, 'playback setup must not depend on Ubuntu package downloads');
   assert.match(browser, /NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https:\/\/unipad-browser-test\.firebaseio\.com'/);
   const steps = [
     `uses: ${setupAction}`,
-    'run: pnpm exec playwright install --with-deps chromium',
+    'run: pnpm exec playwright install chromium',
     'run: pnpm build',
-    'run: pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts',
+    command.trim(),
     'uses: actions/upload-artifact@',
   ];
   let position = -1;
@@ -70,12 +88,6 @@ test('Linux runs playback, offline, sound, multi-touch and layout tests in Chrom
   }
   assert.match(browser, /if: failure\(\)\n\s+uses: actions\/upload-artifact@/);
   for (const folder of ['playwright-report/', 'test-results/']) assert.ok(browser.includes(folder), `${folder} must be uploaded`);
-  const command = browser.split('\n').find(line => line.includes('run: pnpm test:e2e'));
-  assert.ok(command, 'Linux browser test command must exist');
-  for (const file of [...playbackFiles, 'offline-play.spec.ts', 'sound-formats.spec.ts']) {
-    assert.ok(command.includes(`e2e/${file}`), `Linux must run ${file}`);
-    assert.ok(read(`e2e/${file}`), `${file} must exist`);
-  }
   assert.ok(readme.indexOf('pnpm test:e2e') > readme.indexOf('pnpm build'));
 });
 
@@ -92,6 +104,17 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   const { windowsPlaybackTests } = await import('../playwright.config.ts');
   assert.deepEqual(windowsPlaybackTests, playbackFiles);
   assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);
+});
+
+test('Windows gives the browsers a verified audio output before the playback tests', () => {
+  const windows = read('.github/workflows/playback-windows.yml');
+  const audio = windows.indexOf('name: Add a virtual audio output');
+  assert.ok(audio >= 0, 'Windows must add an audio output: hosted runners have none and Firefox then never starts Web Audio');
+  assert.ok(audio < windows.indexOf('run: pnpm exec playwright test'), 'the audio output must exist before the tests start');
+  const step = windows.slice(audio, windows.indexOf('\n      - ', audio));
+  assert.match(step, /Get-FileHash .* -Algorithm SHA256\)\.Hash -ne '[0-9A-F]{64}'/, 'the downloaded driver must match a recorded SHA-256');
+  assert.match(step, /Start-Service audiosrv/);
+  assert.match(step, /throw 'No audio output device is available'/);
 });
 
 test('WebKit and Firefox include the shared playback tests', async () => {
