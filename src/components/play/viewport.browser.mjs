@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertReachable, hitReport, still } from './hitTarget.testUtils.mjs';
+import { assertReachable, hitReport, notAtRest } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -68,19 +68,31 @@ const until = async expression => {
 };
 // Require a real hit target after scrolling, rather than a programmatic click on
 // an invisible/clipped button. This catches both overflow and covering overlays.
-const tap = async expression => {
-  const report = await run(`(() => {
-    const e = ${expression}; if (!e) throw Error('Target missing');
-    // Scroll only areas the user can scroll. scrollIntoView would also scroll
-    // overflow:hidden ancestors and conceal the original store clipping bug.
-    for (let parent=e.parentElement; parent; parent=parent.parentElement) {
-      if (!['auto','scroll'].includes(getComputedStyle(parent).overflowY)) continue;
-      const r=e.getBoundingClientRect(), bounds=parent.getBoundingClientRect();
-      if (r.bottom>bounds.bottom) parent.scrollTop+=r.bottom-bounds.bottom;
-      if (r.top<bounds.top) parent.scrollTop-=bounds.top-r.top;
-    }
-    return ${hitReport('e')};
-  })()`);
+// With `atRest`, the control is pressed only once it is at rest (see notAtRest), checked in the
+// same reading that measures it; a scroll this makes to bring it into view is waited out too.
+const tap = async (expression, { atRest = false } = {}) => {
+  let report;
+  for (let attempt = 0; ; attempt++) {
+    report = await run(`(async () => {
+      const e = ${expression}; if (!e) throw Error('Target missing');
+      ${atRest ? `const reason = await ${notAtRest('e')}; if (reason) return { notAtRest: reason };` : ''}
+      // Scroll only areas the user can scroll. scrollIntoView would also scroll
+      // overflow:hidden ancestors and conceal the original store clipping bug.
+      let scrolled = false;
+      for (let parent=e.parentElement; parent; parent=parent.parentElement) {
+        if (!['auto','scroll'].includes(getComputedStyle(parent).overflowY)) continue;
+        const r=e.getBoundingClientRect(), bounds=parent.getBoundingClientRect(), top=parent.scrollTop;
+        if (r.bottom>bounds.bottom) parent.scrollTop+=r.bottom-bounds.bottom;
+        if (r.top<bounds.top) parent.scrollTop-=bounds.top-r.top;
+        if (parent.scrollTop !== top) scrolled = true;
+      }
+      ${atRest ? `if (scrolled) return { notAtRest: 'scrolled into view by the test' };` : ''}
+      return ${hitReport('e')};
+    })()`);
+    if (!report.notAtRest) break;
+    if (attempt === 59) throw new Error(`Not at rest (${report.notAtRest}): ${expression}`);
+    await wait(250);
+  }
   await assertReachable({ report, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
   const { point } = report;
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
@@ -176,10 +188,9 @@ try {
     }
     await tap(button('Store'));
     await until(`document.querySelectorAll('[data-store-code]').length===12`);
-    // As the list appears its rows fade in and it scrolls itself to the chosen pack; a press
-    // released after the row has moved goes to the row, not to the control that was pressed.
-    await until(still(`document.querySelector('[data-store-code="viewport-11"]')`));
-    await tap(`document.querySelector('[data-store-code="viewport-11"]')`);
+    // The list's rows fade in as it appears; a press released after the row has moved goes to
+    // the row's parent, not to the row.
+    await tap(`document.querySelector('[data-store-code="viewport-11"]')`, { atRest: true });
     await wait(400);
     await tap(`document.querySelector('[role="dialog"] h3')`);
     await snapshot(`detail-${scenarioIndex}`);
@@ -191,8 +202,9 @@ try {
     await until(`!document.querySelector('[role="dialog"]')`);
     await tap(button('Store'));
     await until(`document.querySelector('[data-store-code="viewport-11"]')?.textContent.includes('Play')`);
-    await until(still(`document.querySelector('[data-store-code="viewport-11"] button:last-child')`));
-    await tap(`document.querySelector('[data-store-code="viewport-11"] button:last-child')`);
+    // Reopened, the list fades in again and scrolls itself to the pack chosen before; a press
+    // released after Play has moved goes to the row, which only selects the pack.
+    await tap(`document.querySelector('[data-store-code="viewport-11"] button:last-child')`, { atRest: true });
     await until(`document.querySelectorAll('[data-pad]').length===64`);
     console.log('PASS:', portrait ? 'portrait prompt and store' : '64 pad presses, controls and menu', 'store last item, detail, local download and close', size || 'native viewport');
     scenarioIndex++;

@@ -81,28 +81,53 @@ export async function assertReachable({ report, target, label, dir, run, command
 }
 
 /**
- * A page expression that resolves true when `target` is at rest: neither it nor an ancestor is
- * faded or has an animation running or waiting to start, and it is at the same place in the
- * viewport at the start and the end of `ms` milliseconds.
+ * A page expression for `target` (a page expression itself, as for `hitReport`) resolving to null
+ * once it is at rest, or else to why it is not: missing, faded or animating (it or an ancestor is
+ * not fully shown, or has an animation running or waiting to start), scrolled (anything on the
+ * page scrolled meanwhile), moved, or no frame drawn. At rest also needs at least `frames` drawn
+ * frames and `ms` milliseconds over which nothing scrolled and the target kept its place.
  * A press is only whole when the target stays under the pointer from press to release; if it
  * moves away in between, the browser sends the click to whatever holds both points (a list row,
  * say), not to the target. Rows fading in and a list scrolling itself to a selection both move a
- * target with no input. The scroll is not an animation `getAnimations` reports, so the place is
- * read twice; the fade is required to have ended first because a busy page can hold every motion
- * back for longer than `ms`, before any of it starts.
+ * target with no input. A scroll the browser animates reaches the page only when a frame is drawn,
+ * so on a busy page two readings a timer apart can match while the scroll is half done; the
+ * readings here are taken at drawn frames, and any scroll event in between counts.
  * @param {string} target
- * @param {number} [ms]
+ * @param {{ ms?: number, frames?: number }} [options]
  */
-export const still = (target, ms = 200) => `(async () => {
+export const notAtRest = (target, { ms = 200, frames = 3 } = {}) => `(async () => {
+  const brief = e => e === document ? 'document' : e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + [...e.attributes]
+    .filter(a => a.name === 'role' || a.name.startsWith('data-')).map(a => '[' + a.name + '=' + JSON.stringify(a.value.slice(0, 40)) + ']').join('');
   const place = () => {
     const subject = ${target};
-    if (!subject) return null;
-    for (let p = subject; p; p = p.parentElement)
-      if (getComputedStyle(p).opacity !== '1' || p.getAnimations().some(a => a.pending || a.playState === 'running')) return null;
-    return JSON.stringify(subject.getBoundingClientRect());
+    if (!subject) return { reason: 'missing' };
+    for (let p = subject; p; p = p.parentElement) {
+      const opacity = getComputedStyle(p).opacity;
+      if (opacity !== '1') return { reason: 'faded: ' + brief(p) + ' opacity ' + opacity };
+      if (p.getAnimations().some(a => a.pending || a.playState === 'running')) return { reason: 'animating: ' + brief(p) };
+    }
+    return { at: JSON.stringify(subject.getBoundingClientRect()) };
   };
-  const before = place();
-  if (!before) return false;
-  await new Promise(resolve => setTimeout(resolve, ${ms}));
-  return place() === before;
+  const first = place();
+  if (first.reason) return first.reason;
+  let scrolled = null;
+  const onScroll = event => { scrolled = scrolled || brief(event.target); };
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+  try {
+    const start = performance.now();
+    for (let drawn = 0; drawn < ${frames} || performance.now() - start < ${ms}; drawn++) {
+      const frame = await Promise.race([
+        new Promise(resolve => requestAnimationFrame(() => resolve(true))),
+        new Promise(resolve => setTimeout(() => resolve(false), 1000)),
+      ]);
+      if (!frame) return 'no frame drawn for 1 s';
+      if (scrolled) return 'scrolled: ' + scrolled;
+      const now = place();
+      if (now.reason) return now.reason;
+      if (now.at !== first.at) return 'moved';
+    }
+    return null;
+  } finally {
+    removeEventListener('scroll', onScroll, { capture: true });
+  }
 })()`;
