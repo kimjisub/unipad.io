@@ -376,9 +376,11 @@ visit starts with `?no_analytics=1` (use `&no_analytics=1` after other parameter
 The marker is remembered in `sessionStorage` for that tab, including full document
 navigation to URLs without the marker, for the lifetime of that page session. If
 the browser denies session storage, the marker still works on the current document;
-keep the marker on subsequent URLs in that case. Existing other tabs and ordinary visits
-are unaffected. Events remain queued in `dataLayer` for playback checks, while
-`ga-disable-<measurement ID>` prevents transmission before the first config,
+keep the marker on subsequent URLs in that case. Existing independent tabs and
+ordinary visits are unaffected. Duplicating the marked tab or opening a new tab
+from it can copy the session storage and its opt-out. Events remain queued in
+`dataLayer` for playback checks, while `ga-disable-<measurement ID>` prevents
+transmission before the first config,
 including when Firebase returns a different measurement ID from the build config.
 The initial marked URL and its queued page path keep the marker; those events are
 not transmitted. Subsequent internal URLs need not carry it.
@@ -387,11 +389,14 @@ not transmitted. Subsequent internal URLs need not carry it.
 common browser fixture, it downloads and executes Google's actual tag script for
 an unused test measurement ID, so running this file requires access to the tag
 script host. Firebase replies are local, and the tag's collection transport points
-to a local HTTP server that stays alive through page close. The ordinary-visit
-control shadows only `navigator.webdriver` before application code, and must
+to a separate local HTTP server per test that stays alive through page and context
+close. Late requests from an earlier test cannot enter another test's collector.
+The ordinary-visit control shadows only `navigator.webdriver` before application code, and must
 produce page-view deliveries with the same tag and collector. Independent native
-`pagehide` beacon and keepalive probes must reach that collector when the page
-closes, proving that the observation path remains alive during teardown.
+`pagehide` probes prove that the observation path remains alive during navigation
+and page close. The test polls for both beacon and keepalive deliveries on Firefox
+and WebKit. Chromium can drop the beacon on page close, so its required signal is
+the keepalive delivery; both probe results remain in every test's attachment.
 Both opt-out conditions must deliver zero requests, including after full
 navigation without the marker. This checks real tag execution rather than
 counting requests blocked by Playwright routing. Vercel Analytics and Firebase
