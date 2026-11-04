@@ -3,10 +3,12 @@
 // CDP_URL=http://localhost:9222 PLAYER_URL=http://localhost:3000/play \
 // SCREENSHOT_DIR=/path/to/evidence node src/components/play/mainScreenViewport.browser.mjs
 // Uses only the existing jszip dependency and Node's native WebSocket.
+// A control that cannot be hit leaves unreachable-N.json and a screenshot in SCREENSHOT_DIR.
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertReachable, hitReport } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -70,9 +72,9 @@ const geometry = expression => run(`(() => {
     if (s.overflowY !== 'visible') { top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom); }
     if (s.overflowX !== 'visible') { left = Math.max(left, b.left); right = Math.min(right, b.right); }
   }
-  const x = r.left + r.width / 2, y = r.top + r.height / 2;
-  const hit = document.elementFromPoint(x, y);
-  return { reachable: r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1 && !!hit && (e === hit || e.contains(hit)), rect: r.toJSON(), x, y };
+  const clip = { top, bottom, left, right };
+  const hit = ${hitReport('e')};
+  return { ...hit, reachable: r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1 && hit.reachable, clip, rect: r.toJSON(), ...hit.point };
 })()`);
 // Only real wheel input at the nearest user-scrollable area is allowed.
 // Never use click(), force, focus(), scrollIntoView or scroll hidden ancestors.
@@ -94,7 +96,7 @@ const reach = async expression => {
     await wait(120);
   }
   const g = await geometry(expression);
-  assert.equal(g.reachable, true, `Target clipped or covered: ${expression} ${JSON.stringify(g)}`);
+  await assertReachable({ report: g, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
   return g;
 };
 const tap = async expression => {
