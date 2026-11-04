@@ -334,3 +334,43 @@ test('a replaced pack discards an in-flight sound buffer when decoding settles a
     assert.equal(bytes.byteLength, 0, 'late decoding still releases its exclusively owned encoded bytes');
   } finally { await run.finish(); }
 });
+
+test('the inspection worker discards its copy of a sound once it has read it', async () => {
+  const previousSelf = globalThis.self;
+  const responses = [];
+  globalThis.self = { postMessage: response => responses.push(response) };
+  try {
+    await import('./audioInspection.worker.ts');
+    const copy = wave({ frames: 8000, mark: 1 });
+    const bytes = copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength);
+    globalThis.self.onmessage({ data: { id: 7, bytes } });
+    assert.equal(responses.length, 1);
+    assert.equal(responses[0].id, 7);
+    assert.notEqual(responses[0].inspection, null);
+    assert.equal(bytes.byteLength, 0, 'the worker no longer holds the sound until it is collected');
+  } finally { globalThis.self = previousSelf; }
+});
+
+test('a worker that fails after discarding its copies leaves every sound loadable from the page', async () => {
+  const { createAudioInspector } = await import('./audioInspectionWorker.ts');
+  const previousWorker = globalThis.Worker;
+  const previousWarn = console.warn;
+  console.warn = () => {};
+  globalThis.Worker = class {
+    postMessage({ bytes }) {
+      const copied = structuredClone(bytes);
+      queueMicrotask(() => { copied.transfer(0); this.onerror({ preventDefault() {}, message: 'worker crashed' }); });
+    }
+    terminate() {}
+  };
+  const pack = await parseUniPack(await packZip({ info: INFO, keySound: '1 1 1 a.wav\n1 1 2 b.wav',
+    'sounds/a.wav': wave({ frames: 8000, mark: 1 }), 'sounds/b.wav': wave({ frames: 8000, mark: 2 }) }));
+  const decoded = fakeAudio();
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const inspector = createAudioInspector();
+  try {
+    const report = await engine.load(inspector);
+    assert.deepEqual([report.loadedFiles, report.failures], [2, []]);
+    assert.deepEqual(decoded.sort(), [1, 2]);
+  } finally { inspector.close(); engine.destroy(); globalThis.Worker = previousWorker; console.warn = previousWarn; }
+});

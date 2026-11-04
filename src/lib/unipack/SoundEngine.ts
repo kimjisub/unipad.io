@@ -144,13 +144,13 @@ export class SoundEngine {
    * Admits the pack's sound files under the shared limits, then decodes only the admitted ones. The
    * whole selection is made before any decoding, so a file that fails to decode keeps its reservation
    * and never lets a later file in. This consumes the pack's encoded sound buffers: excluded files are discarded before decoding,
-   * and admitted files are discarded when their decode settles. Caller-provided aliases stay intact.
+   * and admitted files are discarded when their decode settles. A buffer listed under more than one file is not discarded.
    */
   async load(inspector: AudioInspector = INLINE_AUDIO_INSPECTOR): Promise<SoundLoadReport> {
     if (this.loaded || this.destroyed) return EMPTY_SOUND_LOAD_REPORT;
 
     const { soundTable, soundFiles, info } = this.unipack;
-    // Parsed files own independent buffers. Keep caller-provided aliases readable.
+    // Parsed files own independent buffers; a buffer listed twice is left readable for its other file.
     const seen = new Set<ArrayBuffer>();
     const sharedBuffers = new Set<ArrayBuffer>();
     for (const bytes of soundFiles.values()) {
@@ -205,7 +205,7 @@ export class SoundEngine {
           // destroy() clears the map while a native decode can still be pending.
           const bytes = soundFiles.get(file);
           let reason;
-          try { reason = await this.decode(file); }
+          try { reason = await this.decode(file, bytes); }
           finally { discardSound(file, bytes); }
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
@@ -238,8 +238,7 @@ export class SoundEngine {
   }
 
   /** Pass the original bytes; WebKit may copy them internally. The caller discards them on settlement. */
-  private async decode(file: string): Promise<'decode' | 'memory' | null> {
-    const bytes = this.unipack.soundFiles.get(file);
+  private async decode(file: string, bytes: ArrayBuffer | undefined): Promise<'decode' | 'memory' | null> {
     try {
       const buffer = await this.audioContext.decodeAudioData(bytes!);
       if (!this.destroyed) this.bufferCache.set(file, buffer);

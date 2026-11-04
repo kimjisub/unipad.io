@@ -259,3 +259,50 @@ for (const [name, update] of [
     assert.deepEqual(db.archiveAccesses(), { reads: 0, writes: 0 });
   });
 }
+
+test('reading a chunked archive discards each stored chunk once it is copied', async (t) => {
+  const chunkBytes = 8 * 1024 * 1024;
+  const source = new Uint8Array(chunkBytes + 3);
+  for (let i = 0; i < source.length; i++) source[i] = (i * 7) % 251;
+  const chunks = [source.slice(0, chunkBytes).buffer, source.slice(chunkBytes).buffer];
+  const { zipData: _zipData, ...metadata } = original;
+  void _zipData;
+  const records: Record<string, (key: unknown) => unknown> = {
+    unipacks: () => ({ id: original.id, format: 'chunks-v1', byteLength: source.length, chunkCount: chunks.length }),
+    unipackMetadata: () => structuredClone(metadata),
+    // Chunks are handed over as read so the test can see whether the reader kept them.
+    unipackChunks: key => ({ data: chunks[(key as [string, number])[1]] }),
+  };
+  const db = {
+    close() {},
+    transaction() {
+      let outstanding = 0;
+      const transaction = {
+        error: null,
+        oncomplete: undefined as (() => void) | undefined,
+        onabort: undefined as (() => void) | undefined,
+        abort() { setImmediate(() => transaction.onabort?.()); },
+        objectStore(name: string) {
+          return {
+            get(key: unknown) {
+              const request: Request = {};
+              outstanding++;
+              setImmediate(() => {
+                request.result = records[name](key);
+                request.onsuccess?.();
+                if (--outstanding === 0) setImmediate(() => { if (outstanding === 0) transaction.oncomplete?.(); });
+              });
+              return request;
+            },
+          };
+        },
+      };
+      return transaction;
+    },
+  };
+  installDB(t, { factory: { open() { const request: Request = { result: db }; setImmediate(() => request.onsuccess?.()); return request; } } as unknown as IDBFactory } as ReturnType<typeof fakeIndexedDB>);
+  const saved = await getUniPack(original.id);
+  assert.ok(saved);
+  assert.ok(Buffer.from(saved.zipData).equals(Buffer.from(source)));
+  assert.deepEqual(chunks.map(chunk => chunk.byteLength), [0, 0]);
+});

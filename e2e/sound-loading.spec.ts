@@ -210,9 +210,16 @@ test('an imported archive is released during decoding and freshly read for savin
 test('an unreadable import source keeps playing and can be imported again', async ({ page }) => {
   await page.addInitScript(() => {
     const read = File.prototype.arrayBuffer;
-    let reads = 0;
-    File.prototype.arrayBuffer = function () {
-      if (++reads === 2) return Promise.reject(new DOMException('Source file disappeared', 'NotReadableError'));
+    // The first file read twice disappears on its second read (for saving); other reads are untouched.
+    const reads = new WeakMap<File, number>();
+    let failed = false;
+    File.prototype.arrayBuffer = function (this: File) {
+      const count = (reads.get(this) ?? 0) + 1;
+      reads.set(this, count);
+      if (count === 2 && !failed) {
+        failed = true;
+        return Promise.reject(new DOMException('Source file disappeared', 'NotReadableError'));
+      }
       return Reflect.apply(read, this, []);
     };
   });
