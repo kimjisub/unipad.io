@@ -40,6 +40,24 @@ test('a seed whose write fails records the record it was writing', async ({ page
   expect(report).toMatchObject({ ok: false, upgradeEntered: true, failure: { request: 'write', target: 'broken/x', name: 'DataError' } });
 });
 
+// The browser can abort the upgrade without the seed seeing a request fail (a quota error at commit). The open
+// request then only says AbortError, so the cause has to come from the transaction's own error.
+test('a seed whose upgrade the browser aborts records the abort cause, not AbortError', async ({ page }) => {
+  await page.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name !== 'aborted') return put.apply(this, args);
+      put.apply(this, args);
+      const duplicate = this.add(...args);
+      duplicate.addEventListener('error', event => event.stopImmediatePropagation());
+      return duplicate;
+    };
+  });
+  const report = await seedFailure(seedDatabase(page, 'seed-test', 1, [store('aborted', ['x'])]));
+  expect(report).toMatchObject({ ok: false, upgradeEntered: true, failure: { request: 'upgrade', name: 'ConstraintError' } });
+  expect(report.events.some(event => event.endsWith('upgrade aborted: ConstraintError'))).toBe(true);
+});
+
 // Firefox's quota manager cannot set up an origin whose storage folder is a file. The open then fails with the
 // same UnknownError that seeding once hit; the attached logs must carry Firefox's reason, not just the DOM name.
 test('Firefox storage failures leave the browser reason next to the seed failure', async ({ browserName, playwright, baseURL }, info) => {

@@ -60,7 +60,12 @@ export async function seedDatabase(page: Page, database: string, version: number
       report.upgradeEntered = true;
       note(`upgrade entered from v${event.oldVersion}`);
       const upgrade = open.transaction!;
-      upgrade.onabort = () => note(`upgrade aborted: ${upgrade.error?.name ?? 'no error'}`);
+      // A browser-started abort (a request error, a quota error at commit) carries its cause only here:
+      // the open request that settles afterwards reports a plain AbortError.
+      upgrade.onabort = () => {
+        note(`upgrade aborted: ${upgrade.error?.name ?? 'no error'}`);
+        if (upgrade.error) fail('upgrade', upgrade.error);
+      };
       upgrade.oncomplete = () => note('upgrade committed');
       try {
         for (const store of stores) {
