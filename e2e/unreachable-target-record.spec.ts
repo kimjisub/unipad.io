@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertReachable, hitReport } from '../src/components/play/hitTarget.testUtils.mjs';
+import { assertReachable, hitReport, settled } from '../src/components/play/hitTarget.testUtils.mjs';
 
 // The CDP size regressions (src/components/play/*.browser.mjs) refuse to press a control whose
 // centre is not its own. These cases check what such a failure leaves behind for diagnosis.
@@ -86,4 +86,45 @@ test('a reachable control passes and leaves no files', async ({ page }) => {
   expect(report).toMatchObject({ reachable: true, point: { x: 660.5, y: 272 }, hit: { tag: 'button' } });
   await assertReachable({ report, target: quit, label: 'Quit', dir, run, command });
   expect(await readdir(dir)).toEqual([]);
+});
+
+test('a caller that also checks clipping reads the target again with its own check', async ({ page }) => {
+  await page.setContent(menu(250));
+  const { run, command } = await cdp(page);
+  const clipped = { reachable: false, clip: { bottom: 260 } };
+
+  const failure = await assertReachable({ report: clipped, target: quit, label: 'Quit', dir, run, command, reread: async () => clipped })
+    .then(() => null, (error: Error) => error);
+  expect(failure?.message).toMatch(/^Target clipped or covered: Quit\n/);
+  // Without its own check, the second reading would see the button's centre and call it reachable.
+  const { record } = await failureFiles(dir);
+  expect(record.afterScreenshot).toEqual(clipped);
+});
+
+// The menu slides in from the right (OptionPanel's slide-in-right). The size regressions press
+// Quit only after `settled` is true, rather than after a fixed delay.
+const slidingMenu = (duration: string, inner = '') => `<body style="margin:0">
+  <style>
+    @keyframes slide-in { from { transform: translateX(280px); } to { transform: translateX(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <div role="dialog" style="position:fixed;right:0;top:0;bottom:0;width:280px;animation:slide-in ${duration} ease-out">
+    <div><button aria-label="Quit" style="position:absolute;left:40px;top:230px;width:121px;height:44px">Quit${inner}</button></div>
+  </div></body>`;
+
+test('a control is not settled while its menu is still sliding in, and is once the slide ends', async ({ page }) => {
+  await page.setContent(slidingMenu('1500ms'));
+  expect(await page.evaluate(settled(quit))).toBe(false);
+  // A press now would miss: the centre is still off to the right of where the button comes to rest.
+  const moving = await page.evaluate(hitReport(quit)) as { point: { x: number } };
+  expect(moving.point.x).toBeGreaterThan(660.5);
+
+  await expect.poll(() => page.evaluate(settled(quit)), { timeout: 5000 }).toBe(true);
+  expect(await page.evaluate(hitReport(quit))).toMatchObject({ reachable: true, point: { x: 620.5, y: 252 } });
+});
+
+test('an animation inside the control does not hold the wait, and a missing control is never settled', async ({ page }) => {
+  await page.setContent(slidingMenu('0s', '<span style="display:inline-block;animation:spin 1s linear infinite">.</span>'));
+  expect(await page.evaluate(settled(quit))).toBe(true);
+  expect(await page.evaluate(settled(`document.querySelector('button[aria-label="Close"]')`))).toBe(false);
 });
