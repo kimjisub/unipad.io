@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertReachable, hitReport } from './hitTarget.testUtils.mjs';
+import { assertReachable, hitReport, settled } from './hitTarget.testUtils.mjs';
 
 const endpoint = process.env.CDP_URL;
 const url = process.env.PLAYER_URL;
@@ -101,7 +101,7 @@ const reach = async expression => {
     await wait(120);
   }
   const g = await geometry(expression);
-  await assertReachable({ report: g, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command });
+  await assertReachable({ report: g, target: expression, label: expression, dir: process.env.SCREENSHOT_DIR, run, command, reread: () => geometry(expression) });
   return g;
 };
 const tap = async expression => {
@@ -125,6 +125,8 @@ const quit = async () => {
   }
   await tap(`document.querySelector('button[aria-label="Open menu"]')`);
   await until(`!!document.querySelector('[role="dialog"]')`);
+  // The menu slides in; on a busy machine the slide can start late, so wait for it to end.
+  await until(settled(button('Quit')));
   await tap(button('Quit'));
   await until(`!!${row} && !document.querySelector('[data-pad]')`);
 };
