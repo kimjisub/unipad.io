@@ -55,7 +55,7 @@ try {
     await context.addCookies([{ name: 'NEXT_LOCALE', value: locale, url: new URL(url).origin }]);
     if (['double-close', 'repeat-escape'].includes(process.env.REGRESSION_CASE)) await page.goto(new URL(url).origin);
     await page.goto(url);
-    await page.locator('input[accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+    await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
     await expect(page.locator('[data-pad]')).toHaveCount(64);
     await page.getByRole('button', { name: locale === 'en' ? 'Open menu' : '메뉴 열기', exact: true }).click();
     const settingsName = locale === 'en' ? 'Launchpad Settings' : '런치패드 설정';

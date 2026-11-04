@@ -146,12 +146,12 @@ try {
   await until(`location.href === 'about:blank'`);
   await command('Storage.clearDataForOrigin', { origin, storageTypes: 'indexeddb,local_storage' });
   await command('Page.navigate', { url });
-  await until(`!!document.querySelector('input[accept=".zip,.uni"]')`);
+  await until(`!!document.querySelector('input[data-unipack-import]')`);
   // Populate the native file input; every interaction after import is real input.
   await run(`(() => {
     const dt = new DataTransfer();
     dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(pack)}), c => c.charCodeAt(0))], 'viewport.uni'));
-    const input = document.querySelector('input[accept=".zip,.uni"]'); input.files = dt.files;
+    const input = document.querySelector('input[data-unipack-import]'); input.files = dt.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   await quit();

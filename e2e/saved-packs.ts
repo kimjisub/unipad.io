@@ -48,7 +48,7 @@ export async function expectSavedPackCount(page: Page, count: number) {
 /** Imports the fixture pack through the normal file input, waits until it is saved and opens `landing`. */
 export async function importSavedPack(page: Page, landing = '/') {
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
   await expectSavedPackCount(page, 1);
   await page.goto(landing);

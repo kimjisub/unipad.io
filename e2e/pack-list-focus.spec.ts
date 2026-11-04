@@ -6,7 +6,7 @@ import { reachable, resize } from './layout';
 for (const name of ['Play', 'Delete UniPack']) {
   test(`switching packs with arrow keys preserves focus on ${name}`, async ({ page }, testInfo) => {
     await importSavedPack(page, '/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+    await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
     await expectPads(page);
     await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
     await page.goto('/play');
@@ -35,7 +35,7 @@ test.describe('focused details on a short landscape screen', () => {
 
   test('switching packs keeps the tabbed YouTube link visible at 640x360', async ({ page, browserName }, testInfo) => {
     await importSavedPack(page, '/play');
-    await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+    await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
     await expectPads(page);
     await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
     await page.goto('/play');
