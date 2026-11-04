@@ -229,7 +229,28 @@ rather than waiting for a successful screen until the entire test times out.
 Restoration can briefly show the pack list while a local pack URL is still pending;
 a held native storage response covers that transition. A deliberately delayed native
 decode checks that opening still works beyond the former five-second assertion.
-Native multi-touch CDP tests remain Chromium-only.
+Native multi-touch CDP tests remain Chromium-only. The same A–G and I assertions
+also run in a separately labeled `DOM pointer supplement` group on every engine.
+Item H remains in the Chromium-only `chain-release.spec.ts` browser-touch tests.
+`e2e/pointer-touch.ts` dispatches untrusted PointerEvents to the original hit-test
+target, retaining that target for moves and releases to model capture. This checks
+the actual application listeners, pad lights and native Web Audio start/stop calls.
+It bypasses the browser's touch-to-pointer conversion, native capture, gesture
+arbitration and user activation. Multiple events run sequentially in one page task;
+they are not simultaneous hardware contacts. Unsupported browser-touch cases stay
+skipped in WebKit and Firefox; supplemental passes do not replace them or establish
+complete input compatibility. Each result records its input-evidence annotation.
+
+The seven `with 200% text` layout cases run in Chromium via `Page.setFontSizes` and
+in Firefox via launch preferences for both Korean and Western variable/monospace
+fonts. A separate probe requires a 32px initial font and an em media query based on
+that font, in Korean and English. Changing the root CSS alone would fail the latter.
+Only that test group changes Firefox's defaults; the default-text and scroll sweeps
+retain their existing settings. WebKit's browser-default-font cases stay skipped:
+Playwright exposes neither CDP nor an equivalent font preference for that engine.
+The existing root-CSS enlargement checks remain supplemental. Safari's mobile page
+zoom changes the page presentation on an iOS device; it is not evidence for Mac
+Safari default-font behavior at the specified desktop viewport sizes.
 On Windows, reproduce the smoke jobs with:
 
 ```bash
