@@ -140,9 +140,9 @@ for (const { value: profile } of LAUNCHPAD_PROFILE_OPTIONS) {
     await dialog.locator('select').selectOption(profile);
     await expect(dialog).toContainText(`Resolved Type: ${profile === 'auto' ? 'launchpad_x' : profile}`);
     await info.attach('selected-model', { body: await page.screenshot(), contentType: 'image/png' });
-    // The pads and the dialog update before the pack and the choice are saved, and the address
-    // names the pack only after its save; a reload before then reopens the list or drops the choice.
-    await expect(page).toHaveURL(/pack=.+/);
+    // The pads and the dialog update before the pack and the choice are saved; a reload before
+    // then reopens the list or drops the choice.
+    await expectSavedPlaybackPack(page);
     await expect.poll(() => storedSetting(page, 'midiProfile')).toBe(profile);
     await page.reload();
     await expectPads(page);
