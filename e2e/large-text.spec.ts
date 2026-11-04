@@ -4,8 +4,26 @@ import { reachable } from './layout';
 
 test.use({ locale: 'ko-KR' });
 
-/** Sets the browser's default font size to 200%, as the Chrome text size setting does. */
+// Launch settings are worker-scoped: extend only the enlarged-text tests instead
+// of changing an option inside describe (which Playwright rejects).
+const largeText = test.extend({
+  launchOptions: [async ({ launchOptions, browserName }, use) => {
+    await use(browserName === 'firefox' ? {
+      ...launchOptions,
+      firefoxUserPrefs: {
+        ...launchOptions.firefoxUserPrefs,
+        'font.size.variable.x-western': 32,
+        'font.size.monospace.x-western': 26,
+        'font.size.variable.ko': 32,
+        'font.size.monospace.ko': 26,
+      },
+    } : launchOptions);
+  }, { scope: 'worker' }],
+});
+
+/** Firefox receives its default sizes at launch; Chromium supports a per-page setting. */
 async function useLargeText(page: Page) {
+  if (page.context().browser()!.browserType().name() === 'firefox') return;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
 }
@@ -155,11 +173,22 @@ test.describe('scroll button settling', () => {
   }
 });
 
-test.describe('with 200% text', () => {
-  test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium can set the default font size');
+largeText.describe('with 200% text', () => {
+  largeText.skip(({ browserName }) => browserName === 'webkit', 'WebKit does not expose a browser default font size setting');
+
+  largeText('the browser default grows text and em media queries in Korean and English', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 800 });
+    await useLargeText(page);
+    for (const lang of ['ko', 'en']) {
+      await page.setContent(`<html lang="${lang}"><body>Default text</body></html>`);
+      expect(await page.locator('html').evaluate(el => getComputedStyle(el).fontSize), lang).toBe('32px');
+      // Root CSS injection cannot change this initial-font-size media query.
+      expect(await page.evaluate(() => matchMedia('(min-width: 20em)').matches), lang).toBe(false);
+    }
+  });
 
   for (const width of [320, 390, 680, 768]) {
-    test(`the footer web and install links are on screen and pressable at ${width}px`, async ({ page }) => {
+    largeText(`the footer web and install links are on screen and pressable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await useLargeText(page);
       await page.goto('/docs');
@@ -170,7 +199,7 @@ test.describe('with 200% text', () => {
     });
   }
 
-  test('the top bar items do not overlap and the last menu item can be reached on a short screen', async ({ page }) => {
+  largeText('the top bar items do not overlap and the last menu item can be reached on a short screen', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 360 });
     await useLargeText(page);
     await page.goto('/docs');
@@ -195,7 +224,7 @@ test.describe('with 200% text', () => {
   });
 
   for (const path of ['/notices', '/notices/v4-1-1-update']) {
-    test(`the notice date and tags do not widen the page at 320px on ${path}`, async ({ page }) => {
+    largeText(`the notice date and tags do not widen the page at 320px on ${path}`, async ({ page }) => {
       await page.setViewportSize({ width: 320, height: 800 });
       await useLargeText(page);
       await page.goto(path);
@@ -214,6 +243,7 @@ test.describe('with default text', () => {
     test(`the footer web and install links stay on one line at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/docs');
+      await expect(page.locator('html'), 'enlarged-text launch settings stay in their own group').toHaveCSS('font-size', '16px');
       await scrollToFooter(page);
       const boxes = await Promise.all(installLinks(page).map(link => link.boundingBox()));
       expect(new Set(boxes.map(box => Math.round(box!.y))).size, 'rows of links').toBe(1);
@@ -258,6 +288,10 @@ test.describe('the scroll-to-top button', () => {
     await scrollTo(page, await page.evaluate(() => document.documentElement.scrollHeight));
     expect(await page.evaluate(() => scrollY)).toBeGreaterThan(600);
     startScripts();
+    // Releasing requests starts downloading and executing the scripts. Keep that
+    // preparation out of the button assertion, without scrolling again after hydration.
+    await page.waitForLoadState('load');
+    expect(await page.evaluate(() => scrollY), 'the pre-script scroll position survives loading').toBeGreaterThan(600);
     await expect(page.getByRole('button', { name: 'Scroll to top' })).toBeVisible();
   });
 
