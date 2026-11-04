@@ -190,6 +190,9 @@ platform's own fix removes it.
   See [RESULTS.md](unipack-conformance/RESULTS.md#web-trailing-wait-fix-merged-2026-10-25)
   for the reviewed commit, observation counts, initial-timer shortening of up to 1 ms and other
   verification limits.
+  Android and then iOS have since moved to the 391-case current corpus copy, which the strict check
+  accepts; see [the Android move](unipack-conformance/RESULTS.md#android-copy-reference-moved-to-the-current-corpus-2026-10-31)
+  and [the iOS move](unipack-conformance/RESULTS.md#ios-copy-reference-moved-to-the-current-corpus-2026-11-04).
 - **KS-B08, KL-BE10: Android now stores the exact zero-based value `-2147483649`.**
   [unipad-android#303](https://github.com/kimjisub/unipad-android/pull/303) resolves the sound-loop
   and LED coordinate/chain storage differences. G6 already removed both old Android pins.
@@ -198,9 +201,9 @@ platform's own fix removes it.
   SHA256 `18a80808b9c032c288c4b4791bd6c967d446b21c3b08279d1e74728d315f0b97`.
   The 382-case G6 canonical corpus is unchanged; these historical snapshots do not establish current
   app compatibility. See [RESULTS.md](unipack-conformance/RESULTS.md#android-minimum-integer-storage-differences-resolved-2026-10-25).
-  Android and then iOS have since moved to the current corpus copy; see
-  [RESULTS.md](unipack-conformance/RESULTS.md#android-copy-reference-moved-to-the-current-corpus-2026-10-31)
-  and [RESULTS.md](unipack-conformance/RESULTS.md#ios-copy-reference-moved-to-the-current-corpus-2026-11-04).
+  Android and then iOS have since moved from these snapshots to the 391-case current corpus copy; see
+  [the Android move](unipack-conformance/RESULTS.md#android-copy-reference-moved-to-the-current-corpus-2026-10-31)
+  and [the iOS move](unipack-conformance/RESULTS.md#ios-copy-reference-moved-to-the-current-corpus-2026-11-04).
 - **Twelve G6 web playback differences matched their expectations at that revision.**
   RUN-G617 and RUN-G618 have since received corrected input-owned release expectations and are
   failed again before the input-owned release fix above. The following observation retains its original hash.

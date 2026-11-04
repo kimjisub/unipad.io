@@ -10,10 +10,19 @@ byte-identical to the 391-case canonical corpus, SHA256
 `42d01b37ec81facfa6f4acacec48fcccc19de07a` unchanged, `sync.mjs --check --require-current` accepts
 both app copies, and the copy comparison no longer warns that iOS is behind canonical.
 
-That iOS commit runs all 391 cases through its own code and reports them all passing. The eight
-`screenInputs` cases drive the play screen's view model input path rather than real touches; real
-touches are covered by the iOS playback UI tests. No corpus input, expected value or failure
-observation changes here.
+This entry records that the copy matches; it does not record a new iOS result for every case. The
+391 / 391 pass in the iOS pull request was a local run on its head commit
+`ce67d4b3c60c7aebdd6ed4731c85dca841c8347c`, on a case-sensitive volume. The squash merge
+`1754b9a…` also carries a play screen view model change merged to iOS main in between, so four
+files differ from that head, including `unipad/ViewModels/PlayViewModel.swift`. At the merge
+commit, iOS CI (`Build and unit tests`) passed with 927 tests passed, 0 failed and 25 skipped; its
+runner is not case-sensitive, so the case-sensitive file tests were skipped there, and it does not
+report a per-case count. In the corpus, KS-G617, KS-G618 and KS-G619 stay unobserved on iOS, and
+`report.mjs` counts them as not confirmed on iOS.
+
+The eight `screenInputs` cases drive the play screen's view model input path rather than real
+touches; real touches are covered by the iOS playback UI tests. No corpus input, expected value or
+failure observation changes here.
 
 ## Android copy reference moved to the current corpus (2026-10-31)
 
