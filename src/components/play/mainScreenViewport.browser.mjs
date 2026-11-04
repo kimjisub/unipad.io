@@ -73,15 +73,20 @@ const geometry = expression => run(`(() => {
     if (s.overflowX !== 'visible') { left = Math.max(left, b.left); right = Math.min(right, b.right); }
   }
   const clip = { top, bottom, left, right };
+  const inside = r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1;
   const hit = ${hitReport('e')};
-  return { ...hit, reachable: r.width > 0 && r.height > 0 && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= left - 1 && r.right <= right + 1 && hit.reachable, clip, rect: r.toJSON(), ...hit.point };
+  return { ...hit, reachable: inside && hit.reachable, inside, clip, rect: r.toJSON(), ...hit.point };
 })()`);
 // Only real wheel input at the nearest user-scrollable area is allowed.
 // Never use click(), force, focus(), scrollIntoView or scroll hidden ancestors.
+// A control that is in view but covered, as by a dialog still fading out, is waited for and
+// never scrolled: the wheel would land once the cover is gone and move the control away
+// between press and release, sending the click to the panel instead.
 const reach = async expression => {
   for (let i = 0; i < 12; i++) {
     const g = await geometry(expression);
     if (g.reachable) return g;
+    if (g.inside) { await wait(120); continue; }
     const scroll = await run(`(() => {
       const e = ${expression}; if (!e) return null;
       for (let p = e.parentElement; p; p = p.parentElement) {
@@ -141,12 +146,12 @@ try {
   await until(`location.href === 'about:blank'`);
   await command('Storage.clearDataForOrigin', { origin, storageTypes: 'indexeddb,local_storage' });
   await command('Page.navigate', { url });
-  await until(`!!document.querySelector('input[accept=".zip,.uni"]')`);
+  await until(`!!document.querySelector('input[data-unipack-import]')`);
   // Populate the native file input; every interaction after import is real input.
   await run(`(() => {
     const dt = new DataTransfer();
     dt.items.add(new File([Uint8Array.from(atob(${JSON.stringify(pack)}), c => c.charCodeAt(0))], 'viewport.uni'));
-    const input = document.querySelector('input[accept=".zip,.uni"]'); input.files = dt.files;
+    const input = document.querySelector('input[data-unipack-import]'); input.files = dt.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   await quit();

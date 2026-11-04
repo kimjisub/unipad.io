@@ -29,7 +29,7 @@ for (let round = 0; round < 3; round++) {
       await writeFile(fixture, archive);
       await page.goto('/play');
       try {
-        await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(fixture);
+        await page.locator('input[data-unipack-import]').setInputFiles(fixture);
         await expectSavedPlaybackPack(page);
       } finally {
         await unlink(fixture);

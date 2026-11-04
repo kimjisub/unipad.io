@@ -17,7 +17,7 @@ export async function openBasicWith(page: Page, files: Record<string, string | U
   for (const path of remove) zip.remove(path);
   for (const [path, content] of Object.entries(files)) zip.file(path, content, { date });
   await page.goto('/play');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({
+  await page.locator('input[data-unipack-import]').setInputFiles({
     name: 'pack.uni', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }),
   });
   await expectPads(page);

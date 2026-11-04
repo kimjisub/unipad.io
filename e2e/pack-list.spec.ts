@@ -25,7 +25,7 @@ async function openList(page: Page, files: readonly PackFile[], beforeSavedUrl?:
   await test.step('Prepare saved pack list', async () => {
     await page.goto('/play');
     for (const [index, file] of files.entries()) {
-      await page.locator('input[type=file][accept=".zip,.uni"]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
+      await page.locator('input[data-unipack-import]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
       await expectPads(page);
       // Finish controlled-delay setup before starting the saved URL assertion's clock.
       await beforeSavedUrl?.();

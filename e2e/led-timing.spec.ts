@@ -100,7 +100,7 @@ async function playAutoPlay(page: Page, file: string | { name: string; mimeType:
   await recordMidiOutput(page);
   await page.goto('/play');
   test.skip(!await page.evaluate(() => window.browserProbe.midi.supported), 'Not applicable: this browser has no native Web MIDI API');
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(file);
+  await page.locator('input[data-unipack-import]').setInputFiles(file);
   await expect(page.locator('[data-pad]')).toHaveCount(64, { timeout: 120_000 });
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   // The Launchpad X mode switch, then the redraw of every LED once the connection reports itself.

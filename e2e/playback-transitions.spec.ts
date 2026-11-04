@@ -24,7 +24,7 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   for (const [name, content] of Object.entries(leds)) zip.file(`keyLED/${name}`, content);
   zip.file('autoPlay', autoPlay);
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
