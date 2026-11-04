@@ -293,7 +293,7 @@ for (const text of locales) {
     for (const viewport of scrollSwitchScreens) {
       test(`switching packs restores playback after scrolling at ${viewport.width}x${viewport.height}`, async ({ page, context }, testInfo) => {
         await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
-        await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
+        await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
         await expectPads(page);
         await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
         await page.goto('/play');

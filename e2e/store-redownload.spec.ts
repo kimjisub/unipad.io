@@ -27,7 +27,7 @@ async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
   await page.route('**/api/store/download?**', route => route.fulfill({ body: pack, contentType: 'application/zip' }));
   await page.goto('/play');
   await database.publish(1);
-  await page.locator('input[type=file][accept=".zip,.uni"]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+  await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
   await expectSavedPackCount(page, 1);
   await page.goto('/play');

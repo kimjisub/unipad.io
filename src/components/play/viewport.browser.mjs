@@ -110,14 +110,14 @@ try {
     }
     await command('Storage.clearDataForOrigin', { origin:new URL(url).origin, storageTypes:'indexeddb,local_storage' });
     await command('Page.navigate', { url });
-    await until(`!!document.querySelector('input[accept=".zip,.uni"]')`);
+    await until(`!!document.querySelector('input[data-unipack-import]')`);
     await run(`localStorage.setItem('store_items_cache_v1', JSON.stringify(Array.from({length:12},(_,i)=>({
       code:'viewport-'+i,title:'Local pack '+i,producerName:'CI',isLED:true,isAutoPlay:true,downloadCount:12-i
     })))); sessionStorage.removeItem('store_ui_pref_v1');`);
     await run(`(() => {
       const data=Uint8Array.from(atob(${JSON.stringify(pack)}),c=>c.charCodeAt(0));
       const dt=new DataTransfer(); dt.items.add(new File([data],'viewport.zip',{type:'application/zip'}));
-      const input=document.querySelector('input[accept=".zip,.uni"]'); input.files=dt.files;
+      const input=document.querySelector('input[data-unipack-import]'); input.files=dt.files;
       input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`);
     await until(`document.querySelectorAll('[data-pad]').length===64`);
@@ -136,7 +136,7 @@ try {
     if (portrait) {
       assert.equal(await run(`document.body.textContent.includes('Rotate to landscape')`), true, 'Existing portrait rotation prompt remains');
       await command('Page.navigate', { url });
-      await until(`!!document.querySelector('input[accept=".zip,.uni"]') && !document.querySelector('[data-pad]')`);
+      await until(`!!document.querySelector('input[data-unipack-import]') && !document.querySelector('[data-pad]')`);
     } else {
       for (let i=0;i<64;i++) await tap(`document.querySelectorAll('[data-pad]')[${i}]`);
       for (const label of ['Feedback', 'LED', 'Trace', 'Rec']) {
