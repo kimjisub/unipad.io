@@ -33,10 +33,10 @@ let prepared: PreparedContext | null = null;
 /**
  * Safari on iPhone and iPad starts an AudioContext only inside a tap or a click: not when a touch
  * begins and not when a long press ends. A pack's sounds are set up after its file is read, outside
- * the tap that opened it, so their context began suspended and every press stayed silent until the
- * player's first short tap, which itself was lost. Call this synchronously from the tap that opens
- * a pack (before any await): it starts the context the next pack takes and parks it suspended until
- * then. A context started once in a tap resumes later without one.
+ * the tap that opened it, and a context created there stays silent until the player's first short
+ * tap. Call this synchronously from the tap that opens a pack (before any await): it starts the
+ * context the next pack takes and parks it suspended until then. A context started once in a tap
+ * resumes later without one.
  */
 export function prepareAudioContext(): void {
   if (typeof AudioContext === 'undefined') return;
