@@ -197,8 +197,10 @@ test('an archive that cannot be read, dropped over a playing pack, shows the rea
   await loadPack(page, {});
   await expectSavedPlaybackPack(page);
   const count = countLoadFailures(page);
+  // The end-record signature passes the footer check, so the archive parser rejects it after the player closes.
   await page.locator('input[data-unipack-import]').setInputFiles({
-    name: 'broken.uni', mimeType: 'application/zip', buffer: Buffer.from('not a zip archive'),
+    name: 'broken.uni', mimeType: 'application/zip',
+    buffer: Buffer.concat([Buffer.from('not a zip archive'), Buffer.from([0x50, 0x4b, 0x05, 0x06])]),
   });
   try {
     await expect(loadError(page)).toBeVisible();

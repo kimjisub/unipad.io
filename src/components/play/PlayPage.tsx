@@ -48,6 +48,7 @@ import {
 } from '@/lib/store';
 import type { StoredUniPack, StoredTheme, StoredAutoPlay } from '@/lib/unipack';
 import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
+import { hasZipEndRecord } from '@/lib/unipack/zipPreflight';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
 // A previous page can still have an IndexedDB write in flight after navigation. Keep successful
@@ -173,6 +174,7 @@ export function PlayPage() {
   const storeDownloadAbortRef = useRef<AbortController | null>(null);
   const triedUrlPackRestoreRef = useRef(false);
   const packOpenRevisionRef = useRef(0);
+  const fileImportRequestRef = useRef<object | null>(null);
   /** The stored pack a retry after failed sounds opens again. */
   const retryPackIdRef = useRef<string | null>(null);
   const [dismissedSoundReport, setDismissedSoundReport] = useState<SoundLoadReport | null>(null);
@@ -348,12 +350,34 @@ export function PlayPage() {
     }
   }, [loadTheme, showToast, tToast]);
 
+  const checkImportArchive = useCallback(async (file: File, invalidMessage: 'notUniPackFile' | 'notThemeFile') => {
+    try {
+      if (await hasZipEndRecord(file)) return true;
+      showToast(tToast(invalidMessage));
+    } catch {
+      showToast(tToast('fileReadFailed'));
+    }
+    return false;
+  }, [showToast, tToast]);
+
   const handleImportFile = useCallback(
     async (file: File) => {
-      const isCurrent = beginPackOpen();
-      retryPackIdRef.current = null;
+      const request = {};
+      fileImportRequestRef.current = request;
+      const revision = packOpenRevisionRef.current;
+      if (!await checkImportArchive(file, 'notUniPackFile')) return;
+      // A footer read must not reopen a player the user quit or replaced while it waited.
+      const isCurrent = fileImportRequestRef.current === request && revision === packOpenRevisionRef.current
+        ? beginPackOpen() : () => false;
+      if (isCurrent()) retryPackIdRef.current = null;
       await resumeAudio();
-      const buffer = await file.arrayBuffer();
+      let buffer: ArrayBuffer;
+      try {
+        buffer = await file.arrayBuffer();
+      } catch {
+        showToast(tToast('fileReadFailed'));
+        return;
+      }
       // Until this import is saved, an auto mapping has no stored pack to go to.
       if (isCurrent()) currentPackIdRef.current = null;
       // Cancel opening the player, not importing the file into the library.
@@ -388,12 +412,19 @@ export function PlayPage() {
         /* storage error */
       }
     },
-    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme],
+    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme, checkImportArchive, showToast, tToast],
   );
 
   const handleImportThemeFile = useCallback(
     async (file: File) => {
-      const buffer = await file.arrayBuffer();
+      if (!await checkImportArchive(file, 'notThemeFile')) return;
+      let buffer: ArrayBuffer;
+      try {
+        buffer = await file.arrayBuffer();
+      } catch {
+        showToast(tToast('fileReadFailed'));
+        return;
+      }
       try {
         if (state.loaded) {
           await loadTheme(buffer);
@@ -411,7 +442,7 @@ export function PlayPage() {
         await setSetting('lastThemeId', '').catch(() => {});
       }
     },
-    [loadTheme, refreshLists, state.loaded, showToast, tToast],
+    [loadTheme, refreshLists, state.loaded, showToast, tToast, checkImportArchive],
   );
 
   const handlePlay = useCallback(
