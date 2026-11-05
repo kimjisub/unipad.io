@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
+import { packDisplayTitle } from '@/lib/unipack/packTitle';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
 import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
@@ -665,7 +666,7 @@ function PackDetailPanel({
 
         {/* Title area with marquee for long text */}
         <MarqueeText className="text-lg font-extrabold text-white text-center leading-tight tracking-tight">
-          {pack.title}
+          {packDisplayTitle(pack)}
         </MarqueeText>
         <MarqueeText className="text-xs text-white/45 mt-1 text-center">
           {pack.producerName}
@@ -830,7 +831,7 @@ function UnipackListItem({
         </div>
 
         <div className="flex-1 min-w-0 ml-3">
-          <div className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-white/85'}`}>{pack.title}</div>
+          <div className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-white/85'}`}>{packDisplayTitle(pack)}</div>
           <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
             <span className={`text-xs truncate ${isSelected ? 'text-white/45' : 'text-white/35'}`}>{pack.producerName}</span>
           </div>

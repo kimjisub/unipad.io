@@ -19,6 +19,7 @@ import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
   readUniPackMetadata,
+  packNameFromFileName,
   saveUniPack,
   saveStoreUniPack,
   getUniPack,
@@ -367,6 +368,7 @@ export function PlayPage() {
         const parsed = await readUniPackMetadata(buffer);
         const id = await saveUniPack(buffer, {
           ...parsed.info,
+          fileName: packNameFromFileName(file.name),
           keyLedExist: parsed.keyLedExist,
           autoPlayExist: parsed.autoPlayExist,
           soundCount: parsed.soundCount,
