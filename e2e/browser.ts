@@ -1,4 +1,7 @@
 import { test as base, expect, type Page } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { attachLogsSince, firefoxLogsEnabled, logOffsets, withFirefoxLogs } from './firefox-logs';
 
 export interface BrowserProbe {
   audio: { decoded: number[]; starts: { id: number; duration: number; loop: boolean }[]; stops: number[]; outputRms: () => number | null; outputState: () => string | null };
@@ -51,7 +54,22 @@ function collectPageErrors(page: Page): PageErrors {
   return collected;
 }
 
-export const test = base.extend<{ checkedPage: PageErrors }>({
+export const test = base.extend<{ checkedPage: PageErrors; firefoxLogsOnFailure: void }, { firefoxLogDir: string | undefined }>({
+  // One folder per worker: a worker launches one browser, and a failure starts the next worker.
+  firefoxLogDir: [async ({ browserName }, use, workerInfo) => {
+    if (!firefoxLogsEnabled(browserName)) return await use(undefined);
+    const dir = path.join(workerInfo.project.outputDir, 'firefox-logs', `worker-${workerInfo.workerIndex}`);
+    mkdirSync(dir, { recursive: true });
+    await use(dir);
+  }, { scope: 'worker' }],
+  launchOptions: [async ({ launchOptions, firefoxLogDir }, use) => {
+    await use(firefoxLogDir ? withFirefoxLogs(launchOptions, firefoxLogDir) : launchOptions);
+  }, { scope: 'worker' }],
+  firefoxLogsOnFailure: [async ({ firefoxLogDir }, use, info) => {
+    const since = firefoxLogDir ? logOffsets(firefoxLogDir) : undefined;
+    await use();
+    if (firefoxLogDir && since && info.status !== info.expectedStatus) await attachLogsSince(info, firefoxLogDir, since);
+  }, { auto: true }],
   checkedPage: [async ({ page, context, baseURL }, use) => {
     const collected = collectPageErrors(page);
     // Firebase analytics receives inert local responses so its installation

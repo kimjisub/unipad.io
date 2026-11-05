@@ -79,41 +79,69 @@ const scrollButtonSelector = 'button[aria-label="Scroll to top"]';
 /**
  * Lets scroll handlers apply placement, then observes an unchanged, fully visible
  * button (or absence) for longer than its 200ms exit animation. At least three
- * samples are required even when frames are far apart. Changes reset the interval,
- * without discarding samples in batches or making repeated driver round trips.
+ * samples are required. Samples come from display frames and from a short timer,
+ * because a busy machine can stop drawing frames for many seconds; a button that
+ * is still moving, or whose animation waits for a frame to start, never counts as
+ * at rest. Changes reset the interval, without discarding samples in batches or
+ * making repeated driver round trips.
  */
 async function waitForButtonAtRest(page: Page, top?: number) {
   return page.evaluate(({ selector, top }) => new Promise<{ signature: string; stableMs: number }>((resolve, reject) => {
     if (top !== undefined) window.scrollTo({ top, behavior: 'instant' });
     const read = () => [...document.querySelectorAll<HTMLElement>(selector)]
-      .map(button => `${button.style.bottom}/${getComputedStyle(button).transform}/${getComputedStyle(button).opacity}`)
+      .map(button => {
+        const style = getComputedStyle(button);
+        const moving = button.getAnimations().some(animation => animation.pending || animation.playState === 'running');
+        return `${button.style.bottom}/${style.transform}/${style.opacity}${moving ? '/moving' : ''}`;
+      })
       .join(' + ') || 'none';
-    const frames: string[] = [];
+    const recent: string[] = [];
     let stableSince = 0;
     let samples = 0;
+    let drawn = 0;
     let frame = 0;
-    const timeout = setTimeout(() => {
+    let timer = 0;
+    const stop = () => {
+      clearTimeout(timeout);
       cancelAnimationFrame(frame);
-      reject(new Error(`Scroll button did not settle at scroll ${scrollY}: ${frames.join(' | ')}`));
+      clearTimeout(timer);
+    };
+    const timeout = setTimeout(() => {
+      stop();
+      reject(new Error(`Scroll button did not settle at scroll ${scrollY} (${drawn} frames drawn): ${recent.join(' | ')}`));
     }, 15_000);
-    const step = () => {
+    /** Returns whether the button is at rest. */
+    const sample = () => {
       const current = read();
       const now = performance.now();
-      if (current !== frames.at(-1)) {
+      if (current !== recent.at(-1)) {
         stableSince = now;
         samples = 0;
       }
       samples++;
-      frames.push(current);
-      if (frames.length > 6) frames.shift();
-      if (samples >= 3 && now - stableSince >= 250 && (current === 'none' || /^[^+]*\/1$/.test(current))) {
-        clearTimeout(timeout);
+      recent.push(current);
+      if (recent.length > 6) recent.shift();
+      if (samples >= 3 && now - stableSince >= 250 && (current === 'none' || /^[^+]*\/none\/1$/.test(current))) {
+        stop();
         resolve({ signature: current, stableMs: now - stableSince });
-      } else {
-        frame = requestAnimationFrame(step);
+        return true;
       }
+      return false;
     };
-    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(step); });
+    const onFrame = () => {
+      drawn++;
+      if (!sample()) frame = requestAnimationFrame(onFrame);
+    };
+    const onTimer = () => {
+      if (!sample()) timer = window.setTimeout(onTimer, 50);
+    };
+    // The second frame comes after the scroll handlers' own frame callbacks have placed the button.
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        onFrame();
+        timer = window.setTimeout(onTimer, 50);
+      });
+    });
   }), { selector: scrollButtonSelector, top });
 }
 
@@ -135,6 +163,27 @@ test.describe('scroll button settling', () => {
       expect(result.signature === 'none').toBe(!present);
     });
   }
+
+  test('settles while the browser has stopped drawing frames', async ({ page }) => {
+    await page.setContent('<button aria-label="Scroll to top" style="bottom: 24px">Up</button>');
+    await page.evaluate(() => {
+      const request = window.requestAnimationFrame.bind(window);
+      let requests = 0;
+      // As on a busy machine whose browser draws nothing for longer than the settling deadline.
+      window.requestAnimationFrame = callback => ++requests <= 2 ? request(callback) : 0;
+    });
+    const result = await waitForButtonAtRest(page);
+    expect(result.signature).toBe('24px/none/1');
+    expect(result.stableMs).toBeGreaterThanOrEqual(250);
+  });
+
+  test('waits for an animation whose values already look at rest', async ({ page }) => {
+    await page.setContent('<button aria-label="Scroll to top" style="bottom: 24px">Up</button>');
+    const button = page.getByRole('button', { name: 'Scroll to top' });
+    await button.evaluate(el => { el.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 3_000 }); });
+    await waitForButtonAtRest(page);
+    expect(await button.evaluate(el => el.getAnimations().map(animation => animation.playState))).toEqual([]);
+  });
 
   for (const change of ['exit', 'appearance', 'opaque movement'] as const) {
     test(`waits for a delayed ${change}`, async ({ page }) => {

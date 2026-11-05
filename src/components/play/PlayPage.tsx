@@ -19,6 +19,8 @@ import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
 import {
   readUniPackMetadata,
+  packDisplayTitle,
+  packNameFromFileName,
   saveUniPack,
   saveStoreUniPack,
   getUniPack,
@@ -379,6 +381,7 @@ export function PlayPage() {
         const parsed = await readUniPackMetadata(archive);
         const id = await saveUniPack(archive, {
           ...parsed.info,
+          fileName: packNameFromFileName(file.name),
           keyLedExist: parsed.keyLedExist,
           autoPlayExist: parsed.autoPlayExist,
           soundCount: parsed.soundCount,
@@ -433,7 +436,7 @@ export function PlayPage() {
         const pack = await getUniPack(id);
         if (!isCurrent()) return null;
         if (!pack) return false;
-        setLoadingPackTitle(pack.title);
+        setLoadingPackTitle(packDisplayTitle(pack));
         // Recent-open history is best effort; a slow or failed write must not prevent playback.
         void updateUniPackLastOpened(id).catch(error => console.warn('Could not save recent pack history.', error));
         const opened = await loadUniPack(pack.zipData, pack.autoPlay, { releaseArchive: true });

@@ -23,6 +23,8 @@ export interface StoredUniPack {
   id: string;
   storeCode?: string;
   title: string;
+  /** Name of the file an imported pack came from, without its extension; absent for store downloads. */
+  fileName?: string;
   producerName: string;
   buttonX: number;
   buttonY: number;
@@ -201,6 +203,7 @@ export interface UniPackInfo {
   soundCount?: number;
   ledCount?: number;
   storeCode?: string;
+  fileName?: string;
 }
 
 function createUniPackRecord(zipData: ArrayBuffer, info: UniPackInfo): StoredUniPack {
@@ -209,6 +212,7 @@ function createUniPackRecord(zipData: ArrayBuffer, info: UniPackInfo): StoredUni
     id: `${info.title}_${now}`,
     storeCode: info.storeCode,
     title: info.title,
+    ...(info.fileName ? { fileName: info.fileName } : {}),
     producerName: info.producerName,
     buttonX: info.buttonX,
     buttonY: info.buttonY,

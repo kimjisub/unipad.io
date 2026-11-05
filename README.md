@@ -70,11 +70,14 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`, and `e2e/socket-failure-record.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
+`e2e/socket-failure-record.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+on Linux in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
-on Windows 2025 with Chromium and the installed Chrome and Edge channels;
+on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
 failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
@@ -251,10 +254,18 @@ Playwright exposes neither CDP nor an equivalent font preference for that engine
 The existing root-CSS enlargement checks remain supplemental. Safari's mobile page
 zoom changes the page presentation on an iOS device; it is not evidence for Mac
 Safari default-font behavior at the specified desktop viewport sizes.
+Windows Firefox reports the same explicit browser-touch skips as local Firefox;
+skipped tests are not evidence of that capability.
+On Linux, reproduce the browser job with:
+
+```bash
+pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts e2e/socket-failure-record.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts
+```
+
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
 node scripts/playback-summary.mjs
 ```
 
@@ -378,6 +389,21 @@ reader when rolling back other changes.
 `e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
 transaction interruption, retry, existing theme/settings preservation and pack
 reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+Its legacy database is written by `seedDatabase` (`e2e/storage-seed.ts`) on an
+empty page; when that fails, the test gets a `storage-seed-failure` attachment
+with the error name, the failing request (open, upgrade or write), whether the
+upgrade had started, and each request event with its time.
+
+Firefox runs write the browser's own storage logs under the result folder,
+`<output>/firefox-logs/worker-<n>/`: `firefox.moz_log` and
+`firefox.child-<n>.moz_log` (MOZ_LOG with `PageMessages`, which carries Firefox's
+`QM_TRY failure` storage reasons, plus `QuotaManager` and `IndexedDB` requests)
+and `stderr.log` (the browser's standard error). A failing Firefox test also gets
+the lines each log gained during that test as `firefox-log-*` attachments.
+`e2e/storage-seed.spec.ts` turns a real Firefox storage failure into an
+`UnknownError` and checks that the reason reaches those attachments. Set
+`E2E_FIREFOX_LOGS=0` to launch Firefox without the logs; Windows runs never write
+them.
 For an optional large-pack measurement on macOS or Linux, run after building:
 
 ```bash
