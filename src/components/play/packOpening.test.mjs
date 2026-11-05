@@ -443,7 +443,8 @@ test('a damaged store archive is rejected before replacing a saved copy or recor
 });
 
 const basicArchive = () => Uint8Array.from(readFileSync(new URL('../../../e2e/fixtures/basic.uni', import.meta.url))).buffer;
-const importFile = (view, file) => fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [file] } });
+// A chosen file always has a name; saving records it for packs without a title.
+const importFile = (view, file) => fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ name: 'pack.uni', ...file }] } });
 
 test('an import discards its first read before decoding and saves a fresh readable archive afterwards', async () => {
   const view = await mount();
