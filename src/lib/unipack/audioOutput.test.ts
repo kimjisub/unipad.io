@@ -125,3 +125,22 @@ test('a pack taking the context while it is being parked does not report an inte
   assert.equal(interruptions, 0, 'the parking suspension is ours, not an interruption');
   assert.equal(engine.context.state, 'running');
 });
+
+test('a context a tap started for a file that did not open is the one the next pack plays through', async t => {
+  const { made, tap, nextChange } = installWebKitContext(t);
+  const pack = await parseWithLeds({});
+  // The import button's tap; the chosen file is then rejected, so no pack takes the context.
+  tap(prepareAudioContext);
+  await nextChange(made[0], 'suspended');
+
+  tap(prepareAudioContext);
+  assert.equal(made.length, 1, 'the next opening tap reuses the context left by the rejected file');
+  await nextChange(made[0], 'suspended');
+
+  const running = nextChange(made[0], 'running');
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  t.after(() => engine.destroy());
+  assert.equal(made.length, 1, 'the pack plays through that context');
+  await running;
+  assert.equal(engine.context.state, 'running');
+});
