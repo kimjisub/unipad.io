@@ -97,7 +97,7 @@ export function PlayPage() {
     setMidiUiContext,
     setKeyboardBlocked,
     setVolumeLevel,
-    resumeAudio,
+    prepareAudio,
     startAutoMapping,
     restoreAutoPlay,
   } = useUniPadEngine();
@@ -350,7 +350,7 @@ export function PlayPage() {
     async (file: File) => {
       const isCurrent = beginPackOpen();
       retryPackIdRef.current = null;
-      await resumeAudio();
+      await prepareAudio();
       const buffer = await file.arrayBuffer();
       // Until this import is saved, an auto mapping has no stored pack to go to.
       if (isCurrent()) currentPackIdRef.current = null;
@@ -385,7 +385,7 @@ export function PlayPage() {
         /* storage error */
       }
     },
-    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme],
+    [beginPackOpen, loadUniPack, prepareAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const handleImportThemeFile = useCallback(
@@ -416,7 +416,7 @@ export function PlayPage() {
       const isCurrent = beginPackOpen();
       retryPackIdRef.current = id;
       try {
-        await resumeAudio();
+        await prepareAudio();
         if (!isCurrent()) return null;
         const pack = await getUniPack(id);
         if (!isCurrent()) return null;
@@ -441,7 +441,7 @@ export function PlayPage() {
         return isCurrent() ? false : null;
       }
     },
-    [beginPackOpen, loadUniPack, resumeAudio, syncPackUrl, rememberPack, applyLastTheme],
+    [beginPackOpen, loadUniPack, prepareAudio, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const getCodeFromUrl = useCallback((): string | null => {
@@ -1095,7 +1095,10 @@ export function PlayPage() {
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
           hasStoreUpdate={hasStoreUpdate}
-          onImport={() => fileInputRef.current?.click()}
+          onImport={() => {
+            void prepareAudio();
+            fileInputRef.current?.click();
+          }}
           onImportTheme={() => themeInputRef.current?.click()}
           onDeletePack={handleDeletePack}
           onDeleteTheme={handleDeleteTheme}

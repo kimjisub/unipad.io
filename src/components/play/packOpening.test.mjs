@@ -96,9 +96,9 @@ function useTestEngine() {
     await step('themeLoad', noop);
     if (isCurrent()) themes.push(data);
   }, []);
-  const resumeAudio = React.useCallback(() => step('resume', noop), []);
+  const prepareAudio = React.useCallback(() => step('resume', noop), []);
   engine = { state, unload, onQuit: engine?.onQuit };
-  return { state, loadUniPack, unload, loadTheme, resumeAudio, setMidiProfile: noop, setKeyboardBlocked: noop,
+  return { state, loadUniPack, unload, loadTheme, prepareAudio, setMidiProfile: noop, setKeyboardBlocked: noop,
     setMidiUiContext: context => { engine.onQuit = context.onQuit; } };
 }
 stub('./useUniPadEngine.ts', { useUniPadEngine: useTestEngine });
