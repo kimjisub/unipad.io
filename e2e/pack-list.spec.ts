@@ -113,16 +113,18 @@ for (const [method, ascending, titles] of sortCases) {
       return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
     });
     const expectedSettings = { sortMethod: method.toLowerCase(), sortOrder: String(ascending) };
+    const rowLabels = () => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')));
     await expect.poll(readSettings).toEqual(expectedSettings);
     for (const step of ['reload', 'reentry']) {
       if (step === 'reload') await page.reload();
       else { await page.goto('about:blank'); await page.goto('/play'); }
       await expect(list(page).getByRole('option')).toHaveCount(4);
-      await testInfo.attach(`${step}-list`, { body: await page.screenshot(), contentType: 'image/png' });
+      // Rows as text: a page screenshot can take seconds on a busy machine, and a failing test still saves one.
+      await testInfo.attach(`${step}-rows`, { body: JSON.stringify(await rowLabels()), contentType: 'application/json' });
       await testInfo.attach(`${step}-settings`, { body: JSON.stringify(await readSettings()), contentType: 'application/json' });
       await expect(page.getByRole('button', { name: method, exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: ascending ? 'Sort ascending' : 'Sort descending', exact: true })).toBeVisible();
-      await expect.poll(() => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')))).toEqual(expectedRows);
+      await expect.poll(rowLabels).toEqual(expectedRows);
       await expect.poll(readSettings).toEqual(expectedSettings);
     }
   });
