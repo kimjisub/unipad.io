@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
-import { packDisplayTitle } from '@/lib/unipack/packTitle';
+import { packAccessibleName, packDisplayTitle, packIdentifyingTitle } from '@/lib/unipack/packTitle';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
 import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
@@ -427,7 +427,7 @@ export function MainScreen({
         {deleteConfirmId && (
           <ConfirmDialog
             message={t('confirmDeletePack', {
-              title: savedPacks.find((p) => p.id === deleteConfirmId)?.title ?? t('confirmDeletePackFallback'),
+              title: packIdentifyingTitle(savedPacks.find((p) => p.id === deleteConfirmId)) ?? t('confirmDeletePackFallback'),
             })}
             onConfirm={confirmDelete}
             onCancel={() => setDeleteConfirmId(null)}
@@ -780,7 +780,7 @@ function UnipackListItem({
       data-pack-id={pack.id}
       role="option"
       tabIndex={isTabStop ? 0 : -1}
-      aria-label={`${pack.title} by ${pack.producerName}`}
+      aria-label={packAccessibleName(pack) || undefined}
       aria-selected={isSelected}
       className="flex h-[72px] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl overflow-hidden"
       onClick={onClick}

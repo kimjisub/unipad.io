@@ -49,7 +49,9 @@ const step = async (kind, run) => {
   return run();
 };
 const savedAutoPlay = { current: [{ type: 'delay', delay: 1000 }], backup: [] };
-const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
+// Saved packs without a title: one imported with its file name kept, one saved before file names were kept.
+const untitled = { Untitled: { title: '', fileName: 'INF-008' }, Older: { title: '' } };
+const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, ...untitled[id], zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
 stub('../../lib/unipack/index.ts', {
   listUniPacks: () => step('list', () => [...library.values()]), listThemes: async () => [],
   getUniPack: id => step('read', () => pack(id)),
@@ -68,6 +70,7 @@ stub('../../lib/unipack/index.ts', {
   saveUniPack: (bytes, metadata) => step('save', () => { savedImports.push({ bytes, metadata }); importSaved.resolve(); library.set('Imported', pack('Imported')); return 'Imported'; }),
   saveStoreUniPack: async (bytes, metadata) => { storeSaves.push({ bytes, metadata }); return 'Downloaded'; },
   packNameFromFileName: require('../../lib/unipack/packTitle.ts').packNameFromFileName,
+  packDisplayTitle: require('../../lib/unipack/packTitle.ts').packDisplayTitle,
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -153,6 +156,18 @@ for (const leave of ['quit', 'unmount']) {
     assert.equal(await opening, null);
     assert.equal(currentUrlPack(), null);
     assert.equal(storage.has('lastUniPackId'), false);
+  });
+}
+
+for (const [id, shown] of [['A', 'A'], ['Untitled', 'INF-008'], ['Older', null]]) {
+  test(`the loading screen of saved pack ${id} shows ${shown ?? 'no title'}`, async () => {
+    const view = await mount();
+    const decoding = hold('load');
+    let opening;
+    await flush(() => { opening = main.onPlay(id); return decoding.entered.promise; });
+    const title = view.container.querySelector('p.truncate');
+    assert.equal(title?.textContent ?? null, shown);
+    await flush(() => { decoding.resolve(); return opening; });
   });
 }
 
