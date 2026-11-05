@@ -100,7 +100,7 @@ export function PlayPage() {
     setMidiUiContext,
     setKeyboardBlocked,
     setVolumeLevel,
-    resumeAudio,
+    prepareAudio,
     startAutoMapping,
     restoreAutoPlay,
   } = useUniPadEngine();
@@ -370,7 +370,7 @@ export function PlayPage() {
       const isCurrent = fileImportRequestRef.current === request && revision === packOpenRevisionRef.current
         ? beginPackOpen() : () => false;
       if (isCurrent()) retryPackIdRef.current = null;
-      await resumeAudio();
+      await prepareAudio();
       let buffer: ArrayBuffer;
       try {
         buffer = await file.arrayBuffer();
@@ -412,7 +412,7 @@ export function PlayPage() {
         /* storage error */
       }
     },
-    [beginPackOpen, loadUniPack, resumeAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme, checkImportArchive, showToast, tToast],
+    [beginPackOpen, loadUniPack, prepareAudio, refreshLists, syncPackUrl, rememberPack, applyLastTheme, checkImportArchive, showToast, tToast],
   );
 
   const handleImportThemeFile = useCallback(
@@ -450,7 +450,7 @@ export function PlayPage() {
       const isCurrent = beginPackOpen();
       retryPackIdRef.current = id;
       try {
-        await resumeAudio();
+        await prepareAudio();
         if (!isCurrent()) return null;
         const pack = await getUniPack(id);
         if (!isCurrent()) return null;
@@ -475,7 +475,7 @@ export function PlayPage() {
         return isCurrent() ? false : null;
       }
     },
-    [beginPackOpen, loadUniPack, resumeAudio, syncPackUrl, rememberPack, applyLastTheme],
+    [beginPackOpen, loadUniPack, prepareAudio, syncPackUrl, rememberPack, applyLastTheme],
   );
 
   const getCodeFromUrl = useCallback((): string | null => {
@@ -1057,6 +1057,7 @@ export function PlayPage() {
       onConfirm={() => {
         const item = pendingShareItem;
         setPendingShareItem(null);
+        void prepareAudio();
         void installSharedPack(item);
       }}
       onCancel={() => {
@@ -1129,7 +1130,10 @@ export function PlayPage() {
           onOpenStore={handleOpenStore}
           storeCount={storeCount}
           hasStoreUpdate={hasStoreUpdate}
-          onImport={() => fileInputRef.current?.click()}
+          onImport={() => {
+            void prepareAudio();
+            fileInputRef.current?.click();
+          }}
           onImportTheme={() => themeInputRef.current?.click()}
           onDeletePack={handleDeletePack}
           onDeleteTheme={handleDeleteTheme}

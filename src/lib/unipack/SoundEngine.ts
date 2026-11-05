@@ -10,6 +10,7 @@ import {
   type SoundFailure,
   type SoundLoadReport,
 } from './soundLoading';
+import { takeAudioContext } from './audioOutput';
 
 /** Web-only decode scheduling; admission and its shared limits stay unchanged. */
 const DECODE_BATCH_SIZE = 10;
@@ -24,25 +25,6 @@ interface PendingChainChange {
   remaining: number;
   dueAt: number;
   timer: ReturnType<typeof setTimeout> | null;
-}
-
-/** WebKit's Audio Session API, not yet in TypeScript's DOM types. */
-interface AudioSessionNavigator {
-  audioSession: { type: 'auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record' };
-}
-
-/**
- * Safari plays Web Audio in the "ambient" session by default, which the iPhone's silent switch
- * mutes. "playback" plays through it, as the iOS app does; it can also pause audio another app
- * is playing. Browsers without the API are left as they are.
- */
-function requestPlaybackAudioSession(): void {
-  if (typeof navigator === 'undefined' || !('audioSession' in navigator)) return;
-  try {
-    (navigator as Navigator & AudioSessionNavigator).audioSession.type = 'playback';
-  } catch {
-    console.warn('Failed to set the audio session to playback');
-  }
 }
 
 export class SoundEngine {
@@ -82,11 +64,8 @@ export class SoundEngine {
     this.setChain = setChain;
     this.onLoadProgress = onLoadProgress;
 
-    requestPlaybackAudioSession();
-    this.audioContext = new AudioContext({
-      latencyHint: 'interactive',
-      sampleRate: 44100,
-    });
+    const { context, ready } = takeAudioContext();
+    this.audioContext = context;
     this.audioContext.onstatechange = () => {
       if (!this.visibilitySuspended && this.pendingSuspensions === 0 && this.pendingResumptions === 0 && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
         this.onInterrupted?.();
@@ -95,11 +74,12 @@ export class SoundEngine {
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
 
-    // The context is created after several awaits (file read, zip parse), i.e. outside the
-    // user-gesture window, so Safari and autoplay-policy Chrome start it suspended and the
-    // first pack played silently. Resume on the next gesture until it is running.
-    void (typeof document !== 'undefined' && document.hidden
-      ? this.setSuspended(true) : this.resume()).catch(() => {});
+    // Without a context prepared by the opening tap, this one is created after several awaits (file
+    // read, zip parse), outside the user-gesture window, so Safari and autoplay-policy Chrome start
+    // it suspended. Resume on the next gesture until it is running.
+    const start = () => (typeof document !== 'undefined' && document.hidden
+      ? this.setSuspended(true) : this.resume());
+    void (ready ? this.afterParking(ready, start) : start()).catch(() => {});
     if (typeof document !== 'undefined') {
       const resumeOnGesture = () => {
         if (this.visibilitySuspended) return;
@@ -115,6 +95,18 @@ export class SoundEngine {
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) {
         document.addEventListener(type, resumeOnGesture, { capture: true, passive: true });
       }
+    }
+  }
+
+  /** A prepared context's parking suspension is ours, not an interruption, even when its state
+   *  change is delivered after the resume below has begun. */
+  private async afterParking(parking: Promise<void>, start: () => Promise<void>): Promise<void> {
+    this.pendingResumptions++;
+    try {
+      await parking;
+      if (!this.destroyed) await start();
+    } finally {
+      this.pendingResumptions--;
     }
   }
 
