@@ -1023,6 +1023,7 @@ export function PlayPage() {
       onConfirm={() => {
         const item = pendingShareItem;
         setPendingShareItem(null);
+        void prepareAudio();
         void installSharedPack(item);
       }}
       onCancel={() => {

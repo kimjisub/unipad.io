@@ -24,15 +24,15 @@ for (const name of ['PadGrid', 'ChainBar', 'ControlPanel', 'OptionPanel', 'SkinI
   stub(`./${name}.tsx`, { [name]: () => null });
 }
 let main;
-let store, downloadedBytes, storeSaves, analytics, metadataRead;
+let store, downloadedBytes, storeSaves, analytics, metadataRead, storeListing, dialogs, audioPreparations;
 stub('./StoreModal.tsx', { StoreModal: props => { store = props; return null; } });
-stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: () => null });
+stub('./MainScreen.tsx', { MainScreen: props => { main = props; return null; }, ConfirmDialog: props => { dialogs.push(props); return null; } });
 const realStore = require('../../lib/store.ts');
 stub('../../lib/store.ts', {
   ...realStore,
   subscribeStoreCount: async () => noop,
   subscribeStoreItems: async () => noop,
-  fetchStoreItemsResult: async () => ({ items: [] }),
+  fetchStoreItemsResult: async () => ({ items: storeListing }),
   downloadStoreItem: async () => downloadedBytes,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push({ name, params }) });
@@ -96,7 +96,7 @@ function useTestEngine() {
     await step('themeLoad', noop);
     if (isCurrent()) themes.push(data);
   }, []);
-  const prepareAudio = React.useCallback(() => step('resume', noop), []);
+  const prepareAudio = React.useCallback(() => { audioPreparations++; return step('resume', noop); }, []);
   engine = { state, unload, onQuit: engine?.onQuit };
   return { state, loadUniPack, unload, loadTheme, prepareAudio, setMidiProfile: noop, setKeyboardBlocked: noop,
     setMidiUiContext: context => { engine.onQuit = context.onQuit; } };
@@ -108,6 +108,7 @@ async function mount(url = '/play', prepare = noop) {
   library = new Map([['A', pack('A')], ['B', pack('B')]]);
   held = {}; storage = new Map(); loads = []; loadOverrides = []; themes = []; savedImports = []; importSaved = deferred(); nextResult = true; engine = null; main = null;
   store = null; downloadedBytes = null; storeSaves = []; analytics = []; metadataRead = deferred();
+  storeListing = []; dialogs = []; audioPreparations = 0;
   prepare();
   window.history.replaceState(null, '', url);
   const view = render(React.createElement(PlayPage));
@@ -419,4 +420,15 @@ test('a damaged store archive is rejected before replacing a saved copy or recor
   assert.equal(store.downloadingCode, null);
   assert.equal(analytics.some(event => event.name === 'store_download_success'), false);
   assert.ok(analytics.some(event => event.name === 'store_download_fail' && event.params.error_type === 'invalid_pack'));
+});
+
+// iPhone Safari starts sound only inside a tap, so a pack must claim it in the tap that opens it.
+test('the tap that installs a shared pack prepares sound before the download starts', async () => {
+  const shared = { code: 'shared', title: 'Shared' };
+  await mount('/play?code=shared', () => { storeListing = [shared]; });
+  const install = dialogs.findLast(dialog => dialog.label === 'confirmInstallAriaLabel');
+  assert.ok(install, 'the shared link asks before installing');
+  install.onConfirm();
+  assert.equal(audioPreparations, 1, 'sound is prepared within the tap, not after the download');
+  await flush();
 });
