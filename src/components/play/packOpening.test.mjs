@@ -67,6 +67,7 @@ stub('../../lib/unipack/index.ts', {
   },
   saveUniPack: (bytes, metadata) => step('save', () => { savedImports.push({ bytes, metadata }); importSaved.resolve(); library.set('Imported', pack('Imported')); return 'Imported'; }),
   saveStoreUniPack: async (bytes, metadata) => { storeSaves.push({ bytes, metadata }); return 'Downloaded'; },
+  packNameFromFileName: require('../../lib/unipack/packTitle.ts').packNameFromFileName,
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -252,7 +253,7 @@ test('an imported pack replaced during decoding is saved without erasing the new
   const view = await mount();
   const waiting = hold('load');
   await flush(() => {
-    fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ arrayBuffer: async () => new ArrayBuffer(0) }] } });
+    fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ name: 'pack.uni', arrayBuffer: async () => new ArrayBuffer(0) }] } });
     return waiting.entered.promise;
   });
   await flush(() => main.onPlay('B'));
@@ -317,7 +318,7 @@ for (const result of [null, false]) {
         window.history.replaceState(null, '', '/play?pack=Previous');
         if (source === 'saved') await flush(() => main.onPlay('A'));
         else await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
-          target: { files: [{ arrayBuffer: async () => new ArrayBuffer(0) }] },
+          target: { files: [{ name: 'pack.uni', arrayBuffer: async () => new ArrayBuffer(0) }] },
         }));
       }
       assert.equal(currentUrlPack(), result === false ? null : 'Replacement');
@@ -331,7 +332,7 @@ for (const phase of ['resume', 'file', 'load', 'save']) {
     test(`an import interrupted during ${phase} by ${action} still reaches the saved list`, async () => {
       const view = await mount();
       const waiting = hold(phase);
-      const file = { arrayBuffer: () => step('file', () => new ArrayBuffer(0)) };
+      const file = { name: 'pack.uni', arrayBuffer: () => step('file', () => new ArrayBuffer(0)) };
       await flush(() => {
         fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [file] } });
         return waiting.entered.promise;
@@ -368,7 +369,7 @@ for (const phase of ['resume', 'file', 'load', 'save']) {
 }
 
 for (const phase of ['file', 'load', 'failed']) {
-  test(`import saves unchanged bytes and full list metadata after ${phase}`, async () => {
+  test(`import saves unchanged bytes, full list metadata and the file name after ${phase}`, async () => {
     const { packZip, INFO_2X2_2CHAIN, SILENT_WAV } = require('../../lib/unipack/testUtils.ts');
     const bytes = await packZip({ info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 2 2 a.wav',
       'sounds/a.wav': SILENT_WAV, 'keyLed/1 1 1': 'o 1 1 a 5', autoPlay: 'o 1 1\nf 1 1' });
@@ -377,7 +378,7 @@ for (const phase of ['file', 'load', 'failed']) {
     const waiting = phase === 'failed' ? null : hold(phase);
     if (phase === 'failed') nextResult = false;
     await flush(() => {
-      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ arrayBuffer: () => step('file', () => bytes) }] } });
+      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [{ name: 'My Pack.UNI', arrayBuffer: () => step('file', () => bytes) }] } });
       return waiting?.entered.promise;
     });
     if (waiting) {
@@ -391,6 +392,7 @@ for (const phase of ['file', 'load', 'failed']) {
     assert.equal(Buffer.from(saved.bytes).toString('hex'), original);
     assert.deepEqual([saved.metadata.soundCount, saved.metadata.ledCount, saved.metadata.keyLedExist, saved.metadata.autoPlayExist], [2, 1, true, true]);
     assert.equal(saved.metadata.title, 'Test');
+    assert.equal(saved.metadata.fileName, 'My Pack');
   });
 }
 
@@ -399,7 +401,7 @@ test('an imported archive with damaged compressed sound bytes is never saved', a
   const view = await mount();
   nextResult = false;
   await flush(() => fireEvent.change(view.container.querySelector('input[type=file]'), {
-    target: { files: [{ arrayBuffer: async () => bytes }] },
+    target: { files: [{ name: 'pack.uni', arrayBuffer: async () => bytes }] },
   }));
   await flush(() => metadataRead.promise);
   assert.equal(savedImports.length, 0);
