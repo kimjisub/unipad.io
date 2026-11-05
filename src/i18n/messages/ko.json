@@ -421,6 +421,9 @@
       "confirmRestoreAutoPlayAriaLabel": "자동 연주 복원 확인"
     },
     "toast": {
+      "notUniPackFile": "유니팩(.zip, .uni) 파일이 아닙니다.",
+      "notThemeFile": "테마(.zip) 파일이 아닙니다.",
+      "fileReadFailed": "파일을 읽지 못했습니다. 기기에 내려받은 뒤 다시 골라 주세요.",
       "skinFailed": "스킨을 적용하지 못했습니다. 스킨을 초기화합니다.",
       "themeFailed": "테마를 적용하지 못했습니다.",
       "traceLogCleared": "흔적을 모두 지웠습니다",
