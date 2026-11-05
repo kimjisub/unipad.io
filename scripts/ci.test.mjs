@@ -49,7 +49,7 @@ test('the aggregate test command includes all existing test formats and tooling 
   }
 });
 
-test('CI runs the playback and offline saved-pack browser tests in Chromium, apart from Web checks', () => {
+test('Linux runs playback, offline, sound, multi-touch and layout tests in Chromium, apart from Web checks', () => {
   const workflow = read('.github/workflows/ci.yml');
   const readme = read('README.md');
   const browser = job(workflow, 'browser-playback');
@@ -61,7 +61,8 @@ test('CI runs the playback and offline saved-pack browser tests in Chromium, apa
     'e2e/offline-play.spec.ts',
     'e2e/sound-formats.spec.ts',
     'e2e/socket-failure-record.spec.ts',
-  ], 'Browser playback tests must run all four spec files in order');
+    ...playbackFiles.filter(file => file !== 'play.spec.ts').map(file => `e2e/${file}`),
+  ], 'Browser playback tests must run all nine spec files in order');
   const description = readme.match(/\*\*Browser playback tests\*\* job\b([\s\S]*?)\bin Chromium;/);
   assert.ok(description, 'README must describe the Browser playback tests job');
   const documentedFiles = [...description[1].matchAll(/`(e2e\/[^`]+\.spec\.ts)`/g)].map(match => match[1]);
@@ -94,6 +95,8 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   const windows = read('.github/workflows/playback-windows.yml');
   assert.match(windows, /runs-on: windows-2025/);
   assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
+  assert.match(windows, /project: \[chromium, chrome, msedge, firefox\]/);
+  assert.match(windows, /name: Install Firefox\n\s+if: matrix\.project == 'firefox'\n\s+run: pnpm exec playwright install firefox/);
   assert.doesNotMatch(windows, /pnpm install/);
   const command = windows.split('\n').find(line => line.includes('run: pnpm exec playwright test'));
   assert.ok(command, 'Windows playback test command must exist');
