@@ -57,3 +57,28 @@ test('packs without a title show the name of their file in the list and details'
   await rows.nth(2).click();
   await expect(page.getByText('Browser Test Pack', { exact: true })).toHaveCount(2);
 });
+
+test('packs without a title are named by their file in the delete prompt and to screen readers', async ({ page }) => {
+  await page.goto('/play');
+  await importAndQuit(page, { name: 'basic.uni', mimeType: 'application/zip', buffer: await readFile(BASIC_PACK) }, 1, false);
+  await importAndQuit(page, await untitledPack('INF-008.zip'), 2, true);
+
+  // The untitled pack has no producer either, so it is read by its file name alone.
+  const untitled = list(page).getByRole('option', { name: 'INF-008', exact: true });
+  const titled = list(page).getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true });
+  await expect(untitled).toHaveCount(1);
+  await expect(titled).toHaveCount(1);
+
+  const confirmation = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  for (const [row, name] of [[untitled, 'INF-008'], [titled, 'Browser Test Pack']] as const) {
+    // A click on the selected row would clear its selection.
+    if (await row.getAttribute('aria-selected') !== 'true') await row.click();
+    await expect(row).toHaveAttribute('aria-selected', 'true');
+    await row.focus();
+    await page.keyboard.press('Delete');
+    await expect(confirmation).toContainText(`Delete “${name}”?`);
+    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+  }
+  await expect(list(page).getByRole('option')).toHaveCount(2);
+});
