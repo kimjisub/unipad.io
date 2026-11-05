@@ -70,11 +70,14 @@ in worker threads; `tsx` loads TypeScript imports in the existing `.mjs` tests.
 Every pull request (including drafts) runs the fixed **Web checks** job in
 **Web CI**: install, type check, lint, unit tests and build. A separate
 **Browser playback tests** job builds with the browser-test configuration below and
-runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`, and `e2e/socket-failure-record.spec.ts` in Chromium; on failure it
+runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
+`e2e/socket-failure-record.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+on Linux in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
-on Windows 2025 with Chromium and the installed Chrome and Edge channels;
+on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
 failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
@@ -251,10 +254,18 @@ Playwright exposes neither CDP nor an equivalent font preference for that engine
 The existing root-CSS enlargement checks remain supplemental. Safari's mobile page
 zoom changes the page presentation on an iOS device; it is not evidence for Mac
 Safari default-font behavior at the specified desktop viewport sizes.
+Windows Firefox reports the same explicit browser-touch skips as local Firefox;
+skipped tests are not evidence of that capability.
+On Linux, reproduce the browser job with:
+
+```bash
+pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/sound-formats.spec.ts e2e/socket-failure-record.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts
+```
+
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
 node scripts/playback-summary.mjs
 ```
 
