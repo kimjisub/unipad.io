@@ -421,6 +421,9 @@
       "confirmRestoreAutoPlayAriaLabel": "Confirm restoring the AutoPlay"
     },
     "toast": {
+      "notUniPackFile": "This is not a UniPack (.zip, .uni) file.",
+      "notThemeFile": "This is not a theme (.zip) file.",
+      "fileReadFailed": "Could not read the file. Download it to your device, then choose it again.",
       "skinFailed": "Failed to apply skin. Reset skin.",
       "themeFailed": "Failed to apply theme.",
       "traceLogCleared": "Trace Log Cleared",

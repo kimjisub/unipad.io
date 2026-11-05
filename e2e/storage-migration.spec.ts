@@ -3,28 +3,20 @@ import { readFile } from 'node:fs/promises';
 import { test, expect, expectPads } from './browser';
 import type { Page } from '@playwright/test';
 import { storedPackRecords } from './saved-packs';
+import { seedDatabase } from './storage-seed';
 
 async function seedLegacyPacks(page: Page) {
   const bytes = Array.from(await readFile('e2e/fixtures/basic.uni'));
-  await page.route('**/storage-seed', route => route.fulfill({ contentType: 'text/html', body: '<p>Storage fixture</p>' }));
-  await page.goto('/storage-seed');
-  await page.evaluate(bytes => new Promise<void>((resolve, reject) => {
-    const open = indexedDB.open('unipad', 1);
-    open.onupgradeneeded = () => {
-      const db = open.result;
-      const packs = db.createObjectStore('unipacks', { keyPath: 'id' });
-      packs.createIndex('lastOpenedAt', 'lastOpenedAt');
-      for (const [id, title, lastOpenedAt] of [['legacy-a', 'Legacy A', 20], ['legacy-b', 'Legacy B', 10]] as const) {
-        packs.put({ id, title, producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, zipData: new Uint8Array(bytes).buffer,
-          addedAt: 1, lastOpenedAt, openCount: 3, bookmark: true,
-          autoPlay: { current: [{ type: 'delay', delay: 100 }], backup: [{ type: 'delay', delay: 200 }] } });
-      }
-      db.createObjectStore('themes', { keyPath: 'id' }).put({ id: 'theme', name: 'Existing theme', author: 'Tests', zipData: new Uint8Array([4, 5]).buffer, addedAt: 1 });
-      db.createObjectStore('settings', { keyPath: 'key' }).put({ key: 'existing-setting', value: 'keep' });
-    };
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => { open.result.close(); resolve(); };
-  }), bytes);
+  await seedDatabase(page, 'unipad', 1, [
+    { name: 'unipacks', keyPath: 'id', indexes: ['lastOpenedAt'], binaryFields: ['zipData'],
+      records: ([['legacy-a', 'Legacy A', 20], ['legacy-b', 'Legacy B', 10]] as const).map(([id, title, lastOpenedAt]) => ({
+        id, title, producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, zipData: bytes,
+        addedAt: 1, lastOpenedAt, openCount: 3, bookmark: true,
+        autoPlay: { current: [{ type: 'delay', delay: 100 }], backup: [{ type: 'delay', delay: 200 }] } })) },
+    { name: 'themes', keyPath: 'id', binaryFields: ['zipData'],
+      records: [{ id: 'theme', name: 'Existing theme', author: 'Tests', zipData: [4, 5], addedAt: 1 }] },
+    { name: 'settings', keyPath: 'key', records: [{ key: 'existing-setting', value: 'keep' }] },
+  ]);
   return bytes;
 }
 

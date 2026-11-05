@@ -389,6 +389,21 @@ reader when rolling back other changes.
 `e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
 transaction interruption, retry, existing theme/settings preservation and pack
 reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+Its legacy database is written by `seedDatabase` (`e2e/storage-seed.ts`) on an
+empty page; when that fails, the test gets a `storage-seed-failure` attachment
+with the error name, the failing request (open, upgrade or write), whether the
+upgrade had started, and each request event with its time.
+
+Firefox runs write the browser's own storage logs under the result folder,
+`<output>/firefox-logs/worker-<n>/`: `firefox.moz_log` and
+`firefox.child-<n>.moz_log` (MOZ_LOG with `PageMessages`, which carries Firefox's
+`QM_TRY failure` storage reasons, plus `QuotaManager` and `IndexedDB` requests)
+and `stderr.log` (the browser's standard error). A failing Firefox test also gets
+the lines each log gained during that test as `firefox-log-*` attachments.
+`e2e/storage-seed.spec.ts` turns a real Firefox storage failure into an
+`UnknownError` and checks that the reason reaches those attachments. Set
+`E2E_FIREFOX_LOGS=0` to launch Firefox without the logs; Windows runs never write
+them.
 For an optional large-pack measurement on macOS or Linux, run after building:
 
 ```bash
