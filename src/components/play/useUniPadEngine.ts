@@ -29,6 +29,7 @@ import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { createAudioInspector } from '@/lib/unipack/audioInspectionWorker';
 import { releaseArrayBuffer } from '@/lib/unipack/bufferLifetime';
 import { allSoundsFailed, soundsFailedToLoad, type SoundLoadReport } from '@/lib/unipack/soundLoading';
+import { prepareAudioContext } from '@/lib/unipack/audioOutput';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 import type {
@@ -1883,7 +1884,11 @@ export function useUniPadEngine() {
     setMidiUiContext,
     setKeyboardBlocked,
     setVolumeLevel,
-    resumeAudio: () => soundEngineRef.current?.resume(),
+    /** Call synchronously from the tap that opens a pack, so that pack plays from its first press. */
+    prepareAudio: () => {
+      prepareAudioContext();
+      return soundEngineRef.current?.resume();
+    },
     startAutoMapping,
     restoreAutoPlay,
   };

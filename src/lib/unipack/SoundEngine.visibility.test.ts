@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SoundEngine } from './SoundEngine';
-import { parseWithLeds } from './testUtils';
+import { installAudioContext, parseWithLeds } from './testUtils';
 
 function deferred() {
   let resolve!: () => void;
@@ -20,12 +20,7 @@ test('hidden output stays muted through pending suspension, volume changes and r
     async resume() { await resumption.promise; this.state = 'running'; }
     close() { this.state = 'closed'; }
   }
-  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
-  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
-    else Reflect.deleteProperty(globalThis, 'AudioContext');
-  });
+  installAudioContext(t, Context);
   const engine = new SoundEngine(await parseWithLeds({}), () => 0, () => {});
   t.after(() => engine.destroy());
   engine.setVolume(3);
@@ -54,12 +49,7 @@ test('a stale resume cannot unmute a tab that was hidden again', async t => {
     async resume() { await pending.promise; this.state = 'running'; }
     close() { this.state = 'closed'; }
   }
-  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
-  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
-    else Reflect.deleteProperty(globalThis, 'AudioContext');
-  });
+  installAudioContext(t, Context);
   const engine = new SoundEngine(await parseWithLeds({}), () => 0, () => {});
   t.after(() => engine.destroy());
   engine.setVolume(4);
@@ -80,12 +70,7 @@ test('an already running unmuted context does not request another native resume'
     async resume() { resumes++; }
     close() { this.state = 'closed'; }
   }
-  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
-  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
-    else Reflect.deleteProperty(globalThis, 'AudioContext');
-  });
+  installAudioContext(t, Context);
   const engine = new SoundEngine(await parseWithLeds({}), () => 0, () => {});
   t.after(() => engine.destroy());
   await engine.setSuspended(false);
@@ -103,12 +88,7 @@ test('an acknowledged late suspension does not interrupt its pending manual resu
     async resume() { await resumption.promise; this.state = 'running'; this.onstatechange?.(); }
     close() { this.state = 'closed'; }
   }
-  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
-  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Context });
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
-    else Reflect.deleteProperty(globalThis, 'AudioContext');
-  });
+  installAudioContext(t, Context);
   const engine = new SoundEngine(await parseWithLeds({}), () => 0, () => {});
   t.after(() => engine.destroy());
   const context = engine.context as unknown as Context;

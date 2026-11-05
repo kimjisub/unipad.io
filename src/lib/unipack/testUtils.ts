@@ -2,7 +2,7 @@
 // Unlike the other *.test.mjs files these are compiled by tsc first: unipack imports its modules
 // without extensions and names interfaces in value imports, which node's type stripping cannot load.
 import JSZip from 'jszip';
-import { mock } from 'node:test';
+import { mock, type TestContext } from 'node:test';
 import { Worker } from 'node:worker_threads';
 import { parseUniPack } from './parser';
 import type { LedRunnerListener } from './LedRunner';
@@ -97,6 +97,16 @@ export function recordingListener(): { listener: LedRunnerListener; outputs: Led
       onChainLedTurnOff: (c) => { outputs.push(['chainOff', c]); },
     },
   };
+}
+
+/** Replaces the global AudioContext with `context` for the rest of the test. */
+export function installAudioContext(t: TestContext, context: new () => unknown): void {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
+  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: context });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
+    else Reflect.deleteProperty(globalThis, 'AudioContext');
+  });
 }
 
 /**
