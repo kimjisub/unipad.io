@@ -46,17 +46,35 @@ export const hitReport = target => `(() => {
   };
 })()`;
 
+/**
+ * A page expression that is true once `target` exists and neither it nor any ancestor has a CSS
+ * or Web Animations animation running or waiting to start, e.g. once a sliding menu has come to
+ * rest. Movement driven by script frame by frame is not seen. Animations inside the target (a
+ * spinner) do not count: they do not move the target itself.
+ * @param {string} target
+ */
+export const settled = target => `(() => {
+  const subject = ${target};
+  if (!subject) return false;
+  for (let p = subject; p; p = p.parentElement)
+    if (p.getAnimations().some(a => a.pending || a.playState === 'running')) return false;
+  return true;
+})()`;
+
 let recorded = 0;
 
 /**
  * Fails with the report when the target is not reachable, after saving the report and a
  * screenshot (into `dir` when given) and re-reading the same target once without acting on it.
- * Neither saving nor the second reading changes the verdict.
+ * Neither saving nor the second reading changes the verdict. `reread` reads the target again;
+ * pass the caller's own check when it judges more than `hitReport` (a clipping area, say), so
+ * a target that is still clipped does not read as reachable after the screenshot.
  * @param {{ report: any, target: string, label: string, dir?: string,
  *   run: (expression: string) => Promise<any>,
- *   command: (method: string, params?: object) => Promise<any> }} options
+ *   command: (method: string, params?: object) => Promise<any>,
+ *   reread?: () => Promise<any> }} options
  */
-export async function assertReachable({ report, target, label, dir, run, command }) {
+export async function assertReachable({ report, target, label, dir, run, command, reread = () => run(hitReport(target)) }) {
   if (report.reachable) return;
   const record = { label, at: new Date().toISOString(), report, screenshot: null, afterScreenshot: null };
   const name = `unreachable-${++recorded}`;
@@ -71,7 +89,7 @@ export async function assertReachable({ report, target, label, dir, run, command
     record.screenshot = `capture failed: ${error instanceof Error ? error.message : String(error)}`;
   }
   try {
-    record.afterScreenshot = await run(hitReport(target));
+    record.afterScreenshot = await reread();
   } catch (error) {
     record.afterScreenshot = `read failed: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -79,3 +97,55 @@ export async function assertReachable({ report, target, label, dir, run, command
   const what = report.missing ? 'Target missing' : 'Target clipped or covered';
   throw new Error(`${what}: ${label}\n${JSON.stringify(record, null, 2)}`);
 }
+
+/**
+ * A page expression for `target` (a page expression itself, as for `hitReport`) resolving to null
+ * once it is at rest, or else to why it is not: missing, faded or animating (it or an ancestor is
+ * not fully shown, or has an animation running or waiting to start), scrolled (anything on the
+ * page scrolled meanwhile), moved, or no frame drawn. At rest also needs at least `frames` drawn
+ * frames and `ms` milliseconds over which nothing scrolled and the target kept its place.
+ * A press is only whole when the target stays under the pointer from press to release; if it
+ * moves away in between, the browser sends the click to whatever holds both points (a list row,
+ * say), not to the target. Rows fading in and a list scrolling itself to a selection both move a
+ * target with no input. A scroll the browser animates reaches the page only when a frame is drawn,
+ * so on a busy page two readings a timer apart can match while the scroll is half done; the
+ * readings here are taken at drawn frames, and any scroll event in between counts.
+ * @param {string} target
+ * @param {{ ms?: number, frames?: number }} [options]
+ */
+export const notAtRest = (target, { ms = 200, frames = 3 } = {}) => `(async () => {
+  const brief = e => e === document ? 'document' : e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + [...e.attributes]
+    .filter(a => a.name === 'role' || a.name.startsWith('data-')).map(a => '[' + a.name + '=' + JSON.stringify(a.value.slice(0, 40)) + ']').join('');
+  const place = () => {
+    const subject = ${target};
+    if (!subject) return { reason: 'missing' };
+    for (let p = subject; p; p = p.parentElement) {
+      const opacity = getComputedStyle(p).opacity;
+      if (opacity !== '1') return { reason: 'faded: ' + brief(p) + ' opacity ' + opacity };
+      if (p.getAnimations().some(a => a.pending || a.playState === 'running')) return { reason: 'animating: ' + brief(p) };
+    }
+    return { at: JSON.stringify(subject.getBoundingClientRect()) };
+  };
+  const first = place();
+  if (first.reason) return first.reason;
+  let scrolled = null;
+  const onScroll = event => { scrolled = scrolled || brief(event.target); };
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+  try {
+    const start = performance.now();
+    for (let drawn = 0; drawn < ${frames} || performance.now() - start < ${ms}; drawn++) {
+      const frame = await Promise.race([
+        new Promise(resolve => requestAnimationFrame(() => resolve(true))),
+        new Promise(resolve => setTimeout(() => resolve(false), 1000)),
+      ]);
+      if (!frame) return 'no frame drawn for 1 s';
+      if (scrolled) return 'scrolled: ' + scrolled;
+      const now = place();
+      if (now.reason) return now.reason;
+      if (now.at !== first.at) return 'moved';
+    }
+    return null;
+  } finally {
+    removeEventListener('scroll', onScroll, { capture: true });
+  }
+})()`;

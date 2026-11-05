@@ -30,3 +30,4 @@ export {
   getSetting,
 } from './storage';
 export type { StoredUniPack, StoredTheme, StoredAutoPlay } from './storage';
+export { packDisplayTitle, packNameFromFileName } from './packTitle';

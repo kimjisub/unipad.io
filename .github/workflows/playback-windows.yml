@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [chromium, chrome, msedge]
+        project: [chromium, chrome, msedge, firefox]
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
@@ -42,7 +42,10 @@ jobs:
       - name: Install Chromium
         if: matrix.project == 'chromium'
         run: pnpm exec playwright install chromium
-      # Hosted Windows runners have no sound card and leave the Windows Audio service stopped.
+      - name: Install Firefox
+        if: matrix.project == 'firefox'
+        run: pnpm exec playwright install firefox
+      # Hosted Windows runners have Windows Audio running, but no audio output device.
       # Chromium then plays into a fake output, but Firefox never starts Web Audio, so a pad stays
       # silent and Auto never starts. The open-source Scream virtual sound card is the output here.
       - name: Add a virtual audio output

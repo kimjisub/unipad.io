@@ -49,7 +49,9 @@ const step = async (kind, run) => {
   return run();
 };
 const savedAutoPlay = { current: [{ type: 'delay', delay: 1000 }], backup: [] };
-const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
+// Saved packs without a title: one imported with its file name kept, one saved before file names were kept.
+const untitled = { Untitled: { title: '', fileName: 'INF-008' }, Older: { title: '' } };
+const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, ...untitled[id], zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
 stub('../../lib/unipack/index.ts', {
   listUniPacks: () => step('list', () => [...library.values()]), listThemes: async () => [],
   getUniPack: id => step('read', () => pack(id)),
@@ -67,6 +69,8 @@ stub('../../lib/unipack/index.ts', {
   },
   saveUniPack: (bytes, metadata) => step('save', () => { savedImports.push({ bytes, metadata }); importSaved.resolve(); library.set('Imported', pack('Imported')); return 'Imported'; }),
   saveStoreUniPack: async (bytes, metadata) => { storeSaves.push({ bytes, metadata }); return 'Downloaded'; },
+  packNameFromFileName: require('../../lib/unipack/packTitle.ts').packNameFromFileName,
+  packDisplayTitle: require('../../lib/unipack/packTitle.ts').packDisplayTitle,
 });
 function useTestEngine() {
   const [state, setState] = React.useState({
@@ -115,8 +119,8 @@ async function mount(url = '/play', prepare = noop) {
   return view;
 }
 afterEach(cleanup);
-const importFile = (arrayBuffer = async () => new ArrayBuffer(0)) => ({
-  arrayBuffer, size: 22,
+const importFile = (arrayBuffer = async () => new ArrayBuffer(0), name = 'pack.uni') => ({
+  name, arrayBuffer, size: 22,
   slice: () => ({ arrayBuffer: () => step('footer', () => new Uint8Array([0x50, 0x4b, 0x05, 0x06]).buffer) }),
 });
 const currentUrlPack = () => new URL(window.location.href).searchParams.get('pack');
@@ -156,6 +160,18 @@ for (const leave of ['quit', 'unmount']) {
     assert.equal(await opening, null);
     assert.equal(currentUrlPack(), null);
     assert.equal(storage.has('lastUniPackId'), false);
+  });
+}
+
+for (const [id, shown] of [['A', 'A'], ['Untitled', 'INF-008'], ['Older', null]]) {
+  test(`the loading screen of saved pack ${id} shows ${shown ?? 'no title'}`, async () => {
+    const view = await mount();
+    const decoding = hold('load');
+    let opening;
+    await flush(() => { opening = main.onPlay(id); return decoding.entered.promise; });
+    const title = view.container.querySelector('p.truncate');
+    assert.equal(title?.textContent ?? null, shown);
+    await flush(() => { decoding.resolve(); return opening; });
   });
 }
 
@@ -372,7 +388,7 @@ for (const phase of ['footer', 'resume', 'file', 'load', 'save']) {
 }
 
 for (const phase of ['file', 'load', 'failed']) {
-  test(`import saves unchanged bytes and full list metadata after ${phase}`, async () => {
+  test(`import saves unchanged bytes, full list metadata and the file name after ${phase}`, async () => {
     const { packZip, INFO_2X2_2CHAIN, SILENT_WAV } = require('../../lib/unipack/testUtils.ts');
     const bytes = await packZip({ info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 2 2 a.wav',
       'sounds/a.wav': SILENT_WAV, 'keyLed/1 1 1': 'o 1 1 a 5', autoPlay: 'o 1 1\nf 1 1' });
@@ -381,7 +397,7 @@ for (const phase of ['file', 'load', 'failed']) {
     const waiting = phase === 'failed' ? null : hold(phase);
     if (phase === 'failed') nextResult = false;
     await flush(() => {
-      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [importFile(() => step('file', () => bytes))] } });
+      fireEvent.change(view.container.querySelector('input[type=file]'), { target: { files: [importFile(() => step('file', () => bytes), 'My Pack.UNI')] } });
       return waiting?.entered.promise;
     });
     if (waiting) {
@@ -395,6 +411,7 @@ for (const phase of ['file', 'load', 'failed']) {
     assert.equal(Buffer.from(saved.bytes).toString('hex'), original);
     assert.deepEqual([saved.metadata.soundCount, saved.metadata.ledCount, saved.metadata.keyLedExist, saved.metadata.autoPlayExist], [2, 1, true, true]);
     assert.equal(saved.metadata.title, 'Test');
+    assert.equal(saved.metadata.fileName, 'My Pack');
   });
 }
 
