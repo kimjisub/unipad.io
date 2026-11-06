@@ -84,45 +84,73 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await control.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  // Keep the node even if React removes it before the next browser round trip.
-  const element = await dialog.elementHandle();
-  try {
-    await page.keyboard.press('Escape');
-    await element!.evaluate(async dialog => {
-      // AnimatePresence retains the shell until native exits finish. Their timeline can lag
-      // behind wall time on a busy browser; repeating loading decoration never blocks closing.
-      await Promise.all(dialog.getAnimations({ subtree: true })
-        .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
-        .map(animation => animation.finished.catch(error => {
-          if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
-        })));
-    });
-    await expect(dialog).toHaveCount(0);
-  } finally {
-    await element?.dispose();
-  }
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 }
 
-test('store dismissal waits for native exit animations without waiting for infinite decoration', async ({ page }) => {
-  await page.setContent('<button>Store</button>');
-  await page.evaluate(() => {
-    document.querySelector('button')!.onclick = () => {
-      const dialog = document.createElement('div');
-      dialog.setAttribute('role', 'dialog');
-      dialog.innerHTML = '<div>Store content</div><span>Decoration</span>';
-      document.body.append(dialog);
-      dialog.querySelector('span')!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, iterations: Infinity });
-      window.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
-        // AnimatePresence keeps the dialog until its finite native exit has finished.
-        // Longer than the unchanged removal assertion: merely reading animations cannot pass.
-        const exit = dialog.querySelector('div')!.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 6000 });
-        exit.finished.then(() => dialog.remove());
-      }, { once: true });
-    };
+// Observe the real dialog throughout opening and closing: Motion may create native
+// animations on a later frame, and its transform spring only writes inline styles.
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  test.describe(`store motion: ${reducedMotion}`, () => {
+    test.use({ reducedMotion });
+
+    test('store shell respects the motion preference when opening and closing', async ({ page, context }, testInfo) => {
+      const database = await connectStore(context, 0);
+      await page.addInitScript(() => {
+        const samples: { phase: string; target: string; kind: string; value: string | number }[] = [];
+        let phase = 'open';
+        Object.assign(window, { storeMotionSamples: samples });
+        const shell = (element: Element) => element.parentElement?.getAttribute('role') === 'dialog'
+          ? element === element.parentElement.firstElementChild ? 'backdrop' : 'panel' : null;
+        const animate = Element.prototype.animate;
+        Element.prototype.animate = function (keyframes, options) {
+          const target = shell(this);
+          if (target) {
+            samples.push({ phase, target, kind: 'native', value: typeof options === 'number' ? options : Number(options?.duration ?? 0) });
+          }
+          return animate.call(this, keyframes, options);
+        };
+        // Observe continuously, including frames after the Escape handler has returned.
+        new MutationObserver(records => {
+          for (const record of records) {
+            const element = record.target;
+            const target = element instanceof HTMLElement ? shell(element) : null;
+            if (target && element instanceof HTMLElement && element.style.transform && element.style.transform !== 'none') {
+              samples.push({ phase, target, kind: 'transform', value: element.style.transform });
+            }
+          }
+        }).observe(document, { subtree: true, attributes: true, attributeFilter: ['style'] });
+        window.addEventListener('keydown', event => { if (event.key === 'Escape') phase = 'close'; }, true);
+      });
+      await page.goto('/play');
+      await database.publish(0);
+      await page.getByRole('button', { name: /^Store/ }).first().click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      // Move focus to a button so Escape means close, even when the search loads.
+      await dialog.getByRole('button', { name: 'Close', exact: true }).focus();
+      await testInfo.attach('open', { body: await page.screenshot(), contentType: 'image/png' });
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      const samples = await page.evaluate(() => (window as unknown as {
+        storeMotionSamples: { phase: string; target: string; kind: string; value: string | number }[];
+      }).storeMotionSamples);
+      await testInfo.attach('motion-samples', { body: JSON.stringify(samples, null, 2), contentType: 'application/json' });
+      await testInfo.attach('closed', { body: await page.screenshot(), contentType: 'image/png' });
+      for (const phase of ['open', 'close']) {
+        const moving = samples.filter(sample => sample.phase === phase && (sample.kind === 'transform' || Number(sample.value) > 0));
+        if (reducedMotion === 'reduce') expect(moving, `${phase} must not animate the shell`).toEqual([]);
+        else {
+          for (const target of ['backdrop', 'panel']) {
+            expect(moving.some(sample => sample.target === target && sample.kind === 'native'), `${phase} keeps the ${target} fade`).toBe(true);
+          }
+          // The exit spring is driven by JavaScript and is absent from getAnimations().
+          if (phase === 'close') expect(moving.some(sample => sample.target === 'panel' && sample.kind === 'transform'), 'keeps the panel exit spring').toBe(true);
+        }
+      }
+    });
   });
-  await expectStoreOpens(page, page.getByRole('button', { name: 'Store', exact: true }));
-});
+}
 
 test('reachability reads moving controls in the same browser turn', async ({ page }) => {
   await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
@@ -200,6 +228,8 @@ for (const text of locales) {
     test.use({ locale: text.locale });
 
     test('every control works on a phone-width screen with no saved packs', async ({ page, context }) => {
+      // Check controls independently of decorative motion; set this before the app mounts.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       await showStoreCount(page, context, text, async () => { await page.goto('/play'); });
       const { theme, store, import: importButton } = bar(page, text);
       for (const viewport of viewports) {
@@ -225,6 +255,8 @@ for (const text of locales) {
     });
 
     test('every control works on a phone-width screen with a saved pack', async ({ page, context }) => {
+      // Check controls independently of decorative motion; set this before the app mounts.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       test.setTimeout(90_000);
       await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
