@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { storedPackRecords } from './saved-packs';
+import { seedSavedPacks, storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -53,42 +53,16 @@ const sortCases = [
 
 for (const [method, ascending, titles] of sortCases) {
   test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
-    // Sorting needs distinct saved rows, not three rounds of decoding and playing.
-    // Import once through the real UI, then copy its archive and chunks along with
-    // the metadata. Other list tests still import and open the three distinct packs.
-    await openList(page, [packs[0][0]]);
-    await page.evaluate(async () => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('unipad');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
-        const store = tx.objectStore('unipackMetadata');
-        const archive = tx.objectStore('unipacks').getAll();
-        const chunks = tx.objectStore('unipackChunks').getAll();
-        const request = store.getAll();
-        request.onsuccess = () => {
-          const record = request.result[0];
-          const source = archive.result[0];
-          const sourceChunks = chunks.result.filter(chunk => chunk.packId === source.id);
-          const keys = [
-            [record.id, 'Alpha', 'Charlie', 20, false],
-            ['bravo', 'Bravo', 'Alpha', 30, false],
-            ['charlie', 'Charlie', 'Bravo', 10, false],
-            ['favorite', 'Favorite', 'Zulu', 40, true],
-          ] as const;
-          for (const [id, title, producerName, addedAt, bookmark] of keys) {
-            tx.objectStore('unipacks').put({ ...source, id });
-            for (const chunk of sourceChunks) tx.objectStore('unipackChunks').put({ ...chunk, packId: id });
-            store.put({ ...record, id, title, producerName, addedAt, bookmark });
-          }
-        };
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error);
-      });
-      db.close();
+    // Sorting needs distinct saved rows, not rounds of decoding and playing: write them to
+    // the app's database. Other list tests still import and open real packs.
+    await test.step('Prepare saved pack list', async () => {
+      await page.goto('/play');
+      await seedSavedPacks(page, [
+        { id: 'alpha', title: 'Alpha', producerName: 'Charlie', addedAt: 20 },
+        { id: 'bravo', title: 'Bravo', producerName: 'Alpha', addedAt: 30 },
+        { id: 'charlie', title: 'Charlie', producerName: 'Bravo', addedAt: 10 },
+        { id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true },
+      ]);
     });
     await page.reload();
     await expect(list(page).getByRole('option')).toHaveCount(4);
@@ -119,7 +93,7 @@ for (const [method, ascending, titles] of sortCases) {
       if (step === 'reload') await page.reload();
       else { await page.goto('about:blank'); await page.goto('/play'); }
       await expect(list(page).getByRole('option')).toHaveCount(4);
-      // Rows as text: a page screenshot can take seconds on a busy machine, and a failing test still saves one.
+      // The rows as text; a failing test also saves a screenshot.
       await testInfo.attach(`${step}-rows`, { body: JSON.stringify(await rowLabels()), contentType: 'application/json' });
       await testInfo.attach(`${step}-settings`, { body: JSON.stringify(await readSettings()), contentType: 'application/json' });
       await expect(page.getByRole('button', { name: method, exact: true })).toBeVisible();
