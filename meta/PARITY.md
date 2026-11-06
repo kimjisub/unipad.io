@@ -113,7 +113,7 @@ and [web `applyVolumeLevel` and chain display](../src/components/play/useUniPadE
 |---|---|
 | Android | Per-file failures are reported; admitted sounds that decode successfully remain playable. If every sound fails, playback is disabled and the failure details offer an exit. |
 | iOS | Per-file failures produce a notice and successfully decoded sounds remain playable. If none can play, the screen presents a load failure instead of becoming ready. |
-| Web | Failed files are listed as warnings and successfully decoded sounds remain playable; if every file fails, loading fails. |
+| Web | Failed files are listed as warnings and successfully decoded sounds remain playable; if every used file fails, loading fails. In a partially loaded pack, a failed sound is silent, but pressing its pad still advances to the next sound and follows that sound's chain change. |
 
 This is no longer a web-only partial-load policy. See
 [Android `onReport`/`onException`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt)
@@ -121,9 +121,11 @@ and [failure dialog](https://github.com/kimjisub/unipad-android/blob/f8760475f0e
 ([unipad-android#331](https://github.com/kimjisub/unipad-android/pull/331)),
 [iOS `onSoundLoadingComplete`](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/PlayViewModel.swift)
 and [failure presentation](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PlayView.swift),
-and [web sound loading](../src/lib/unipack/SoundEngine.ts)
+and web [all-sounds-failed policy](../src/lib/unipack/soundLoading.ts) and
+[pad sequence and chain changes](../src/lib/unipack/SoundEngine.ts)
 ([unipad.io#211](https://github.com/kimjisub/unipad.io/pull/211)). Engine setup failures are a separate path;
-this table describes individual sound files that cannot be loaded.
+this table describes individual sound files that cannot be loaded. This audit did not verify
+Android or iOS pad-sequence advancement and chain changes when a sound fails to load.
 
 ### Web player controls
 
@@ -135,8 +137,9 @@ and a volume slider ([PlayPage](../src/components/play/PlayPage.tsx),
 The web saves volume, watermark, slide choice and trace display style; feedback light starts from
 the pack's LED availability, rather than a saved global switch
 ([`PLAY_PREFERENCE_KEYS` and saved-preference loading](../src/components/play/useUniPadEngine.ts)).
-iOS also saves watermark, slide choice and trace display style
-([PreferenceManager](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/PreferenceManager.swift)).
+Android and iOS also save watermark, slide choice and trace display style
+([Android `watermark`, `slideMode` and `traceLogClassic`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/manager/PreferenceManager.kt),
+[iOS PreferenceManager](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/PreferenceManager.swift)).
 
 ### Library and usage differences (source audit 2026-11-07)
 
@@ -163,6 +166,8 @@ iOS also saves watermark, slide choice and trace display style
   and [iOS UsageEvent](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/Analytics/UsageAnalytics.swift)
   name `pack_import`, `pack_load`, `play_start`, `play_first_input` and `play_end`.
   [Web UsageEvent](../src/lib/analytics/usageEvents.ts) names `pack_load`, `pad_press` and `autoplay_start`.
+  Its opening comment still calls these core events shared with Android and iOS, although the event
+  names differ; the comment does not describe the current definitions.
   Source event definitions do not prove delivery to the analytics backend; this audit did not measure it.
 
 ## Parser and runner conformance
@@ -438,11 +443,14 @@ application and test sources, on iPhone 17 Pro / iOS 27.0 using the default Xcod
 | `testRepeatedVoiceCanBeStoppedImmediately` | 30 screen-model cleanup rounds with keySound loop 3, immediately or 1–9 ms after a press; passed. |
 | `testRepeatedVoiceCanBeRetriggeredImmediately` | 100 pairs of presses on the same pad with loop 3; all 200 plays started and the test passed. |
 | `destroyWhileARepeatedSoundIsCycling()` | 30 rounds alternating loop 3 and 50, destroying 0–29 ms after the press; all returned in 0.2–0.4 ms and the test passed. |
+| `PlaybackStopUITests/testRepeatedInputExitAndPracticeModeSwitchesStayResponsive` | Three rounds of repeated input, leaving the play screen and switching practice modes stayed responsive; passed in 155.050 s. |
 
 The first two checks use the production `PlayViewModel`
 ([PlaybackStopTests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadTests/PlaybackStopTests.swift));
 the third keeps the original short-tone reproduction input
 ([UniPackConformanceTests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadTests/UniPackConformance/UniPackConformanceTests.swift)).
+The fourth exercises the play screen
+([PlaybackStopUITests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadUITests/PlaybackStopUITests.swift)).
 These selected checks did not hang; this is not a full-suite or physical-output claim.
 The original commands, stacks and failures remain as historical evidence in
 [RESULTS.md](unipack-conformance/RESULTS.md#ios-destroy-while-a-repeated-sound-is-cycling).
@@ -461,6 +469,6 @@ not start that pad.
 
 | Platform | Setting and input path |
 |---|---|
-| Android | [Settings > Play](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/SettingsActivity.kt) > "Slide across pads". [`PreferenceManager.slideMode`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/manager/PreferenceManager.kt) defaults to `false`; [PlayActivity](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt) applies it to `padTouch.slide`. Introduced by [unipad-android#26](https://github.com/kimjisub/unipad-android/pull/26). |
+| Android | [Settings > Play](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/SettingsActivity.kt) > "Slide across pads". [`PreferenceManager.slideMode`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/manager/PreferenceManager.kt) defaults to `false`; [PlayActivity](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt) applies it to `padTouch.slide`. Introduced by [unipad-android#56](https://github.com/kimjisub/unipad-android/pull/56). |
 | iOS | [Settings](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Settings/SettingsView.swift) and [play options](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PlayOptionPanel.swift) both bind `SlideEnabled`, default `false` in [PreferenceManager](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/PreferenceManager.swift). [PadGridView/MultiTouchView](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PadGridView.swift) checks `slideEnabled` on movement. Added by [unipad-ios#231](https://github.com/kimjisub/unipad-ios/pull/231). |
 | Web | Play options > "Slide across pads". [OptionPanel](../src/components/play/OptionPanel.tsx) updates the saved `slideMode` in [useUniPadEngine](../src/components/play/useUniPadEngine.ts); [PadGrid](../src/components/play/PadGrid.tsx) defaults to `false` and gates pointer movement on that value. Added by [unipad.io#187](https://github.com/kimjisub/unipad.io/pull/187). |
