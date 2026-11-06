@@ -56,32 +56,46 @@ export async function importSavedPack(page: Page, landing = '/') {
 }
 
 
-/** Imports real files in one document, then quits to the saved list without restarting the player. */
+/**
+ * Imports distinct 8x8 fixture packs into an empty library in one document. Return to the list
+ * after each save so the previous pack's pads cannot satisfy the next import's readiness check.
+ */
 export async function importSavedPacks(page: Page, files: string[]) {
   await page.goto('/play');
-  const importedIds = new Set<string>();
+  const importedIds: string[] = [];
   for (const [index, file] of files.entries()) {
     await page.locator('input[data-unipack-import]').setInputFiles(file);
-    let records: SavedRecord[] = [];
-    // The previous pack's 64 pads can remain while the next file's footer is read.
-    // Require the newly saved pack's address and pads together within the existing state budget.
+    // Preserve separate state budgets for decoding/rendering and persistence.
+    await expectPads(page);
+    let currentId: string | null = null;
     await expect.poll(async () => {
-      records = await savedRecords(page);
-      const player = await page.evaluate(() => ({
-        pack: new URL(location.href).searchParams.get('pack'),
-        pads: document.querySelectorAll('[data-pad]').length,
+      const { ids, pack } = await page.evaluate(() => new Promise<{ ids: string[]; pack: string | null }>((resolve, reject) => {
+        const empty = { ids: [], pack: null };
+        const open = indexedDB.open('unipad');
+        // Assertions must never create a database before the app initializes its schema.
+        open.onupgradeneeded = () => open.transaction!.abort();
+        open.onerror = event => { event.preventDefault(); resolve(empty); };
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains('unipackMetadata')) { db.close(); resolve(empty); return; }
+          const transaction = db.transaction('unipackMetadata');
+          // The saved count and address need keys, not copies of every archive and sound.
+          const keys = transaction.objectStore('unipackMetadata').getAllKeys();
+          transaction.oncomplete = () => {
+            db.close();
+            resolve({ ids: keys.result.map(String), pack: new URL(location.href).searchParams.get('pack') });
+          };
+          transaction.onabort = () => { db.close(); reject(transaction.error); };
+        };
       }));
-      return {
-        saved: records.length,
-        current: records.some(record => record.id === player.pack && !importedIds.has(record.id)),
-        pads: player.pads,
-      };
-    }, { timeout: stateTimeout }).toEqual({ saved: index + 1, current: true, pads: 64 });
-    records.forEach(record => importedIds.add(record.id));
+      currentId = pack;
+      return { saved: ids.length, current: pack !== null && ids.includes(pack) && !importedIds.includes(pack) };
+    }, { timeout: stateTimeout }).toEqual({ saved: index + 1, current: true });
+    importedIds.push(currentId!);
+    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Quit', exact: true }).click();
+    await expect(page.getByRole('option')).toHaveCount(index + 1);
   }
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await page.getByRole('button', { name: 'Quit', exact: true }).click();
-  await expect(page.getByRole('option')).toHaveCount(files.length);
 }
 
 /** Metadata of a saved pack as the list reads it; `seedSavedPacks` fills the rest from the basic fixture. */

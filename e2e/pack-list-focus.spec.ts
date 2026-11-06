@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { importSavedPacks } from './saved-packs';
-import { reachable, resize } from './layout';
+import { measureElements, reachable } from './layout';
 
 const importFocusPacks = (page: Page) => importSavedPacks(page, [
   resolve('e2e/fixtures/basic.uni'),
@@ -32,12 +32,21 @@ for (const name of ['Play', 'Delete UniPack']) {
   });
 }
 
+// Two drawn frames can still precede a CSS height transition's completion. Tab only in the final layout.
+const resizeFocusDetails = (page: Page) => measureElements(page, [], {
+  viewport: { width: 640, height: 360 }, transitions: true,
+});
+
 test.describe('focused details on a short landscape screen', () => {
   test.use({ reducedMotion: 'reduce' });
 
-  test('switching packs keeps the tabbed YouTube link visible at 640x360', async ({ page, browserName }, testInfo) => {
+  for (const pendingTransition of [false, true]) test(`switching packs keeps the tabbed YouTube link visible at 640x360${pendingTransition ? ' after a pending viewport transition' : ''}`, async ({ page, browserName }, testInfo) => {
     await importFocusPacks(page);
-    await resize(page, { width: 640, height: 360 });
+    if (pendingTransition) {
+      // Make the real height transition observable even when the browser draws quickly.
+      await page.addStyleTag({ content: '.h-screen { transition-duration: 1s !important; }' });
+    }
+    await resizeFocusDetails(page);
     const link = page.getByRole('link', { name: 'Search on YouTube', exact: true });
     const play = page.getByRole('button', { name: 'Play', exact: true });
     const details = page.locator('div.overflow-y-auto').filter({ has: play });
@@ -77,7 +86,75 @@ test('two pack imports finish in one document before returning to the saved list
   expect(documents, 'list setup must keep both imports in the document that already initialized the player').toHaveLength(1);
   await expect(page.getByRole('option')).toHaveCount(2);
   await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
+  // Refresh must also restore the last imported pack's selection, not just the Quit path.
+  await page.reload();
+  await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expectPads(page);
   await expect(page).toHaveTitle('Chain Release v1 manual | UniPad Web Player');
+});
+
+// Keep decoding real; delay its completion so a storage assertion cannot win a race with the pads.
+test('pack import preparation reads storage only after pads are ready', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    const reads: number[] = [];
+    Object.assign(window, { storageReadPadCounts: reads });
+    const open = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function (...args) {
+      if (args[0] === 'unipad' && args[1] === undefined) reads.push(document.querySelectorAll('[data-pad]').length);
+      return open.apply(this, args);
+    };
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = function (...args) {
+      return decode.apply(this, args).then(async buffer => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return buffer;
+      });
+    };
+  });
+  await importSavedPacks(page, [resolve('e2e/fixtures/basic.uni')]);
+  const reads = await page.evaluate(() => (window as unknown as { storageReadPadCounts: number[] }).storageReadPadCounts);
+  await info.attach('storage-read-pad-counts', { body: JSON.stringify(reads), contentType: 'application/json' });
+  expect(reads.length).toBeGreaterThan(0);
+  expect(reads.every(count => count === 64)).toBe(true);
+});
+
+test('pack import preparation gives decoding and saving separate state budgets', async ({ page }, info) => {
+  await page.addInitScript(() => {
+    const stages: { stage: string; time: number }[] = [];
+    Object.assign(window, { importStages: stages });
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = async function () {
+      File.prototype.arrayBuffer = read;
+      stages.push({ stage: 'read started', time: performance.now() });
+      await new Promise(resolve => setTimeout(resolve, 8000));
+      stages.push({ stage: 'read released', time: performance.now() });
+      return read.call(this);
+    };
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = put.apply(this, args);
+      if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          stages.push({ stage: 'saved setting held', time: performance.now() });
+          setTimeout(() => {
+            stages.push({ stage: 'saved setting released', time: performance.now() });
+            request.onsuccess?.call(request, event);
+          }, 8000);
+        }, { once: true });
+        IDBObjectStore.prototype.put = put;
+      }
+      return request;
+    };
+  });
+  try {
+    await importSavedPacks(page, [resolve('e2e/fixtures/basic.uni')]);
+    await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
+  } finally {
+    await info.attach('import-stages', {
+      body: JSON.stringify(await page.evaluate(() => (window as unknown as { importStages: unknown[] }).importStages)),
+      contentType: 'application/json',
+    });
+  }
 });
