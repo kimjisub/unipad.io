@@ -1,15 +1,17 @@
 import { resolve } from 'node:path';
+import { type Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { importSavedPack, savedRecords } from './saved-packs';
+import { importSavedPacks } from './saved-packs';
 import { reachable, resize } from './layout';
+
+const importFocusPacks = (page: Page) => importSavedPacks(page, [
+  resolve('e2e/fixtures/basic.uni'),
+  resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'),
+]);
 
 for (const name of ['Play', 'Delete UniPack']) {
   test(`switching packs with arrow keys preserves focus on ${name}`, async ({ page }, testInfo) => {
-    await importSavedPack(page, '/play');
-    await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
-    await expectPads(page);
-    await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
-    await page.goto('/play');
+    await importFocusPacks(page);
     await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
     const button = page.getByRole('button', { name, exact: true });
     await button.focus();
@@ -34,11 +36,7 @@ test.describe('focused details on a short landscape screen', () => {
   test.use({ reducedMotion: 'reduce' });
 
   test('switching packs keeps the tabbed YouTube link visible at 640x360', async ({ page, browserName }, testInfo) => {
-    await importSavedPack(page, '/play');
-    await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
-    await expectPads(page);
-    await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
-    await page.goto('/play');
+    await importFocusPacks(page);
     await resize(page, { width: 640, height: 360 });
     const link = page.getByRole('link', { name: 'Search on YouTube', exact: true });
     const play = page.getByRole('button', { name: 'Play', exact: true });
@@ -67,4 +65,19 @@ test.describe('focused details on a short landscape screen', () => {
       expect(await reachable(link)).toEqual({ inside: true, pressable: true });
     }
   });
+});
+
+test('two pack imports finish in one document before returning to the saved list', async ({ page }, testInfo) => {
+  const documents: string[] = [];
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents.push(request.url());
+  });
+  await importFocusPacks(page);
+  await testInfo.attach('setup-documents', { body: JSON.stringify(documents), contentType: 'application/json' });
+  expect(documents, 'list setup must keep both imports in the document that already initialized the player').toHaveLength(1);
+  await expect(page.getByRole('option')).toHaveCount(2);
+  await expect(page.getByRole('option', { name: 'Chain Release v1 manual by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expectPads(page);
+  await expect(page).toHaveTitle('Chain Release v1 manual | UniPad Web Player');
 });

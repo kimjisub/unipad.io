@@ -54,3 +54,31 @@ export async function importSavedPack(page: Page, landing = '/') {
   await page.goto(landing);
 }
 
+
+/** Imports real files in one document, then quits to the saved list without restarting the player. */
+export async function importSavedPacks(page: Page, files: string[]) {
+  await page.goto('/play');
+  const importedIds = new Set<string>();
+  for (const [index, file] of files.entries()) {
+    await page.locator('input[data-unipack-import]').setInputFiles(file);
+    let records: SavedRecord[] = [];
+    // The previous pack's 64 pads can remain while the next file's footer is read.
+    // Require the newly saved pack's address and pads together within the existing state budget.
+    await expect.poll(async () => {
+      records = await savedRecords(page);
+      const player = await page.evaluate(() => ({
+        pack: new URL(location.href).searchParams.get('pack'),
+        pads: document.querySelectorAll('[data-pad]').length,
+      }));
+      return {
+        saved: records.length,
+        current: records.some(record => record.id === player.pack && !importedIds.has(record.id)),
+        pads: player.pads,
+      };
+    }, { timeout: stateTimeout }).toEqual({ saved: index + 1, current: true, pads: 64 });
+    records.forEach(record => importedIds.add(record.id));
+  }
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Quit', exact: true }).click();
+  await expect(page.getByRole('option')).toHaveCount(files.length);
+}
