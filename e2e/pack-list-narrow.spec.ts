@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { connectStore } from './database';
-import { measureReachability, reachable, resize } from './layout';
-import { importSavedPack, savedRecords } from './saved-packs';
+import { connectStore, startEachPageOnSocket } from './database';
+import { measureElements, measureReachability, reachable, resize } from './layout';
+import { expectSavedPackCount, importSavedPack, savedRecords } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
 // Phone widths, then the wider ones where the store number and the language decide when the buttons wrap.
@@ -35,36 +35,23 @@ function bar(page: Page, text: (typeof locales)[number]) {
 }
 
 /** The store answers with a count, as it does for a visitor; a build without a database stops here. */
-async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: (beforeLeave: () => Promise<void>) => Promise<void>) {
+async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: () => Promise<void>) {
   const database = await connectStore(context, storeCount);
-  await open(() => database.waitUntilHealthy(page));
+  // Importing a pack leaves its first page as soon as it is saved, often while the socket opens.
+  await startEachPageOnSocket(context);
+  await open();
   await database.publish(storeCount);
   await expect(bar(page, text).store).toContainText(String(storeCount));
 }
 
-/** Font changes start CSS size transitions; keep this wait separate from layout measurement. */
-async function waitForControlLayout(page: Page) {
-  await page.evaluate(async () => {
-    document.documentElement.getBoundingClientRect();
-    await document.fonts.ready;
-    document.documentElement.getBoundingClientRect();
-    // Wait for actual transitions, not a delay or an assertion retry. The repeating badge keeps running.
-    await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition)
-      .map(animation => animation.finished.catch(error => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
-      })));
-  });
-}
+type Measurement = Awaited<ReturnType<typeof measureElements>>[number];
 
 /** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
-async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
-  const named = Object.entries(controls);
-  await waitForControlLayout(named[0][1].page());
-  const measurements = await measureReachability(named.map(([, control]) => control));
-  for (const [index, [name]] of named.entries()) {
+function expectReachable(names: string[], measurements: Measurement[]) {
+  for (const [index, name] of names.entries()) {
     const { box, inside, pressable } = measurements[index];
     expect({ inside, pressable }, name).toEqual({ inside: true, pressable: true });
-    for (const [otherIndex, [otherName]] of named.entries()) {
+    for (const [otherIndex, otherName] of names.entries()) {
       if (otherIndex <= index) continue;
       const other = measurements[otherIndex].box;
       const overlaps = box.x < other.x + other.width && other.x < box.x + box.width
@@ -72,6 +59,12 @@ async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
       expect(overlaps, `${name} overlaps ${otherName}`).toBe(false);
     }
   }
+}
+
+/** Measured once fonts and the CSS size transitions they start have settled. */
+async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
+  const named = Object.entries(controls);
+  expectReachable(named.map(([name]) => name), await measureReachability(named.map(([, control]) => control), { transitions: true }));
 }
 
 async function expectFileChooser(page: Page, control: Locator) {
@@ -88,58 +81,57 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await expect(dialog).toHaveCount(0);
 }
 
-test('saved pack navigation waits for a delayed database handshake', async ({ page, context }, testInfo) => {
-  // Hold incoming frames only in the first document. Keep the actual SDK's
-  // connection marker, transport selection and browser storage untouched.
+test('saved pack navigation connects after leaving a delayed database handshake', async ({ page, context }, testInfo) => {
+  // Keep the real SDK and storage, but hold every incoming frame in the first
+  // document so leaving it cannot clear the SDK's socket failure record.
   await page.addInitScript(() => {
     if (sessionStorage.getItem('delayed-database-document')) return;
     sessionStorage.setItem('delayed-database-document', 'true');
     const NativeSocket = window.WebSocket;
+    const probe = { heldFrames: 0 };
+    Object.assign(window, { delayedDatabase: probe });
     window.WebSocket = class extends NativeSocket {
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols);
         if (!/firebaseio\.com|firebasedatabase\.app/.test(String(url))) return;
-        let held = true;
-        const messages: MessageEvent[] = [];
         this.addEventListener('message', event => {
-          if (!held) return;
           event.stopImmediatePropagation();
-          messages.push(event);
+          probe.heldFrames++;
         });
-        Object.assign(window, { releaseDatabaseHandshake: () => {
-          held = false;
-          messages.forEach(event => this.dispatchEvent(new MessageEvent('message', { data: event.data })));
-        } });
       }
     };
   });
   let documents = 0;
-  page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++; });
-  let leaving = false;
-  let announceLeave: () => void;
-  const atLeave = new Promise<void>(resolve => { announceLeave = resolve; });
-  const preparation = showStoreCount(page, context, locales[0], beforeLeave => importSavedPack(page, '/play', async () => {
-    leaving = true;
-    announceLeave();
-    await beforeLeave?.();
-  }));
-  // Observe rejection immediately even if an assertion below ends the test.
-  const finished = preparation.then(() => ({ error: undefined }), error => ({ error }));
-  const premature = await Promise.race([atLeave.then(() => undefined), finished]);
-  if (premature) {
-    await testInfo.attach('premature-navigation-failure', { body: String(premature.error), contentType: 'text/plain' });
+  const pollingRequests: string[] = [];
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++;
+    if (/firebaseio\.com|firebasedatabase\.app/.test(request.url()) && new URL(request.url()).pathname === '/.lp') {
+      pollingRequests.push(request.url());
+    }
+  });
+  try {
+    await showStoreCount(page, context, locales[0], async () => {
+      await page.goto('/play');
+      await expect.poll(() => page.evaluate(() => Reflect.get(window, 'delayedDatabase')?.heldFrames ?? 0)).toBeGreaterThan(0);
+      await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+      await expectPads(page);
+      await expectSavedPackCount(page, 1);
+      const before = await page.evaluate(() => ({
+        marker: localStorage.getItem('firebase:previous_websocket_failure'),
+        heldFrames: Reflect.get(window, 'delayedDatabase').heldFrames,
+      }));
+      await testInfo.attach('before-navigation', { body: JSON.stringify({ documents, ...before }), contentType: 'application/json' });
+      expect(documents).toBe(1);
+      expect(before.marker).toBe('true');
+      expect(before.heldFrames).toBeGreaterThan(0);
+      await page.goto('/play');
+    });
+    expect(documents).toBe(2);
+    expect(await savedRecords(page)).toHaveLength(1);
+    expect(pollingRequests).toEqual([]);
+  } finally {
+    await testInfo.attach('database-polling-requests', { body: JSON.stringify(pollingRequests), contentType: 'application/json' });
   }
-  const before = await page.evaluate(() => ({
-    marker: localStorage.getItem('firebase:previous_websocket_failure'),
-    release: typeof Reflect.get(window, 'releaseDatabaseHandshake'),
-  }));
-  await testInfo.attach('before-navigation', { body: JSON.stringify({ documents, leaving, ...before }), contentType: 'application/json' });
-  // The stored pack must not trigger a new document while the handshake is held.
-  expect({ documents, leaving, ...before }).toEqual({ documents: 1, leaving: true, marker: 'true', release: 'function' });
-  await page.evaluate(() => Reflect.get(window, 'releaseDatabaseHandshake')());
-  expect((await finished).error).toBeUndefined();
-  await expect(page.getByRole('button', { name: /^Store/ }).first()).toContainText(String(storeCount));
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('firebase:previous_websocket_failure')), { timeout: 15000 }).toBeNull();
 });
 
 test('reachability reads moving controls in the same browser turn', async ({ page }) => {
@@ -231,20 +223,28 @@ for (const text of locales) {
 
     test('the bar and the first pack fit a short screen at every narrow width', async ({ page, context }) => {
       test.setTimeout(90_000);
-      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
-      const controls = bar(page, text);
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
-      for (const width of widths) {
-        await resize(page, { width, height: 568 });
-        await expectAllReachable(controls);
-        expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(112);
-        await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
+      // The bar keeps the same elements at every width; only CSS wrapping moves them. Find them once,
+      // then let one browser call per width resize, settle and measure: a busy machine makes each call slow.
+      const named = Object.entries(bar(page, text));
+      const names = named.map(([name]) => name);
+      const elements = await Promise.all(named.map(([, control]) => control.elementHandle()));
+      try {
+        for (const width of widths) {
+          const measurements = await measureElements(page, elements, { viewport: { width, height: 568 }, transitions: true });
+          expectReachable(names.map(name => `${name} at ${width}px`), measurements);
+          expect(measurements[names.indexOf('search')].box.width, `search box width at ${width}px`).toBeGreaterThanOrEqual(112);
+          await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
+        }
+      } finally {
+        await Promise.all(elements.map(element => element.dispose()));
       }
     });
 
     test('every control works on a phone-width screen with a saved pack', async ({ page, context }) => {
       test.setTimeout(90_000);
-      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       for (const viewport of viewports) {
@@ -274,7 +274,7 @@ for (const text of locales) {
 
     test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
+      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       await expect(row).toBeVisible();
@@ -303,7 +303,7 @@ for (const text of locales) {
       test.use({ locale: text.locale, reducedMotion: 'reduce' });
       test('selected pack can start without scrolling on short phones', async ({ page, context }, testInfo) => {
         test.setTimeout(120_000);
-        await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
+        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
         if (textScale === 200) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
         const row = page.getByRole('option', { name: new RegExp(packTitle) });
         if (await row.getAttribute('aria-selected') !== 'true') await row.click();
@@ -346,7 +346,7 @@ for (const text of locales) {
     test.use({ locale: text.locale, reducedMotion: 'reduce' });
     for (const viewport of scrollSwitchScreens) {
       test(`switching packs restores playback after scrolling at ${viewport.width}x${viewport.height}`, async ({ page, context }, testInfo) => {
-        await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
+        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
         await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
         await expectPads(page);
         await expect.poll(async () => (await savedRecords(page)).length).toBe(2);

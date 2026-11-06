@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { connectStore } from './database';
+import { connectStore, startEachPageOnSocket } from './database';
 import { savedRecords, expectSavedPackCount, type SavedRecord } from './saved-packs';
 
 const STORE_CODE = 'browser-test';
@@ -22,6 +22,7 @@ const storeItems = {
  * listed yet, as when it was downloaded in another tab. The store then offers it for download again.
  */
 async function openStoreWithUnlistedCopy(page: Page): Promise<SavedRecord> {
+  await startEachPageOnSocket(page.context());
   const database = await connectStore(page.context(), 1, storeItems);
   const pack = await readFile(resolve('e2e/fixtures/basic.uni'));
   await page.route('**/api/store/download?**', route => route.fulfill({ body: pack, contentType: 'application/zip' }));
