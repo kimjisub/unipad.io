@@ -16,6 +16,11 @@ const packs = [
 ] as const;
 const [last, middle, first] = packs.map(([, name]) => name);
 
+declare global {
+  // Whether any list row was still moving at each wheel event the page received.
+  interface Window { wheelsWhileRowsMove: boolean[] }
+}
+
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
 const option = (page: Page, name: string) => list(page).getByRole('option', { name, exact: true });
 
@@ -349,7 +354,8 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 const tailSoundPad = '7,7';
 
 // Import a real pack with one looping sound, then clone its saved archive and metadata.
-async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list') {
+// `beforeQuit` runs just before the list is shown again, while its rows have not entered yet.
+async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list', beforeQuit?: () => Promise<void>) {
   await loadInputPack(page, 8, 8, square, tailSoundPad);
   await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
@@ -391,9 +397,22 @@ async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' =
     // Quit refreshes the saved rows without opening a second document during setup.
     // Real pointer input remains in the playback and return actions under test.
     await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+    await beforeQuit?.();
     await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
     await expect(list(page).getByRole('option')).toHaveCount(13);
   }
+}
+
+// The list's rows enter and re-lay out with script-driven transforms and fade-ins. While they move,
+// the transforms stretch the list's scroll range, and a wheel sent then can leave WebKit's list past
+// its settled end with the next wheel never moving it. Send wheel input only once the rows are at rest.
+async function untilRowsAtRest(page: Page) {
+  await test.step('List rows must stop moving before wheel input', async () => {
+    const atRest = await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="option"]')).every(row =>
+      getComputedStyle(row).transform === 'none' && row.getAnimations().every(animation => animation.playState !== 'running')),
+    null, { timeout: 5000 });
+    await atRest.dispose();
+  });
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
@@ -423,6 +442,7 @@ async function wheelTo(page: Page, target: Locator) {
   // equals the distance scrolled or silently retrying the final visibility assertion.
   let remaining: number | undefined;
   while (remaining === undefined || remaining > 0) {
+    await untilRowsAtRest(page);
     const observation = await readScroll();
     try {
       const scroll = await observation.evaluate(value => value && {
@@ -611,6 +631,33 @@ for (const square of [true, false]) {
     });
   }
 }
+
+test('wheel input waits for entering list rows to stop moving', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await page.setViewportSize({ width: 594, height: 368 });
+  // A busy machine can leave the rows' entrance animation running when the test scrolls.
+  // Hold it at its start by pausing the page clock before the list is shown.
+  await page.clock.install();
+  await test.step('Prepare long saved list', () => openLongList(page, true, 'list', () => page.clock.pauseAt(new Date(Date.now() + 1000))));
+  const rows = list(page).getByRole('option');
+  await expect(rows.last()).toHaveCSS('transform', /^matrix\(1, 0, 0, 1, 0, [1-9]/);
+  await page.evaluate(() => {
+    window.wheelsWhileRowsMove = [];
+    addEventListener('wheel', () => window.wheelsWhileRowsMove.push(Array.from(document.querySelectorAll('[role="option"]'))
+      .some(row => getComputedStyle(row).transform !== 'none')), { capture: true });
+  });
+  const tail = option(page, 'Local pack 0 by UniPad Tests');
+  const wheel = wheelTo(page, tail);
+  // While the clock stays paused the rows cannot finish entering, so no wheel may arrive.
+  const early = await page.waitForFunction(() => window.wheelsWhileRowsMove.length > 0, null, { timeout: 3000 })
+    .then(handle => handle.dispose().then(() => true), () => false);
+  await page.clock.resume();
+  await wheel;
+  expect(early, 'a wheel was sent while the rows were still entering').toBe(false);
+  expect(await page.evaluate(() => window.wheelsWhileRowsMove)).not.toContain(true);
+  await tail.click();
+  await expect(tail).toHaveAttribute('aria-selected', 'true');
+});
 
 test('a single saved pack keeps detail playback visible in a tall phone viewport', async ({ page }, info) => {
   await openList(page, [packs[0][0]]);
