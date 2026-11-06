@@ -1,6 +1,6 @@
 import { type Page, type Request, type Route, type TestInfo } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { connectStore } from './database';
+import { connectStore, startEachPageOnSocket } from './database';
 import { importSavedPack } from './saved-packs';
 import { playFirstPad } from './basic-pack';
 
@@ -72,6 +72,7 @@ test('plays a saved pack and quits to the list when only the store database fail
 });
 
 test('plays a saved pack and quits to the list when only analytics fails', async ({ page, context }, testInfo) => {
+  await startEachPageOnSocket(context);
   const database = await connectStore(context);
   await page.goto('/play');
   await database.publish(42);

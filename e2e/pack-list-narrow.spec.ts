@@ -3,7 +3,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { connectStore, startEachPageOnSocket } from './database';
 import { measureElements, measureReachability, reachable, resize } from './layout';
-import { importSavedPack, savedRecords } from './saved-packs';
+import { expectSavedPackCount, importSavedPack, savedRecords } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
 // Phone widths, then the wider ones where the store number and the language decide when the buttons wrap.
@@ -80,6 +80,59 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
+
+test('saved pack navigation connects after leaving a delayed database handshake', async ({ page, context }, testInfo) => {
+  // Keep the real SDK and storage, but hold every incoming frame in the first
+  // document so leaving it cannot clear the SDK's socket failure record.
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('delayed-database-document')) return;
+    sessionStorage.setItem('delayed-database-document', 'true');
+    const NativeSocket = window.WebSocket;
+    const probe = { heldFrames: 0 };
+    Object.assign(window, { delayedDatabase: probe });
+    window.WebSocket = class extends NativeSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (!/firebaseio\.com|firebasedatabase\.app/.test(String(url))) return;
+        this.addEventListener('message', event => {
+          event.stopImmediatePropagation();
+          probe.heldFrames++;
+        });
+      }
+    };
+  });
+  let documents = 0;
+  const pollingRequests: string[] = [];
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++;
+    if (/firebaseio\.com|firebasedatabase\.app/.test(request.url()) && new URL(request.url()).pathname === '/.lp') {
+      pollingRequests.push(request.url());
+    }
+  });
+  try {
+    await showStoreCount(page, context, locales[0], async () => {
+      await page.goto('/play');
+      await expect.poll(() => page.evaluate(() => Reflect.get(window, 'delayedDatabase')?.heldFrames ?? 0)).toBeGreaterThan(0);
+      await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
+      await expectPads(page);
+      await expectSavedPackCount(page, 1);
+      const before = await page.evaluate(() => ({
+        marker: localStorage.getItem('firebase:previous_websocket_failure'),
+        heldFrames: Reflect.get(window, 'delayedDatabase').heldFrames,
+      }));
+      await testInfo.attach('before-navigation', { body: JSON.stringify({ documents, ...before }), contentType: 'application/json' });
+      expect(documents).toBe(1);
+      expect(before.marker).toBe('true');
+      expect(before.heldFrames).toBeGreaterThan(0);
+      await page.goto('/play');
+    });
+    expect(documents).toBe(2);
+    expect(await savedRecords(page)).toHaveLength(1);
+    expect(pollingRequests).toEqual([]);
+  } finally {
+    await testInfo.attach('database-polling-requests', { body: JSON.stringify(pollingRequests), contentType: 'application/json' });
+  }
+});
 
 test('reachability reads moving controls in the same browser turn', async ({ page }) => {
   await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
