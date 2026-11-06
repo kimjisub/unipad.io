@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 import { expect, expectPads, stateTimeout } from './browser';
@@ -54,3 +55,37 @@ export async function importSavedPack(page: Page, landing = '/') {
   await page.goto(landing);
 }
 
+
+/** Metadata of a saved pack as the list reads it; `seedSavedPacks` fills the rest from the basic fixture. */
+export interface SeededPack { id: string; title: string; producerName: string; addedAt: number; bookmark?: boolean }
+
+/**
+ * Writes saved packs straight into the app's own database, each with the basic fixture as its
+ * archive, so a list test skips importing and playing a pack. Waits for the app to create the
+ * database first: opening it here before then would create an empty one at the wrong version.
+ */
+export async function seedSavedPacks(page: Page, packs: readonly SeededPack[]) {
+  const archive = Array.from(readFileSync(resolve('e2e/fixtures/basic.uni')));
+  await expect.poll(() => page.evaluate(({ archive, packs }) => new Promise<boolean>((resolve, reject) => {
+    const open = indexedDB.open('unipad');
+    open.onupgradeneeded = () => open.transaction!.abort();
+    open.onerror = event => { event.preventDefault(); resolve(false); };
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains('unipackChunks')) { db.close(); resolve(false); return; }
+      const transaction = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
+      const data = new Uint8Array(archive).buffer;
+      for (const { id, title, producerName, addedAt, bookmark = false } of packs) {
+        transaction.objectStore('unipacks').put({ id, format: 'chunks-v1', byteLength: data.byteLength, chunkCount: 1 });
+        transaction.objectStore('unipackChunks').put({ packId: id, index: 0, data });
+        transaction.objectStore('unipackMetadata').put({
+          id, title, fileName: 'basic', producerName, buttonX: 8, buttonY: 8, chain: 1,
+          keyLedExist: true, autoPlayExist: true, soundCount: 2, ledCount: 2, openCount: 0,
+          bookmark, addedAt, lastOpenedAt: addedAt,
+        });
+      }
+      transaction.oncomplete = () => { db.close(); resolve(true); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+    };
+  }), { archive, packs }), { timeout: stateTimeout }).toBe(true);
+}
