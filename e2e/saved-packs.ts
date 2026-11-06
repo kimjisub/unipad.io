@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type Page } from '@playwright/test';
+import { type JSHandle, type Page } from '@playwright/test';
 import { expect, expectPads, stateTimeout } from './browser';
 
 export interface SavedRecord { id: string; storeCode?: string; zipBytes: number }
@@ -56,45 +56,65 @@ export async function importSavedPack(page: Page, landing = '/') {
 }
 
 
-/**
- * Imports distinct 8x8 fixture packs into an empty library in one document. Return to the list
- * after each save so the previous pack's pads cannot satisfy the next import's readiness check.
- */
-export async function importSavedPacks(page: Page, files: string[]) {
+/** Runs against an initialized schema without ever creating an empty database. */
+async function withExistingPackDatabase<T>(page: Page, stores: string[], action: (database: JSHandle<IDBDatabase | null>) => Promise<T>): Promise<T> {
+  const database = await page.evaluateHandle(stores => new Promise<IDBDatabase | null>(resolve => {
+    const open = indexedDB.open('unipad');
+    open.onupgradeneeded = () => open.transaction!.abort();
+    open.onerror = event => { event.preventDefault(); resolve(null); };
+    open.onsuccess = () => {
+      const db = open.result;
+      if (stores.some(store => !db.objectStoreNames.contains(store))) { db.close(); resolve(null); return; }
+      resolve(db);
+    };
+  }), stores);
+  try {
+    return await action(database);
+  } finally {
+    await database.evaluate(db => db?.close());
+    await database.dispose();
+  }
+}
+
+export type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
+interface ImportOptions {
+  afterInput?: () => Promise<void>;
+  beforeSavedUrl?: () => Promise<void>;
+}
+
+/** Imports an 8x8 fixture and returns to the list after its save completes. */
+export async function importSavedPackAndQuit(page: Page, file: PackFile, count: number, options: ImportOptions = {}) {
+  await page.locator('input[data-unipack-import]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
+  await options.afterInput?.();
+  // Preserve separate state budgets for decoding/rendering and persistence.
+  await expectPads(page);
+  // Finish controlled-delay setup before starting the saved URL assertion's clock.
+  await options.beforeSavedUrl?.();
+  await expect.poll(() => withExistingPackDatabase(page, ['unipackMetadata'], database => database.evaluate(db => {
+    if (!db) return { saved: 0, current: false };
+    return new Promise<{ saved: number; current: boolean }>((resolve, reject) => {
+      const transaction = db.transaction('unipackMetadata');
+      // The saved count and address need keys, not copies of every archive and sound.
+      const keys = transaction.objectStore('unipackMetadata').getAllKeys();
+      transaction.oncomplete = () => {
+        const pack = new URL(location.href).searchParams.get('pack');
+        resolve({ saved: keys.result.length, current: pack !== null && keys.result.includes(pack) });
+      };
+      transaction.onabort = () => reject(transaction.error);
+    });
+  })), { timeout: stateTimeout }).toEqual({ saved: count, current: true });
+  // Setup needs the buttons' actions, not pointer hit testing during their animations.
+  await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+  await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
+  await expect(page.getByRole('listbox', { name: 'UniPack list' }).getByRole('option')).toHaveCount(count);
+}
+
+/** Imports distinct 8x8 fixtures into an empty library, keeping one document alive. */
+export async function importSavedPacks(page: Page, files: readonly PackFile[], options: ImportOptions = {}) {
   await page.goto('/play');
-  const importedIds: string[] = [];
   for (const [index, file] of files.entries()) {
-    await page.locator('input[data-unipack-import]').setInputFiles(file);
-    // Preserve separate state budgets for decoding/rendering and persistence.
-    await expectPads(page);
-    let currentId: string | null = null;
-    await expect.poll(async () => {
-      const { ids, pack } = await page.evaluate(() => new Promise<{ ids: string[]; pack: string | null }>((resolve, reject) => {
-        const empty = { ids: [], pack: null };
-        const open = indexedDB.open('unipad');
-        // Assertions must never create a database before the app initializes its schema.
-        open.onupgradeneeded = () => open.transaction!.abort();
-        open.onerror = event => { event.preventDefault(); resolve(empty); };
-        open.onsuccess = () => {
-          const db = open.result;
-          if (!db.objectStoreNames.contains('unipackMetadata')) { db.close(); resolve(empty); return; }
-          const transaction = db.transaction('unipackMetadata');
-          // The saved count and address need keys, not copies of every archive and sound.
-          const keys = transaction.objectStore('unipackMetadata').getAllKeys();
-          transaction.oncomplete = () => {
-            db.close();
-            resolve({ ids: keys.result.map(String), pack: new URL(location.href).searchParams.get('pack') });
-          };
-          transaction.onabort = () => { db.close(); reject(transaction.error); };
-        };
-      }));
-      currentId = pack;
-      return { saved: ids.length, current: pack !== null && ids.includes(pack) && !importedIds.includes(pack) };
-    }, { timeout: stateTimeout }).toEqual({ saved: index + 1, current: true });
-    importedIds.push(currentId!);
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-    await page.getByRole('button', { name: 'Quit', exact: true }).click();
-    await expect(page.getByRole('option')).toHaveCount(index + 1);
+    // Returning to the list removes old pads before the next readiness check.
+    await importSavedPackAndQuit(page, file, index + 1, options);
   }
 }
 
@@ -108,13 +128,9 @@ export interface SeededPack { id: string; title: string; producerName: string; a
  */
 export async function seedSavedPacks(page: Page, packs: readonly SeededPack[]) {
   const archive = Array.from(readFileSync(resolve('e2e/fixtures/basic.uni')));
-  await expect.poll(() => page.evaluate(({ archive, packs }) => new Promise<boolean>((resolve, reject) => {
-    const open = indexedDB.open('unipad');
-    open.onupgradeneeded = () => open.transaction!.abort();
-    open.onerror = event => { event.preventDefault(); resolve(false); };
-    open.onsuccess = () => {
-      const db = open.result;
-      if (!db.objectStoreNames.contains('unipackChunks')) { db.close(); resolve(false); return; }
+  await expect.poll(() => withExistingPackDatabase(page, ['unipacks', 'unipackMetadata', 'unipackChunks'], database => database.evaluate((db, { archive, packs }) => {
+    if (!db) return false;
+    return new Promise<boolean>((resolve, reject) => {
       const transaction = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
       const data = new Uint8Array(archive).buffer;
       for (const { id, title, producerName, addedAt, bookmark = false } of packs) {
@@ -126,8 +142,8 @@ export async function seedSavedPacks(page: Page, packs: readonly SeededPack[]) {
           bookmark, addedAt, lastOpenedAt: addedAt,
         });
       }
-      transaction.oncomplete = () => { db.close(); resolve(true); };
-      transaction.onabort = () => { db.close(); reject(transaction.error); };
-    };
-  }), { archive, packs }), { timeout: stateTimeout }).toBe(true);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }, { archive, packs })), { timeout: stateTimeout }).toBe(true);
 }

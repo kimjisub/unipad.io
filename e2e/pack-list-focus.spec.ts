@@ -95,6 +95,7 @@ test('two pack imports finish in one document before returning to the saved list
 });
 
 // Keep decoding real; delay its completion so a storage assertion cannot win a race with the pads.
+// Observe unversioned reads made by the preparation helper; app opens specify a version.
 test('pack import preparation reads storage only after pads are ready', async ({ page }, info) => {
   await page.addInitScript(() => {
     const reads: number[] = [];
