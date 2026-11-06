@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 interface FormatProbe {
-  decodedBuffers: { id: number; duration: number; encodedSha256: string }[];
+  decodedBuffers: { id: number; duration: number; frames: number; channels: number; sampleRate: number; encodedSha256: string }[];
   starts: { bufferId: number | null; duration: number; loop: boolean }[];
 }
 
@@ -22,7 +22,8 @@ export async function observeFormatBuffers(page: Page) {
         const encodedSha256 = Array.from(new Uint8Array(await hash), byte => byte.toString(16).padStart(2, '0')).join('');
         const id = probe.decodedBuffers.length + 1;
         bufferIds.set(buffer, id);
-        probe.decodedBuffers.push({ id, duration: buffer.duration, encodedSha256 });
+        probe.decodedBuffers.push({ id, duration: buffer.duration, frames: buffer.length, channels: buffer.numberOfChannels,
+          sampleRate: buffer.sampleRate, encodedSha256 });
         return buffer;
       });
     };
