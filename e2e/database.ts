@@ -49,3 +49,15 @@ export async function connectStore(
     },
   };
 }
+
+/**
+ * The fake answers only on a socket. A page left while its socket still waited for the first
+ * answer keeps the SDK's socket failure record, and the next page then starts on long polling,
+ * which nothing answers. Tests that check what the store shows, not how the SDK connects
+ * (socket-failure-record.spec.ts), start each page without that record.
+ */
+export async function startEachPageOnSocket(context: BrowserContext) {
+  await context.addInitScript(() => {
+    try { localStorage.removeItem('firebase:previous_websocket_failure'); } catch { /* no storage on this page */ }
+  });
+}

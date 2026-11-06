@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { connectStore } from './database';
+import { connectStore, startEachPageOnSocket } from './database';
 import { measureElements, measureReachability, reachable, resize } from './layout';
 import { importSavedPack, savedRecords } from './saved-packs';
 
@@ -37,6 +37,8 @@ function bar(page: Page, text: (typeof locales)[number]) {
 /** The store answers with a count, as it does for a visitor; a build without a database stops here. */
 async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: () => Promise<void>) {
   const database = await connectStore(context, storeCount);
+  // Importing a pack leaves its first page as soon as it is saved, often while the socket opens.
+  await startEachPageOnSocket(context);
   await open();
   await database.publish(storeCount);
   await expect(bar(page, text).store).toContainText(String(storeCount));
