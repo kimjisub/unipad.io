@@ -87,6 +87,8 @@ export class AutoPlayRunner {
   // Step mode state
   private stepPendingPads = new Set<number>();
   private skippedStepLines = new Set<number>();
+  private preserveStepPresses = false;
+  private restoredStepGuides = new Set<number>();
   private pressedKeysQueue: { key: number; chain: number }[] = [];
   private stepScanned = false;
   private stepConsumedInput = false;
@@ -146,6 +148,8 @@ export class AutoPlayRunner {
     this.active = true;
     this.setProgress(0);
     this.skippedStepLines.clear();
+    this.preserveStepPresses = false;
+    this.restoredStepGuides.clear();
     this.listener.onStart();
 
     const autoPlay = this.unipack.autoPlay;
@@ -213,6 +217,10 @@ export class AutoPlayRunner {
             const elapsed = currTime - this.startTime;
             while (this.guideIndex < this.guideTimeline.length) {
               const event = this.guideTimeline[this.guideIndex];
+              if (this.skippedStepLines.has(event.index)) {
+                this.guideIndex++;
+                continue;
+              }
               if (event.timeMs <= elapsed + GUIDE_LOOKAHEAD_MS) {
                 if (event.chain !== this.chainValue()) {
                   this.waitingForChain = event.chain;
@@ -222,7 +230,12 @@ export class AutoPlayRunner {
                   this.listener.onGuideChainOn(event.chain);
                   break;
                 }
-                const targetWallTimeMs = this.startTime + event.timeMs;
+                const restored = this.restoredStepGuides.delete(event.index);
+                const authoredTarget = this.startTime + event.timeMs;
+                // An overdue restored step still needs one visible LED update. Keep that
+                // brief display separate from song time so later notes retain their deadlines.
+                const targetWallTimeMs = restored && authoredTarget <= currTime
+                  ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
                 this.guideIndex++;
@@ -330,9 +343,9 @@ export class AutoPlayRunner {
           }
 
           if (needsScan) {
-            // Lines skipped for an earlier switch to autoplay belong to that pass; practice guides
-            // every pad from here again.
-            this.skippedStepLines.clear();
+            // Lines skipped for an earlier autoplay pass expire on entering practice. A quick
+            // return from timed guidance must still remember performed chord members.
+            if (!this.preserveStepPresses) this.skippedStepLines.clear();
             this.listener.onRemoveGuide();
             this.stepScanOrigin ??= this.progress;
             this.stepStartProgress = this.progress;
@@ -347,7 +360,8 @@ export class AutoPlayRunner {
         (this.stepPendingPads.size > 0 || this.waitingForChain >= 0);
       const stepping = this.stepMode && this.practiceGuide && !this.playmode;
       const awaitsFinalDelay = !(stepping && this.stepConsumedInput) && this.delayAccum > (this.pausedAt ?? currTime) - this.startTime;
-      if (this.suspendedAt !== null || this.progress < autoPlay.elements.length || awaitsLastStep || awaitsFinalDelay) {
+      const awaitsGuide = this.playmode && this.practiceGuide && this.activeGuides.size > 0;
+      if (this.suspendedAt !== null || this.progress < autoPlay.elements.length || awaitsLastStep || awaitsFinalDelay || awaitsGuide) {
         this.rafId = this.schedule(loop);
       } else {
         this.active = false;
@@ -369,6 +383,7 @@ export class AutoPlayRunner {
     }
     this.activeGuides.clear();
     this.skippedStepLines.clear();
+    this.restoredStepGuides.clear();
     this.resetStepState();
   }
 
@@ -442,11 +457,13 @@ export class AutoPlayRunner {
   /** Both play controls and mode controls use the same step-exit and clock rules. */
   play(practiceGuide = this.practiceGuide): void {
     this.practiceGuide = practiceGuide;
+    if (!practiceGuide) this.preserveStepPresses = false;
+    const restoringStepGuide = practiceGuide && this.stepMode && this.stepScanOrigin !== null;
     const scannedPads = this.leaveStepPractice();
     // A step scan without pads has not advanced song time. In particular, leaving
     // paused practice for autoplay must preserve the remainder of the current delay.
-    if (scannedPads) this.resyncToProgress();
-    if (!this.playmode) this.clockPending ??= 'nextNote';
+    if (scannedPads && !restoringStepGuide) this.resyncToProgress();
+    if (!this.playmode && !restoringStepGuide) this.clockPending ??= 'nextNote';
     this.playmode = true;
     this.beforeStartPlaying = true;
   }
@@ -502,6 +519,8 @@ export class AutoPlayRunner {
     const autoPlay = this.unipack.autoPlay;
     const max = autoPlay ? autoPlay.elements.length : 0;
     this.skippedStepLines.clear();
+    this.restoredStepGuides.clear();
+    this.preserveStepPresses = false;
     const target = this.progress + offset;
     this.setProgress(Math.max(0, Math.min(max, target)));
     this.resyncToProgress();
@@ -534,27 +553,59 @@ export class AutoPlayRunner {
     return false;
   }
 
-  /** Autoplay owes the unpressed members of the last shown group. Earlier completed
-   *  groups and pressed members stay consumed. Guide playback keeps its existing position;
-   *  a chain-only scan restores its delays without replaying earlier groups. */
+  /** Both timed modes owe unpressed members of the shown group. Earlier completed
+   *  groups and pressed members stay consumed; guide playback also preserves the song clock. */
   leaveStepPractice(): boolean {
     this.drainPressedKeys();
     const scannedPads = this.hasScannedStepPads;
     const skippedLines = new Set<number>();
+    const restoredGuides = new Set<number>();
     let pendingStart: number | null = null;
     const elements = this.unipack.autoPlay?.elements;
-    if (!this.practiceGuide && this.stepPendingPads.size > 0 && elements) {
+    if (this.stepPendingPads.size > 0 && elements) {
       for (let i = this.stepStartProgress; i < this.progress; i++) {
         const element = elements[i];
         if (element.type !== 'on' && element.type !== 'off') continue;
         if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
-          if (element.type === 'on') pendingStart ??= i;
+          if (element.type === 'on') { pendingStart ??= i; restoredGuides.add(i); }
         } else if (pendingStart !== null) {
           skippedLines.add(i);
         }
       }
     }
-    if (pendingStart !== null) {
+    if (this.practiceGuide && this.stepScanOrigin !== null && elements) {
+      let songTimeMs = 0;
+      let lastPressedTimeMs: number | null = null;
+      for (let i = 0; i < this.progress; i++) {
+        const element = elements[i];
+        if (element.type === 'delay') songTimeMs += element.delay;
+        if (this.stepConsumedInput && i >= this.stepScanOrigin && element.type === 'on' &&
+          (i < this.stepStartProgress || !this.stepPendingPads.has(this.guideKey(element.x, element.y)))) {
+          lastPressedTimeMs = songTimeMs;
+        }
+      }
+      const restoredProgress = pendingStart ?? (this.stepRangeHasPads(this.stepStartProgress)
+        ? this.progress : this.stepStartProgress);
+      this.setProgress(restoredProgress);
+      this.skippedStepLines = skippedLines;
+      this.preserveStepPresses = true;
+      this.restoredStepGuides = restoredGuides;
+      this.delayAccum = elements.slice(0, restoredProgress).reduce((time, element) =>
+        time + (element.type === 'delay' ? element.delay : 0), 0);
+      if (lastPressedTimeMs !== null) {
+        // A performed step anchors the next written gap to resume. Merely offering a step
+        // must instead keep the frozen song time, including an already-overdue note.
+        const now = this.suspendedAt ?? performance.now();
+        this.startTime = now - lastPressedTimeMs;
+        this.pausedAt = now;
+      }
+      this.clockPending = null;
+      this.clearChainWait();
+      this.stepMode = false;
+      this.clearStepScan();
+      this.restartGuideAtProgress();
+      return scannedPads;
+    } else if (pendingStart !== null) {
       this.skippedStepLines = skippedLines;
       this.setProgress(pendingStart);
     } else if (this.stepScanOrigin !== null) {
@@ -613,6 +664,10 @@ export class AutoPlayRunner {
     let totalDelayMs = 0;
 
     scanLoop: while (this.progress < autoPlay.elements.length) {
+      if (this.preserveStepPresses && this.skippedStepLines.has(this.progress)) {
+        this.setProgress(this.progress + 1);
+        continue;
+      }
       const element = autoPlay.elements[this.progress];
       switch (element.type) {
         case 'on': {

@@ -97,7 +97,7 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
-for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redraws only the next unscanned note`, async ({ page }, info) => {
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} retains the unpressed note before guiding the next`, async ({ page }, info) => {
   await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
   const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
   await mode(page, 'Guide').dispatchEvent('click');
@@ -118,9 +118,13 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redr
   await info.attach('resumed-guide', { path, contentType: 'image/png' });
   const messages = await page.evaluate(() => window.browserProbe.midi.messages);
   await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
+  await expect(guide('0,0')).toHaveCount(1);
+  await expect(guide('0,1')).toHaveCount(0);
+  await page.clock.fastForward(600);
+  await page.clock.runFor(16);
   await expect(guide('0,0')).toHaveCount(0);
   await expect(guide('0,1')).toHaveCount(1);
-  await page.clock.fastForward(800);
+  await page.clock.fastForward(1000);
   await page.clock.runFor(16);
   await expect(guide('0,1')).toHaveCount(0);
 });

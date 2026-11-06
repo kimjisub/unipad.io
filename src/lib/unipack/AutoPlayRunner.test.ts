@@ -71,6 +71,57 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  for (const pauseMs of [500, 1500]) for (const pressed of [false, true]) {
+    test(`guide resume at song time ${pauseMs} preserves ${pressed ? 'the gap after a pressed note' : 'an unpressed note'}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n1 2 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+        autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 1000\n',
+      }));
+      const guides: [number, number, number][] = [];
+      const screen = new Set<string>();
+      const sounds: number[] = [];
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() { screen.clear(); }, onProgressUpdate() {}, onChainChange() {}, onGuideChainOn() {},
+        onPadTouchOn() { sounds.push(clock.now); }, onPadTouchOff() {},
+        onGuidePadOn(x, y, at) { guides.push([x, y, at]); screen.add(`${x},${y}`); },
+        onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onGuideLedUpdate() {}, onRemoveGuide() { screen.clear(); },
+      }, () => 0, () => {}, () => {}, () => {});
+      runner.practiceGuide = true;
+      const startedAt = clock.now;
+      runner.launch();
+      clock.tick(1);
+      // Pause before servicing a late timer too: an overdue, unprocessed note is still owed.
+      clock.now = startedAt + pauseMs;
+      runner.pause(); runner.stepMode = true;
+      clock.tick(0);
+      assert.deepEqual([...screen], ['0,0']);
+      if (pressed) { runner.stepPadPressed(0, 0); clock.tick(0); }
+      clock.tick(2000);
+      const resumedAt = clock.now;
+      guides.length = 0;
+      runner.play(true);
+      clock.tick(0);
+      if (pressed) {
+        assert.ok(guides.every(([x, y]) => x !== 0 || y !== 0), 'a pressed note must stay consumed');
+      } else {
+        assert.equal(screen.has('0,0'), true, 'an overdue note must actually be visible, not just emit an on/off pair');
+        if (pauseMs < 1000) assert.deepEqual(guides[0], [0, 0, resumedAt + 500]);
+        else {
+          clock.tick(50);
+          assert.equal(screen.has('0,0'), false, 'the immediate overdue hint clears without moving the song clock');
+        }
+      }
+      const secondAt = resumedAt + (pressed ? 1000 : 2000 - pauseMs);
+      for (let i = 0; i < 30; i++) clock.tick(100);
+      assert.ok(guides.some(([x, y, at]) => x === 0 && y === 1 && at === secondAt), 'the next note keeps its expected deadline');
+      assert.ok(guides.some(([x, y, at]) => x === 1 && y === 0 && at === secondAt + 1000));
+      assert.deepEqual(sounds, [], 'timed guidance never presses a sounding pad');
+      clock.tick(2000);
+      assert.equal(runner.active, false);
+      assert.equal(screen.size, 0);
+    });
+  }
+
   test('resuming a timed guide redraws it after clearing the paused screen', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'd 1000\no 1 1\nf 1 1\nd 10000',
