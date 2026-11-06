@@ -1,4 +1,4 @@
-import { type BrowserContext } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
 import { expect } from './browser';
 
 // Keep the real SDK and browser storage; replace only its network peer.
@@ -39,13 +39,24 @@ export async function connectStore(
     });
     socket.send(JSON.stringify({ t: 'c', d: { t: 'h', d: { ts: Date.now(), v: '5', h: new URL(socket.url()).hostname, s: 'browser-test-session' } } }));
   });
+  const waitForSubscriber = () => expect.poll(() => Boolean(publishCount), {
+    message: 'Firebase database did not connect. Rebuild with NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://unipad-browser-test.firebaseio.com (see README).',
+    timeout: 15000,
+  }).toBe(true);
   return {
     async publish(count: number) {
-      await expect.poll(() => Boolean(publishCount), {
-        message: 'Firebase database did not connect. Rebuild with NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://unipad-browser-test.firebaseio.com (see README).',
-        timeout: 15000,
-      }).toBe(true);
+      await waitForSubscriber();
       publishCount!(count);
+    },
+    async waitUntilHealthy(page: Page) {
+      await waitForSubscriber();
+      // The SDK marks every new socket as a provisional failure until it has
+      // received enough replies. Leaving earlier makes the next document use
+      // HTTP long polling, which this WebSocket peer does not implement.
+      await expect.poll(() => page.evaluate(() => localStorage.getItem('firebase:previous_websocket_failure')), {
+        message: 'Firebase must receive its health-check replies before leaving the document.',
+        timeout: 15000,
+      }).toBeNull();
     },
   };
 }

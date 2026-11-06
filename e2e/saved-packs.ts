@@ -45,12 +45,13 @@ export async function expectSavedPackCount(page: Page, count: number) {
   await expect.poll(async () => (await savedRecords(page)).length, { timeout: stateTimeout }).toBe(count);
 }
 
-/** Imports the fixture pack through the normal file input, waits until it is saved and opens `landing`. */
-export async function importSavedPack(page: Page, landing = '/') {
+/** Imports the fixture pack through the normal file input, waits for storage and optional connection preparation and opens `landing`. */
+export async function importSavedPack(page: Page, landing = '/', beforeLeave?: () => Promise<void>) {
   await page.goto('/play');
   await page.locator('input[data-unipack-import]').setInputFiles(resolve('e2e/fixtures/basic.uni'));
   await expectPads(page);
   await expectSavedPackCount(page, 1);
+  await beforeLeave?.();
   await page.goto(landing);
 }
 

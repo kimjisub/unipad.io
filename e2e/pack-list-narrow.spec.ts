@@ -35,9 +35,9 @@ function bar(page: Page, text: (typeof locales)[number]) {
 }
 
 /** The store answers with a count, as it does for a visitor; a build without a database stops here. */
-async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: () => Promise<void>) {
+async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: (beforeLeave: () => Promise<void>) => Promise<void>) {
   const database = await connectStore(context, storeCount);
-  await open();
+  await open(() => database.waitUntilHealthy(page));
   await database.publish(storeCount);
   await expect(bar(page, text).store).toContainText(String(storeCount));
 }
@@ -87,6 +87,60 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
+
+test('saved pack navigation waits for a delayed database handshake', async ({ page, context }, testInfo) => {
+  // Hold incoming frames only in the first document. Keep the actual SDK's
+  // connection marker, transport selection and browser storage untouched.
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('delayed-database-document')) return;
+    sessionStorage.setItem('delayed-database-document', 'true');
+    const NativeSocket = window.WebSocket;
+    window.WebSocket = class extends NativeSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (!/firebaseio\.com|firebasedatabase\.app/.test(String(url))) return;
+        let held = true;
+        const messages: MessageEvent[] = [];
+        this.addEventListener('message', event => {
+          if (!held) return;
+          event.stopImmediatePropagation();
+          messages.push(event);
+        });
+        Object.assign(window, { releaseDatabaseHandshake: () => {
+          held = false;
+          messages.forEach(event => this.dispatchEvent(new MessageEvent('message', { data: event.data })));
+        } });
+      }
+    };
+  });
+  let documents = 0;
+  page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++; });
+  let leaving = false;
+  let announceLeave: () => void;
+  const atLeave = new Promise<void>(resolve => { announceLeave = resolve; });
+  const preparation = showStoreCount(page, context, locales[0], beforeLeave => importSavedPack(page, '/play', async () => {
+    leaving = true;
+    announceLeave();
+    await beforeLeave?.();
+  }));
+  // Observe rejection immediately even if an assertion below ends the test.
+  const finished = preparation.then(() => ({ error: undefined }), error => ({ error }));
+  const premature = await Promise.race([atLeave.then(() => undefined), finished]);
+  if (premature) {
+    await testInfo.attach('premature-navigation-failure', { body: String(premature.error), contentType: 'text/plain' });
+  }
+  const before = await page.evaluate(() => ({
+    marker: localStorage.getItem('firebase:previous_websocket_failure'),
+    release: typeof Reflect.get(window, 'releaseDatabaseHandshake'),
+  }));
+  await testInfo.attach('before-navigation', { body: JSON.stringify({ documents, leaving, ...before }), contentType: 'application/json' });
+  // The stored pack must not trigger a new document while the handshake is held.
+  expect({ documents, leaving, ...before }).toEqual({ documents: 1, leaving: true, marker: 'true', release: 'function' });
+  await page.evaluate(() => Reflect.get(window, 'releaseDatabaseHandshake')());
+  expect((await finished).error).toBeUndefined();
+  await expect(page.getByRole('button', { name: /^Store/ }).first()).toContainText(String(storeCount));
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('firebase:previous_websocket_failure')), { timeout: 15000 }).toBeNull();
+});
 
 test('reachability reads moving controls in the same browser turn', async ({ page }) => {
   await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
@@ -177,7 +231,7 @@ for (const text of locales) {
 
     test('the bar and the first pack fit a short screen at every narrow width', async ({ page, context }) => {
       test.setTimeout(90_000);
-      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       for (const width of widths) {
@@ -190,7 +244,7 @@ for (const text of locales) {
 
     test('every control works on a phone-width screen with a saved pack', async ({ page, context }) => {
       test.setTimeout(90_000);
-      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       for (const viewport of viewports) {
@@ -220,7 +274,7 @@ for (const text of locales) {
 
     test('the search box and the first pack stay usable at 320px with 200% text', async ({ page, context }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+      await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
       const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
       await expect(row).toBeVisible();
@@ -249,7 +303,7 @@ for (const text of locales) {
       test.use({ locale: text.locale, reducedMotion: 'reduce' });
       test('selected pack can start without scrolling on short phones', async ({ page, context }, testInfo) => {
         test.setTimeout(120_000);
-        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+        await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
         if (textScale === 200) await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
         const row = page.getByRole('option', { name: new RegExp(packTitle) });
         if (await row.getAttribute('aria-selected') !== 'true') await row.click();
@@ -292,7 +346,7 @@ for (const text of locales) {
     test.use({ locale: text.locale, reducedMotion: 'reduce' });
     for (const viewport of scrollSwitchScreens) {
       test(`switching packs restores playback after scrolling at ${viewport.width}x${viewport.height}`, async ({ page, context }, testInfo) => {
-        await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
+        await showStoreCount(page, context, text, beforeLeave => importSavedPack(page, '/play', beforeLeave));
         await page.locator('input[data-unipack-import]').setInputFiles(resolve('meta/unipack-conformance/chain-release-v1/packs/manual.uni'));
         await expectPads(page);
         await expect.poll(async () => (await savedRecords(page)).length).toBe(2);
