@@ -131,32 +131,67 @@ apps keep those switches in the option panel and reset them per session.
 
 ## Parser and runner conformance
 
-`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
-the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: historical results). The preserved incomplete recheck on 2026-11-06
-(Korea time) uses G6, 391 cases, corpus SHA-256
-`13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`.
+`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read.
+The recheck on 2026-11-07 (Korea time) uses G6, 391 cases, corpus SHA-256
+`746a5ce6925926df2a27ac34313c157662e244a1a70ae873eec7f8d7391e3c64`.
 
 | Platform | Application commit | Common cases passed | Failed | Unverified |
 |---|---|---:|---:|---:|
-| Android | `726bdc631600f726c1ea499519c6523f3c7ea3fc` | 368 | 0 | 23 |
-| iOS | `3eee27285e67ca609b35e7ac724dd928e10681f8` | 0 | 0 | 391 |
-| Web | `33c97f7329afb6c36a636731bbcc9af7481d4db9` | 391 | 0 | 0 |
+| Android | `f47058f6f788d7b7dd372aae07bc1bc33f6c58d4` | 368 | 0 | 23 |
+| iOS | `44ab0823e885c37f520f57fa9d383f2041d8d266` | 391 | 0 | 0 |
+| Web | `d4e771e0bbd3ba585bf12d6157977dadd27379b5` | 391 | 0 | 0 |
 
-The iOS tests did not start; its row means no new observation. Android's 23 unverified cases are
-KL-026/KL-028 (the host changed stored names), the ten archive sound-identity cases, KS-G617 through
-KS-G619 (case-sensitive paths), and the eight distinct screen-input cases. They are not passes.
-The web's archive and Chromium audio tests also passed; the common operation adapters alone do not
-verify the whole application. Current app copies pass `sync.mjs --check --require-current` byte
-comparison, which is separate from compatibility. The current generated corpus and `divergences.json` have no remaining failure pins on any
-platform. The two historical Android pins were removed using the ordered observations below;
-this does not change the old common-run results. The current 391-case corpus SHA-256 is
-`746a5ce6925926df2a27ac34313c157662e244a1a70ae873eec7f8d7391e3c64`;
-its full three-platform recheck is pending. The old 172-case results remain historical in
-[RESULTS.md](unipack-conformance/RESULTS.md).
+All rows use the same corpus bytes, with unchanged inputs, fingerprints and expected values.
+Each application's common and app tests use the same clean application commit; commands record
+the commit and source status before and after execution. iOS uses the default Xcode 27.1
+(27A9275) and an iPhone 17 Pro simulator running iOS 27.0.
 
-KS-B08 and KL-BE10 have no current failure pin; both passed in this Android run. That does not supply
-a new iOS observation. No result here establishes every pack's compatibility, physical controllers,
+Android's 23 unverified cases are KL-026/KL-028 (the host changed stored names), the ten
+archive sound-identity cases, KS-G617 through KS-G619 (case-sensitive paths), and the eight
+distinct screen-input cases. They are not passes. The separate Android app tests confirm
+eight registered items and include captured emulator output; the web app tests confirm
+seven registered items, with audio measured in Chromium only. Physical output is unverified.
+
+The first iOS unit invocation ran twice: both preserved raw attempts passed, but the execution
+wrapper initially exported only the final bundle. Combining both attempts rejects the repeated
+registered unit tests, leaving that round at 99 of 114 grammar items. A separate follow-up on the
+same clean commit ran the six selected unit suites and one required UI import test; every raw
+attempt was collected. Its 16 registered unit tests and one UI test passed exactly once, with no
+missing, skipped or repeated required tests. This does not claim a full UI-suite pass or fill
+skips from the earlier full unit invocation.
+
+Combining the common and registered app tests confirms Android 96, iOS 104 and web 104 of the
+114 grammar items, with 96 confirmed on all three. iOS has 99 items confirmed by the common
+run and five further items by app tests; F-01 rests on the case-sensitive common run. Unconfirmed
+items remain unconfirmed, and these counts do not establish every UniPack's compatibility.
+
+The browser inventory has 1,665 distinct registered tests. Preserved rounds cover 1,489 passes
+and 176 skips: Chromium 677/12, WebKit 380/119, and Firefox 432/45 (passed/skipped).
+The first full command retained 658 passes before a deleted temporary directory caused 41 failures
+and one interruption. Those failures remain in the original record. A follow-up checked the
+remaining Chromium and all WebKit entries, then stopped at the planned browser boundary (exit 130);
+the complete Firefox command exited 0. The final selected observations match the inventory in both
+directions with no missing, duplicated, retried or unexpected results. Skips retain the existing
+browser-specific conditions. These are split-run observations with the first failed round retained.
+
+The first remote full-unit run on the same iOS commit failed two sound tests on the pack-loading
+deadline. [The second attempt of the whole job](https://github.com/kimjisub/unipad-ios/actions/runs/42264092093)
+passed 959 tests, failed none and skipped 25. Preserve the time-only first failure and the successful
+whole-job re-execution (1/1); the two tests were not rerun alone. The timeout was unchanged.
+
+The exact public app copies are [unipad-android#365](https://github.com/kimjisub/unipad-android/pull/365)
+and [unipad-ios#259](https://github.com/kimjisub/unipad-ios/pull/259), at the commits in the table.
+Their downloaded corpus files pass `sync.mjs --check --require-current` against this corpus.
+These references identify reviewed copies; merge status and a post-merge check remain separate.
+
+The generated corpus and `divergences.json` have no remaining failure pins on any platform.
+The two historical Android pins were removed using the ordered observations below, including
+the restored-defect failures. Removing those annotations does not fill the 23 missing common
+observations. Copy-byte verification is also separate from compatibility. The old 172-case and
+other earlier results remain historical in [RESULTS.md](unipack-conformance/RESULTS.md).
+
+KS-B08 and KL-BE10 have no current failure pin; both passed in these Android, iOS and web
+common runs. No result here establishes every pack's compatibility, physical controllers,
 phone speakers, headphones, Bluetooth output, or Android 7.0–8.0 audio output.
 
 ### Open differences found by the corpus
