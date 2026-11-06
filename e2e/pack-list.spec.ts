@@ -34,6 +34,64 @@ const sortCases = [
   ['Date', false, ['Favorite', 'Bravo', 'Alpha', 'Charlie']],
 ] as const;
 
+/**
+ * Reads the list's sort settings from the app's database. Opening without a version would
+ * create an empty database where the app's is missing, so that open is cancelled and the
+ * read fails with what the browser showed: its databases, the version and stores it opened,
+ * the document and the storage estimate.
+ */
+async function readSortSettings(page: Page, database = 'unipad') {
+  return page.evaluate(async database => {
+    const missing = async (opened: { version: number; stores: string[] }) => JSON.stringify({
+      database,
+      opened,
+      databases: await indexedDB.databases(),
+      url: location.href,
+      topLevel: window === window.top,
+      storage: await navigator.storage.estimate(),
+    });
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(database);
+      let upgrade: { version: number; stores: string[] } | undefined;
+      request.onupgradeneeded = event => {
+        upgrade = { version: event.oldVersion, stores: Array.from(request.result.objectStoreNames) };
+        request.transaction!.abort();
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = event => {
+        if (!upgrade) { reject(request.error); return; }
+        event.preventDefault();
+        missing(upgrade).then(details => reject(new Error(`No ${database} database to read settings from: ${details}`)), reject);
+      };
+    });
+    if (!db.objectStoreNames.contains('settings')) {
+      const opened = { version: db.version, stores: Array.from(db.objectStoreNames) };
+      db.close();
+      throw new Error(`No settings store in the ${database} database: ${await missing(opened)}`);
+    }
+    const values = await new Promise<Record<string, string>>((resolve, reject) => {
+      const request = db.transaction('settings').objectStore('settings').getAll();
+      request.onsuccess = () => resolve(Object.fromEntries(request.result.map(({ key, value }) => [key, value])));
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
+  }, database);
+}
+
+test('reading sort settings fails without creating a missing database', async ({ page }) => {
+  await page.goto('/play');
+  const read = await readSortSettings(page, 'unipad-missing').then(() => 'read', (error: Error) => error.message);
+  expect(read).toContain('No unipad-missing database to read settings from');
+  // Chromium and Firefox add the page's stack after the message.
+  const message = read.split('\n')[0];
+  const details = JSON.parse(message.slice(message.indexOf('{')));
+  expect(details).toMatchObject({ database: 'unipad-missing', opened: { version: 0, stores: [] }, topLevel: true });
+  expect(details.url).toMatch(/\/play$/);
+  expect(details.storage).toHaveProperty('quota');
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map(({ name }) => name))).not.toContain('unipad-missing');
+});
+
 for (const [method, ascending, titles] of sortCases) {
   test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
     // Sorting needs distinct saved rows, not rounds of decoding and playing: write them to
@@ -55,20 +113,7 @@ for (const [method, ascending, titles] of sortCases) {
       await page.getByRole('button', { name: /^Sort (ascending|descending)$/ }).click();
     }
     const expectedRows = titles.map(title => `${title} by ${{ Favorite: 'Zulu', Alpha: 'Charlie', Bravo: 'Alpha', Charlie: 'Bravo' }[title]}`);
-    const readSettings = () => page.evaluate(async () => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('unipad');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const values = await new Promise<Record<string, string>>((resolve, reject) => {
-        const request = db.transaction('settings').objectStore('settings').getAll();
-        request.onsuccess = () => resolve(Object.fromEntries(request.result.map(({ key, value }) => [key, value])));
-        request.onerror = () => reject(request.error);
-      });
-      db.close();
-      return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
-    });
+    const readSettings = () => readSortSettings(page);
     const expectedSettings = { sortMethod: method.toLowerCase(), sortOrder: String(ascending) };
     const rowLabels = () => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')));
     await expect.poll(readSettings).toEqual(expectedSettings);
