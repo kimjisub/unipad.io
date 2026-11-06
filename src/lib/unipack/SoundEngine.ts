@@ -1,5 +1,6 @@
 import { Sound, NO_WORMHOLE, UniPackData } from './types';
 import { PACK_AUDIO_LIMIT, selectAudio, type AudioSelection } from './audioSafety';
+import { releaseArrayBuffer } from './bufferLifetime';
 import {
   EMPTY_SOUND_LOAD_REPORT,
   INLINE_AUDIO_INSPECTOR,
@@ -134,12 +135,21 @@ export class SoundEngine {
   /**
    * Admits the pack's sound files under the shared limits, then decodes only the admitted ones. The
    * whole selection is made before any decoding, so a file that fails to decode keeps its reservation
-   * and never lets a later file in. The pack's encoded bytes are released once read.
+   * and never lets a later file in. This consumes the pack's encoded sound buffers: excluded files are discarded before decoding,
+   * and admitted files are discarded when their decode settles. A buffer listed under more than one file is not discarded.
    */
   async load(inspector: AudioInspector = INLINE_AUDIO_INSPECTOR): Promise<SoundLoadReport> {
     if (this.loaded || this.destroyed) return EMPTY_SOUND_LOAD_REPORT;
 
     const { soundTable, soundFiles, info } = this.unipack;
+    // Parsed files own independent buffers; a buffer listed twice is left readable for its other file.
+    const seen = new Set<ArrayBuffer>();
+    const sharedBuffers = new Set<ArrayBuffer>();
+    for (const bytes of soundFiles.values()) {
+      if (seen.has(bytes)) sharedBuffers.add(bytes);
+      seen.add(bytes);
+    }
+    seen.clear();
     const plan = await selectAudio(
       audioReferences(this.unipack),
       { chains: info.chain, width: info.buttonX, height: info.buttonY },
@@ -160,9 +170,13 @@ export class SoundEngine {
       else failures.push({ file: identity, reason: exclusionReason(exclusion), exclusion });
     }
 
+    const discardSound = (file: string, bytes = soundFiles.get(file)) => {
+      soundFiles.delete(file);
+      if (bytes && !sharedBuffers.has(bytes)) releaseArrayBuffer(bytes);
+    };
     const selected = new Set(admitted.map(({ identity }) => identity));
     for (const file of soundFiles.keys()) {
-      if (!selected.has(file)) soundFiles.delete(file);
+      if (!selected.has(file)) discardSound(file);
     }
 
     const total = plan.files.length;
@@ -180,7 +194,11 @@ export class SoundEngine {
       }
       await Promise.all(
         admitted.slice(i, end).map(async ({ identity: file }) => {
-          const reason = await this.decode(file);
+          // destroy() clears the map while a native decode can still be pending.
+          const bytes = soundFiles.get(file);
+          let reason;
+          try { reason = await this.decode(file, bytes); }
+          finally { discardSound(file, bytes); }
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
           if (!this.destroyed) this.onLoadProgress?.(settled, total);
@@ -211,17 +229,15 @@ export class SoundEngine {
     };
   }
 
-  /** Pass the original bytes; WebKit may copy them internally. Drop our reference on settlement. */
-  private async decode(file: string): Promise<'decode' | 'memory' | null> {
+  /** Pass the original bytes; WebKit may copy them internally. The caller discards them on settlement. */
+  private async decode(file: string, bytes: ArrayBuffer | undefined): Promise<'decode' | 'memory' | null> {
     try {
-      const buffer = await this.audioContext.decodeAudioData(this.unipack.soundFiles.get(file)!);
+      const buffer = await this.audioContext.decodeAudioData(bytes!);
       if (!this.destroyed) this.bufferCache.set(file, buffer);
       return null;
     } catch (error) {
       console.warn(`Failed to decode audio: ${file}`, error);
       return isMemoryFailure(error) ? 'memory' : 'decode';
-    } finally {
-      this.unipack.soundFiles.delete(file);
     }
   }
 

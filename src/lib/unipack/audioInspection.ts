@@ -37,6 +37,40 @@ export function inspectAudio(input: Uint8Array | ArrayBuffer): AudioInspection {
     throw error;
   }
 }
+/** Chunks a WAV file may have for its whole layout to count as a header read. */
+const HEADER_CHUNK_LIMIT = 64;
+
+/**
+ * True for a PCM or float WAV whose whole chunk layout fits in a few headers: reading it walks those
+ * headers only, so it takes no noticeable time and needs no copy of the file on another thread.
+ * WAVs carrying MPEG frames, other formats and unusual layouts return false.
+ */
+export function readsFromHeadersOnly(input: Uint8Array | ArrayBuffer): boolean {
+  try {
+    const d = new AudioData(input);
+    if (!d.matches(0, 'RIFF') || !d.matches(8, 'WAVE')) return false;
+    let at = 12;
+    let pcm = false;
+    for (let chunk = 0; chunk < HEADER_CHUNK_LIMIT; chunk++) {
+      if (d.size - at < 8) return pcm;
+      const length = d.uint(at + 4, 4, true);
+      if (d.matches(at, 'fmt ')) {
+        if (length < 16) return false;
+        let encoding = d.uint(at + 8, 2, true);
+        if (encoding === 0xfffe) encoding = length >= 26 ? d.uint(at + 32, 2, true) : 85;
+        pcm = encoding !== 85;
+        if (!pcm) return false;
+      }
+      const next = at + 8 + length + (length % 2);
+      if (next >= d.size) return pcm;
+      at = next;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function inspectWave(d: AudioData): AudioFacts {
   requireAudio(d.matches(8, 'WAVE'));
   let at = 12,

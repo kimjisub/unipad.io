@@ -37,6 +37,16 @@ function wave({ rate = 8000, frames, mark, claimedSeconds }) {
 }
 const TEN_MINUTES = 600 * 8000;
 
+/** `wave` with empty chunks before its data: too many headers to count as a header read. */
+function layeredWave({ frames, mark, chunks = 70 }) {
+  const plain = wave({ frames, mark });
+  const junk = Buffer.alloc(chunks * 8);
+  for (let i = 0; i < chunks; i++) junk.write('junk', i * 8);
+  const b = Buffer.concat([plain.subarray(0, 36), junk, plain.subarray(36)]);
+  b.writeUInt32LE(b.length - 8, 4);
+  return b;
+}
+
 /** What a decoder was handed, by the mark of each file; `fail` rejects the files it names. */
 function fakeAudio(fail = {}) {
   const decoded = [];
@@ -140,7 +150,7 @@ test('a pack whose used sounds all fail is reported as such; a pack without soun
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-async function pendingLoad() {
+async function pendingLoad(shared = false) {
   const pack = await parseUniPack(await packZip({ info: INFO,
     keySound: '1 1 1 a.wav\n1 1 2 b.wav\n1 2 1 c.wav\n1 2 2 bad.wav',
     'sounds/a.wav': wave({ frames: 8000, mark: 1 }),
@@ -149,7 +159,8 @@ async function pendingLoad() {
     'sounds/bad.wav': 'not audio',
   }));
   // The parser normally only extracts referenced sounds; a caller may retain an extra file.
-  pack.soundFiles.set('unused.wav', new ArrayBuffer(1));
+  pack.soundFiles.set('unused.wav', shared ? pack.soundFiles.get('sounds/a.wav') : new ArrayBuffer(1));
+  const encoded = new Map(pack.soundFiles);
   const gates = [null, deferred(), deferred(), deferred()];
   const decoded = fakeAudio({ 2: encodingError });
   const decode = AudioContext.prototype.decodeAudioData;
@@ -163,7 +174,7 @@ async function pendingLoad() {
   const engine = new SoundEngine(pack, () => 0, () => {});
   const loading = engine.load();
   await entered.promise;
-  return { pack, gates, loading, decoded, engine, finish: async () => {
+  return { pack, encoded, gates, loading, decoded, engine, finish: async () => {
     for (const gate of gates.slice(1)) gate.resolve();
     await loading; engine.destroy();
   } };
@@ -175,7 +186,21 @@ test('excluded and unused sound bytes are released before decoding begins', asyn
     assert.equal(run.pack.soundFiles.has('sounds/bad.wav'), false);
     assert.equal(run.pack.soundFiles.has('unused.wav'), false);
     assert.equal(run.pack.soundFiles.has('sounds/a.wav'), true, 'pending files keep their bytes');
+    assert.equal(run.encoded.get('sounds/bad.wav').byteLength, 0);
+    assert.equal(run.encoded.get('unused.wav').byteLength, 0);
   } finally { await run.finish(); }
+});
+
+test('an excluded alias cannot discard bytes still owned by a selected sound', async () => {
+  const run = await pendingLoad(true);
+  try {
+    assert.equal(run.pack.soundFiles.has('unused.wav'), false);
+    assert.ok(run.encoded.get('sounds/a.wav').byteLength > 0);
+    run.gates[1].resolve();
+    await turn();
+    assert.ok(run.encoded.get('sounds/a.wav').byteLength > 0, 'shared buffers keep their original lifetime');
+  } finally { await run.finish(); }
+  assert.deepEqual(run.decoded.sort(), [1, 2, 3]);
 });
 
 for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
@@ -186,6 +211,7 @@ for (const [mark, file] of [[1, 'a.wav'], [2, 'b.wav']]) {
       await turn();
       assert.equal(run.pack.soundFiles.has(`sounds/${file}`), false);
       assert.equal(run.pack.soundFiles.has('sounds/c.wav'), true);
+      assert.equal(run.encoded.get(`sounds/${file}`).byteLength, 0);
     } finally { await run.finish(); }
     assert.equal(run.pack.soundFiles.size, 0);
     assert.deepEqual(run.decoded.sort(), [1, 2, 3]);
@@ -206,7 +232,7 @@ test('inspection ends before the first decode and closing again is safe', async 
     terminate() { events.push('close'); }
   };
   const pack = await parseUniPack(await packZip({ info: INFO, keySound: '1 1 1 a.wav\n1 1 2 b.wav',
-    'sounds/a.wav': wave({ frames: 8000, mark: 1 }), 'sounds/b.wav': wave({ frames: 8000, mark: 2 }) }));
+    'sounds/a.wav': layeredWave({ frames: 8000, mark: 1 }), 'sounds/b.wav': layeredWave({ frames: 8000, mark: 2 }) }));
   fakeAudio();
   const decode = AudioContext.prototype.decodeAudioData;
   AudioContext.prototype.decodeAudioData = function (bytes) {
@@ -304,4 +330,107 @@ test('replacing a pack during inspection never starts a decode', async () => {
   await loading;
   assert.deepEqual(decoded, []);
   assert.equal(pack.soundFiles.size, 0);
+});
+
+
+test('a replaced pack discards an in-flight sound buffer when decoding settles after its map was cleared', async () => {
+  const run = await costRun([2n]);
+  const bytes = run.pack.soundFiles.get('sounds/1.wav');
+  try {
+    run.engine.destroy();
+    assert.equal(run.pack.soundFiles.size, 0);
+    run.gates[0].resolve();
+    await run.loading;
+    assert.equal(bytes.byteLength, 0, 'late decoding still releases its exclusively owned encoded bytes');
+  } finally { await run.finish(); }
+});
+
+test('the inspection worker discards its copy of a sound once it has read it', async () => {
+  const previousSelf = globalThis.self;
+  const responses = [];
+  globalThis.self = { postMessage: response => responses.push(response) };
+  try {
+    await import('./audioInspection.worker.ts');
+    const copy = wave({ frames: 8000, mark: 1 });
+    const bytes = copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength);
+    globalThis.self.onmessage({ data: { id: 7, bytes } });
+    assert.equal(responses.length, 1);
+    assert.equal(responses[0].id, 7);
+    assert.notEqual(responses[0].inspection, null);
+    assert.equal(bytes.byteLength, 0, 'the worker no longer holds the sound until it is collected');
+  } finally { globalThis.self = previousSelf; }
+});
+
+test('a worker that fails after discarding its copies leaves every sound loadable from the page', async () => {
+  const { createAudioInspector } = await import('./audioInspectionWorker.ts');
+  const previousWorker = globalThis.Worker;
+  const previousWarn = console.warn;
+  console.warn = () => {};
+  globalThis.Worker = class {
+    postMessage({ bytes }) {
+      const copied = structuredClone(bytes);
+      queueMicrotask(() => { copied.transfer(0); this.onerror({ preventDefault() {}, message: 'worker crashed' }); });
+    }
+    terminate() {}
+  };
+  const pack = await parseUniPack(await packZip({ info: INFO, keySound: '1 1 1 a.wav\n1 1 2 b.wav',
+    'sounds/a.wav': layeredWave({ frames: 8000, mark: 1 }), 'sounds/b.wav': layeredWave({ frames: 8000, mark: 2 }) }));
+  const decoded = fakeAudio();
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  const inspector = createAudioInspector();
+  try {
+    const report = await engine.load(inspector);
+    assert.deepEqual([report.loadedFiles, report.failures], [2, []]);
+    assert.deepEqual(decoded.sort(), [1, 2]);
+  } finally { inspector.close(); engine.destroy(); globalThis.Worker = previousWorker; console.warn = previousWarn; }
+});
+
+test('only WAV files read from their headers stay off the worker', async () => {
+  const { readsFromHeadersOnly } = await import('./audioInspection.ts');
+  const float = wave({ frames: 800, mark: 1 });
+  float.writeUInt16LE(3, 20);
+  const extensibleMpeg = Buffer.concat([wave({ frames: 0, mark: 0 }).subarray(0, 12), Buffer.alloc(48)]);
+  extensibleMpeg.write('fmt ', 12);
+  extensibleMpeg.writeUInt32LE(40, 16);
+  extensibleMpeg.writeUInt16LE(0xfffe, 20);
+  extensibleMpeg.writeUInt16LE(85, 44);
+  const cases = [
+    ['8-bit PCM', wave({ frames: 800, mark: 1 }), true],
+    ['float', float, true],
+    ['PCM with a trailing chunk', readFileSync(fixtures + 'trailing-junk.wav'), true],
+    ['PCM with empty chunks within the limit', layeredWave({ frames: 800, mark: 1, chunks: 10 }), true],
+    ['PCM with more chunks than a header read', layeredWave({ frames: 800, mark: 1 }), false],
+    ['MPEG frames in WAV', readFileSync(fixtures + 'mp3-in-wave.wav'), false],
+    ['extensible WAV carrying MPEG', extensibleMpeg, false],
+    ['MP3 named .wav', readFileSync(fixtures + 'mp3-named.wav'), false],
+    ['Ogg', readFileSync('e2e/fixtures/tone.ogg'), false],
+    ['not audio', Buffer.from('not audio'), false],
+  ];
+  for (const [name, bytes, expected] of cases)
+    assert.equal(readsFromHeadersOnly(new Uint8Array(bytes)), expected, name);
+});
+
+test('a plain WAV is read on the page with no copy posted to the worker', async () => {
+  const { createAudioInspector } = await import('./audioInspectionWorker.ts');
+  const { inspectAudio } = await import('./audioInspection.ts');
+  const previousWorker = globalThis.Worker;
+  const posted = [];
+  globalThis.Worker = class {
+    postMessage({ id, bytes }) {
+      posted.push(bytes.byteLength);
+      const copied = structuredClone(bytes);
+      queueMicrotask(() => this.onmessage({ data: { id, inspection: inspectAudio(copied) } }));
+    }
+    terminate() {}
+  };
+  const inspector = createAudioInspector();
+  const plain = wave({ frames: 8000, mark: 1 });
+  const layered = layeredWave({ frames: 8000, mark: 2 });
+  const ogg = readFileSync('e2e/fixtures/tone.ogg');
+  const own = bytes => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  try {
+    const results = await Promise.all([plain, layered, ogg].map(bytes => inspector.inspect(own(bytes))));
+    assert.deepEqual(results.map(result => result.facts?.format), ['wav', 'wav', 'ogg']);
+    assert.deepEqual(posted, [layered.byteLength, ogg.byteLength]);
+  } finally { inspector.close(); globalThis.Worker = previousWorker; }
 });
