@@ -82,8 +82,8 @@ interface ImportOptions {
   beforeSavedUrl?: () => Promise<void>;
 }
 
-/** Imports an 8x8 fixture and returns to the list after its save completes. */
-export async function importSavedPackAndQuit(page: Page, file: PackFile, count: number, options: ImportOptions = {}) {
+/** Imports an 8x8 fixture with separate readiness budgets for pads and persistence. */
+export async function importSavedPackForPlayback(page: Page, file: PackFile, count: number, options: ImportOptions = {}) {
   await page.locator('input[data-unipack-import]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
   await options.afterInput?.();
   // Preserve separate state budgets for decoding/rendering and persistence.
@@ -103,6 +103,11 @@ export async function importSavedPackAndQuit(page: Page, file: PackFile, count: 
       transaction.onabort = () => reject(transaction.error);
     });
   })), { timeout: stateTimeout }).toEqual({ saved: count, current: true });
+}
+
+/** Imports an 8x8 fixture and returns to the list after its save completes. */
+export async function importSavedPackAndQuit(page: Page, file: PackFile, count: number, options: ImportOptions = {}) {
+  await importSavedPackForPlayback(page, file, count, options);
   // Setup needs the buttons' actions, not pointer hit testing during their animations.
   await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
   await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');

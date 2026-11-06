@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
+import { delayImportStages, expectImportStageDelays, readImportStages } from './import-stages';
 import { test, expect, expectPads } from './browser';
 import { importSavedPacks } from './saved-packs';
 import { measureElements, reachable } from './layout';
@@ -121,40 +122,14 @@ test('pack import preparation reads storage only after pads are ready', async ({
 });
 
 test('pack import preparation gives decoding and saving separate state budgets', async ({ page }, info) => {
-  await page.addInitScript(() => {
-    const stages: { stage: string; time: number }[] = [];
-    Object.assign(window, { importStages: stages });
-    const read = File.prototype.arrayBuffer;
-    File.prototype.arrayBuffer = async function () {
-      File.prototype.arrayBuffer = read;
-      stages.push({ stage: 'read started', time: performance.now() });
-      await new Promise(resolve => setTimeout(resolve, 8000));
-      stages.push({ stage: 'read released', time: performance.now() });
-      return read.call(this);
-    };
-    const put = IDBObjectStore.prototype.put;
-    IDBObjectStore.prototype.put = function (...args) {
-      const request = put.apply(this, args);
-      if (this.name === 'settings' && args[0].key === 'lastUniPackId') {
-        request.addEventListener('success', event => {
-          event.stopImmediatePropagation();
-          stages.push({ stage: 'saved setting held', time: performance.now() });
-          setTimeout(() => {
-            stages.push({ stage: 'saved setting released', time: performance.now() });
-            request.onsuccess?.call(request, event);
-          }, 8000);
-        }, { once: true });
-        IDBObjectStore.prototype.put = put;
-      }
-      return request;
-    };
-  });
+  await page.addInitScript(delayImportStages);
   try {
     await importSavedPacks(page, [resolve('e2e/fixtures/basic.uni')]);
     await expect(page.getByRole('option', { name: 'Browser Test Pack by UniPad Tests', exact: true })).toHaveAttribute('aria-selected', 'true');
+    expectImportStageDelays(await readImportStages(page));
   } finally {
     await info.attach('import-stages', {
-      body: JSON.stringify(await page.evaluate(() => (window as unknown as { importStages: unknown[] }).importStages)),
+      body: JSON.stringify(await readImportStages(page)),
       contentType: 'application/json',
     });
   }

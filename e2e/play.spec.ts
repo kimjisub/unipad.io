@@ -3,11 +3,12 @@ import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
+import { delayImportStages, expectImportStageDelays, readImportStages } from './import-stages';
 import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack } from './browser';
 import { expectLandscapePads } from './pad-layout';
 import { loadInputPack } from './input-fixture';
 import { touchScreens } from './touch';
-import { savedRecords, expectSavedPackCount } from './saved-packs';
+import { importSavedPackForPlayback, savedRecords, expectSavedPackCount } from './saved-packs';
 import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
 
@@ -201,8 +202,7 @@ async function loadPack(page: Page, file: string | { name: string; mimeType: str
 async function loadSavedFixture(page: Page) {
   // These cases need a saved fixture; detailed import checks belong to the import tests.
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
-  await page.locator('input[data-unipack-import]').setInputFiles(pack);
-  await expectSavedPlaybackPack(page);
+  await importSavedPackForPlayback(page, pack, 1);
 }
 
 async function expectLoadedPack(page: Page) {
@@ -428,6 +428,18 @@ test('a file still enters the library when another pack replaces its pending rea
   await page.getByRole('button', { name: 'Quit', exact: true }).click();
   await expect(page.getByRole('option', { name: 'Imported Later by UniPad Tests', exact: true })).toBeVisible();
   await info.attach('saved-import-list', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('saved fixture preparation waits for decoding and persistence separately', async ({ page }, info) => {
+  await page.addInitScript(delayImportStages);
+  try {
+    await loadSavedFixture(page);
+    await expect(page).toHaveURL(/\/play\?pack=.+/);
+    await expect(page).toHaveTitle(/^Browser Test Pack \|/);
+    expectImportStageDelays(await readImportStages(page));
+  } finally {
+    await info.attach('import-stages', { body: JSON.stringify(await readImportStages(page)), contentType: 'application/json' });
+  }
 });
 
 test('restoration waits for a delayed storage result past the temporary pack list', async ({ page }, testInfo) => {
