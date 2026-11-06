@@ -1,8 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { openBasicWith } from './basic-pack';
+import { expect } from './browser';
+import { pad } from './touch';
+
+type DecodedBuffer = { id: number; duration: number; frames: number; channels: number; sampleRate: number; encodedSha256: string };
+type Start = { bufferId: number | null; duration: number; loop: boolean };
 
 interface FormatProbe {
-  decodedBuffers: { id: number; duration: number; frames: number; channels: number; sampleRate: number; encodedSha256: string }[];
-  starts: { bufferId: number | null; duration: number; loop: boolean }[];
+  decodedBuffers: DecodedBuffer[];
+  starts: Start[];
 }
 
 declare global {
@@ -42,3 +49,49 @@ export async function observeFormatBuffers(page: Page) {
 }
 
 export const formatAudio = (page: Page) => page.evaluate(() => window.formatProbe);
+
+export const sha256 = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
+
+/**
+ * Opens basic.uni without its lights and auto play, with the given files written over it, and waits until
+ * `decodeCount` sounds reached native decoding with no error shown. observeFormatBuffers must run first.
+ */
+export async function openFormatPack(page: Page, files: Record<string, string | Uint8Array>, decodeCount: number) {
+  await openBasicWith(page, files, ['keyLED', 'autoPlay']);
+  await expect.poll(async () => (await formatAudio(page)).decodedBuffers.length).toBe(decodeCount);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  return (await formatAudio(page)).decodedBuffers;
+}
+
+export interface HeldPadSound { decoded: DecodedBuffer; started: Start; playingRms: number | null }
+
+/**
+ * Holds the pad, whose sound must repeat (keySound loop 0), and checks the conformance audio items: silence
+ * before the press, one start of the buffer decoded from the expected bytes, an output signal after the
+ * application gain, and silence again once released. `whilePlaying` runs while the pad is still held, so a
+ * record attached there survives a failure on release.
+ */
+export async function expectHeldPadPlays(page: Page, position: string, encodedSha256: string,
+  whilePlaying: (sound: HeldPadSound) => Promise<void>) {
+  const rms = () => page.evaluate(() => window.browserProbe.audio.outputRms());
+  await expect.poll(rms).toBe(0);
+  await pad(page, position).hover();
+  await page.mouse.down();
+  try {
+    await expect.poll(async () => (await formatAudio(page)).starts.length).toBe(1);
+    const { decodedBuffers, starts: [started] } = await formatAudio(page);
+    const decoded = decodedBuffers.find(buffer => buffer.id === started.bufferId);
+    expect(decoded?.encodedSha256).toBe(encodedSha256);
+    expect(started.duration).toBe(decoded!.duration);
+    expect(started.loop).toBe(true);
+    let playingRms: number | null = null;
+    await expect.poll(async () => {
+      playingRms = await rms();
+      return playingRms;
+    }).toBeGreaterThan(0.001);
+    await whilePlaying({ decoded: decoded!, started, playingRms });
+  } finally {
+    await page.mouse.up();
+  }
+  await expect.poll(rms).toBe(0);
+}
