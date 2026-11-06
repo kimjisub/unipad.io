@@ -142,6 +142,9 @@ The recheck on 2026-11-07 (Korea time) uses G6, 391 cases, corpus SHA-256
 | Web | `d4e771e0bbd3ba585bf12d6157977dadd27379b5` | 391 | 0 | 0 |
 
 All rows use the same corpus bytes, with unchanged inputs, fingerprints and expected values.
+The Android and iOS commits above are the heads of the pull requests that carried the corpus copies;
+those copies reached each app's `main` in merge commits `f8760475f0e392e241ac4a0e202eb1a59a9e513c`
+(Android) and `7270e1698f759f44996f65112f501e8eebf52b64` (iOS), which `copies.json` names.
 Each application's common and app tests use the same clean application commit; commands record
 the commit and source status before and after execution. iOS uses the default Xcode 27.1
 (27A9275) and an iPhone 17 Pro simulator running iOS 27.0.
