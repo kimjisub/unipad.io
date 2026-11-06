@@ -84,9 +84,45 @@ async function expectStoreOpens(page: Page, control: Locator) {
   await control.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(dialog).toHaveCount(0);
+  // Keep the node even if React removes it before the next browser round trip.
+  const element = await dialog.elementHandle();
+  try {
+    await page.keyboard.press('Escape');
+    await element!.evaluate(async dialog => {
+      // AnimatePresence retains the shell until native exits finish. Their timeline can lag
+      // behind wall time on a busy browser; repeating loading decoration never blocks closing.
+      await Promise.all(dialog.getAnimations({ subtree: true })
+        .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+        .map(animation => animation.finished.catch(error => {
+          if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
+        })));
+    });
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    await element?.dispose();
+  }
 }
+
+test('store dismissal waits for native exit animations without waiting for infinite decoration', async ({ page }) => {
+  await page.setContent('<button>Store</button>');
+  await page.evaluate(() => {
+    document.querySelector('button')!.onclick = () => {
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.innerHTML = '<div>Store content</div><span>Decoration</span>';
+      document.body.append(dialog);
+      dialog.querySelector('span')!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, iterations: Infinity });
+      window.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        // AnimatePresence keeps the dialog until its finite native exit has finished.
+        // Longer than the unchanged removal assertion: merely reading animations cannot pass.
+        const exit = dialog.querySelector('div')!.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 6000 });
+        exit.finished.then(() => dialog.remove());
+      }, { once: true });
+    };
+  });
+  await expectStoreOpens(page, page.getByRole('button', { name: 'Store', exact: true }));
+});
 
 test('reachability reads moving controls in the same browser turn', async ({ page }) => {
   await page.setContent('<div style="display:flex;gap:20px"><button>Theme</button><button>+ Import</button></div>');
