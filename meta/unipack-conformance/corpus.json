@@ -23609,9 +23609,7 @@
           "note": "releasing the later player input stops the sound and light it started"
         }
       ],
-      "expectedFailing": [
-        "android"
-      ],
+      "expectedFailing": [],
       "scenario": [
         {
           "do": "watchStops"
@@ -23780,9 +23778,7 @@
           "note": "releasing the later player input stops the sound and light it started"
         }
       ],
-      "expectedFailing": [
-        "android"
-      ],
+      "expectedFailing": [],
       "scenario": [
         {
           "do": "watchStops"

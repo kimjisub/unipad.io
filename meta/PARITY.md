@@ -151,7 +151,7 @@ verify the whole application. Current app copies pass `sync.mjs --check --requir
 comparison, which is separate from compatibility. The current generated corpus and `divergences.json` have no remaining failure pins on any
 platform. The two historical Android pins were removed using the ordered observations below;
 this does not change the old common-run results. The current 391-case corpus SHA-256 is
-`86f61e7c369d73e3f3a7c458ba46f0cc93765b3d8084102671d3d64f8fc2d24c`;
+`746a5ce6925926df2a27ac34313c157662e244a1a70ae873eec7f8d7391e3c64`;
 its full three-platform recheck is pending. The old 172-case results remain historical in
 [RESULTS.md](unipack-conformance/RESULTS.md).
 
