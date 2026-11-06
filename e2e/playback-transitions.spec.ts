@@ -123,6 +123,10 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} reta
   await page.clock.fastForward(600);
   await page.clock.runFor(16);
   await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(0);
+  // The next note's 800 ms lookahead starts after the first note has passed.
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
   await expect(guide('0,1')).toHaveCount(1);
   await page.clock.fastForward(1000);
   await page.clock.runFor(16);
