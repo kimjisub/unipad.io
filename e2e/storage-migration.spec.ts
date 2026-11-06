@@ -116,10 +116,15 @@ test('listing and bookmarking saved packs never access archive records', async (
 
 
 /** Runs the production storage module against each browser's real IndexedDB. */
+const moduleText = async (path: string) => ts.transpileModule(await readFile(path, 'utf8'),
+  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+
 async function openStorageModule(page: Page) {
-  const source = await readFile('src/lib/unipack/storage.ts', 'utf8');
-  const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
-  await page.route('**/storage-module.mjs', route => route.fulfill({ contentType: 'text/javascript', body: outputText }));
+  const storage = await moduleText('src/lib/unipack/storage.ts');
+  // Storage's own runtime import, served beside it under the specifier it uses.
+  const bufferLifetime = await moduleText('src/lib/unipack/bufferLifetime.ts');
+  await page.route('**/storage-module.mjs', route => route.fulfill({ contentType: 'text/javascript', body: storage }));
+  await page.route('**/bufferLifetime', route => route.fulfill({ contentType: 'text/javascript', body: bufferLifetime }));
   await page.route('**/storage-test', route => route.fulfill({ contentType: 'text/html', body: '<p>Archive storage test</p>' }));
   await page.goto('/storage-test');
 }
