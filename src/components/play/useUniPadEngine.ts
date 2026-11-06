@@ -27,6 +27,7 @@ import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
 import { createAudioInspector } from '@/lib/unipack/audioInspectionWorker';
+import { releaseArrayBuffer } from '@/lib/unipack/bufferLifetime';
 import { allSoundsFailed, soundsFailedToLoad, type SoundLoadReport } from '@/lib/unipack/soundLoading';
 import { prepareAudioContext } from '@/lib/unipack/audioOutput';
 import { PlayUsageTracker, type PadInputSource } from '@/lib/analytics/usageEvents';
@@ -1105,8 +1106,9 @@ export function useUniPadEngine() {
    * Opens a pack; `savedAutoPlay` is the autoPlay stored for it, played in place of the archive's.
    * Resolves false when the pack could not be opened; the reason is left in `errors`. Resolves null
    * when a later load or a quit replaced this one: the player belongs to that, so leave it alone.
+   * `releaseArchive` consumes the bytes after parsing. Callers that save must read the File again.
    */
-  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay): Promise<boolean | null> => {
+  const loadUniPack = useCallback(async (zipData: ArrayBuffer, savedAutoPlay?: StoredAutoPlay, options: { releaseArchive?: boolean } = {}): Promise<boolean | null> => {
     unload();
     // A later load or a quit unloads this one, and that unload already destroyed the sound engine
     // this load made. Going on would set up a second pack whose keyboard and timers nobody owns.
@@ -1117,9 +1119,15 @@ export function useUniPadEngine() {
     setState((prev) => ({ ...prev, loading: true, loadProgress: 0, loadPhase: 'Reading archive...', errors: [], soundLoadReport: null }));
 
     try {
-      const unipack = await parseUniPack(zipData, (phase) => {
-        if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
-      });
+      let unipack: UniPackData;
+      try {
+        unipack = await parseUniPack(zipData, (phase) => {
+          if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
+        });
+      } finally {
+        // The extracted sounds own their bytes. Release before inspection makes its copies.
+        if (options.releaseArchive) releaseArrayBuffer(zipData);
+      }
       // Nothing plays before a lowered volume is known: opening a pack must not raise it.
       await playPreferences;
       if (superseded()) return null;

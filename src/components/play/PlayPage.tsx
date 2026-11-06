@@ -381,17 +381,29 @@ export function PlayPage() {
       // Until this import is saved, an auto mapping has no stored pack to go to.
       if (isCurrent()) currentPackIdRef.current = null;
       // Cancel opening the player, not importing the file into the library.
-      const opened = isCurrent() ? await loadUniPack(buffer) : null;
+      const opened = isCurrent() ? await loadUniPack(buffer, undefined, { releaseArchive: true }) : null;
       if (isCurrent() && opened === false) {
         // Failed imports clear their own address; a replaced import owns no player state.
         currentPackIdRef.current = null;
         syncPackUrl(null);
       }
 
+      // Parsing has consumed the first read. Keep the File, then read again only after decoding
+      // so the archive does not overlap the decoder's temporary memory. Older browsers may retain it.
+      let archive = buffer;
+      if (archive.byteLength === 0) {
+        try {
+          archive = await file.arrayBuffer();
+        } catch {
+          // The decoded pack can still play even when the source file is no longer readable.
+          if (isCurrent()) showToast(tToast('installFailed'));
+          return;
+        }
+      }
       try {
         // Keep a readable imported archive in the library even if another open replaced it.
-        const parsed = await readUniPackMetadata(buffer);
-        const id = await saveUniPack(buffer, {
+        const parsed = await readUniPackMetadata(archive);
+        const id = await saveUniPack(archive, {
           ...parsed.info,
           fileName: packNameFromFileName(file.name),
           keyLedExist: parsed.keyLedExist,
@@ -458,7 +470,7 @@ export function PlayPage() {
         setLoadingPackTitle(packDisplayTitle(pack));
         // Recent-open history is best effort; a slow or failed write must not prevent playback.
         void updateUniPackLastOpened(id).catch(error => console.warn('Could not save recent pack history.', error));
-        const opened = await loadUniPack(pack.zipData, pack.autoPlay);
+        const opened = await loadUniPack(pack.zipData, pack.autoPlay, { releaseArchive: true });
         if (!isCurrent() || opened === null) return null;
         if (opened === false) {
           currentPackIdRef.current = null;

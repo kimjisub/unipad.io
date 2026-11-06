@@ -23,9 +23,11 @@ let held = { parse: [], decode: [], theme: [] };
 let started = { led: 0, wake: 0, midi: 0 };
 // What the next sound load reports; every used sound loaded unless a test says otherwise.
 let soundReport = null;
+let onParsingProgress = () => {};
 const analytics = [];
 const releasedThemes = [];
 const runners = [];
+const loadedPacks = [];
 Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
   started.wake++; return { release: async () => {}, addEventListener() {} };
 } } });
@@ -36,7 +38,7 @@ const step = async (kind, run) => {
 };
 const real = require('../../lib/unipack/index.ts');
 stub('../../lib/unipack/index.ts', { ...real,
-  parseUniPack: (...args) => step('parse', () => real.parseUniPack(...args)),
+  parseUniPack: (bytes, progress) => step('parse', () => real.parseUniPack(bytes, phase => { onParsingProgress(bytes); progress?.(phase); })),
   LedRunner: class extends real.LedRunner {
     constructor(...args) { super(...args); runners.push(this); }
     launch(...args) { started.led++; return super.launch(...args); }
@@ -46,6 +48,7 @@ stub('../../lib/unipack/index.ts', { ...real,
   getSetting: async () => null,
   setSetting: async () => {},
   SoundEngine: class {
+    constructor(pack) { loadedPacks.push(pack); }
     context = { state: 'running' };
     async setSuspended(suspended) { this.context.state = suspended ? 'suspended' : 'running'; }
     load() { return step('decode', () => soundReport ?? { usedFiles: 2, loadedFiles: 2, failures: [], reservedCost: 0n }); }
@@ -59,7 +62,7 @@ stub('../../lib/unipack/index.ts', { ...real,
 });
 stub('../../lib/analytics/logAnalyticsEvent.ts', { logAnalyticsEvent: (name, params) => analytics.push([name, params?.result]) });
 const { useUniPadEngine } = require('./useUniPadEngine.ts');
-afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; soundReport = null; analytics.length = 0; });
+afterEach(() => { cleanup(); for (const runner of runners.splice(0)) runner.stop(); held = { parse: [], decode: [], theme: [] }; started = { led: 0, wake: 0, midi: 0 }; releasedThemes.length = 0; soundReport = null; analytics.length = 0; loadedPacks.length = 0; onParsingProgress = () => {}; });
 const flush = async action => act(async () => { await action?.(); await new Promise(resolve => setTimeout(resolve, 5)); });
 const deferred = () => { let resolve; return { promise: new Promise(r => { resolve = r; }), resolve: () => resolve() }; };
 const hold = kind => {
@@ -76,12 +79,68 @@ async function pack(keyLedExist) {
 const pressedPads = result => result.current.state.padStates.flat().filter(pad => pad.pressed).length;
 const key = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code.slice(-1).toLowerCase() }));
 
+test('a saved archive stays readable through parsing and is discarded before sound loading', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  const bytes = await pack(true);
+  const reading = hold('parse');
+  const decoding = hold('decode');
+  let loading;
+  await flush(() => {
+    loading = result.current.loadUniPack(bytes, undefined, { releaseArchive: true });
+    return reading.entered.promise;
+  });
+  let parsingObserved = false;
+  onParsingProgress = archive => { parsingObserved = true; assert.ok(archive.byteLength > 0, 'parsing still needs the archive'); };
+  await flush(() => { reading.resolve(); return decoding.entered.promise; });
+  try {
+    assert.ok(parsingObserved, 'the archive was checked during parsing');
+    assert.equal(bytes.byteLength, 0, 'sound loading no longer needs the saved archive');
+    const parsed = loadedPacks.at(-1);
+    assert.ok(parsed.soundFiles.size > 0);
+    assert.ok([...parsed.soundFiles.values()].every(sound => sound.byteLength > 0), 'extracted sounds own their bytes');
+  } finally { await flush(() => { decoding.resolve(); return loading; }); }
+  assert.equal(await loading, true);
+});
+
+test('a failed saved archive can be discarded and retried with a fresh storage read', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  const damaged = new Uint8Array([1, 2, 3]).buffer;
+  let opened;
+  await flush(async () => { opened = await result.current.loadUniPack(damaged, undefined, { releaseArchive: true }); });
+  assert.equal(opened, false);
+  assert.equal(damaged.byteLength, 0);
+  const fresh = await pack(true);
+  await flush(async () => { opened = await result.current.loadUniPack(fresh, undefined, { releaseArchive: true }); });
+  assert.equal(opened, true);
+});
+
+test('imported archives remain readable for saving after success or parsing failure', async () => {
+  const { result } = renderHook(useUniPadEngine);
+  for (const bytes of [await pack(true), new Uint8Array([1, 2, 3]).buffer]) {
+    const original = Buffer.from(bytes).toString('hex');
+    await flush(() => result.current.loadUniPack(bytes));
+    assert.equal(Buffer.from(bytes).toString('hex'), original);
+  }
+});
+
+test('saved packs still open when buffer transfer is unavailable', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'transfer');
+  Object.defineProperty(ArrayBuffer.prototype, 'transfer', { configurable: true, value: undefined });
+  t.after(() => Object.defineProperty(ArrayBuffer.prototype, 'transfer', descriptor));
+  const { result } = renderHook(useUniPadEngine);
+  const bytes = await pack(true);
+  let opened;
+  await flush(async () => { opened = await result.current.loadUniPack(bytes, undefined, { releaseArchive: true }); });
+  assert.equal(opened, true);
+  assert.ok(bytes.byteLength > 0, 'unsupported browsers keep their previous buffer lifetime');
+});
+
 test('a load replaced by a later one leaves the later pack playing from the keyboard', async () => {
   const { result } = renderHook(useUniPadEngine);
   const [first, second] = await Promise.all([pack(true), pack(false)]);
   const decoding = hold('decode');
   let firstLoad, secondLoad;
-  await flush(() => { firstLoad = result.current.loadUniPack(first); return decoding.entered.promise; });
+  await flush(() => { firstLoad = result.current.loadUniPack(first, undefined, { releaseArchive: true }); return decoding.entered.promise; });
   const reading = hold('parse');
   await flush(() => { secondLoad = result.current.loadUniPack(second); return reading.entered.promise; });
   // The replaced load finishes while the later one still reads its archive, as when a pack is
@@ -92,6 +151,8 @@ test('a load replaced by a later one leaves the later pack playing from the keyb
   // The replaced load tells its caller the player is not its own, so the caller leaves it alone.
   assert.equal(await firstLoad, null);
   assert.equal(await secondLoad, true);
+  assert.equal(first.byteLength, 0);
+  assert.ok(second.byteLength > 0, 'a replacing import still owns its archive');
   assert.equal(result.current.state.loaded, true);
   assert.equal(result.current.state.unipack.keyLedExist, false);
   await flush(() => key('keydown', 'KeyQ'));
