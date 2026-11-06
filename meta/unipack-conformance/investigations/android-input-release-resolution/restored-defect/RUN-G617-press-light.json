@@ -1,0 +1,348 @@
+{
+  "platform": "android",
+  "id": "RUN-G617",
+  "fingerprint": "eaf866f8c697f9cc3325d5d6e321f94ee85b1ceb7d3163b25818d9f46504dc21",
+  "corpusSha256": "13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d",
+  "status": "unverified",
+  "pressLight": true,
+  "nativeAudioOutput": false,
+  "nativeDecoder": true,
+  "detail": "Real screen snapshots; event order is not certified",
+  "steps": [
+    {
+      "step": {
+        "do": "watchStops"
+      },
+      "elapsedMs": 8,
+      "completedMs": 8
+    },
+    {
+      "step": {
+        "do": "press",
+        "x": 0,
+        "y": 0,
+        "input": "pointer:1"
+      },
+      "elapsedMs": 8,
+      "pointerId": 0,
+      "screenPoint": [
+        896,
+        143
+      ],
+      "completedMs": 38
+    },
+    {
+      "step": {
+        "do": "advance",
+        "ms": 20
+      },
+      "elapsedMs": 38,
+      "completedMs": 58
+    },
+    {
+      "step": {
+        "do": "observe"
+      },
+      "elapsedMs": 58,
+      "completedMs": 59
+    },
+    {
+      "step": {
+        "do": "press",
+        "x": 0,
+        "y": 0,
+        "input": "pointer:2"
+      },
+      "elapsedMs": 59,
+      "pointerId": 1,
+      "screenPoint": [
+        1016,
+        143
+      ],
+      "completedMs": 64
+    },
+    {
+      "step": {
+        "do": "advance",
+        "ms": 20
+      },
+      "elapsedMs": 64,
+      "completedMs": 85
+    },
+    {
+      "step": {
+        "do": "observe"
+      },
+      "elapsedMs": 85,
+      "completedMs": 85
+    },
+    {
+      "step": {
+        "do": "release",
+        "x": 0,
+        "y": 0,
+        "input": "pointer:2"
+      },
+      "elapsedMs": 85,
+      "pointerId": 1,
+      "completedMs": 88
+    },
+    {
+      "step": {
+        "do": "advance",
+        "ms": 20
+      },
+      "elapsedMs": 88,
+      "completedMs": 108
+    },
+    {
+      "step": {
+        "do": "observe"
+      },
+      "elapsedMs": 108,
+      "completedMs": 108
+    },
+    {
+      "step": {
+        "do": "release",
+        "x": 0,
+        "y": 0,
+        "input": "pointer:1"
+      },
+      "elapsedMs": 108,
+      "pointerId": 0,
+      "completedMs": 119
+    },
+    {
+      "step": {
+        "do": "advance",
+        "ms": 20
+      },
+      "elapsedMs": 119,
+      "completedMs": 141
+    },
+    {
+      "step": {
+        "do": "observe"
+      },
+      "elapsedMs": 141,
+      "completedMs": 141
+    }
+  ],
+  "snapshots": [
+    {
+      "elapsedMs": 58,
+      "chain": 0,
+      "lights": [
+        [
+          0,
+          0,
+          "fffafafa",
+          3
+        ]
+      ],
+      "chainEvents": [],
+      "plays": [
+        1
+      ],
+      "loops": [
+        -1
+      ],
+      "stoppedVoices": [
+        0
+      ],
+      "ringingLoops": [
+        1
+      ],
+      "engineStops": 0,
+      "silences": 0,
+      "loaded": {
+        "a.wav": 1
+      },
+      "requestCount": 2,
+      "padLightCount": 2
+    },
+    {
+      "elapsedMs": 85,
+      "chain": 0,
+      "lights": [
+        [
+          0,
+          0,
+          "fffafafa",
+          3
+        ]
+      ],
+      "chainEvents": [],
+      "plays": [
+        1,
+        1
+      ],
+      "loops": [
+        -1,
+        -1
+      ],
+      "stoppedVoices": [
+        0,
+        1
+      ],
+      "ringingLoops": [
+        1
+      ],
+      "engineStops": 0,
+      "silences": 0,
+      "loaded": {
+        "a.wav": 1
+      },
+      "requestCount": 4,
+      "padLightCount": 4
+    },
+    {
+      "elapsedMs": 108,
+      "chain": 0,
+      "lights": [
+        [
+          0,
+          0,
+          "fffafafa",
+          3
+        ]
+      ],
+      "chainEvents": [],
+      "plays": [
+        1,
+        1
+      ],
+      "loops": [
+        -1,
+        -1
+      ],
+      "stoppedVoices": [
+        0,
+        1
+      ],
+      "ringingLoops": [
+        1
+      ],
+      "engineStops": 0,
+      "silences": 0,
+      "loaded": {
+        "a.wav": 1
+      },
+      "requestCount": 4,
+      "padLightCount": 4
+    },
+    {
+      "elapsedMs": 141,
+      "chain": 0,
+      "lights": [],
+      "chainEvents": [],
+      "plays": [
+        1,
+        1
+      ],
+      "loops": [
+        -1,
+        -1
+      ],
+      "stoppedVoices": [
+        0,
+        1,
+        2
+      ],
+      "ringingLoops": [],
+      "engineStops": 0,
+      "silences": 0,
+      "loaded": {
+        "a.wav": 1
+      },
+      "requestCount": 5,
+      "padLightCount": 6
+    }
+  ],
+  "completed": true,
+  "requests": [
+    [
+      "stop",
+      0,
+      34
+    ],
+    [
+      "play",
+      1,
+      -1,
+      1,
+      34
+    ],
+    [
+      "stop",
+      1,
+      63
+    ],
+    [
+      "play",
+      1,
+      -1,
+      2,
+      63
+    ],
+    [
+      "stop",
+      2,
+      109
+    ]
+  ],
+  "padLights": [
+    [
+      0,
+      0,
+      null,
+      true,
+      34
+    ],
+    [
+      0,
+      0,
+      [
+        "ffff0000",
+        4
+      ],
+      true,
+      39
+    ],
+    [
+      0,
+      0,
+      null,
+      true,
+      67
+    ],
+    [
+      0,
+      0,
+      [
+        "ffff0000",
+        4
+      ],
+      true,
+      68
+    ],
+    [
+      0,
+      0,
+      [
+        "ffff0000",
+        4
+      ],
+      false,
+      110
+    ],
+    [
+      0,
+      0,
+      null,
+      false,
+      111
+    ]
+  ]
+}

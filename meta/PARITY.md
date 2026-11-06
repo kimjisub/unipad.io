@@ -133,32 +133,50 @@ apps keep those switches in the option panel and reset them per session.
 
 `meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
 the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
-(Korea time), on corpus `aae2cc72…`, 172 cases: Android passes 170 with two pinned storage differences;
-iOS and the web pass all 172. None is undetermined or unverified
-([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
-that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
-are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
+covered and what is not; RESULTS.md: historical results). The preserved incomplete recheck on 2026-11-06
+(Korea time) uses G6, 391 cases, corpus SHA-256
+`13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d`.
+
+| Platform | Application commit | Common cases passed | Failed | Unverified |
+|---|---|---:|---:|---:|
+| Android | `726bdc631600f726c1ea499519c6523f3c7ea3fc` | 368 | 0 | 23 |
+| iOS | `3eee27285e67ca609b35e7ac724dd928e10681f8` | 0 | 0 | 391 |
+| Web | `33c97f7329afb6c36a636731bbcc9af7481d4db9` | 391 | 0 | 0 |
+
+The iOS tests did not start; its row means no new observation. Android's 23 unverified cases are
+KL-026/KL-028 (the host changed stored names), the ten archive sound-identity cases, KS-G617 through
+KS-G619 (case-sensitive paths), and the eight distinct screen-input cases. They are not passes.
+The web's archive and Chromium audio tests also passed; the common operation adapters alone do not
+verify the whole application. Current app copies pass `sync.mjs --check --require-current` byte
+comparison, which is separate from compatibility. The current generated corpus and `divergences.json` have no remaining failure pins on any
+platform. The two historical Android pins were removed using the ordered observations below;
+this does not change the old common-run results. The current 391-case corpus SHA-256 is
+`86f61e7c369d73e3f3a7c458ba46f0cc93765b3d8084102671d3d64f8fc2d24c`;
+its full three-platform recheck is pending. The old 172-case results remain historical in
+[RESULTS.md](unipack-conformance/RESULTS.md).
+
+KS-B08 and KL-BE10 have no current failure pin; both passed in this Android run. That does not supply
+a new iOS observation. No result here establishes every pack's compatibility, physical controllers,
+phone speakers, headphones, Bluetooth output, or Android 7.0–8.0 audio output.
 
 ### Open differences found by the corpus
 
-- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
-  Native input-path observations on application commit `208afb9e`, after
-  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
-  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
-  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
-  remain on until the last input releases. The older `777cc4a3` observations predate that input change
-  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
-  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
-  stored historical app copies remain separate from these observations. See the
-  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
-  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
-
+There are no remaining pinned failures. Unverified observations above remain unverified.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
+
+- **RUN-G617/RUN-G618: Android releases the later input's sound and pack light.**
+  The ownership fix in [unipad-android#309](https://github.com/kimjisub/unipad-android/pull/309)
+  is confirmed by ordered screen records at `a9d7484e` from
+  [unipad-android#358](https://github.com/kimjisub/unipad-android/pull/358).
+  Both unchanged scenarios match every expected checkpoint, and restoring the old ownership
+  condition makes the third and fourth checkpoints fail.
+  [Original records, hashes and limits](unipack-conformance/investigations/android-input-release-resolution/README.md)
+  distinguish this observation from the old common run's missing screen-input actual values.
+
 
 - **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
   [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
