@@ -131,34 +131,90 @@ apps keep those switches in the option panel and reset them per session.
 
 ## Parser and runner conformance
 
-`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
-the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
-(Korea time), on corpus `aae2cc72…`, 172 cases: Android passes 170 with two pinned storage differences;
-iOS and the web pass all 172. None is undetermined or unverified
-([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
-that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
-are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
+`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read.
+The recheck on 2026-11-07 (Korea time) uses G6, 391 cases, corpus SHA-256
+`746a5ce6925926df2a27ac34313c157662e244a1a70ae873eec7f8d7391e3c64`.
+
+| Platform | Application commit | Common cases passed | Failed | Unverified |
+|---|---|---:|---:|---:|
+| Android | `f47058f6f788d7b7dd372aae07bc1bc33f6c58d4` | 368 | 0 | 23 |
+| iOS | `44ab0823e885c37f520f57fa9d383f2041d8d266` | 391 | 0 | 0 |
+| Web | `d4e771e0bbd3ba585bf12d6157977dadd27379b5` | 391 | 0 | 0 |
+
+All rows use the same corpus bytes, with unchanged inputs, fingerprints and expected values.
+The Android and iOS commits above are the heads of the pull requests that carried the corpus copies;
+those copies reached each app's `main` in merge commits `f8760475f0e392e241ac4a0e202eb1a59a9e513c`
+(Android) and `7270e1698f759f44996f65112f501e8eebf52b64` (iOS), which `copies.json` names.
+Each application's common and app tests use the same clean application commit; commands record
+the commit and source status before and after execution. iOS uses the default Xcode 27.1
+(27A9275) and an iPhone 17 Pro simulator running iOS 27.0.
+
+Android's 23 unverified cases are KL-026/KL-028 (the host changed stored names), the ten
+archive sound-identity cases, KS-G617 through KS-G619 (case-sensitive paths), and the eight
+distinct screen-input cases. They are not passes. The separate Android app tests confirm
+eight registered items and include captured emulator output; the web app tests confirm
+seven registered items, with audio measured in Chromium only. Physical output is unverified.
+
+The first iOS unit invocation ran twice: both preserved raw attempts passed, but the execution
+wrapper initially exported only the final bundle. Combining both attempts rejects the repeated
+registered unit tests, leaving that round at 99 of 114 grammar items. A separate follow-up on the
+same clean commit ran the six selected unit suites and one required UI import test; every raw
+attempt was collected. Its 16 registered unit tests and one UI test passed exactly once, with no
+missing, skipped or repeated required tests. This does not claim a full UI-suite pass or fill
+skips from the earlier full unit invocation.
+
+Combining the common and registered app tests confirms Android 96, iOS 104 and web 104 of the
+114 grammar items, with 96 confirmed on all three. iOS has 99 items confirmed by the common
+run and five further items by app tests; F-01 rests on the case-sensitive common run. Unconfirmed
+items remain unconfirmed, and these counts do not establish every UniPack's compatibility.
+
+The browser inventory has 1,665 distinct registered tests. Preserved rounds cover 1,489 passes
+and 176 skips: Chromium 677/12, WebKit 380/119, and Firefox 432/45 (passed/skipped).
+The first full command retained 658 passes before a deleted temporary directory caused 41 failures
+and one interruption. Those failures remain in the original record. A follow-up checked the
+remaining Chromium and all WebKit entries, then stopped at the planned browser boundary (exit 130);
+the complete Firefox command exited 0. The final selected observations match the inventory in both
+directions with no missing, duplicated, retried or unexpected results. Skips retain the existing
+browser-specific conditions. These are split-run observations with the first failed round retained.
+
+The first remote full-unit run on the same iOS commit failed two sound tests on the pack-loading
+deadline. [The second attempt of the whole job](https://github.com/kimjisub/unipad-ios/actions/runs/42264092093)
+passed 959 tests, failed none and skipped 25. Preserve the time-only first failure and the successful
+whole-job re-execution (1/1); the two tests were not rerun alone. The timeout was unchanged.
+
+The exact public app copies are [unipad-android#365](https://github.com/kimjisub/unipad-android/pull/365)
+and [unipad-ios#259](https://github.com/kimjisub/unipad-ios/pull/259), at the commits in the table.
+Their downloaded corpus files pass `sync.mjs --check --require-current` against this corpus.
+These references identify reviewed copies; merge status and a post-merge check remain separate.
+
+The generated corpus and `divergences.json` have no remaining failure pins on any platform.
+The two historical Android pins were removed using the ordered observations below, including
+the restored-defect failures. Removing those annotations does not fill the 23 missing common
+observations. Copy-byte verification is also separate from compatibility. The old 172-case and
+other earlier results remain historical in [RESULTS.md](unipack-conformance/RESULTS.md).
+
+KS-B08 and KL-BE10 have no current failure pin; both passed in these Android, iOS and web
+common runs. No result here establishes every pack's compatibility, physical controllers,
+phone speakers, headphones, Bluetooth output, or Android 7.0–8.0 audio output.
 
 ### Open differences found by the corpus
 
-- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
-  Native input-path observations on application commit `208afb9e`, after
-  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
-  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
-  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
-  remain on until the last input releases. The older `777cc4a3` observations predate that input change
-  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
-  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
-  stored historical app copies remain separate from these observations. See the
-  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
-  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
-
+There are no remaining pinned failures. Unverified observations above remain unverified.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
+
+- **RUN-G617/RUN-G618: Android releases the later input's sound and pack light.**
+  The ownership fix in [unipad-android#309](https://github.com/kimjisub/unipad-android/pull/309)
+  is confirmed by ordered screen records at `a9d7484e` from
+  [unipad-android#358](https://github.com/kimjisub/unipad-android/pull/358).
+  Both unchanged scenarios match every expected checkpoint, and restoring the old ownership
+  condition makes the third and fourth checkpoints fail.
+  [Original records, hashes and limits](unipack-conformance/investigations/android-input-release-resolution/README.md)
+  distinguish this observation from the old common run's missing screen-input actual values.
+
 
 - **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
   [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
