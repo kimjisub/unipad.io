@@ -122,6 +122,32 @@ describe('AutoPlayRunner', () => {
     });
   }
 
+  test('an overdue restored hint lights hardware immediately between brightness updates', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000',
+    }));
+    const leds: [number, number][] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+      onGuidePadOn() {}, onGuidePadOff() {}, onRemoveGuide() {},
+      onGuideLedUpdate(_x, _y, velocity) { leds.push([clock.now, velocity]); },
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch();
+    clock.tick(1); clock.tick(998);
+    clock.now += 2;
+    runner.pause(); runner.stepMode = true; clock.tick(0);
+    leds.length = 0;
+    const resumedAt = clock.now;
+    runner.play(true); clock.tick(0);
+    assert.deepEqual(leds.filter(([, velocity]) => velocity > 0), [[resumedAt, 21]]);
+    // A delayed next tick must not turn this into an off-only hardware hint.
+    clock.tick(50);
+    assert.deepEqual(leds.at(-1), [resumedAt + 50, 0]);
+    runner.stop();
+  });
+
   test('resuming a timed guide redraws it after clearing the paused screen', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV, autoPlay: 'd 1000\no 1 1\nf 1 1\nd 10000',

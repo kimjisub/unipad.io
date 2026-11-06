@@ -238,6 +238,9 @@ export class AutoPlayRunner {
                   ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
+                if (restored && authoredTarget <= currTime) {
+                  this.listener.onGuideLedUpdate(event.x, event.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
+                }
                 this.guideIndex++;
               } else {
                 break;
