@@ -113,7 +113,7 @@ and [web `applyVolumeLevel` and chain display](../src/components/play/useUniPadE
 |---|---|
 | Android | Per-file failures are reported; admitted sounds that decode successfully remain playable. If every sound fails, playback is disabled and the failure details offer an exit. |
 | iOS | Per-file failures produce a notice and successfully decoded sounds remain playable. If none can play, the screen presents a load failure instead of becoming ready. |
-| Web | Failed files are listed as warnings and successfully decoded sounds remain playable; if every used file fails, loading fails. In a partially loaded pack, a failed sound is silent, but pressing its pad still advances to the next sound and follows that sound's chain change. |
+| Web | Failed files are listed as warnings and successfully decoded sounds remain playable; if every used file fails, loading fails. In a partially loaded pack, a failed sound is silent, but pressing its pad still advances to the next sound and applies the failed sound's chain change. |
 
 This is no longer a web-only partial-load policy. See
 [Android `onReport`/`onException`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt)
