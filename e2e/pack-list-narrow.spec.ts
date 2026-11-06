@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
-import { connectStore } from './database';
-import { measureReachability, reachable, resize } from './layout';
+import { connectStore, startEachPageOnSocket } from './database';
+import { measureElements, measureReachability, reachable, resize } from './layout';
 import { importSavedPack, savedRecords } from './saved-packs';
 
 const viewports = [{ width: 320, height: 568 }, { width: 375, height: 667 }, { width: 430, height: 932 }];
@@ -37,34 +37,21 @@ function bar(page: Page, text: (typeof locales)[number]) {
 /** The store answers with a count, as it does for a visitor; a build without a database stops here. */
 async function showStoreCount(page: Page, context: BrowserContext, text: (typeof locales)[number], open: () => Promise<void>) {
   const database = await connectStore(context, storeCount);
+  // Importing a pack leaves its first page as soon as it is saved, often while the socket opens.
+  await startEachPageOnSocket(context);
   await open();
   await database.publish(storeCount);
   await expect(bar(page, text).store).toContainText(String(storeCount));
 }
 
-/** Font changes start CSS size transitions; keep this wait separate from layout measurement. */
-async function waitForControlLayout(page: Page) {
-  await page.evaluate(async () => {
-    document.documentElement.getBoundingClientRect();
-    await document.fonts.ready;
-    document.documentElement.getBoundingClientRect();
-    // Wait for actual transitions, not a delay or an assertion retry. The repeating badge keeps running.
-    await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition)
-      .map(animation => animation.finished.catch(error => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
-      })));
-  });
-}
+type Measurement = Awaited<ReturnType<typeof measureElements>>[number];
 
 /** The whole control is on screen, a press at its centre reaches it and no two controls touch. */
-async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
-  const named = Object.entries(controls);
-  await waitForControlLayout(named[0][1].page());
-  const measurements = await measureReachability(named.map(([, control]) => control));
-  for (const [index, [name]] of named.entries()) {
+function expectReachable(names: string[], measurements: Measurement[]) {
+  for (const [index, name] of names.entries()) {
     const { box, inside, pressable } = measurements[index];
     expect({ inside, pressable }, name).toEqual({ inside: true, pressable: true });
-    for (const [otherIndex, [otherName]] of named.entries()) {
+    for (const [otherIndex, otherName] of names.entries()) {
       if (otherIndex <= index) continue;
       const other = measurements[otherIndex].box;
       const overlaps = box.x < other.x + other.width && other.x < box.x + box.width
@@ -72,6 +59,12 @@ async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
       expect(overlaps, `${name} overlaps ${otherName}`).toBe(false);
     }
   }
+}
+
+/** Measured once fonts and the CSS size transitions they start have settled. */
+async function expectAllReachable(controls: Partial<ReturnType<typeof bar>>) {
+  const named = Object.entries(controls);
+  expectReachable(named.map(([name]) => name), await measureReachability(named.map(([, control]) => control), { transitions: true }));
 }
 
 async function expectFileChooser(page: Page, control: Locator) {
@@ -178,13 +171,21 @@ for (const text of locales) {
     test('the bar and the first pack fit a short screen at every narrow width', async ({ page, context }) => {
       test.setTimeout(90_000);
       await showStoreCount(page, context, text, () => importSavedPack(page, '/play'));
-      const controls = bar(page, text);
       const row = page.getByRole('option', { name: new RegExp(packTitle) });
-      for (const width of widths) {
-        await resize(page, { width, height: 568 });
-        await expectAllReachable(controls);
-        expect((await controls.search.boundingBox())!.width, 'search box width').toBeGreaterThanOrEqual(112);
-        await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
+      // The bar keeps the same elements at every width; only CSS wrapping moves them. Find them once,
+      // then let one browser call per width resize, settle and measure: a busy machine makes each call slow.
+      const named = Object.entries(bar(page, text));
+      const names = named.map(([name]) => name);
+      const elements = await Promise.all(named.map(([, control]) => control.elementHandle()));
+      try {
+        for (const width of widths) {
+          const measurements = await measureElements(page, elements, { viewport: { width, height: 568 }, transitions: true });
+          expectReachable(names.map(name => `${name} at ${width}px`), measurements);
+          expect(measurements[names.indexOf('search')].box.width, `search box width at ${width}px`).toBeGreaterThanOrEqual(112);
+          await expect(row, `first pack at ${width}px`).toBeInViewport({ ratio: 0.99 });
+        }
+      } finally {
+        await Promise.all(elements.map(element => element.dispose()));
       }
     });
 
