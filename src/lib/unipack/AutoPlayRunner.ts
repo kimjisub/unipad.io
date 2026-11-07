@@ -607,7 +607,9 @@ export class AutoPlayRunner {
         this.pausedAt = now;
       }
       this.clearChainWait();
-      this.clockPending = (this.pausedAt ?? this.suspendedAt ?? performance.now()) - this.startTime;
+      // With no remaining guide, the trailing wait keeps counting from resume normally.
+      this.clockPending = this.guideIndexAtProgress() < this.guideTimeline.length
+        ? (this.pausedAt ?? this.suspendedAt ?? performance.now()) - this.startTime : null;
       this.stepMode = false;
       this.clearStepScan();
       this.restartGuideAtProgress();
