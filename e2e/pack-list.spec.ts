@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { storedPackRecords } from './saved-packs';
+import { importSavedPacks, type PackFile, seedSavedPacks, storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -16,28 +16,16 @@ const packs = [
 ] as const;
 const [last, middle, first] = packs.map(([, name]) => name);
 
+declare global {
+  // Whether any list row was still moving at each wheel event the page received.
+  interface Window { wheelsWhileRowsMove?: boolean[] }
+}
+
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
 const option = (page: Page, name: string) => list(page).getByRole('option', { name, exact: true });
 
-type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
-
 async function openList(page: Page, files: readonly PackFile[], beforeSavedUrl?: () => Promise<void>) {
-  await test.step('Prepare saved pack list', async () => {
-    await page.goto('/play');
-    for (const [index, file] of files.entries()) {
-      await page.locator('input[data-unipack-import]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
-      await expectPads(page);
-      // Finish controlled-delay setup before starting the saved URL assertion's clock.
-      await beforeSavedUrl?.();
-      // The import shows the pads before it saves the pack; the URL changes once it is saved.
-      await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
-      // Setup needs the buttons' actions, not pointer hit testing during their animations.
-      // Keep the page alive and return to the list before the next import.
-      await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
-      await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
-      await expect(list(page).getByRole('option')).toHaveCount(index + 1);
-    }
-  });
+  await test.step('Prepare saved pack list', () => importSavedPacks(page, files, { beforeSavedUrl }));
 }
 
 const openListWithThreePacks = (page: Page) => openList(page, packs.map(([file]) => file));
@@ -51,44 +39,76 @@ const sortCases = [
   ['Date', false, ['Favorite', 'Bravo', 'Alpha', 'Charlie']],
 ] as const;
 
+/**
+ * Reads the list's sort settings from the app's database. Opening without a version would
+ * create an empty database where the app's is missing, so that open is cancelled and the
+ * read fails with what the browser showed: its databases, the version and stores it opened,
+ * the document and the storage estimate.
+ */
+async function readSortSettings(page: Page, database = 'unipad') {
+  return page.evaluate(async database => {
+    const missing = async (opened: { version: number; stores: string[] }) => JSON.stringify({
+      database,
+      opened,
+      databases: await indexedDB.databases(),
+      url: location.href,
+      topLevel: window === window.top,
+      storage: await navigator.storage.estimate(),
+    });
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(database);
+      let upgrade: { version: number; stores: string[] } | undefined;
+      request.onupgradeneeded = event => {
+        upgrade = { version: event.oldVersion, stores: Array.from(request.result.objectStoreNames) };
+        request.transaction!.abort();
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = event => {
+        if (!upgrade) { reject(request.error); return; }
+        event.preventDefault();
+        missing(upgrade).then(details => reject(new Error(`No ${database} database to read settings from: ${details}`)), reject);
+      };
+    });
+    if (!db.objectStoreNames.contains('settings')) {
+      const opened = { version: db.version, stores: Array.from(db.objectStoreNames) };
+      db.close();
+      throw new Error(`No settings store in the ${database} database: ${await missing(opened)}`);
+    }
+    const values = await new Promise<Record<string, string>>((resolve, reject) => {
+      const request = db.transaction('settings').objectStore('settings').getAll();
+      request.onsuccess = () => resolve(Object.fromEntries(request.result.map(({ key, value }) => [key, value])));
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
+  }, database);
+}
+
+test('reading sort settings fails without creating a missing database', async ({ page }) => {
+  await page.goto('/play');
+  const read = await readSortSettings(page, 'unipad-missing').then(() => 'read', (error: Error) => error.message);
+  expect(read).toContain('No unipad-missing database to read settings from');
+  // Chromium and Firefox add the page's stack after the message.
+  const message = read.split('\n')[0];
+  const details = JSON.parse(message.slice(message.indexOf('{')));
+  expect(details).toMatchObject({ database: 'unipad-missing', opened: { version: 0, stores: [] }, topLevel: true });
+  expect(details.url).toMatch(/\/play$/);
+  expect(details.storage).toHaveProperty('quota');
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map(({ name }) => name))).not.toContain('unipad-missing');
+});
+
 for (const [method, ascending, titles] of sortCases) {
   test(`saved ${method}/${ascending} sorting survives reload and list reentry`, async ({ page }, testInfo) => {
-    // Sorting needs distinct saved rows, not three rounds of decoding and playing.
-    // Import once through the real UI, then copy its archive and chunks along with
-    // the metadata. Other list tests still import and open the three distinct packs.
-    await openList(page, [packs[0][0]]);
-    await page.evaluate(async () => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('unipad');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['unipacks', 'unipackMetadata', 'unipackChunks'], 'readwrite');
-        const store = tx.objectStore('unipackMetadata');
-        const archive = tx.objectStore('unipacks').getAll();
-        const chunks = tx.objectStore('unipackChunks').getAll();
-        const request = store.getAll();
-        request.onsuccess = () => {
-          const record = request.result[0];
-          const source = archive.result[0];
-          const sourceChunks = chunks.result.filter(chunk => chunk.packId === source.id);
-          const keys = [
-            [record.id, 'Alpha', 'Charlie', 20, false],
-            ['bravo', 'Bravo', 'Alpha', 30, false],
-            ['charlie', 'Charlie', 'Bravo', 10, false],
-            ['favorite', 'Favorite', 'Zulu', 40, true],
-          ] as const;
-          for (const [id, title, producerName, addedAt, bookmark] of keys) {
-            tx.objectStore('unipacks').put({ ...source, id });
-            for (const chunk of sourceChunks) tx.objectStore('unipackChunks').put({ ...chunk, packId: id });
-            store.put({ ...record, id, title, producerName, addedAt, bookmark });
-          }
-        };
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error);
-      });
-      db.close();
+    // Sorting needs distinct saved rows, not rounds of decoding and playing: write them to
+    // the app's database. Other list tests still import and open real packs.
+    await test.step('Prepare saved pack list', async () => {
+      await page.goto('/play');
+      await seedSavedPacks(page, [
+        { id: 'alpha', title: 'Alpha', producerName: 'Charlie', addedAt: 20 },
+        { id: 'bravo', title: 'Bravo', producerName: 'Alpha', addedAt: 30 },
+        { id: 'charlie', title: 'Charlie', producerName: 'Bravo', addedAt: 10 },
+        { id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true },
+      ]);
     });
     await page.reload();
     await expect(list(page).getByRole('option')).toHaveCount(4);
@@ -98,31 +118,20 @@ for (const [method, ascending, titles] of sortCases) {
       await page.getByRole('button', { name: /^Sort (ascending|descending)$/ }).click();
     }
     const expectedRows = titles.map(title => `${title} by ${{ Favorite: 'Zulu', Alpha: 'Charlie', Bravo: 'Alpha', Charlie: 'Bravo' }[title]}`);
-    const readSettings = () => page.evaluate(async () => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('unipad');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const values = await new Promise<Record<string, string>>((resolve, reject) => {
-        const request = db.transaction('settings').objectStore('settings').getAll();
-        request.onsuccess = () => resolve(Object.fromEntries(request.result.map(({ key, value }) => [key, value])));
-        request.onerror = () => reject(request.error);
-      });
-      db.close();
-      return { sortMethod: values.sortMethod, sortOrder: values.sortOrder };
-    });
+    const readSettings = () => readSortSettings(page);
     const expectedSettings = { sortMethod: method.toLowerCase(), sortOrder: String(ascending) };
+    const rowLabels = () => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')));
     await expect.poll(readSettings).toEqual(expectedSettings);
     for (const step of ['reload', 'reentry']) {
       if (step === 'reload') await page.reload();
       else { await page.goto('about:blank'); await page.goto('/play'); }
       await expect(list(page).getByRole('option')).toHaveCount(4);
-      await testInfo.attach(`${step}-list`, { body: await page.screenshot(), contentType: 'image/png' });
+      // The rows as text; a failing test also saves a screenshot.
+      await testInfo.attach(`${step}-rows`, { body: JSON.stringify(await rowLabels()), contentType: 'application/json' });
       await testInfo.attach(`${step}-settings`, { body: JSON.stringify(await readSettings()), contentType: 'application/json' });
       await expect(page.getByRole('button', { name: method, exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: ascending ? 'Sort ascending' : 'Sort descending', exact: true })).toBeVisible();
-      await expect.poll(() => list(page).getByRole('option').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label')))).toEqual(expectedRows);
+      await expect.poll(rowLabels).toEqual(expectedRows);
       await expect.poll(readSettings).toEqual(expectedSettings);
     }
   });
@@ -328,7 +337,8 @@ test('Enter on the delete confirmation presses the focused button, and deletes f
 const tailSoundPad = '7,7';
 
 // Import a real pack with one looping sound, then clone its saved archive and metadata.
-async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list') {
+// `beforeQuit` runs just before the list is shown again, while its rows have not entered yet.
+async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' = 'list', beforeQuit?: () => Promise<void>) {
   await loadInputPack(page, 8, 8, square, tailSoundPad);
   await expect(page).toHaveURL(/pack=/, { timeout: stateTimeout });
   await page.evaluate(async () => {
@@ -370,9 +380,25 @@ async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' =
     // Quit refreshes the saved rows without opening a second document during setup.
     // Real pointer input remains in the playback and return actions under test.
     await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
+    await beforeQuit?.();
     await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
     await expect(list(page).getByRole('option')).toHaveCount(13);
   }
+}
+
+// The saved pack rows enter and re-lay out with script-driven transforms. While they move, the
+// transforms stretch the list's scroll range, and a wheel sent then can leave WebKit's list past its
+// settled end with the next wheel never moving it. Send wheel input only once they are at rest.
+// Only transforms count: the rows' fade-in never changes the layout. Page source, so the wait and
+// the regression test's wheel record share one condition.
+const savedRowsMoving = `() => Array.from(document.querySelectorAll('[role="option"][data-pack-id]'))
+  .some(row => getComputedStyle(row).transform !== 'none')`;
+
+async function untilRowsAtRest(page: Page) {
+  await test.step('Saved pack rows must stop moving before wheel input', async () => {
+    const atRest = await page.waitForFunction(`!(${savedRowsMoving})()`, null, { timeout: 5000 });
+    await atRest.dispose();
+  });
 }
 
 // Use actual wheel input; never scroll a hidden target into view through DOM methods.
@@ -402,6 +428,7 @@ async function wheelTo(page: Page, target: Locator) {
   // equals the distance scrolled or silently retrying the final visibility assertion.
   let remaining: number | undefined;
   while (remaining === undefined || remaining > 0) {
+    await untilRowsAtRest(page);
     const observation = await readScroll();
     try {
       const scroll = await observation.evaluate(value => value && {
@@ -590,6 +617,34 @@ for (const square of [true, false]) {
     });
   }
 }
+
+test('wheel input waits for entering list rows to stop moving', async ({ page }, info) => {
+  test.setTimeout(Math.max(info.project.timeout, 60_000));
+  await page.setViewportSize({ width: 594, height: 368 });
+  // A busy machine can leave the rows' entrance animation running when the test scrolls.
+  // Hold it at its start by pausing the page clock before the list is shown. pauseAt also installs
+  // the clock, and a fixed time leaves no host-time deadline that can expire in transit.
+  await test.step('Prepare long saved list', () => openLongList(page, true, 'list', () => page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'))));
+  const rows = list(page).getByRole('option');
+  await expect(rows.last()).toHaveCSS('transform', /^matrix\(1, 0, 0, 1, 0, [1-9]/);
+  await page.evaluate(`window.wheelsWhileRowsMove = [];
+    addEventListener('wheel', () => window.wheelsWhileRowsMove.push((${savedRowsMoving})()), { capture: true });`);
+  const tail = option(page, 'Local pack 0 by UniPad Tests');
+  const recordedWheels = () => page.evaluate(() => window.wheelsWhileRowsMove);
+  // While the clock stays paused the rows cannot finish entering: the wait for rest must run out
+  // before any wheel is sent. The clock resumes only after that, so the two deadlines never overlap.
+  const held = await wheelTo(page, tail).then(() => undefined, (error: unknown) => error);
+  expect(await recordedWheels(), 'a wheel was sent while the rows were still entering').toEqual([]);
+  expect(String(held)).toMatch(/Timeout 5000ms/);
+  expect(await page.evaluate(`(${savedRowsMoving})()`), 'the paused rows must still be entering').toBe(true);
+  await page.clock.resume();
+  await wheelTo(page, tail);
+  const wheels = await recordedWheels();
+  expect(wheels?.length, 'the tail must be reached through wheel input').toBeGreaterThan(0);
+  expect(wheels, 'a wheel was sent while the rows were still moving').not.toContain(true);
+  await tail.click();
+  await expect(tail).toHaveAttribute('aria-selected', 'true');
+});
 
 test('a single saved pack keeps detail playback visible in a tall phone viewport', async ({ page }, info) => {
   await openList(page, [packs[0][0]]);

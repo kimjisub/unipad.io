@@ -1,4 +1,5 @@
 import type { AudioInspection } from './audioSafety';
+import { readsFromHeadersOnly } from './audioInspection';
 import { INLINE_AUDIO_INSPECTOR, type AudioInspector } from './soundLoading';
 
 export interface InspectionRequest { id: number; bytes: ArrayBuffer }
@@ -15,6 +16,7 @@ interface Pending { bytes: ArrayBuffer; resolve: (inspection: AudioInspection) =
 /**
  * Reads sound files on a worker so a long FLAC or Ogg file, which takes seconds to read, does not
  * freeze the page while a pack opens. The worker reads a copy; the pack keeps its bytes for decoding.
+ * Plain WAV files are read from their chunk headers on the page.
  * Without a working worker the files are read in place: a reader that cannot start must not make
  * every sound unreadable.
  */
@@ -55,7 +57,8 @@ export function createAudioInspector(): ClosableAudioInspector {
   return {
     inspect(bytes) {
       if (closed) return Promise.reject(new Error('The pack stopped opening'));
-      if (!worker) return inPlace(bytes);
+      // A copy for the worker would only add to the memory the first decode starts on.
+      if (!worker || readsFromHeadersOnly(bytes)) return inPlace(bytes);
       const running = worker;
       return new Promise((resolve, reject) => {
         const id = nextId++;

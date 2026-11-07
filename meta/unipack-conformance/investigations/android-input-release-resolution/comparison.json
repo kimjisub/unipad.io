@@ -1,0 +1,582 @@
+[
+  {
+    "phase": "r2",
+    "id": "RUN-G617",
+    "source": "corrected/RUN-G617.json",
+    "sha256": "32fad3e4fd007f1305be0f6cfff08418054a9ad99925af66a10514ea00f2e3c4",
+    "checks": {
+      "completed": true,
+      "sameFingerprint": true,
+      "sameSteps": true,
+      "sameCorpusHash": true,
+      "noAmbiguousCrossChannelTimes": true,
+      "matchesExpected": true
+    },
+    "ambiguousTimes": [],
+    "actual": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    },
+    "expected": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    }
+  },
+  {
+    "phase": "r2",
+    "id": "RUN-G618",
+    "source": "corrected/RUN-G618.json",
+    "sha256": "92906f8b6c039bd63904a9871ee011d766dd4150827439f52759dd099b87e3a0",
+    "checks": {
+      "completed": true,
+      "sameFingerprint": true,
+      "sameSteps": true,
+      "sameCorpusHash": true,
+      "noAmbiguousCrossChannelTimes": true,
+      "matchesExpected": true
+    },
+    "ambiguousTimes": [],
+    "actual": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    },
+    "expected": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    }
+  },
+  {
+    "phase": "m2",
+    "id": "RUN-G617",
+    "source": "restored-defect/RUN-G617.json",
+    "sha256": "232759fdb953efd194693e3c46c3427f4f0aa0dae71490bcb8adf567161b7edf",
+    "checks": {
+      "completed": true,
+      "sameFingerprint": true,
+      "sameSteps": true,
+      "sameCorpusHash": true,
+      "noAmbiguousCrossChannelTimes": true,
+      "matchesExpected": false
+    },
+    "ambiguousTimes": [],
+    "actual": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ]
+      ]
+    },
+    "expected": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    }
+  },
+  {
+    "phase": "m2",
+    "id": "RUN-G618",
+    "source": "restored-defect/RUN-G618.json",
+    "sha256": "a0f50569f4cc8b18ce62cac7ba0193dcae749ee20e26eca0f963758264a58784",
+    "checks": {
+      "completed": true,
+      "sameFingerprint": true,
+      "sameSteps": true,
+      "sameCorpusHash": true,
+      "noAmbiguousCrossChannelTimes": true,
+      "matchesExpected": false
+    },
+    "ambiguousTimes": [],
+    "actual": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ]
+      ]
+    },
+    "expected": {
+      "checkpoints": [
+        [
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "sound",
+            0,
+            0,
+            0,
+            "a.wav",
+            -1
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ],
+          [
+            "ledOn",
+            0,
+            0,
+            "ffff0000",
+            4
+          ]
+        ],
+        [
+          [
+            "soundStop",
+            0,
+            0,
+            0,
+            "a.wav"
+          ],
+          [
+            "ledOff",
+            0,
+            0
+          ]
+        ],
+        []
+      ]
+    }
+  }
+]

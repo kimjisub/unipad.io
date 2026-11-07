@@ -4,12 +4,14 @@ Where Android, iOS and Web stand relative to each other. Update this in the same
 change that creates or closes a gap — a gap that only exists in someone's head
 comes back.
 
-Last verified: 2026-09-08. Sections marked *(re-read 2026-09-30)* were read again on that date at the latest
-`main` commit of each repository (unipad-android `20207d89`, unipad-ios `1ef848d`, unipad.io `1f13a4a`); the
-rest still date from 2026-09-08. "Sold build" means the commit is contained in the final release commit of a
-build on sale: Android 4.1.8 (115) `7d740029` (in a staged rollout next to 4.1.3), iOS 4.1.6 (build 7)
-`fe2e99c`, web `8019666` (`prod`, two commits behind baseline `3760b3c`). Everything in these sections was read from source;
-none of it was run on a device.
+Source audit: 2026-11-07 (Korea time), at Android
+[`f8760475`](https://github.com/kimjisub/unipad-android/tree/f8760475f0e392e241ac4a0e202eb1a59a9e513c),
+iOS [`7270e169`](https://github.com/kimjisub/unipad-ios/tree/7270e1698f759f44996f65112f501e8eebf52b64)
+and web [`64d7149c`](https://github.com/kimjisub/unipad.io/tree/64d7149ca627031f71b0286f639566cbc734016a),
+their `main` heads when read. Screens, MIDI registration, engine behaviour and slide settings below
+describe those sources, not which store build contains them. The parser/runner section keeps its
+own dated observations and application commits. Simulator verification for this audit is limited to
+repeated-sound stopping and play-screen responsiveness; physical MIDI and audio output remain unverified.
 
 Which devices, operating systems and browsers each platform runs on is not tracked here but in
 [`compatibility/`](compatibility/README.md) (support matrix, evidence, world-distribution sources).
@@ -18,13 +20,14 @@ Which devices, operating systems and browsers each platform runs on is not track
 
 | Platform | Repo | Notes |
 |---|---|---|
-| Android | `unipad-android` | Oldest, largest user base, all outside contributors so far |
-| iOS | `unipad-ios` | Newest; screens and engine fully ported |
+| Android | `unipad-android` | Android app |
+| iOS | `unipad-ios` | iOS app |
 | Web | `unipad.io` | Player + store + docs site; also hosts this `meta/` directory |
 
 ## Screens
 
-Every Android screen has an iOS counterpart except the file-transfer screen.
+The Android-to-iOS screen mapping below records source entry points; USB attachment is handled
+by CoreMIDI on iOS rather than an Android-style intent.
 
 | Android | iOS |
 |---|---|
@@ -34,12 +37,14 @@ Every Android screen has an iOS counterpart except the file-transfer screen.
 | FBStoreActivity | `Store/StoreView` |
 | SettingsActivity | `Settings/SettingsView` |
 | ThemeActivity | `Theme/ThemeView` |
-| TransferActivity | none on `main` *(re-read 2026-09-30)*: `Transfer/TransferView` was removed by unipad-ios#27 (2026-09-27) as unreachable; the sold 4.1.6 still contains the file |
+| TransferActivity | none: `Transfer/TransferView` was removed by [unipad-ios#27](https://github.com/kimjisub/unipad-ios/pull/27) as unreachable |
 | MidiSelectActivity | `MidiSelect/MidiSelectView` |
-| ImportPackByUrlActivity | `Import/ImportByUrlView` |
 | MidiBannerController | `MidiConnectionBannerView` + `MidiBannerCoordinator` |
 | UsbMidiHandlerActivity | n/a — iOS uses CoreMIDI, there is no USB attach intent |
 | BaseActivity | n/a — SwiftUI |
+
+Source inventory: [Android activities](https://github.com/kimjisub/unipad-android/tree/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity)
+and [iOS views](https://github.com/kimjisub/unipad-ios/tree/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views).
 
 ## MIDI drivers
 
@@ -52,26 +57,33 @@ Every Android screen has an iOS counterpart except the file-transfer screen.
 | Launchpad Mini MK3 | `LaunchpadMiniMK3` | `LaunchpadMiniMK3Driver` |
 | Launchpad Pro MK3 | `LaunchpadMK3` | `LaunchpadProMK3Driver` |
 | Launchpad Pro MK2 (CFW) | `LaunchpadPROCFW` | `LaunchpadProCFWDriver` |
+| Launchpad CoreFW | `LaunchpadCoreFW` | `LaunchpadCoreCFWDriver` |
 | Matrix | `Matrix` | `MatrixDriver` |
 | Midi Fighter | `MidiFighter` | `MidiFighterDriver` |
 | Master keyboard / fallback | `MasterKeyboard`, `Noting` | `MasterKeyboardDriver`, `GenericDriver` |
 
 Note the Android class for the Pro MK3 is named `LaunchpadMK3`, not `LaunchpadProMK3`.
 
-### Open gaps
+### Registration and remaining verification
 
-- **Launchpad Pro MK2 (CFW), web: not supported.** The web `LaunchpadProfile` union has no
-  `launchpad_pro_cfw`, so a CFW Pro falls back to the generic mapping and every pad is wrong.
-  Android and iOS both have the driver.
-- **Launchpad Core CFW: iOS only** *(re-read 2026-09-30)*. `LaunchpadCoreCFWDriver` exists in unipad-ios and has no
-  Android or web counterpart (file listing of the three driver folders).
-- **CFW driver, iOS: ported, unverified on hardware.** `LaunchpadProCFWDriver`
-  (unipad-ios, 2026-09-06) mirrors the Android note map and has unit tests for it,
-  but nobody has plugged a Pro MK2 on the "Launchpad Open" firmware into an iPhone yet.
-  Auto-detect keys on a CoreMIDI source name starting with "Launchpad Open".
-- **Dual-launchpad support: Android only** *(re-read 2026-09-30)*. Merged as unipad-android#64 on 2026-09-14 (replacing the
-  review-stage #27); it is in the 4.1.8 (115) sold build, not in 4.1.3, and in no iOS or web code (no dual or
-  secondary handling found in `Services/MIDI` or the web `MidiConnection.ts`). Never run with two physical pads.
+- **Launchpad Pro (Launchpad Open) and CoreFW are registered on all three.** The web has
+  `launchpad_pro_cfw`, `launchpad_corefw` and `launchpad_corefw_rg`
+  ([profiles](../src/lib/unipack/MidiProfiles.ts), [mapping](../src/lib/unipack/MidiConnection.ts),
+  [Pro mapping change #14](https://github.com/kimjisub/unipad.io/pull/14),
+  [CoreFW change #107](https://github.com/kimjisub/unipad.io/pull/107)). Android registers Pro CFW and
+  the RGB/two-colour CoreFW variants in
+  [MidiConnection.kt](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/midi/MidiConnection.kt)
+  ([CoreFW change #203](https://github.com/kimjisub/unipad-android/pull/203)); iOS registers them in
+  [MidiManager.swift](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/MIDI/MidiManager.swift).
+  Registration and code mappings do not establish correct lights or input on physical hardware;
+  this audit did not connect these controllers.
+- **Dual-launchpad support remains Android only in the audited sources.**
+  [Android MidiConnection.kt](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/midi/MidiConnection.kt)
+  maintains multiple sessions behind `dualPadModeEnabled`, introduced by
+  [unipad-android#64](https://github.com/kimjisub/unipad-android/pull/64).
+  [iOS MidiManager.swift](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/MIDI/MidiManager.swift)
+  and [web MidiConnection.ts](../src/lib/unipack/MidiConnection.ts) select one controller connection.
+  Two physical controllers were not tested.
 
 ## Engine
 
@@ -90,75 +102,175 @@ Access Framework migration on Android; CoreMIDI on iOS.
 | iOS | Sets the system volume through MPVolumeView; KVO follows external changes. |
 | Web | Sets the player's own gain node and persists the level. Browsers cannot touch the system volume, and the level survives a reload because nothing else remembers it. |
 
-The ring shows the level the same way on all three (8 - level lit, blue).
+The eight volume positions show the quantized level in blue. The source paths are
+[Android `setVolume`/`updateVolumeUI`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt),
+[iOS `setVolume`/`updateVolumeUI`](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/PlayViewModel.swift),
+and [web `applyVolumeLevel` and chain display](../src/components/play/useUniPadEngine.ts).
 
 ### Sound decoding failures
 
 | Platform | Behaviour |
 |---|---|
-| Android, iOS | A pack whose sounds cannot be decoded shows "outOfCPU" and leaves the play screen. |
-| Web | Files that fail to decode are listed as warnings and the pack keeps playing; only a pack where every file failed is a critical error. A sound that failed is silent in its own turn: the pad still moves on to its next sound and the sound's wormhole still switches the chain. |
+| Android | Per-file failures are reported; admitted sounds that decode successfully remain playable. If every sound fails, playback is disabled and the failure details offer an exit. |
+| iOS | Per-file failures produce a notice and successfully decoded sounds remain playable. If none can play, the screen presents a load failure instead of becoming ready. |
+| Web | Failed files are listed as warnings and successfully decoded sounds remain playable; if every used file fails, loading fails. In a partially loaded pack, a failed sound is silent, but pressing its pad still advances to the next sound and applies the failed sound's chain change. |
 
-Deliberate: on the web a single unsupported codec should not cost the whole session, and there is
-no memory pressure to escape from.
+This is no longer a web-only partial-load policy. See
+[Android `onReport`/`onException`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt)
+and [failure dialog](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt)
+([unipad-android#331](https://github.com/kimjisub/unipad-android/pull/331)),
+[iOS `onSoundLoadingComplete`](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/PlayViewModel.swift)
+and [failure presentation](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PlayView.swift),
+and web [all-sounds-failed policy](../src/lib/unipack/soundLoading.ts) and
+[pad sequence and chain changes](../src/lib/unipack/SoundEngine.ts)
+([unipad.io#211](https://github.com/kimjisub/unipad.io/pull/211)). Engine setup failures are a separate path;
+this table describes individual sound files that cannot be loaded. This audit did not verify
+Android or iOS pad-sequence advancement and chain changes when a sound fails to load.
 
-### Web-only affordances
+### Web player controls
 
-Keyboard mapping (rows by physical key, F1-F12 for chains, Space for AutoPlay), Alt shortcuts, the
-MIDI panel inside the play screen, status badges, drag-and-drop import, `?pack=`/`?code=` deep
-links, a volume slider, and persistence of the volume, watermark and feedback-light toggles. These
-exist because the web player is a single page with a keyboard and no settings screen; the mobile
-apps keep those switches in the option panel and reset them per session.
+The web player has keyboard pad mapping (rows by physical key, F1–F12 for chains, Space for AutoPlay),
+Alt shortcuts, an in-play MIDI panel, status badges, drag-and-drop import, `?pack=`/`?code=` links
+and a volume slider ([PlayPage](../src/components/play/PlayPage.tsx),
+[play hook](../src/components/play/useUniPadEngine.ts)).
 
-### Known remaining differences *(re-read 2026-09-30; first written in the 2026-09-07 review)*
+The web saves volume, watermark, slide choice and trace display style; feedback light starts from
+the pack's LED availability, rather than a saved global switch
+([`PLAY_PREFERENCE_KEYS` and saved-preference loading](../src/components/play/useUniPadEngine.ts)).
+Android and iOS also save watermark, slide choice and trace display style
+([Android `watermark`, `slideMode` and `traceLogClassic`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/manager/PreferenceManager.kt),
+[iOS PreferenceManager](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/PreferenceManager.swift)).
 
-- **Android has no search on the pack list**; iOS (`MainViewModel.searchQuery`) and web do. Android's only search field is inside `TransferActivity`. Still open.
-- **Android sort options are three** (title, producer, download date); iOS offers five (adds play count, last opened). Still open.
-- **A pack with no title shows "Untitled" in the play menu** (closed on `main`): Android (`PlayActivity`,
-  `title.ifEmpty { "Untitled" }`), iOS (`PlayOptionPanel.swift`, `unipack.title.isEmpty ? "Untitled"`) and, since #85, the web
-  (`playMenuTitle` in `src/components/play/packTitle.ts`). All three leave the pack list row and detail panel empty.
-- **iOS has no file-transfer screen.** `TransferView` was removed from `main` by unipad-ios#27 (2026-09-27) as unreachable. The sold
-  4.1.6 still has the file and a navigation case for it; whether anything in that build navigates there was not checked.
-- **Deleting a pack now also removes the saved history row** (closed on `main`): unipad-android#105 and unipad-ios#32 both
-  landed after the final release commits (4.1.8 `7d740029`, 4.1.6 `fe2e99c`), so neither is in a sold build yet; the web already did.
-- **Analytics events differ by platform.** Web sends `pack_load`, `pad_press`, `autoplay_start`
-  (`src/lib/analytics/usageEvents.ts`). iOS sends `pack_import`, `pack_load`, `play_start`, `play_end`
-  (`Services/Analytics/UsageAnalytics.swift`, unipad-ios#19, 2026-09-25; its commit `f233f3b` is contained in the final
-  4.1.6 release commit, so the events are in the sold build).
-  Android sends none: the Firebase Analytics dependency is in `app/build.gradle` but no `logEvent` call exists in `app/src/main`.
-  The web file's comment about events "shared with the Android and iOS players" does not match the iOS event names.
-  How much of this reaches the analytics backend was not measured; local browser checks block all analytics requests.
+### Library and usage differences (source audit 2026-11-07)
+
+- **Pack-list search is present on all three.** Android's
+  [`MainActivity.searchQuery` and `PackSearch.filter`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/MainActivity.kt)
+  filter the saved pack list; iOS uses
+  [`MainViewModel.searchQuery`](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/MainViewModel.swift)
+  and web uses [MainScreen](../src/components/play/MainScreen.tsx).
+- **Sort counts still differ:** Android has title, producer and download date
+  ([MainTotalPanelViewModel](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/viewmodel/MainTotalPanelViewModel.kt));
+  iOS adds play count and last opened
+  ([MainViewModel.SortMethod](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/MainViewModel.swift)).
+- **An empty title still gets a fallback in the play menu**, in
+  [Android PlayActivity](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt),
+  [iOS PlayOptionPanel](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PlayOptionPanel.swift)
+  and [web `playMenuTitle`](../src/components/play/packTitle.ts).
+- **Deleting a pack removes its history row** on the native apps since
+  [unipad-android#105](https://github.com/kimjisub/unipad-android/pull/105) and
+  [unipad-ios#32](https://github.com/kimjisub/unipad-ios/pull/32); see the current
+  [Android repository deletion](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/db/repository/UnipackRepository.kt)
+  and [iOS `deleteItem`](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/ViewModels/MainViewModel.swift).
+- **Analytics names still differ, but Android now records events.**
+  [Android UsageEvent](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/analytics/UsageEvent.kt)
+  and [iOS UsageEvent](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/Analytics/UsageAnalytics.swift)
+  name `pack_import`, `pack_load`, `play_start`, `play_first_input` and `play_end`.
+  [Web UsageEvent](../src/lib/analytics/usageEvents.ts) names `pack_load`, `pad_press` and `autoplay_start`.
+  Its opening comment still calls these core events shared with Android and iOS, although the event
+  names differ; the comment does not describe the current definitions.
+  Source event definitions do not prove delivery to the analytics backend; this audit did not measure it.
 
 ## Parser and runner conformance
 
-`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read, with
-the expected result of each case (README there: how to run it, what each harness measures, what is
-covered and what is not; RESULTS.md: the numbers). Results recorded and reported on 2026-10-19
-(Korea time), on corpus `aae2cc72…`, 172 cases: Android passes 170 with two pinned storage differences;
-iOS and the web pass all 172. None is undetermined or unverified
-([RESULTS.md](unipack-conformance/RESULTS.md)). This is a result for those cases, not a statement
-that every UniPack is compatible. No pack of the corpus has been opened in a running app yet. Differences
-are pinned in `meta/unipack-conformance/divergences.json`; each becomes its own narrow fix.
+`meta/unipack-conformance/` holds one corpus of small packs that all three parsers and runners read.
+The recheck on 2026-11-07 (Korea time) uses G6, 391 cases, corpus SHA-256
+`746a5ce6925926df2a27ac34313c157662e244a1a70ae873eec7f8d7391e3c64`.
+
+| Platform | Application commit | Common cases passed | Failed | Unverified |
+|---|---|---:|---:|---:|
+| Android | `f47058f6f788d7b7dd372aae07bc1bc33f6c58d4` | 368 | 0 | 23 |
+| iOS | `44ab0823e885c37f520f57fa9d383f2041d8d266` | 391 | 0 | 0 |
+| Web | `d4e771e0bbd3ba585bf12d6157977dadd27379b5` | 391 | 0 | 0 |
+
+All rows use the same corpus bytes, with unchanged inputs, fingerprints and expected values.
+The Android and iOS commits above are the heads of the pull requests that carried the corpus copies;
+those copies reached each app's `main` in merge commits `f8760475f0e392e241ac4a0e202eb1a59a9e513c`
+(Android) and `7270e1698f759f44996f65112f501e8eebf52b64` (iOS), which `copies.json` names.
+Each application's common and app tests use the same clean application commit; commands record
+the commit and source status before and after execution. iOS uses the default Xcode 27.1
+(27A9275) and an iPhone 17 Pro simulator running iOS 27.0.
+
+Android's 23 unverified cases are KL-026/KL-028 (the host changed stored names), the ten
+archive sound-identity cases, KS-G617 through KS-G619 (case-sensitive paths), and the eight
+distinct screen-input cases. They are not passes. The separate Android app tests confirm
+eight registered items and include captured emulator output; the web app tests confirm
+seven registered items, with audio measured in Chromium only. Physical output is unverified.
+
+The first iOS unit invocation ran twice: both preserved raw attempts passed, but the execution
+wrapper initially exported only the final bundle. Combining both attempts rejects the repeated
+registered unit tests, leaving that round at 99 of 114 grammar items. A separate follow-up on the
+same clean commit ran the six selected unit suites and one required UI import test; every raw
+attempt was collected. Its 16 registered unit tests and one UI test passed exactly once, with no
+missing, skipped or repeated required tests. This does not claim a full UI-suite pass or fill
+skips from the earlier full unit invocation.
+
+Combining the common and registered app tests confirms Android 96, iOS 104 and web 104 of the
+114 grammar items, with 96 confirmed on all three. iOS has 99 items confirmed by the common
+run and five further items by app tests; F-01 rests on the case-sensitive common run. Unconfirmed
+items remain unconfirmed, and these counts do not establish every UniPack's compatibility.
+
+The browser inventory has 1,665 distinct registered tests. Preserved rounds cover 1,489 passes
+and 176 skips: Chromium 677/12, WebKit 380/119, and Firefox 432/45 (passed/skipped).
+The first full command retained 658 passes before a deleted temporary directory caused 41 failures
+and one interruption. Those failures remain in the original record. A follow-up checked the
+remaining Chromium and all WebKit entries, then stopped at the planned browser boundary (exit 130);
+the complete Firefox command exited 0. The final selected observations match the inventory in both
+directions with no missing, duplicated, retried or unexpected results. Skips retain the existing
+browser-specific conditions. These are split-run observations with the first failed round retained.
+
+The first remote full-unit run on the same iOS commit failed two sound tests on the pack-loading
+deadline. [The second attempt of the whole job](https://github.com/kimjisub/unipad-ios/actions/runs/42264092093)
+passed 959 tests, failed none and skipped 25. Preserve the time-only first failure and the successful
+whole-job re-execution (1/1); the two tests were not rerun alone. The timeout was unchanged.
+
+The exact public app copies are [unipad-android#365](https://github.com/kimjisub/unipad-android/pull/365)
+and [unipad-ios#259](https://github.com/kimjisub/unipad-ios/pull/259), at the commits in the table.
+Their downloaded corpus files pass `sync.mjs --check --require-current` against this corpus.
+These references identify reviewed copies; merge status and a post-merge check remain separate.
+
+The generated corpus and `divergences.json` have no remaining failure pins on any platform.
+The two historical Android pins were removed using the ordered observations below, including
+the restored-defect failures. Removing those annotations does not fill the 23 missing common
+observations. Copy-byte verification is also separate from compatibility. The old 172-case and
+other earlier results remain historical in [RESULTS.md](unipack-conformance/RESULTS.md).
+
+KS-B08 and KL-BE10 have no current failure pin; both passed in these Android, iOS and web
+common runs. No result here establishes every pack's compatibility, physical controllers,
+phone speakers, headphones, Bluetooth output, or Android 7.0–8.0 audio output.
+
+### Zero-width grid (`buttonX=0`)
+
+The shared **INF-009** result agrees with the documented warning policy on all three:
+
+| Input | Android | iOS | Web |
+|---|---|---|---|
+| `buttonX=0` with the INF-009 keySound lines | Opens with warnings; skips out-of-range keySound lines | Opens with warnings; skips out-of-range keySound lines | Opens with warnings; skips out-of-range keySound lines |
+
+The unchanged [INF-009 definition](unipack-conformance/cases.mjs) expects a loaded pack,
+`buttonX: 0` and both `info:missing-field` and `keySound:range` warnings. This records that
+case's existing result from the common runs above; it does not extend it to every zero-sized pack. It also differs from non-integer `buttonX`, which aborts loading (INF-010). Source guards:
+[Android UniPackFolder](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/unipack/UniPackFolder.kt),
+[iOS UniPackFolder](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Models/UniPackFolder.swift),
+[web parser](../src/lib/unipack/parser.ts), and the [info documentation](../content/docs/en/unipack/info.mdx).
 
 ### Open differences found by the corpus
 
-- **RUN-G617/RUN-G618: Android delays the later input's sound and pack-light release.**
-  Native input-path observations on application commit `208afb9e`, after
-  [unipad-android#304](https://github.com/kimjisub/unipad-android/pull/304), show an empty third
-  checkpoint and a stop only when the last finger releases at the fourth in both cases. Both
-  pack-output results are pinned as failures. Both separately observed pressed indicators correctly
-  remain on until the last input releases. The older `777cc4a3` observations predate that input change
-  and are historical. iOS on `e8ac34d` and the web on `5e88285` match both target pack expectations.
-  The refreshed Android files retain source corpus `fe37e773…69c8`, while iOS retains `7ac226a8…4180`;
-  stored historical app copies remain separate from these observations. See the
-  [original Android results](unipack-conformance/investigations/android-input-release-observations/README.md)
-  and [results summary](unipack-conformance/RESULTS.md#native-input-owned-release-observations-2026-10-25).
-
+There are no remaining pinned failures. Unverified observations above remain unverified.
 
 A new difference found by the corpus is pinned in `divergences.json` and listed here until the
 platform's own fix removes it.
 
 ### Resolved differences found by the corpus
+
+- **RUN-G617/RUN-G618: Android releases the later input's sound and pack light.**
+  The ownership fix in [unipad-android#309](https://github.com/kimjisub/unipad-android/pull/309)
+  is confirmed by ordered screen records at `a9d7484e` from
+  [unipad-android#358](https://github.com/kimjisub/unipad-android/pull/358).
+  Both unchanged scenarios match every expected checkpoint, and restoring the old ownership
+  condition makes the third and fourth checkpoints fail.
+  [Original records, hashes and limits](unipack-conformance/investigations/android-input-release-resolution/README.md)
+  distinguish this observation from the old common run's missing screen-input actual values.
+
 
 - **RUN-G616: iOS cancels its delayed chain callback when autoPlay is turned off.**
   [unipad-ios#217](https://github.com/kimjisub/unipad-ios/pull/217) adds cancellation to the real
@@ -313,9 +425,36 @@ iOS now measures the six cases the corpus used to mark as not observable on iOS,
 - **What a Launchpad shows after the play screen is left on iOS** (RUN-L-006, RUN-L-007). Android clears them in the play screen's `onStop` (#101) and the web in `LedRunner.stop()` (#32). At `stop` the iOS harness runs the main screen's step that takes the MIDI controller back (`MainMidiControllerAdapter.onAttach` → `sendClearLed`) against a recording MIDI driver, so it sees the clear being sent, not the lights going out on a device. Nobody has checked that on a Launchpad. An earlier version of this section said "iOS does not turn lit LEDs off when the play screen is left", which came from stopping the runner alone in the test.
 - **Round and logo lights on Android with Pro light mode off**, which is how the play screen starts. The corpus measures Android with it on.
 
-### Found while building the corpus (iOS, not fixed here)
+### Repeated-sound stop hang: fixed, rechecked on iOS main
 
-- **Stopping a repeated sound while it cycles hangs the iOS main thread** (simulator, iOS 27.0, 3 runs of 3). A keySound loop of 2 or more, then `SoundEngine.destroy()` (leaving the play screen) or the same pad pressed again: `AVAudioPlayerNode.stop()` waits for the completion handler `SoundEngine.soundOn` scheduled, which waits for the engine lock `stop()` holds. Input, command and stacks in `meta/unipack-conformance/RESULTS.md`. Not checked on a device. Android and web are not affected by this code path; whether they have their own problem there is not known.
+The September 30 hang was fixed by
+[unipad-ios#51](https://github.com/kimjisub/unipad-ios/pull/51), merged October 2 as
+[`c034f70d`](https://github.com/kimjisub/unipad-ios/commit/c034f70d7a87f70669f827626b08720299fd4e42).
+It moved completion work out of AVFoundation's callback. In the audited
+[SoundEngine/FiniteRepeatScheduler](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/Audio/SoundEngine.swift),
+callbacks enqueue work and return; finite-repeat scheduling and stopping share a serial queue,
+so stopping a node does not wait for a callback that is waiting for that queue.
+
+Rechecked on 2026-11-07 at iOS `7270e1698f759f44996f65112f501e8eebf52b64`, with unchanged
+application and test sources, on iPhone 17 Pro / iOS 27.0 using the default Xcode 27.1 (27A9275):
+
+| Existing check | Observed result |
+|---|---|
+| `testRepeatedVoiceCanBeStoppedImmediately` | 30 screen-model cleanup rounds with keySound loop 3, immediately or 1–9 ms after a press; passed. |
+| `testRepeatedVoiceCanBeRetriggeredImmediately` | 100 pairs of presses on the same pad with loop 3; all 200 plays started and the test passed. |
+| `destroyWhileARepeatedSoundIsCycling()` | 30 rounds alternating loop 3 and 50, destroying 0–29 ms after the press; all returned in 0.2–0.4 ms and the test passed. |
+| `PlaybackStopUITests/testRepeatedInputExitAndPracticeModeSwitchesStayResponsive` | Three rounds of repeated input, leaving the play screen and switching practice modes stayed responsive; passed in 155.050 s. |
+
+The first two checks use the production `PlayViewModel`
+([PlaybackStopTests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadTests/PlaybackStopTests.swift));
+the third keeps the original short-tone reproduction input
+([UniPackConformanceTests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadTests/UniPackConformance/UniPackConformanceTests.swift)).
+The fourth exercises the play screen
+([PlaybackStopUITests](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipadUITests/PlaybackStopUITests.swift)).
+These selected checks did not hang; this is not a full-suite or physical-output claim.
+The original commands, stacks and failures remain as historical evidence in
+[RESULTS.md](unipack-conformance/RESULTS.md#ios-destroy-while-a-repeated-sound-is-cycling).
+Physical devices and older iOS versions were not checked in this audit.
 
 ### Documentation that disagrees with the code
 
@@ -324,12 +463,12 @@ iOS now measures the six cases the corpus used to mark as not observable on iOS,
 
 ## Slide across pads
 
-Dragging a finger onto another pad plays it and releases the one it left.
+All three offer a saved, opt-in setting, **off by default**. When enabled, dragging a finger onto
+another pad plays it and releases the one it left. When disabled, moving over another pad does
+not start that pad.
 
-| Platform | Behaviour |
+| Platform | Setting and input path |
 |---|---|
-| Android | Opt-in: Settings > Play > "Slide across pads" (`PreferenceManager.slideMode`), off by default so a resting palm does not trigger runs. `SlideTouchOverlayView` over the grid, since 2026-09-06 (unipad-android#26). Present in the 4.1.8 (115) sold build *(re-read 2026-09-30)*. |
-| iOS | Always on (`MultiTouchView.touchesMoved`). |
-| Web | Always on (`PadGrid` uses `elementFromPoint` with pointer capture). |
-
-The two always-on platforms have no palm-rejection complaint on record; revisit if one arrives.
+| Android | [Settings > Play](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/SettingsActivity.kt) > "Slide across pads". [`PreferenceManager.slideMode`](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/manager/PreferenceManager.kt) defaults to `false`; [PlayActivity](https://github.com/kimjisub/unipad-android/blob/f8760475f0e392e241ac4a0e202eb1a59a9e513c/app/src/main/java/com/kimjisub/launchpad/activity/PlayActivity.kt) applies it to `padTouch.slide`. Introduced by [unipad-android#56](https://github.com/kimjisub/unipad-android/pull/56). |
+| iOS | [Settings](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Settings/SettingsView.swift) and [play options](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PlayOptionPanel.swift) both bind `SlideEnabled`, default `false` in [PreferenceManager](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Services/PreferenceManager.swift). [PadGridView/MultiTouchView](https://github.com/kimjisub/unipad-ios/blob/7270e1698f759f44996f65112f501e8eebf52b64/unipad/Views/Play/PadGridView.swift) checks `slideEnabled` on movement. Added by [unipad-ios#231](https://github.com/kimjisub/unipad-ios/pull/231). |
+| Web | Play options > "Slide across pads". [OptionPanel](../src/components/play/OptionPanel.tsx) updates the saved `slideMode` in [useUniPadEngine](../src/components/play/useUniPadEngine.ts); [PadGrid](../src/components/play/PadGrid.tsx) defaults to `false` and gates pointer movement on that value. Added by [unipad.io#187](https://github.com/kimjisub/unipad.io/pull/187). |

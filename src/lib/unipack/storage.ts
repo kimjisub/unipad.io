@@ -1,4 +1,5 @@
 import type { AutoPlayElement } from './types';
+import { releaseArrayBuffer } from './bufferLifetime';
 
 const DB_NAME = 'unipad';
 const DB_VERSION = 3;
@@ -342,6 +343,8 @@ export async function getUniPack(id: string): Promise<StoredUniPack | undefined>
                 throw new Error('Missing or incomplete archive chunk.');
               }
               bytes.set(new Uint8Array(chunk), offset);
+              // A copied chunk left for collection would overlap the first sound decode.
+              releaseArrayBuffer(chunk);
               index++;
               next();
             } catch (error) { fail(error); }
