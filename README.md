@@ -78,7 +78,7 @@ uploads the Playwright report and traces as an artifact. A separate **Windows pl
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
 on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
-failures fail their jobs, with no retries. None of these
+Firefox, the slowest, splits them across two jobs. Failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
 GitHub records each step's duration; each job summary records elapsed time from setup

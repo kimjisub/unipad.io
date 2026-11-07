@@ -19,6 +19,8 @@ function summarize(suites) {
   }
 }
 summarize(report.suites);
+const shard = report.config?.shard;
+if (shard && shard.total > 1) console.log(`Shard ${shard.current} of ${shard.total}: these counts cover only this job's share of the tests.`);
 console.log('Playback result counts (skips and incomplete execution remain visible):');
 console.log(`Passed: ${report.stats.expected}; failed: ${report.stats.unexpected}; skipped: ${counts.skipped}; not run: ${counts.notRun}; interrupted: ${counts.interrupted}; flaky: ${report.stats.flaky}.`);
 for (const skip of skips) console.log(skip);
