@@ -2,8 +2,8 @@ import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { BASIC_PACK } from './basic-pack';
-import { test, expect, expectPads, stateTimeout } from './browser';
-import { storedPackRecords } from './saved-packs';
+import { test, expect } from './browser';
+import { importSavedPackAndQuit, storedPackRecords } from './saved-packs';
 
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
 
@@ -15,17 +15,13 @@ async function untitledPack(name: string) {
 }
 
 async function importAndQuit(page: Page, file: { name: string; mimeType: string; buffer: Buffer }, count: number, untitled: boolean) {
-  await page.locator('input[data-unipack-import]').first().setInputFiles(file);
-  if (untitled) {
-    const warning = page.getByRole('alertdialog');
-    await expect(warning).toContainText('title was missing');
-    await warning.getByRole('button', { name: 'OK', exact: true }).click();
-  }
-  await expectPads(page);
-  await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
-  await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
-  await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
-  await expect(list(page).getByRole('option')).toHaveCount(count);
+  await importSavedPackAndQuit(page, file, count, {
+    afterInput: untitled ? async () => {
+      const warning = page.getByRole('alertdialog');
+      await expect(warning).toContainText('title was missing');
+      await warning.getByRole('button', { name: 'OK', exact: true }).click();
+    } : undefined,
+  });
 }
 
 test('packs without a title show the name of their file in the list and details', async ({ page }) => {

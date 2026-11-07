@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { seedSavedPacks, storedPackRecords } from './saved-packs';
+import { importSavedPacks, type PackFile, seedSavedPacks, storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -24,25 +24,8 @@ declare global {
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
 const option = (page: Page, name: string) => list(page).getByRole('option', { name, exact: true });
 
-type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
-
 async function openList(page: Page, files: readonly PackFile[], beforeSavedUrl?: () => Promise<void>) {
-  await test.step('Prepare saved pack list', async () => {
-    await page.goto('/play');
-    for (const [index, file] of files.entries()) {
-      await page.locator('input[data-unipack-import]').first().setInputFiles(typeof file === 'string' ? resolve(file) : file);
-      await expectPads(page);
-      // Finish controlled-delay setup before starting the saved URL assertion's clock.
-      await beforeSavedUrl?.();
-      // The import shows the pads before it saves the pack; the URL changes once it is saved.
-      await expect(page).toHaveURL(/\/play\?pack=.+/, { timeout: stateTimeout });
-      // Setup needs the buttons' actions, not pointer hit testing during their animations.
-      // Keep the page alive and return to the list before the next import.
-      await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
-      await page.getByRole('button', { name: 'Quit', exact: true }).dispatchEvent('click');
-      await expect(list(page).getByRole('option')).toHaveCount(index + 1);
-    }
-  });
+  await test.step('Prepare saved pack list', () => importSavedPacks(page, files, { beforeSavedUrl }));
 }
 
 const openListWithThreePacks = (page: Page) => openList(page, packs.map(([file]) => file));
