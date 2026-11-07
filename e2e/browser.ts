@@ -20,6 +20,15 @@ export function installationResponse(url: URL) {
     : { fid: 'cAAAAAAAAAAAAAAAAAAAAA', refreshToken: 'FAKE_REFRESH_TOKEN', authToken };
 }
 
+/**
+ * Matches every URL except those starting with `origin`; with no origin, every URL. A RegExp is matched inside
+ * Playwright's server. URLs of the origin in another form, such as `blob:<origin>/…` in WebKit, still match.
+ */
+function outsideOrigin(origin: string | undefined) {
+  const escaped = (origin ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return origin ? new RegExp(`^(?!${escaped}(?:[/?#]|$))`) : /.*/;
+}
+
 export interface PageErrors {
   /** Fail the test unless it empties this list itself. */
   errors: string[];
@@ -74,7 +83,9 @@ export const test = base.extend<{ checkedPage: PageErrors; firefoxLogsOnFailure:
     const collected = collectPageErrors(page);
     // Firebase analytics receives inert local responses so its installation
     // promise does not reject when networking is blocked. No requests leave CI.
-    await context.route('**/*', route => {
+    // The test server's own requests match no route, so the browser loads them without asking this
+    // process first: each such round trip cost about 30 ms in Firefox, on every script of every page load.
+    await context.route(outsideOrigin(baseURL), route => {
       const url = new URL(route.request().url());
       if (url.hostname === 'firebaseinstallations.googleapis.com') {
         return route.fulfill({ json: installationResponse(url) });
