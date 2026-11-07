@@ -133,6 +133,34 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} reta
   await expect(guide('0,1')).toHaveCount(0);
 });
 
+for (const resume of ['button', 'mode']) for (const pressed of [false, true]) test(`a late guide resume via ${resume} keeps dense following notes visible, pressed=${pressed}`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 60\no 1 2\nf 1 2\nd 60\no 2 1\nf 2 1\nd 60\no 2 2\nf 2 2\nd 3000');
+  const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(949);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await expect(guide('0,0')).toHaveCount(1);
+  if (pressed) {
+    const pad = page.locator('[data-pad="0,0"]');
+    const box = (await pad.boundingBox())!;
+    const pointer = { pointerId: 1, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+    await pad.dispatchEvent('pointerdown', pointer);
+    await pad.dispatchEvent('pointerup', pointer);
+    await page.clock.runFor(20);
+    await expect(guide('0,0')).toHaveCount(0);
+  }
+  await page.clock.fastForward(1000);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  // One late timer models a busy render before the runner gets its first resumed turn.
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
+  await info.attach('dense-resumed-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(guide('0,0')).toHaveCount(pressed ? 0 : 1);
+  for (const position of ['0,1', '1,0', '1,1']) await expect(guide(position)).toHaveCount(1);
+});
+
 for (const resume of ['button', 'mode']) for (const extraDelay of [0, 1000]) test(`resuming guide via ${resume} after scanning only a chain preserves the guide with ${extraDelay}ms extra wait`, async ({ page }, info) => {
   await open(page, `d 1000\no 1 1\nf 1 1\nd 1000\nc 2\n${extraDelay ? `d ${extraDelay}\n` : ''}o 1 2\nf 1 2\nd 10000`);
   const guide = page.locator('[data-pad="0,1"] .z-\\[25\\]');

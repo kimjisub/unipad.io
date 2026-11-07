@@ -122,6 +122,76 @@ describe('AutoPlayRunner', () => {
     });
   }
 
+  for (const pressed of [false, true]) {
+    test(`a delayed first guide tick preserves the frozen song time, pressed=${pressed}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+        autoPlay: 'd 1000\no 1 1\nf 1 1\nd 60\no 1 2\nf 1 2\nd 60\no 2 1\nf 2 1\nd 1000',
+      }));
+      const screen = new Map<string, number>();
+      const leds = new Map<string, number>();
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+        onGuidePadOn(x, y, at) { screen.set(`${x},${y}`, at); },
+        onGuidePadOff(x, y) { screen.delete(`${x},${y}`); },
+        onGuideLedUpdate(x, y, velocity) { leds.set(`${x},${y}`, velocity); }, onRemoveGuide() { screen.clear(); leds.clear(); },
+      }, () => 0, () => {}, () => {}, () => {});
+      runner.practiceGuide = true;
+      runner.launch(); clock.tick(1); clock.tick(949);
+      runner.pause(); runner.stepMode = true; clock.tick(0);
+      if (pressed) runner.stepPadPressed(0, 0);
+      clock.tick(1000);
+      runner.play(true);
+      clock.tick(200);
+      const firstTickAt = clock.now;
+      const remaining = pressed ? 60 : 110;
+      assert.equal(screen.get('0,1'), firstTickAt + remaining, 'render time cannot consume the gap to the next unshown note');
+      assert.equal(screen.get('1,0'), firstTickAt + remaining + 60, 'later notes keep their authored spacing');
+      assert.ok(leds.get('0,1')! > 0, 'the next unshown guide reaches the device');
+      if (pressed) assert.equal(screen.has('0,0'), false, 'the performed step stays consumed');
+      clock.tick(remaining - 1);
+      assert.equal(screen.has('0,1'), true);
+      clock.tick(1);
+      assert.equal(screen.has('0,1'), false);
+      assert.equal(screen.has('1,0'), true);
+      runner.stop();
+    });
+  }
+
+  test('pausing before a late tick still displays overdue notes beyond the shown step group', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\no 1 1\nf 1 1\nd 60\no 1 2\nf 1 2\nd 60\no 2 1\nf 2 1\nd 1000',
+    }));
+    const screen = new Map<string, number>();
+    const leds = new Map<string, number>();
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideChainOn() {},
+      onGuidePadOn(x, y, at) { screen.set(`${x},${y}`, at); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); },
+      onGuideLedUpdate(x, y, velocity) { leds.set(`${x},${y}`, velocity); }, onRemoveGuide() { screen.clear(); leds.clear(); },
+    }, () => 0, () => {}, () => {}, () => {});
+    runner.practiceGuide = true;
+    runner.launch(); clock.tick(1);
+    clock.now += 1099;
+    runner.pause(); runner.stepMode = true; clock.tick(0);
+    assert.deepEqual([...screen.keys()], ['0,0'], 'only the first group was offered while paused');
+    clock.tick(1000);
+    runner.play(true); clock.tick(200);
+    const firstTickAt = clock.now;
+    assert.deepEqual([...screen], [['0,0', firstTickAt + 50], ['0,1', firstTickAt + 50], ['1,0', firstTickAt + 20]]);
+    assert.equal(leds.get('0,0'), 21);
+    assert.equal(leds.get('0,1'), 21, 'an overdue unshown note lights hardware immediately');
+    clock.tick(20);
+    assert.equal(screen.has('1,0'), false, 'a future note retains its authored deadline');
+    clock.tick(29);
+    assert.equal(screen.has('0,1'), true);
+    clock.tick(1);
+    assert.equal(screen.size, 0);
+    assert.equal(leds.get('0,1'), 0);
+    runner.stop();
+  });
+
   test('an overdue restored hint lights hardware immediately between brightness updates', async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,

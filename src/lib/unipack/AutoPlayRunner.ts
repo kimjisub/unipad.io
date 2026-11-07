@@ -82,13 +82,14 @@ export class AutoPlayRunner {
   // that time, so the render time never shortens the gap after the next note. Starting and seeking
   // restart from the next line; resuming restarts from the next note, so a wait the song was already
   // in keeps its written length even when a release or another wait comes first.
-  private clockPending: 'nextLine' | 'nextNote' | null = null;
+  // A numeric restart keeps paused guide time, even when unprocessed notes are already overdue.
+  private clockPending: 'nextLine' | 'nextNote' | number | null = null;
 
   // Step mode state
   private stepPendingPads = new Set<number>();
   private skippedStepLines = new Set<number>();
   private preserveStepPresses = false;
-  private restoredStepGuides = new Set<number>();
+  private restoringStepGuides = false;
   private pressedKeysQueue: { key: number; chain: number }[] = [];
   private stepScanned = false;
   private stepConsumedInput = false;
@@ -149,7 +150,7 @@ export class AutoPlayRunner {
     this.setProgress(0);
     this.skippedStepLines.clear();
     this.preserveStepPresses = false;
-    this.restoredStepGuides.clear();
+    this.restoringStepGuides = false;
     this.listener.onStart();
 
     const autoPlay = this.unipack.autoPlay;
@@ -182,7 +183,8 @@ export class AutoPlayRunner {
       const currTime = performance.now();
 
       if (this.playmode && this.clockPending !== null) {
-        const restartMs = this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
+        const restartMs = typeof this.clockPending === 'number' ? this.clockPending
+          : this.clockPending === 'nextNote' ? this.nextNoteTimeMs(autoPlay) : this.delayAccum;
         this.clockPending = null;
         const pastDueMs = currTime - this.startTime - restartMs;
         // A normally scheduled first tick already belongs to the requested song clock.
@@ -230,15 +232,16 @@ export class AutoPlayRunner {
                   this.listener.onGuideChainOn(event.chain);
                   break;
                 }
-                const restored = this.restoredStepGuides.delete(event.index);
                 const authoredTarget = this.startTime + event.timeMs;
-                // An overdue restored step still needs one visible LED update. Keep that
-                // brief display separate from song time so later notes retain their deadlines.
-                const targetWallTimeMs = restored && authoredTarget <= currTime
+                // Every overdue note first enabled on step resume needs a visible LED update,
+                // including notes beyond the scanned group when pause beat a late tick.
+                // Keep that display separate from song time and later notes' deadlines.
+                const overdueOnResume = this.restoringStepGuides && authoredTarget <= currTime;
+                const targetWallTimeMs = overdueOnResume
                   ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
-                if (restored && authoredTarget <= currTime) {
+                if (overdueOnResume) {
                   this.listener.onGuideLedUpdate(event.x, event.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
                 }
                 this.guideIndex++;
@@ -246,6 +249,8 @@ export class AutoPlayRunner {
                 break;
               }
             }
+
+            if (this.waitingForChain < 0) this.restoringStepGuides = false;
 
             // Guide expiration + LED brightness
             if (this.activeGuides.size > 0) {
@@ -386,7 +391,7 @@ export class AutoPlayRunner {
     }
     this.activeGuides.clear();
     this.skippedStepLines.clear();
-    this.restoredStepGuides.clear();
+    this.restoringStepGuides = false;
     this.resetStepState();
   }
 
@@ -522,7 +527,7 @@ export class AutoPlayRunner {
     const autoPlay = this.unipack.autoPlay;
     const max = autoPlay ? autoPlay.elements.length : 0;
     this.skippedStepLines.clear();
-    this.restoredStepGuides.clear();
+    this.restoringStepGuides = false;
     this.preserveStepPresses = false;
     const target = this.progress + offset;
     this.setProgress(Math.max(0, Math.min(max, target)));
@@ -562,7 +567,6 @@ export class AutoPlayRunner {
     this.drainPressedKeys();
     const scannedPads = this.hasScannedStepPads;
     const skippedLines = new Set<number>();
-    const restoredGuides = new Set<number>();
     let pendingStart: number | null = null;
     const elements = this.unipack.autoPlay?.elements;
     if (this.stepPendingPads.size > 0 && elements) {
@@ -570,7 +574,7 @@ export class AutoPlayRunner {
         const element = elements[i];
         if (element.type !== 'on' && element.type !== 'off') continue;
         if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
-          if (element.type === 'on') { pendingStart ??= i; restoredGuides.add(i); }
+          if (element.type === 'on') pendingStart ??= i;
         } else if (pendingStart !== null) {
           skippedLines.add(i);
         }
@@ -592,7 +596,7 @@ export class AutoPlayRunner {
       this.setProgress(restoredProgress);
       this.skippedStepLines = skippedLines;
       this.preserveStepPresses = true;
-      this.restoredStepGuides = restoredGuides;
+      this.restoringStepGuides = true;
       this.delayAccum = elements.slice(0, restoredProgress).reduce((time, element) =>
         time + (element.type === 'delay' ? element.delay : 0), 0);
       if (lastPressedTimeMs !== null) {
@@ -602,8 +606,8 @@ export class AutoPlayRunner {
         this.startTime = now - lastPressedTimeMs;
         this.pausedAt = now;
       }
-      this.clockPending = null;
       this.clearChainWait();
+      this.clockPending = (this.pausedAt ?? this.suspendedAt ?? performance.now()) - this.startTime;
       this.stepMode = false;
       this.clearStepScan();
       this.restartGuideAtProgress();
