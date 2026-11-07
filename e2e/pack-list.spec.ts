@@ -18,7 +18,7 @@ const [last, middle, first] = packs.map(([, name]) => name);
 
 declare global {
   // Whether any list row was still moving at each wheel event the page received.
-  interface Window { wheelsWhileRowsMove: boolean[] }
+  interface Window { wheelsWhileRowsMove?: boolean[] }
 }
 
 const list = (page: Page) => page.getByRole('listbox', { name: 'UniPack list' });
@@ -647,14 +647,18 @@ test('wheel input waits for entering list rows to stop moving', async ({ page },
   await page.evaluate(`window.wheelsWhileRowsMove = [];
     addEventListener('wheel', () => window.wheelsWhileRowsMove.push((${savedRowsMoving})()), { capture: true });`);
   const tail = option(page, 'Local pack 0 by UniPad Tests');
-  const wheel = wheelTo(page, tail);
-  // While the clock stays paused the rows cannot finish entering, so no wheel may arrive.
-  const early = await page.waitForFunction(() => window.wheelsWhileRowsMove.length > 0, null, { timeout: 3000 })
-    .then(handle => handle.dispose().then(() => true), () => false);
+  const recordedWheels = () => page.evaluate(() => window.wheelsWhileRowsMove);
+  // While the clock stays paused the rows cannot finish entering: the wait for rest must run out
+  // before any wheel is sent. The clock resumes only after that, so the two deadlines never overlap.
+  const held = await wheelTo(page, tail).then(() => undefined, (error: unknown) => error);
+  expect(await recordedWheels(), 'a wheel was sent while the rows were still entering').toEqual([]);
+  expect(String(held)).toMatch(/Timeout 5000ms/);
+  expect(await page.evaluate(`(${savedRowsMoving})()`), 'the paused rows must still be entering').toBe(true);
   await page.clock.resume();
-  await wheel;
-  expect(early, 'a wheel was sent while the rows were still entering').toBe(false);
-  expect(await page.evaluate(() => window.wheelsWhileRowsMove)).not.toContain(true);
+  await wheelTo(page, tail);
+  const wheels = await recordedWheels();
+  expect(wheels?.length, 'the tail must be reached through wheel input').toBeGreaterThan(0);
+  expect(wheels, 'a wheel was sent while the rows were still moving').not.toContain(true);
   await tail.click();
   await expect(tail).toHaveAttribute('aria-selected', 'true');
 });
