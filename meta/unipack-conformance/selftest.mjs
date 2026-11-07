@@ -1078,7 +1078,7 @@ test('iOS playback observations distinguish stored repeats from a delayed chain 
     'the historical partial run must not be relabelled as a run on the current corpus');
 });
 
-test('current Android release observations pin both later-input pack failures', () => {
+test('historical Android release failures remain failures after their pins retire', () => {
   const cases = buildCorpus().cases;
   for (const id of ['RUN-G617', 'RUN-G618']) {
     const c = cases.find(c => c.id === id);
@@ -1090,17 +1090,65 @@ test('current Android release observations pin both later-input pack failures', 
     assert.equal(observed.corpusSha256, 'fe37e7731224b51218d94a351e9513beab3f60206100511f90d238612b1069c8');
     assert.equal(observed.fingerprint, c.fingerprint);
     assert.deepEqual(observed.expected, c.expected);
-    assert.deepEqual(c.expectedFailing, ['android']);
-    assert.equal(c.known.android.status, 'fail');
-    assert.deepEqual(c.known.android.actual, observed.actual);
+    assert.deepEqual(c.expectedFailing, []);
+    assert.equal(c.known?.android, undefined);
     assert.deepEqual(observed.actual.checkpoints[2], []);
     assert.deepEqual(observed.actual.checkpoints[3], c.expected.checkpoints[2]);
     assert.deepEqual(observed.pressedActual, [true, true, true, false]);
     assert.deepEqual(observed.pressedActual, observed.pressedExpected);
     assert.equal(classify(c, observed.actual, 'android'), 'fail');
-    assert.equal(classify(c, c.expected, 'android'), 'unverified',
-      'a fixed output must retire its Android failure pin before counting as a pass');
+    assert.equal(classify(c, c.expected, 'android'), 'pass',
+      'the retired pin must no longer hide a corrected output');
     assert.equal(classify(c, c.expected, 'ios'), 'pass');
     assert.equal(classify(c, c.expected, 'web'), 'pass');
+  }
+});
+
+
+test('ordered Android screen records confirm later-input release and expose the restored defect', () => {
+  const cases = buildCorpus().cases;
+  const records = join(here, 'investigations/android-input-release-resolution');
+  const expectedHashes = {
+    'corrected/RUN-G617': '32fad3e4fd007f1305be0f6cfff08418054a9ad99925af66a10514ea00f2e3c4',
+    'corrected/RUN-G618': '92906f8b6c039bd63904a9871ee011d766dd4150827439f52759dd099b87e3a0',
+  };
+  for (const id of ['RUN-G617', 'RUN-G618']) {
+    const c = cases.find(c => c.id === id);
+    for (const phase of ['corrected', 'restored-defect']) {
+      const bytes = readFileSync(join(records, phase, `${id}.json`));
+      if (phase === 'corrected') assert.equal(sha256(bytes), expectedHashes[`${phase}/${id}`]);
+      const record = JSON.parse(bytes);
+      assert.equal(record.completed, true);
+      assert.equal(record.fingerprint, c.fingerprint);
+      assert.equal(record.corpusSha256, '13cc746d567347d304f46d01518011f1c2aaf1d8ce19c5877bf2419b6c98ab7d');
+      assert.equal(record.status, 'unverified', 'real-time recorder status must stay separate from event comparison');
+      assert.deepEqual(record.steps.map(s => s.step), c.scenario);
+      let request = 0;
+      let light = 0;
+      const checkpoints = record.snapshots.map(snapshot => {
+        const sounds = record.requests.slice(request, snapshot.requestCount).filter(r => r[0] !== 'stop' || r[1] !== 0);
+        const lights = record.padLights.slice(light, snapshot.padLightCount).filter(r => !r[3]);
+        request = snapshot.requestCount;
+        light = snapshot.padLightCount;
+        for (const s of sounds) for (const l of lights) assert.notEqual(s.at(-1), l.at(-1),
+          'equal timestamps across channels do not establish their order');
+        const events = [
+          ...sounds.map(r => ({ at: r.at(-1), event: r[0] === 'play'
+            ? ['sound', 0, 0, 0, 'a.wav', r[2]] : ['soundStop', 0, 0, 0, 'a.wav'] })),
+          ...lights.map(r => ({ at: r.at(-1), event: r[2] === null
+            ? ['ledOff', r[0], r[1]] : ['ledOn', r[0], r[1], ...r[2]] })),
+        ];
+        return events.sort((a, b) => a.at - b.at).map(e => e.event);
+      });
+      const actual = { checkpoints };
+      if (phase === 'corrected') {
+        assert.deepEqual(actual, c.expected);
+        assert.equal(classify(c, actual, 'android'), 'pass');
+      } else {
+        assert.deepEqual(checkpoints[2], []);
+        assert.deepEqual(checkpoints[3], c.expected.checkpoints[2]);
+        assert.equal(classify(c, actual, 'android'), 'fail');
+      }
+    }
   }
 });

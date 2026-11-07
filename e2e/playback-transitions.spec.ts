@@ -97,7 +97,7 @@ test('guide next and previous redraw the upcoming pad at the selected position',
   await expect(page.locator('[data-pad="0,1"] .z-\\[25\\]')).toHaveCount(1);
 });
 
-for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redraws only the next unscanned note`, async ({ page }, info) => {
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} retains the unpressed note before guiding the next`, async ({ page }, info) => {
   await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000');
   const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
   await mode(page, 'Guide').dispatchEvent('click');
@@ -118,11 +118,47 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} redr
   await info.attach('resumed-guide', { path, contentType: 'image/png' });
   const messages = await page.evaluate(() => window.browserProbe.midi.messages);
   await info.attach('controller-output', { body: JSON.stringify({ physicalHardware: false, messages }), contentType: 'application/json' });
+  await expect(guide('0,0')).toHaveCount(1);
+  await expect(guide('0,1')).toHaveCount(0);
+  await page.clock.fastForward(600);
+  await page.clock.runFor(16);
   await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(0);
+  // The next note's 800 ms lookahead starts after the first note has passed.
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
   await expect(guide('0,1')).toHaveCount(1);
-  await page.clock.fastForward(800);
+  await page.clock.fastForward(1000);
   await page.clock.runFor(16);
   await expect(guide('0,1')).toHaveCount(0);
+});
+
+for (const resume of ['button', 'mode']) for (const pressed of [false, true]) test(`a late guide resume via ${resume} keeps dense following notes visible, pressed=${pressed}`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 60\no 1 2\nf 1 2\nd 60\no 2 1\nf 2 1\nd 60\no 2 2\nf 2 2\nd 3000');
+  const guide = (position: string) => page.locator(`[data-pad="${position}"] .z-\\[25\\]`);
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(949);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+  await page.clock.runFor(20);
+  await expect(guide('0,0')).toHaveCount(1);
+  if (pressed) {
+    const pad = page.locator('[data-pad="0,0"]');
+    const box = (await pad.boundingBox())!;
+    const pointer = { pointerId: 1, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+    await pad.dispatchEvent('pointerdown', pointer);
+    await pad.dispatchEvent('pointerup', pointer);
+    await page.clock.runFor(20);
+    await expect(guide('0,0')).toHaveCount(0);
+  }
+  await page.clock.fastForward(1000);
+  await (resume === 'button' ? page.getByRole('button', { name: 'Play', exact: true }) : mode(page, 'Guide')).dispatchEvent('click');
+  // One late timer models a busy render before the runner gets its first resumed turn.
+  await page.clock.fastForward(200);
+  await page.clock.runFor(16);
+  await info.attach('dense-resumed-guide', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await expect(guide('0,0')).toHaveCount(pressed ? 0 : 1);
+  for (const position of ['0,1', '1,0', '1,1']) await expect(guide(position)).toHaveCount(1);
 });
 
 for (const resume of ['button', 'mode']) for (const extraDelay of [0, 1000]) test(`resuming guide via ${resume} after scanning only a chain preserves the guide with ${extraDelay}ms extra wait`, async ({ page }, info) => {

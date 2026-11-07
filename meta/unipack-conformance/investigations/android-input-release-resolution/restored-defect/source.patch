@@ -1,0 +1,13 @@
+diff --git a/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt b/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt
+index c4d79428..5ecf2e16 100644
+--- a/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt
++++ b/app/src/main/java/com/kimjisub/launchpad/viewmodel/PlayActivityViewModel.kt
+@@ -720,7 +720,7 @@ class PlayActivityViewModel(
+ 				if (!sources.remove(input)) return
+ 				// Sound and pack lights belong to the input that started them. Press feedback
+ 				// stays on independently until every input holding this pad has released it.
+-				if (padOutputOwner[pad] == input) {
++				if (sources.none { it.trigger == pressedBy } && padOutputOwner[pad]?.trigger == pressedBy) {
+ 					padOutputOwner.remove(pad)
+ 					soundRunner?.soundOff(x, y)
+ 					ledRunner?.eventOff(x, y, atMs)

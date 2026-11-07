@@ -3,7 +3,7 @@
     "target": "es2022",
     "module": "commonjs",
     "moduleResolution": "node",
-    "lib": ["es2022", "dom"],
+    "lib": ["esnext", "dom"],
     "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
