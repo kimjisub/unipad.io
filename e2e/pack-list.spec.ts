@@ -403,14 +403,17 @@ async function openLongList(page: Page, square: boolean, entry: 'list' | 'url' =
   }
 }
 
-// The list's rows enter and re-lay out with script-driven transforms and fade-ins. While they move,
-// the transforms stretch the list's scroll range, and a wheel sent then can leave WebKit's list past
-// its settled end with the next wheel never moving it. Send wheel input only once the rows are at rest.
+// The saved pack rows enter and re-lay out with script-driven transforms. While they move, the
+// transforms stretch the list's scroll range, and a wheel sent then can leave WebKit's list past its
+// settled end with the next wheel never moving it. Send wheel input only once they are at rest.
+// Only transforms count: the rows' fade-in never changes the layout. Page source, so the wait and
+// the regression test's wheel record share one condition.
+const savedRowsMoving = `() => Array.from(document.querySelectorAll('[role="option"][data-pack-id]'))
+  .some(row => getComputedStyle(row).transform !== 'none')`;
+
 async function untilRowsAtRest(page: Page) {
-  await test.step('List rows must stop moving before wheel input', async () => {
-    const atRest = await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="option"]')).every(row =>
-      getComputedStyle(row).transform === 'none' && row.getAnimations().every(animation => animation.playState !== 'running')),
-    null, { timeout: 5000 });
+  await test.step('Saved pack rows must stop moving before wheel input', async () => {
+    const atRest = await page.waitForFunction(`!(${savedRowsMoving})()`, null, { timeout: 5000 });
     await atRest.dispose();
   });
 }
@@ -636,16 +639,13 @@ test('wheel input waits for entering list rows to stop moving', async ({ page },
   test.setTimeout(Math.max(info.project.timeout, 60_000));
   await page.setViewportSize({ width: 594, height: 368 });
   // A busy machine can leave the rows' entrance animation running when the test scrolls.
-  // Hold it at its start by pausing the page clock before the list is shown.
-  await page.clock.install();
-  await test.step('Prepare long saved list', () => openLongList(page, true, 'list', () => page.clock.pauseAt(new Date(Date.now() + 1000))));
+  // Hold it at its start by pausing the page clock before the list is shown. pauseAt also installs
+  // the clock, and a fixed time leaves no host-time deadline that can expire in transit.
+  await test.step('Prepare long saved list', () => openLongList(page, true, 'list', () => page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'))));
   const rows = list(page).getByRole('option');
   await expect(rows.last()).toHaveCSS('transform', /^matrix\(1, 0, 0, 1, 0, [1-9]/);
-  await page.evaluate(() => {
-    window.wheelsWhileRowsMove = [];
-    addEventListener('wheel', () => window.wheelsWhileRowsMove.push(Array.from(document.querySelectorAll('[role="option"]'))
-      .some(row => getComputedStyle(row).transform !== 'none')), { capture: true });
-  });
+  await page.evaluate(`window.wheelsWhileRowsMove = [];
+    addEventListener('wheel', () => window.wheelsWhileRowsMove.push((${savedRowsMoving})()), { capture: true });`);
   const tail = option(page, 'Local pack 0 by UniPad Tests');
   const wheel = wheelTo(page, tail);
   // While the clock stays paused the rows cannot finish entering, so no wheel may arrive.
