@@ -14,13 +14,14 @@ const storeItem = {
 // Keep the real Firebase SDK; only the network peer is local.
 // A stalled peer keeps its handshake but drops database replies. This lets the
 // retry test restore that same connection without faking the SDK's HTTP fallback.
-async function connectStore(context: BrowserContext) {
+async function connectStore(context: BrowserContext, firstHandshakeDelayMs = 0) {
+  let firstConnection = true;
   let connected = true;
   let liveItem = storeItem;
   let blockedStoreRequests = 0;
   let heldReplies: (() => void)[] | null = null;
   await context.route('**/firebaseremoteconfig.googleapis.com/**', route => route.fulfill({ json: { entries: {}, state: 'NO_CHANGE' } }));
-  await context.routeWebSocket(/firebaseio\.com|firebasedatabase\.app/, socket => {
+  await context.routeWebSocket(/firebaseio\.com|firebasedatabase\.app/, async socket => {
     socket.onMessage(raw => {
       const message = JSON.parse(String(raw));
       if (message.t !== 'd') return;
@@ -40,6 +41,9 @@ async function connectStore(context: BrowserContext) {
       }
       respond();
     });
+    const delay = firstConnection ? firstHandshakeDelayMs : 0;
+    firstConnection = false;
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
     socket.send(JSON.stringify({ t: 'c', d: { t: 'h', d: { ts: Date.now(), v: '5', h: new URL(socket.url()).hostname, s: 'store-test-session' } } }));
   });
   return {
@@ -63,6 +67,13 @@ async function verifyDatabase(page: Page) {
   await expect(page.getByRole('button', { name: /^Store/ })).toContainText('42', {
     timeout: 15000,
   });
+}
+
+async function openConnectedSharedLink(page: Page) {
+  // Route registration alone does not put the SDK online. Warm it before the
+  // link's bounded lookup so a slow first connection is not an outage test.
+  await verifyDatabase(page);
+  await page.goto('/play?code=browser-pack');
 }
 
 test.afterEach(async ({ page }, testInfo) => {
@@ -142,16 +153,20 @@ test('offers a retry for a shared link when Firebase is blocked', async ({ page,
   await expect(page.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible({ timeout: 6500 });
 });
 
-test('a connected shared link still asks before installing and plays the downloaded pack', async ({ page, context }) => {
-  await connectStore(context);
-  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
-  await page.goto('/play?code=browser-pack');
-  const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
-  await expect(confirmation).toBeVisible();
-  await expect(page.locator('[data-pad]')).toHaveCount(0);
-  await confirmation.getByRole('button', { name: 'Install', exact: true }).click();
-  await expectPads(page);
-});
+for (const firstHandshakeDelayMs of [0, 6000]) {
+  test(`a connected shared link still asks before installing and plays the downloaded pack (first handshake delay: ${firstHandshakeDelayMs}ms)`, async ({ page, context }) => {
+    await connectStore(context, firstHandshakeDelayMs);
+    await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+    await openConnectedSharedLink(page);
+    // Observe the late database reply before checking which view the link chose.
+    await expect(page.getByRole('button', { name: /^Store/ })).toContainText('42', { timeout: 15000 });
+    const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+    await expect(confirmation).toBeVisible();
+    await expect(page.locator('[data-pad]')).toHaveCount(0);
+    await confirmation.getByRole('button', { name: 'Install', exact: true }).click();
+    await expectPads(page);
+  });
+}
 
 test('a store download with damaged compressed audio stays unsaved and offers a working retry', async ({ page, context }, testInfo) => {
   await connectStore(context);
@@ -201,7 +216,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
     expect(failures).toBe(opened);
   };
 
-  await page.goto('/play?code=browser-pack');
+  await openConnectedSharedLink(page);
   await page.getByRole('alertdialog', { name: 'Confirm install', exact: true }).getByRole('button', { name: 'Install', exact: true }).click();
   try {
     await expect(error).toContainText('1 sound file cannot be read');
@@ -211,7 +226,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
   await expectNoReopen(1);
 
   // The same link again finds the pack already downloaded and opens it without asking.
-  await page.goto('/play?code=browser-pack');
+  await openConnectedSharedLink(page);
   await expect(error).toContainText('1 sound file cannot be read');
   await expectNoReopen(2);
 });
@@ -223,7 +238,7 @@ test('Enter on the shared link confirmation\'s Cancel button installs nothing', 
     downloads += 1;
     return route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' });
   });
-  await page.goto('/play?code=browser-pack');
+  await openConnectedSharedLink(page);
   const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   await expect(confirmation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
   await confirmation.getByRole('button', { name: 'Cancel', exact: true }).focus();
@@ -242,7 +257,7 @@ test('ends a stalled shared pack download and retries it', async ({ page, contex
     if (stalled) return;
     return route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' });
   });
-  await page.goto('/play?code=browser-pack');
+  await openConnectedSharedLink(page);
   await page.getByRole('alertdialog', { name: 'Confirm install', exact: true }).getByRole('button', { name: 'Install', exact: true }).click();
   const row = page.getByRole('dialog', { name: 'Store', exact: true }).locator('[data-store-code="browser-pack"]');
   try {
