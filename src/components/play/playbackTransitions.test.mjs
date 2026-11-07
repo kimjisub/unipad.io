@@ -130,7 +130,7 @@ for (const direction of ['next', 'prev']) test(`guide ${direction} moves the gui
   assert.ok(guides.every(p => p.guideTargetWallTimeMs >= now - 800 && p.guideTargetWallTimeMs <= now + 800), 'the upcoming guide must keep its lead time at the new position');
 });
 
-for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} discards the scanned step and guides only upcoming notes`, async () => {
+for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} retains the unpressed step at its original time`, async () => {
   const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 10000' });
   await flush(() => result.current.switchPlayMode('guidePlay'));
   await tick(1); await tick(200); await draw();
@@ -138,17 +138,84 @@ for (const resume of ['button', 'mode']) test(`resuming guide via ${resume} disc
   await flush(() => result.current.autoPlayPlayPause());
   await tick(1); await draw();
   assert.equal(result.current.state.padStates[0][0].guide, true, 'the scanned step is offered until resume');
-  const progress = result.current.state.autoPlayProgress;
   await tick(2000);
   const resumedAt = now;
   await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
   await tick(1); await draw();
-  assert.equal(result.current.state.autoPlayProgress, progress + 1, 'resume consumes only the next delay, without replaying the scanned note');
-  assert.equal(result.current.state.padStates[0][0].guide, false, 'the scanned note must not reappear');
-  await tick(200); await draw();
-  assert.equal(result.current.state.padStates[0][1].guide, true, 'the next unscanned note gets its full guide');
-  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs, resumedAt + 1000);
+  assert.equal(result.current.state.padStates[0][0].guide, true, 'the unpressed note is still owed');
+  assert.equal(result.current.state.padStates[0][0].guideTargetWallTimeMs, resumedAt + 799);
+  await tick(797); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await tick(1); await draw();
   assert.equal(result.current.state.padStates[0][0].guide, false);
+  await tick(200); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs, resumedAt + 1799);
+});
+
+for (const trailingDelay of ['', '\nd 100']) test(`the final overdue guide is visible before completion with trailing delay ${trailingDelay ? '100ms' : 'none'}`, async () => {
+  const { result } = await mount({ autoPlay: `d 1000\no 1 1\nf 1 1${trailingDelay}` });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1);
+  // The pause input wins the task race against an overdue sequencer callback.
+  now += 1499;
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  await tick(2000);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  assert.equal(result.current.state.autoPlayEnabled, true, 'completion waits for the visible overdue hint');
+  await tick(49); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false);
+  assert.equal(result.current.state.padStates[0][0].guide, false);
+  assert.equal(starts.length, 0);
+});
+
+test('a guide resumed and paused before its first tick keeps a performed chord member consumed', async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\no 1 2\nd 1000\no 2 1\nd 1000' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(499);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  await flush(() => { result.current.padTouchOn(0, 1); result.current.padTouchOff(0, 1); });
+  await tick(1); await draw();
+  assert.deepEqual(result.current.state.padStates[0].map(p => p.guide), [true, false]);
+  await flush(() => result.current.autoPlayPlayPause());
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.deepEqual(result.current.state.padStates[0].map(p => p.guide), [true, false]);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.deepEqual(result.current.state.padStates[0].map(p => p.guide), [true, false]);
+});
+
+for (const pressed of [false, true]) test(`guide paused after the first note ${pressed ? 'keeps the gap after the performed second note' : 'retains the unperformed second note'}`, async () => {
+  const { result } = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 1000\no 2 1\nf 2 1\nd 1000\n' });
+  await flush(() => result.current.switchPlayMode('guidePlay'));
+  await tick(1); await tick(999); await tick(500);
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][1].guide, true);
+  if (pressed) {
+    await flush(() => { result.current.padTouchOn(0, 1); result.current.padTouchOff(0, 1); });
+    await tick(1); await draw();
+  }
+  await tick(2000);
+  const resumedAt = now;
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(1); await draw();
+  if (!pressed) {
+    assert.equal(result.current.state.padStates[0][1].guideTargetWallTimeMs, resumedAt + 500);
+    await tick(500); await draw();
+    assert.equal(result.current.state.padStates[0][1].guide, false);
+  } else assert.equal(result.current.state.padStates[0][1].guide, false);
+  await tick(200); await draw();
+  assert.equal(result.current.state.padStates[1][0].guide, true);
+  assert.equal(result.current.state.padStates[1][0].guideTargetWallTimeMs, resumedAt + (pressed ? 1000 : 1500));
+  assert.equal(starts.length, pressed ? 1 : 0);
 });
 
 for (const resume of ['button', 'mode']) {
@@ -1279,7 +1346,7 @@ for (const [via, pausedMs] of [['mode', 0], ['button', 0], ['button', 3000]]) {
   });
 }
 
-for (const resume of ['button', 'mode']) test(`pausing guide right after a replayed step note via ${resume} offers only the following note`, async () => {
+for (const resume of ['button', 'mode']) test(`pausing guide right after a replayed step note via ${resume} retains the unpressed following note`, async () => {
   const { result } = await mount(stepThenAutoPack);
   const row = () => result.current.state.padStates[0];
   await replayShownStep(result);
@@ -1287,28 +1354,31 @@ for (const resume of ['button', 'mode']) test(`pausing guide right after a repla
   await flush(() => result.current.switchPlayMode('guidePlay'));
   await tick(1); await draw();
   assert.ok(row().every(pad => !pad.guide));
+  const remainingMs = starts[1] - 1 + 5000 - now;
   // Pausing guide play is step practice, which offers the next group at once.
   await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('stepPractice'));
   await tick(1); await draw();
   assert.deepEqual(row().map(pad => pad.guide), [false, false, true], 'the paused practice offers the third note, not the sounded second');
   await tick(3000); await draw();
   assert.deepEqual(row().map(pad => pad.guide), [false, false, true]);
-  // Resuming treats the offered third note as passed, so the song only waits out its 5000 ms gap.
+  // The offered third note is still owed at its remaining song time.
   const resumedAt = now;
   await flush(() => resume === 'button' ? result.current.autoPlayPlayPause() : result.current.switchPlayMode('guidePlay'));
-  // The first timer consumes one millisecond of the song clock; a later first timer would shift it.
   await tick(1); await draw();
   assert.equal(result.current.playMode, 'guidePlay');
-  assert.equal(result.current.state.autoPlayPlaying, true, 'guide play resumes');
-  for (let elapsed = 1; elapsed < 4999; elapsed += 100) {
-    await tick(Math.min(100, resumedAt + 4999 - now)); await draw();
-    assert.equal(result.current.state.autoPlayEnabled, true, `guide still plays ${now - resumedAt} ms after resuming`);
-    assert.equal(row()[1].guide, false, 'the sounded second note is never guided again');
-    assert.equal(row()[2].guide, false, 'the passed third note is not guided again');
-  }
-  assert.equal(now - resumedAt, 4999);
+  assert.equal(result.current.state.autoPlayPlaying, true);
+  await tick(remainingMs - 801); await draw();
+  assert.equal(row()[2].guide, true, 'the third note receives its timed guide');
+  assert.equal(row()[2].guideTargetWallTimeMs, resumedAt + remainingMs);
+  assert.equal(row()[1].guide, false, 'the sounded second note is never guided again');
+  await tick(799); await draw();
+  assert.equal(row()[2].guide, true);
   await tick(1); await draw();
-  assert.equal(result.current.state.autoPlayEnabled, false, 'the song ends 5000 ms after resuming');
+  assert.equal(row()[2].guide, false);
+  await tick(4999); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, true);
+  await tick(1); await draw();
+  assert.equal(result.current.state.autoPlayEnabled, false);
   assert.ok(row().every(pad => !pad.guide));
   assert.equal(starts.length, 2, 'guide mode never sounds a note');
 });
