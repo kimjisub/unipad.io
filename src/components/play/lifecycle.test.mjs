@@ -125,6 +125,7 @@ test('Delete opens confirmation without deleting the selected saved pack', async
     onDeletePack: (id) => deleted.push(id), onDeleteTheme: noop, onApplyTheme: noop,
     onClearTheme: noop, onToggleBookmark: noop,
   }));
+  await view.findByRole('option', { name: 'CI pack by CI' });
   fireEvent.keyDown(window, { key: 'Delete' });
   assert.ok(view.getByRole('alertdialog', { name: 'Confirm deletion' }));
   assert.deepEqual(deleted, []);

@@ -59,6 +59,7 @@ export function MainScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
   const [sortAsc, setSortAsc] = useState(false);
+  const [sortReady, setSortReady] = useState(false);
   const sortChangedRef = useRef(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const filteredAndSortedPacks = useMemo(() => {
@@ -106,7 +107,7 @@ export function MainScreen({
   // Only one row is in the Tab order: the selected pack, or the first one when none is selected.
   const tabStopId = selectedPack?.id ?? filteredAndSortedPacks[0]?.id ?? null;
 
-  // Restore sort settings from IndexedDB (persists across sessions like Android SharedPreferences)
+  // Wait for saved sorting before showing rows, including when restoration fails.
   useEffect(() => {
     let cancelled = false;
     Promise.all([getSetting('sortMethod'), getSetting('sortOrder')]).then(([method, order]) => {
@@ -117,7 +118,9 @@ export function MainScreen({
       if (order === 'true' || order === 'false') {
         setSortAsc(order === 'true');
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setSortReady(true);
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -126,6 +129,7 @@ export function MainScreen({
     sortChangedRef.current = true;
     setSortMethod(method);
     setSortAsc(ascending);
+    setSortReady(true);
     setSetting('sortMethod', method).catch(() => {});
     setSetting('sortOrder', String(ascending)).catch(() => {});
   };
@@ -160,7 +164,7 @@ export function MainScreen({
         return;
       }
 
-      if (isTextInput || filteredAndSortedPacks.length === 0) return;
+      if (isTextInput || !sortReady || filteredAndSortedPacks.length === 0) return;
 
       // Up and down select from anywhere on the page; inside the list the list itself handles them.
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -182,7 +186,7 @@ export function MainScreen({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filteredAndSortedPacks, onPlay, selectedId, keyboardDisabled, showSortMenu, selectPackRow]);
+  }, [filteredAndSortedPacks, onPlay, selectedId, keyboardDisabled, showSortMenu, selectPackRow, sortReady]);
 
   // Listbox keys for the focused row: arrows, Home and End move focus and selection together,
   // Space selects, Enter plays.
@@ -382,7 +386,7 @@ export function MainScreen({
         {/* Pack List: this minimum plus the toolbar sizes the mobile panel, so a wrapped
             button row takes its height from the details and not from the first pack. */}
         <div className="grow basis-0 overflow-y-auto overflow-x-hidden min-h-[72px] md:min-h-0 rounded-xl">
-          {filteredAndSortedPacks.length === 0 ? (
+          {!sortReady ? null : filteredAndSortedPacks.length === 0 ? (
             searchQuery.trim() ? (
               <NoResults query={searchQuery.trim()} onClear={() => setSearchQuery('')} />
             ) : (
