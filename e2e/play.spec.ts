@@ -11,6 +11,7 @@ import { touchScreens } from './touch';
 import { importSavedPackForPlayback, savedRecords, expectSavedPackCount } from './saved-packs';
 import { configureMidiPorts, midiPortMessages, selectMidiProfile } from './midi';
 import { LAUNCHPAD_PROFILE_OPTIONS } from '../src/lib/unipack/MidiProfiles';
+import { toastDurationMs } from '../src/components/play/toastDuration';
 
 const pack = resolve('e2e/fixtures/basic.uni');
 const pad = (page: Page, position: string) => page.locator(`[data-pad="${position}"]`);
@@ -660,6 +661,40 @@ for (const invalidBeforeMode of [false, true]) {
     expect(recorded.slice(0, firstMode).every(message => message[2] === 0)).toBe(!invalidBeforeMode);
   });
 }
+
+test('unsupported Web MIDI shows a clear notice above the menu and settings dialog', async ({ page }, info) => {
+  // Allow this page's development connection; external service sockets stay blocked.
+  await page.routeWebSocket('**/_next/hmr**', socket => socket.connectToServer());
+  await page.goto('/play');
+  await page.evaluate(() => {
+    delete (navigator as Partial<Navigator>).requestMIDIAccess;
+    delete (Navigator.prototype as Partial<Navigator>).requestMIDIAccess;
+    window.browserProbe.midi.supported = false;
+  });
+  await page.locator('input[data-unipack-import]').setInputFiles(pack);
+  await expectLoadedPack(page);
+  const message = "This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.";
+  const notice = page.getByText(message, { exact: true });
+  const expectNoticeOnTop = async () => {
+    await expect(notice).toBeVisible();
+    await expect.poll(() => notice.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+    })).toBe(true);
+  };
+
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'MIDI Connect', exact: true }).click();
+  await expectNoticeOnTop();
+  await info.attach('unsupported-midi-menu', { body: await page.screenshot(), contentType: 'image/png' });
+  // A two-sentence notice stays on screen longer than the default assertion wait.
+  await expect(notice).toHaveCount(0, { timeout: toastDurationMs(message) + 5_000 });
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings Open', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expectNoticeOnTop();
+  await info.attach('unsupported-midi-settings', { body: await page.screenshot(), contentType: 'image/png' });
+});
 
 for (const delayedInspection of [false, true]) {
   test(`Web MIDI discovers devices, receives notes, emits LED bytes and disconnects${delayedInspection ? ' after delayed inspection' : ''}`, async ({ page }, testInfo) => {

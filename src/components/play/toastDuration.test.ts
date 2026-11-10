@@ -16,10 +16,10 @@ test('short notices keep the 2 s display time', () => {
 });
 
 test('a two-sentence notice stays long enough to read the second sentence', () => {
-  const korean = '이 브라우저는 MIDI 기기 연결을 지원하지 않습니다. 화면 패드로 계속 연주할 수 있습니다.';
-  const english = "This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.";
-  assert.ok(toastDurationMs(korean) >= 4500, `${toastDurationMs(korean)} ms`);
-  assert.ok(toastDurationMs(english) >= 4500, `${toastDurationMs(english)} ms`);
+  for (const locale of ['ko', 'en']) {
+    const duration = toastDurationMs(toastMessages(locale).midiUnsupported);
+    assert.ok(duration >= 4500, `${locale}: ${duration} ms`);
+  }
 });
 
 test('Korean and English versions of a notice get comparable time', () => {

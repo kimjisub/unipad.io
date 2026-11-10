@@ -732,6 +732,10 @@ export function PlayPage() {
 
   const handleConnectMidi = useCallback(async () => {
     if (midiConnecting) return;
+    if (typeof navigator.requestMIDIAccess !== 'function') {
+      showToast(tToast('midiUnsupported'));
+      return;
+    }
     setMidiConnecting(true);
     try {
       const ok = await connectMidi();

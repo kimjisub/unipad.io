@@ -16,15 +16,16 @@ async function showInvalidImportNotice(page: Page) {
 
 async function expectCentered(page: Page, notice: ReturnType<Page['getByText']>) {
   const width = page.viewportSize()!.width;
-  // Poll through the entrance animation; its scale keeps the centre where it is.
+  // Poll through the entrance animation; its scale keeps the centre where it is. Subpixel
+  // layout may leave the centre up to a pixel away; the broken placement was ~100 px off.
   await expect.poll(async () => {
     const box = await notice.boundingBox();
     if (!box) return null;
     return {
-      offCentre: Math.round(Math.abs(box.x + box.width / 2 - width / 2)),
+      centred: Math.abs(box.x + box.width / 2 - width / 2) <= 1,
       inside: box.x >= 0 && box.x + box.width <= width,
     };
-  }).toEqual({ offCentre: 0, inside: true });
+  }).toEqual({ centred: true, inside: true });
 }
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 1024, height: 1366 }, { width: 844, height: 390 }]) {
