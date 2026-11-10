@@ -1020,7 +1020,8 @@ for (const action of ['off', 'pause']) {
     await page.clock.runFor(1);
     await capture(page, info);
     await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
-    await page.clock.runFor(1004);
+    // Observe ownership across a loop boundary without replaying every paused sequencer tick.
+    await page.clock.fastForward(1004);
     await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
     await page.keyboard.up('1');
     // The light runner ticks every four milliseconds after auto-play has stopped.
