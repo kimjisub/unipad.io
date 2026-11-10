@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
-import { test, expect, expectPads, stateTimeout } from './browser';
+import { test, expect, expectAudioOutputRunning, expectPads, stateTimeout } from './browser';
 
 declare global { interface Window {
   transitionAudio: AudioContext;
@@ -27,6 +27,10 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   await page.locator('input[data-unipack-import]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  // A mode starts only once the output runs. Firefox can open the device after a mode tap or never; the
+  // cases would then count virtual time the song never ran, or wait for a Pause button that never appears.
+  // A hidden page keeps its output suspended until it returns.
+  if (!await page.evaluate(() => document.hidden)) await expectAudioOutputRunning(page);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   // These cases assert virtual timer commands and DOM changes. Keep the audio control clock
