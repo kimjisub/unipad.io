@@ -799,3 +799,65 @@ for (const action of ['opening', 'bookmarking'] as const) {
     }
   });
 }
+
+
+for (const theme of [false, true]) test(`${theme ? 'theme' : 'pack'} deletion blocks background list and search shortcuts`, async ({ page }, info) => {
+  await page.goto('/play');
+  await seedSavedPacks(page, [
+    { id: 'alpha', title: 'Alpha', producerName: 'Tests', addedAt: 1 },
+    { id: 'bravo', title: 'Bravo', producerName: 'Tests', addedAt: 2 },
+    { id: 'charlie', title: 'Charlie', producerName: 'Tests', addedAt: 3 },
+  ]);
+  if (theme) await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('unipad');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('themes', 'readwrite');
+      tx.objectStore('themes').put({ id: 'test-theme', name: 'Test theme', author: 'Tests', zipData: new ArrayBuffer(0), addedAt: 1 });
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+  }));
+  await page.reload();
+  await expect(list(page).getByRole('option')).toHaveCount(3);
+  const selected = option(page, 'Bravo by Tests');
+  if (theme) await page.getByRole('button', { name: 'Delete theme' }).click();
+  else {
+    await selected.click();
+    await selected.focus();
+    await page.keyboard.press('Delete');
+  }
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+  const observations = [];
+  for (const buttonName of ['Delete', 'Cancel']) {
+    for (const key of ['ArrowDown', 'ArrowUp', '/', 'Control+k', 'Meta+k']) {
+      await dialog.getByRole('button', { name: buttonName, exact: true }).focus();
+      await page.keyboard.press(key);
+      observations.push(await page.evaluate(({ buttonName, key }) => ({
+        buttonName, key,
+        selected: Array.from(document.querySelectorAll('[role="option"][aria-selected="true"]')).map(row => (row as HTMLElement).dataset.packId),
+        focusInDialog: !!document.activeElement?.closest('[role="alertdialog"]'),
+        dialogOpen: !!document.querySelector('[role="alertdialog"]'),
+      }), { buttonName, key }));
+      if (key === 'ArrowDown' || key === '/') await info.attach(`${buttonName}-${key === '/' ? 'search' : 'arrow'}`, { body: await page.screenshot(), contentType: 'image/png' });
+      // A broken theme dialog can disappear when an arrow selects a pack.
+      if (await dialog.count() === 0) break;
+    }
+    if (await dialog.count() === 0) break;
+  }
+  await info.attach('shortcut-observations', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' });
+  expect(observations).toHaveLength(10);
+  for (const observation of observations) {
+    expect(observation, observation.key).toMatchObject({ selected: theme ? [] : ['bravo'], focusInDialog: true, dialogOpen: true });
+  }
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(list(page).getByRole('option')).toHaveCount(3);
+  await page.keyboard.press('/');
+  await expect(page.getByRole('textbox')).toBeFocused();
+  await selected.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(option(page, 'Alpha by Tests')).toHaveAttribute('aria-selected', 'true');
+});
