@@ -146,7 +146,9 @@ export function MainScreen({
     setSelectedId(null);
   }
 
-  useEffect(() => {
+  // Attached during the commit that shows the rows: a passive effect would leave the previous
+  // handler, which still sees the rows as pending, in place until after the browser paints them.
+  useLayoutEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (keyboardDisabled) return;
 
