@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { importSavedPacks, type PackFile, seedSavedPacks, storedPackRecords } from './saved-packs';
+import { expectSavedPackListCount, importSavedPacks, type PackFile, seedSavedPacks, storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -111,7 +111,7 @@ for (const [method, ascending, titles] of sortCases) {
       ]);
     });
     await page.reload();
-    await expect(list(page).getByRole('option')).toHaveCount(4);
+    await expectSavedPackListCount(page, list(page).getByRole('option'), 4);
     await page.getByRole('button', { name: /^(Title|Producer|Date)$/ }).click();
     await page.getByRole('button', { name: method, exact: true }).last().click();
     if (ascending === (method === 'Date')) {
@@ -125,7 +125,7 @@ for (const [method, ascending, titles] of sortCases) {
     for (const step of ['reload', 'reentry']) {
       if (step === 'reload') await page.reload();
       else { await page.goto('about:blank'); await page.goto('/play'); }
-      await expect(list(page).getByRole('option')).toHaveCount(4);
+      await expectSavedPackListCount(page, list(page).getByRole('option'), 4);
       // The rows as text; a failing test also saves a screenshot.
       await testInfo.attach(`${step}-rows`, { body: JSON.stringify(await rowLabels()), contentType: 'application/json' });
       await testInfo.attach(`${step}-settings`, { body: JSON.stringify(await readSettings()), contentType: 'application/json' });
