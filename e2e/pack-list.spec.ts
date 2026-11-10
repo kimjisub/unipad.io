@@ -508,10 +508,11 @@ async function wheelTo(page: Page, target: Locator) {
       await page.mouse.wheel(0, scroll.delta);
       // Observe the same element inside the browser. A driver-side poll can spend its
       // entire deadline resolving the locator again, even when the wheel has moved it.
+      // Whether it moved is state, not speed: a busy page can run this check seconds late.
       await test.step('Wheel input must move the target scroll container', async () => {
         const moved = await page.waitForFunction(scroll => scroll && scroll.element.isConnected
           && (scroll.delta > 0 ? scroll.element.scrollTop > scroll.top : scroll.element.scrollTop < scroll.top),
-        observation, { timeout: 5000 });
+        observation, { timeout: stateTimeout });
         await moved.dispose();
       });
     } finally {
@@ -616,10 +617,41 @@ test('wheel movement survives a delayed driver observation', async ({ page }) =>
   await wheelTo(page, target);
 });
 
+test('wheel movement survives a page stall before the movement check runs', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  const wheel = page.mouse.wheel.bind(page.mouse);
+  let wheelSent = false;
+  page.mouse.wheel = async (...args) => { await wheel(...args); wheelSent = true; };
+  let stall: Promise<number> | undefined;
+  const checks: number[] = [];
+  page.waitForFunction = new Proxy(page.waitForFunction, {
+    async apply(waitForFunction, receiver, args) {
+      if (!wheelSent) return Reflect.apply(waitForFunction, receiver, args);
+      wheelSent = false;
+      // Sent ahead of the first movement check, so the page runs this finite task first while the
+      // check's deadline is already running: longer than five seconds, shorter than Firefox's
+      // ten-second slow-script limit. A busy machine has stalled the page this way for seconds.
+      stall ??= page.evaluate(() => {
+        const start = performance.now();
+        while (performance.now() - start < 6000) { /* hold the page */ }
+        return performance.now() - start;
+      });
+      const start = Date.now();
+      const result = await Reflect.apply(waitForFunction, receiver, args);
+      checks.push(Date.now() - start);
+      return result;
+    },
+  });
+  await wheelTo(page, page.getByRole('button', { name: 'Tail' }));
+  expect(await stall).toBeGreaterThanOrEqual(6000);
+  // The first check could only finish after the stall: past the old five-second limit.
+  expect(checks[0]).toBeGreaterThan(5000);
+});
+
 test('wheel movement still fails when wheel input is prevented', async ({ page }) => {
   await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
   await page.evaluate(() => document.addEventListener('wheel', event => event.preventDefault(), { passive: false }));
-  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 5000ms/);
+  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 15000ms/);
   expect(await page.locator('div').first().evaluate(element => element.scrollTop)).toBe(0);
 });
 

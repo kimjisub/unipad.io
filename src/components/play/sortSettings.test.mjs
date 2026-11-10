@@ -107,6 +107,41 @@ test('pending rows keep their selection without responding to list shortcuts', a
   assert.equal(view.getAllByRole('option').find(row => row.dataset.packId === 'b').getAttribute('aria-selected'), 'true');
 });
 
+// A browser paints restored rows before React runs passive effects, so a key pressed as soon as
+// the rows appear must already reach a handler that knows the list is ready.
+test('list shortcuts work from the moment restored rows appear', async () => {
+  const deleted = [];
+  const { view, release } = mount({ sortMethod: 'title', sortOrder: 'true' }, false,
+    { lastPlayedPackId: 'b', onDeletePack: id => deleted.push(id) });
+  let observer, deadline;
+  const handled = await new Promise((resolve, reject) => {
+    observer = new window.MutationObserver(() => {
+      try {
+        if (!view.queryAllByRole('option').length) return;
+        observer.disconnect();
+        resolve(!fireEvent.keyDown(window, { key: 'Delete' }));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    observer.observe(view.container, { childList: true, subtree: true });
+    // Rows that never appear must fail this test instead of leaving it waiting forever.
+    deadline = setTimeout(() => reject(new Error('restored rows did not appear within 10 s')), 10_000);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+    release();
+  }).finally(() => {
+    observer.disconnect();
+    clearTimeout(deadline);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  });
+  assert.equal(handled, true, 'Delete pressed on the first painted rows must open the confirmation');
+  await flush();
+  const dialog = view.getByRole('alertdialog');
+  assert.deepEqual(deleted, [], 'Delete must only ask for confirmation');
+  await flush(() => fireEvent.click([...dialog.querySelectorAll('button')].at(-1)));
+  assert.deepEqual(deleted, ['b'], 'the confirmation must target the restored selection');
+});
+
 test('changes after restoration are saved and survive a remount', async () => {
   const { view, release } = mount({ sortMethod: 'producer', sortOrder: 'false' });
   await flush(release);

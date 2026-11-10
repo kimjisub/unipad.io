@@ -428,6 +428,7 @@
       "themeFailed": "테마를 적용하지 못했습니다.",
       "traceLogCleared": "흔적을 모두 지웠습니다",
       "copied": "복사했습니다",
+      "midiUnsupported": "이 브라우저는 MIDI 기기 연결을 지원하지 않습니다. 화면 패드로 계속 연주할 수 있습니다.",
       "midiNoDevice": "MIDI 기기를 찾지 못했습니다.",
       "midiConnected": "MIDI 를 연결했습니다.",
       "midiFailed": "MIDI 연결에 실패했습니다.",

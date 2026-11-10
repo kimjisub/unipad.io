@@ -428,6 +428,7 @@
       "themeFailed": "Failed to apply theme.",
       "traceLogCleared": "Trace Log Cleared",
       "copied": "Copied",
+      "midiUnsupported": "This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.",
       "midiNoDevice": "No MIDI device found.",
       "midiConnected": "MIDI connected.",
       "midiFailed": "MIDI connection failed.",
