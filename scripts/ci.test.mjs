@@ -95,12 +95,17 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   const windows = read('.github/workflows/playback-windows.yml');
   assert.match(windows, /runs-on: windows-2025/);
   assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
-  assert.match(windows, /project: \[chromium, chrome, msedge, firefox\]/);
+  const jobs = [...windows.matchAll(/- \{ project: (\w+), shard: (\d+), shards: (\d+) \}/g)].map(([, project, shard, shards]) => `${project} ${shard}/${shards}`);
+  // Firefox alone needs about 11 of the 15 minutes for these tests, so it runs them in two halves.
+  assert.deepEqual(jobs, ['chromium 1/1', 'chrome 1/1', 'msedge 1/1', 'firefox 1/2', 'firefox 2/2']);
+  assert.match(windows, /name: Windows playback \(\$\{\{ matrix\.project \}\}\$\{\{ matrix\.shards > 1 && format\(' \{0\}\/\{1\}', matrix\.shard, matrix\.shards\) \|\| '' \}\}\)/);
+  assert.match(windows, /name: windows-playback-\$\{\{ matrix\.project \}\}\$\{\{ matrix\.shards > 1 && format\('-\{0\}-of-\{1\}', matrix\.shard, matrix\.shards\) \|\| '' \}\}/, 'each job must upload its results under its own name');
   assert.match(windows, /name: Install Firefox\n\s+if: matrix\.project == 'firefox'\n\s+run: pnpm exec playwright install firefox/);
   assert.doesNotMatch(windows, /pnpm install/);
   const command = windows.split('\n').find(line => line.includes('run: pnpm exec playwright test'));
   assert.ok(command, 'Windows playback test command must exist');
   for (const file of playbackFiles) assert.ok(command.includes(`e2e/${file}`), `Windows must run ${file}`);
+  assert.ok(command.endsWith('--project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}'), 'each job must run its share of the tests');
   const { windowsPlaybackTests } = await import('../playwright.config.ts');
   assert.deepEqual(windowsPlaybackTests, playbackFiles);
   assert.doesNotMatch(windows, /continue-on-error|secrets\.|pull_request_target/);

@@ -661,6 +661,38 @@ for (const invalidBeforeMode of [false, true]) {
   });
 }
 
+test('unsupported Web MIDI shows a clear notice above the menu and settings dialog', async ({ page }, info) => {
+  // Allow this page's development connection; external service sockets stay blocked.
+  await page.routeWebSocket('**/_next/hmr**', socket => socket.connectToServer());
+  await page.goto('/play');
+  await page.evaluate(() => {
+    delete (navigator as Partial<Navigator>).requestMIDIAccess;
+    delete (Navigator.prototype as Partial<Navigator>).requestMIDIAccess;
+    window.browserProbe.midi.supported = false;
+  });
+  await page.locator('input[data-unipack-import]').setInputFiles(pack);
+  await expectLoadedPack(page);
+  const notice = page.getByText("This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.", { exact: true });
+  const expectNoticeOnTop = async () => {
+    await expect(notice).toBeVisible();
+    await expect.poll(() => notice.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+    })).toBe(true);
+  };
+
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'MIDI Connect', exact: true }).click();
+  await expectNoticeOnTop();
+  await info.attach('unsupported-midi-menu', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(notice).toHaveCount(0);
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings Open', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+  await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expectNoticeOnTop();
+  await info.attach('unsupported-midi-settings', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
 for (const delayedInspection of [false, true]) {
   test(`Web MIDI discovers devices, receives notes, emits LED bytes and disconnects${delayedInspection ? ' after delayed inspection' : ''}`, async ({ page }, testInfo) => {
     await skipWithoutWebMidi(page);

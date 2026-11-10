@@ -27,6 +27,10 @@ test('playback summary retains nested skip counts and reasons and fails on faile
     assert.match(passing.stdout, /Passed: 8; failed: 0; skipped: 1; not run: 0; interrupted: 0; flaky: 0/);
     assert.match(passing.stdout, /webkit: Web MIDI: Not applicable: no native Web MIDI API/);
     assert.match(passing.stdout, /No person listened/);
+    assert.doesNotMatch(passing.stdout, /Shard/);
+    report.config = { shard: { current: 2, total: 2 } };
+    assert.match(run().stdout, /^Shard 2 of 2: these counts cover only this job's share of the tests\.$/m);
+    delete report.config;
     report.stats.unexpected = 1;
     assert.equal(run().status, 1);
     report.stats.unexpected = 0;
