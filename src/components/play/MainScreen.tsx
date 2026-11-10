@@ -56,7 +56,8 @@ export function MainScreen({
   const detailsPanelRef = useRef<HTMLDivElement | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
-  const listKeyboardDisabled = keyboardDisabled || deleteConfirmId !== null || deleteThemeConfirmId !== null;
+  const deleteConfirmationOpen = deleteConfirmId !== null || deleteThemeConfirmId !== null;
+  const listKeyboardDisabled = keyboardDisabled || deleteConfirmationOpen;
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
@@ -150,7 +151,12 @@ export function MainScreen({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (listKeyboardDisabled) return;
+      const isSearchShortcut = event.key === '/' || (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey));
+      if (listKeyboardDisabled) {
+        // Firefox's native quick find can take focus even when the app ignores the shortcut.
+        if (deleteConfirmationOpen && isSearchShortcut) event.preventDefault();
+        return;
+      }
 
       if (event.key === 'Escape' && showSortMenu) {
         setShowSortMenu(false);
@@ -160,7 +166,7 @@ export function MainScreen({
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       const isTextInput = tag === 'input' || tag === 'textarea';
-      if ((event.key === '/' || (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey))) && !isTextInput) {
+      if (isSearchShortcut && !isTextInput) {
         event.preventDefault();
         searchInputRef.current?.focus();
         return;
@@ -188,7 +194,7 @@ export function MainScreen({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filteredAndSortedPacks, onPlay, selectedId, listKeyboardDisabled, showSortMenu, selectPackRow, sortReady]);
+  }, [filteredAndSortedPacks, onPlay, selectedId, listKeyboardDisabled, deleteConfirmationOpen, showSortMenu, selectPackRow, sortReady]);
 
   // Listbox keys for the focused row: arrows, Home and End move focus and selection together,
   // Space selects, Enter plays.

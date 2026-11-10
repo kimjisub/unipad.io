@@ -58,7 +58,10 @@ for (const theme of [false, true]) for (const shortcut of shortcuts) {
     for (const name of ['Delete', 'Cancel']) {
       const button = within(dialog).getByRole('button', { name, exact: true });
       button.focus();
-      fireEvent.keyDown(button, shortcut);
+      const defaultAllowed = fireEvent.keyDown(button, shortcut);
+      if (shortcut.key === '/' || shortcut.key === 'k') {
+        assert.equal(defaultAllowed, false, 'native browser search must not steal focus either');
+      }
       assert.ok(document.activeElement === button, 'search must not take focus from the confirmation');
       assert.deepEqual(view.getAllByRole('option').filter(row => row.getAttribute('aria-selected') === 'true').map(row => row.dataset.packId), theme ? [] : ['Bravo']);
       assert.ok(view.getByRole('alertdialog') === dialog);
