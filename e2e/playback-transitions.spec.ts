@@ -1020,10 +1020,11 @@ for (const action of ['off', 'pause']) {
     await page.clock.runFor(1);
     await capture(page, info);
     await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
-    await page.clock.runFor(1000);
+    await page.clock.runFor(1004);
     await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
     await page.keyboard.up('1');
-    await page.clock.runFor(1);
+    // The light runner ticks every four milliseconds after auto-play has stopped.
+    await page.clock.runFor(4);
     await expect(light).toHaveCount(0);
   });
 }
