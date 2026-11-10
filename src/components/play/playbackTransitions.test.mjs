@@ -1484,3 +1484,23 @@ for (const action of ['off', 'pause']) {
     assert.equal(result.current.state.chain, 1);
   });
 }
+
+test('a constant-on endless light remains player-owned after autoplay pauses', async () => {
+  const { result } = await mount({
+    autoPlay: 'd 10000\no 2 2', keySound: '1 1 1 a.wav 0',
+    leds: { '1 1 1 0': 'o 1 2 FF0000\nd 1000' },
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(4);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await tick(1004); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+});

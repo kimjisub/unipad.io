@@ -1007,7 +1007,7 @@ for (const action of ['off', 'pause']) {
   test(`autoplay ${action} keeps a player's looping light until release`, async ({ page }, info) => {
     await open(page, 'd 10000\no 2 2', false, {
       keySound: '1 1 1 tone.wav 0',
-      leds: { '1 1 1 0': 'o 1 2 FF0000\nd 500\nf 1 2\nd 500' },
+      leds: { '1 1 1 0': 'o 1 2 FF0000\nd 1000' },
     });
     await mode(page, 'Auto').dispatchEvent('click');
     await page.clock.runFor(1);
