@@ -137,6 +137,73 @@ for (const [method, ascending, titles] of sortCases) {
   });
 }
 
+test('list reentry first shows saved sorting when sort reads arrive after packs', async ({ page }, info) => {
+  await page.goto('/play');
+  await seedSavedPacks(page, [
+    { id: 'alpha', title: 'Alpha', producerName: 'Charlie', addedAt: 20 },
+    { id: 'bravo', title: 'Bravo', producerName: 'Alpha', addedAt: 30 },
+    { id: 'charlie', title: 'Charlie', producerName: 'Bravo', addedAt: 10 },
+    { id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true },
+  ]);
+  await page.reload();
+  await expect(list(page).getByRole('option')).toHaveCount(4);
+  await page.getByRole('button', { name: /^(Title|Producer|Date)$/ }).click();
+  await page.getByRole('button', { name: 'Title', exact: true }).last().click();
+  await expect.poll(() => readSortSettings(page)).toEqual({ sortMethod: 'title', sortOrder: 'true' });
+  await page.addInitScript(() => {
+    const held: (() => void)[] = [];
+    let released = false;
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (...args) {
+      const request = get.apply(this, args);
+      if (this.name === 'settings' && ['sortMethod', 'sortOrder'].includes(String(args[0]))) {
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          held.push(() => request.onsuccess?.call(request, event));
+          document.documentElement.dataset.heldSortReads = String(held.length);
+        }, { once: true });
+      }
+      return request;
+    };
+    const observations: { ids: string[]; released: boolean; at: number }[] = [];
+    Object.assign(window, { sortEntryObservations: observations });
+    const observe = () => {
+      const ids = Array.from(document.querySelectorAll<HTMLElement>('[role="option"][data-pack-id]'))
+        .map(row => row.dataset.packId!);
+      if (ids.length && observations.at(-1)?.ids.join() !== ids.join()) {
+        observations.push({ ids, released, at: performance.now() });
+      }
+    };
+    new MutationObserver(observe).observe(document, { childList: true, subtree: true });
+    window.addEventListener('release-sort-reads', () => {
+      released = true;
+      held.forEach(release => release());
+    }, { once: true });
+  });
+  await page.goto('about:blank');
+  await page.goto('/play');
+  try {
+    await expect(page.locator('html')).toHaveAttribute('data-held-sort-reads', '2');
+    // The toolbar needs the saved packs: its presence proves pack loading finished while
+    // only the two native sort responses are held. No clock or timeout is changed.
+    await expect(page.getByRole('button', { name: 'Date', exact: true })).toBeVisible();
+    await info.attach('pending-sort-reads', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.evaluate(() => window.dispatchEvent(new Event('release-sort-reads')));
+    await expect(page.getByRole('button', { name: 'Title', exact: true })).toBeVisible();
+    await expect(list(page).getByRole('option')).toHaveCount(4);
+    const observations = await page.evaluate(() => (window as unknown as {
+      sortEntryObservations: { ids: string[]; released: boolean; at: number }[];
+    }).sortEntryObservations);
+    await info.attach('first-row-orders', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' });
+    await info.attach('restored-sort', { body: await page.screenshot(), contentType: 'image/png' });
+    expect(observations[0]).toMatchObject({ ids: ['favorite', 'alpha', 'bravo', 'charlie'], released: true });
+  } finally {
+    // Retain the order record even when a readiness assertion fails.
+    await info.attach('sort-entry-record', { body: JSON.stringify(await page.evaluate(() =>
+      (window as unknown as { sortEntryObservations: unknown }).sortEntryObservations), null, 2), contentType: 'application/json' });
+  }
+});
+
 // The basic test pack under another title.
 async function packTitled(title: string): Promise<PackFile> {
   const zip = await JSZip.loadAsync(readFileSync(resolve(packs[0][0])));
@@ -441,10 +508,11 @@ async function wheelTo(page: Page, target: Locator) {
       await page.mouse.wheel(0, scroll.delta);
       // Observe the same element inside the browser. A driver-side poll can spend its
       // entire deadline resolving the locator again, even when the wheel has moved it.
+      // Whether it moved is state, not speed: a busy page can run this check seconds late.
       await test.step('Wheel input must move the target scroll container', async () => {
         const moved = await page.waitForFunction(scroll => scroll && scroll.element.isConnected
           && (scroll.delta > 0 ? scroll.element.scrollTop > scroll.top : scroll.element.scrollTop < scroll.top),
-        observation, { timeout: 5000 });
+        observation, { timeout: stateTimeout });
         await moved.dispose();
       });
     } finally {
@@ -549,10 +617,41 @@ test('wheel movement survives a delayed driver observation', async ({ page }) =>
   await wheelTo(page, target);
 });
 
+test('wheel movement survives a page stall before the movement check runs', async ({ page }) => {
+  await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
+  const wheel = page.mouse.wheel.bind(page.mouse);
+  let wheelSent = false;
+  page.mouse.wheel = async (...args) => { await wheel(...args); wheelSent = true; };
+  let stall: Promise<number> | undefined;
+  const checks: number[] = [];
+  page.waitForFunction = new Proxy(page.waitForFunction, {
+    async apply(waitForFunction, receiver, args) {
+      if (!wheelSent) return Reflect.apply(waitForFunction, receiver, args);
+      wheelSent = false;
+      // Sent ahead of the first movement check, so the page runs this finite task first while the
+      // check's deadline is already running: longer than five seconds, shorter than Firefox's
+      // ten-second slow-script limit. A busy machine has stalled the page this way for seconds.
+      stall ??= page.evaluate(() => {
+        const start = performance.now();
+        while (performance.now() - start < 6000) { /* hold the page */ }
+        return performance.now() - start;
+      });
+      const start = Date.now();
+      const result = await Reflect.apply(waitForFunction, receiver, args);
+      checks.push(Date.now() - start);
+      return result;
+    },
+  });
+  await wheelTo(page, page.getByRole('button', { name: 'Tail' }));
+  expect(await stall).toBeGreaterThanOrEqual(6000);
+  // The first check could only finish after the stall: past the old five-second limit.
+  expect(checks[0]).toBeGreaterThan(5000);
+});
+
 test('wheel movement still fails when wheel input is prevented', async ({ page }) => {
   await page.setContent('<div style="overflow-y:auto;height:100px;width:200px"><div style="height:200px"></div><button>Tail</button></div>');
   await page.evaluate(() => document.addEventListener('wheel', event => event.preventDefault(), { passive: false }));
-  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 5000ms/);
+  await expect(wheelTo(page, page.getByRole('button', { name: 'Tail' }))).rejects.toThrow(/Timeout 15000ms/);
   expect(await page.locator('div').first().evaluate(element => element.scrollTop)).toBe(0);
 });
 
