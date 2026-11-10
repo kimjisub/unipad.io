@@ -125,6 +125,44 @@ test('manual selection, search, filters, sorting, keyboard and reopen stay usabl
 });
 
 
+test('a keydown without a key, as autofill sends, is ignored and later keys still work', () => {
+  const downloads = [];
+  const view = render(wrapped(StoreModal, { ...storeProps, visible: true, onDownload: item => downloads.push(item.code) }));
+  const errors = [];
+  const record = (event) => { errors.push(event.error?.message ?? event.message); event.preventDefault(); };
+  window.addEventListener('error', record);
+  try {
+    window.dispatchEvent(new window.Event('keydown', { bubbles: true }));
+    view.getByRole('textbox').dispatchEvent(new window.Event('keydown', { bubbles: true }));
+  } finally {
+    window.removeEventListener('error', record);
+  }
+  assert.deepEqual(errors, []);
+  fireEvent.keyDown(window, { key: 'Enter' });
+  assert.deepEqual(downloads, ['first']);
+});
+
+test('changing the selection and download state keeps the store\'s window key handler attached once', async () => {
+  const props = { ...storeProps, visible: true };
+  const view = render(wrapped(StoreModal, props));
+  let added = 0;
+  const { addEventListener } = window;
+  window.addEventListener = function (type, ...rest) {
+    if (type === 'keydown') added++;
+    return addEventListener.call(this, type, ...rest);
+  };
+  try {
+    for (let step = 0; step < 50; step++) fireEvent.keyDown(window, { key: 'ArrowDown' });
+    for (const downloadingCode of ['first', null, 'second', null]) {
+      await act(async () => view.rerender(wrapped(StoreModal, { ...props, downloadingCode })));
+    }
+  } finally {
+    window.addEventListener = addEventListener;
+  }
+  assert.equal(added, 0);
+  assert.equal(selected(view), 'first');
+});
+
 test('store initial focus does not take focus back from a chosen button', async () => {
   const view = render(wrapped(StoreModal, { ...storeProps, visible: true }));
   const led = view.getByRole('button', { name: 'LED', exact: true });

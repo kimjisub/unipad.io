@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
 import { useUniPadEngine } from './useUniPadEngine';
 import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
@@ -663,53 +664,42 @@ export function PlayPage() {
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
-  useEffect(() => {
-    if (!state.loaded) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur?.();
-        if (soundNoticeShown && soundDetailsOpen) {
-          setSoundDetailsOpen(false);
-          setDismissedSoundReport(soundReport);
-        } else if (errorDialogShown) {
-          if (!state.criticalError) setErrorDialogShown(false);
-        } else if (launchpadSettingsOpen) {
-          setLaunchpadSettingsOpen(false);
-        } else if (state.hideUI) {
-          toggleHideUI();
-        } else if (optionPanelOpen) {
-          setOptionPanelOpen(false);
-        } else {
-          setOptionPanelOpen(true);
-        }
-        return;
+  useWindowKeyDown((e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      (document.activeElement as HTMLElement)?.blur?.();
+      if (soundNoticeShown && soundDetailsOpen) {
+        setSoundDetailsOpen(false);
+        setDismissedSoundReport(soundReport);
+      } else if (errorDialogShown) {
+        if (!state.criticalError) setErrorDialogShown(false);
+      } else if (launchpadSettingsOpen) {
+        setLaunchpadSettingsOpen(false);
+      } else if (state.hideUI) {
+        toggleHideUI();
+      } else if (optionPanelOpen) {
+        setOptionPanelOpen(false);
+      } else {
+        setOptionPanelOpen(true);
       }
-      if (dialogOpen) return;
+      return;
+    }
+    if (dialogOpen) return;
 
-      // Android function key equivalents (Backtick + number)
-      if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        switch (e.key) {
-          case 'f': e.preventDefault(); toggleFeedbackLight(); break;
-          case 'l': e.preventDefault(); toggleLed(); break;
-          case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
-          case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
-          case 'h': e.preventDefault(); toggleHideUI(); break;
-          case 'w': e.preventDefault(); toggleWatermark(); break;
-          case 'p': e.preventDefault(); toggleProLightMode(); break;
-          case 'r': e.preventDefault(); toggleRecording(); break;
-        }
+    // Android function key equivalents (Backtick + number)
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      switch (e.key) {
+        case 'f': e.preventDefault(); toggleFeedbackLight(); break;
+        case 'l': e.preventDefault(); toggleLed(); break;
+        case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
+        case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
+        case 'h': e.preventDefault(); toggleHideUI(); break;
+        case 'w': e.preventDefault(); toggleWatermark(); break;
+        case 'p': e.preventDefault(); toggleProLightMode(); break;
+        case 'r': e.preventDefault(); toggleRecording(); break;
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    state.loaded, state.hideUI, state.criticalError,
-    toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
-    toggleWatermark, toggleProLightMode, toggleRecording,
-    errorDialogShown, launchpadSettingsOpen, optionPanelOpen, dialogOpen,
-    soundNoticeShown, soundDetailsOpen, soundReport,
-  ]);
+    }
+  }, { enabled: state.loaded });
 
   useEffect(() => {
     const base = 'UniPad Web Player';
