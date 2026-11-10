@@ -663,10 +663,10 @@ export function useUniPadEngine() {
     scheduleFlush();
   }, [refreshPad, scheduleFlush]);
 
-  /** The player's last release of a pad autoPlay stopped over also ends autoPlay's press there. */
+  /** Releases only this player contact; auto-play owns its presses independently. */
   const userPadTouchOff = useCallback((x: number, y: number, input: string) => {
-    const releasesAutoPlay = playerHoldsRef.current.release(x, y);
-    padTouchOff(x, y, releasesAutoPlay ? undefined : input);
+    playerHoldsRef.current.release(x, y);
+    padTouchOff(x, y, input);
   }, [padTouchOff]);
 
   const releaseKeyboardPads = useCallback(() => {
@@ -772,29 +772,31 @@ export function useUniPadEngine() {
     };
   }, [state.loaded, userPadTouchOn, releaseKeyboardPads, userPadTouchOff, selectChain]);
 
-  /** Releases every pad the player is not holding, which includes each pad autoplay still holds. */
+  /** Releases auto-play across all chains, even where the player still holds the same pad. */
   const padInit = useCallback(() => {
     const unipack = unipackRef.current;
     if (!unipack) return;
-    playerHoldsRef.current.releaseOthers(unipack.info.buttonX, unipack.info.buttonY, padTouchOff);
+    for (let x = 0; x < unipack.info.buttonX; x++) {
+      for (let y = 0; y < unipack.info.buttonY; y++) padTouchOff(x, y, AUTO_PLAY_INPUT);
+    }
   }, [padTouchOff]);
 
-  const ledInit = useCallback(() => {
+  const ledInit = useCallback((input?: string) => {
     const unipack = unipackRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
     if (!unipack || !cm) return;
     for (let x = 0; x < unipack.info.buttonX; x++) {
       for (let y = 0; y < unipack.info.buttonY; y++) {
-        if (lr) lr.eventOff(x, y);
-        cm.remove(x, y, Channel.LED);
+        if (lr) lr.eventOff(x, y, undefined, input);
+        if (input === undefined) cm.remove(x, y, Channel.LED);
         refreshPad(x, y);
       }
     }
     const chainLedCount = Math.max(unipack.info.chain, 36);
     for (let c = 0; c < chainLedCount; c++) {
-      if (lr) lr.eventOff(-1, c);
-      cm.remove(-1, c, Channel.LED);
+      if (lr) lr.eventOff(-1, c, undefined, input);
+      if (input === undefined) cm.remove(-1, c, Channel.LED);
       refreshChain(c);
     }
     scheduleFlush();
@@ -907,7 +909,7 @@ export function useUniPadEngine() {
       runner.pause();
       if (runner.active) runner.stop();
       padInit();
-      ledInit();
+      ledInit(AUTO_PLAY_INPUT);
       autoPlayRemoveGuide();
       const feedback = !unipack?.keyLedExist;
       feedbackLightRef.current = feedback;
@@ -986,7 +988,7 @@ export function useUniPadEngine() {
     if (runner.isPlaying) {
       runner.pause();
       padInit();
-      ledInit();
+      ledInit(AUTO_PLAY_INPUT);
       autoPlayRemoveGuide();
       if (stateRef.current.practiceMode) {
         runner.stepMode = true;
@@ -996,7 +998,7 @@ export function useUniPadEngine() {
       if (!await activatePlaybackAudio()) return;
       autoPlayRemoveGuide();
       padInit();
-      ledInit();
+      ledInit(AUTO_PLAY_INPUT);
       runner.play();
       if (unipack?.keyLedExist) {
         feedbackLightRef.current = false;
@@ -1016,14 +1018,14 @@ export function useUniPadEngine() {
 
   const autoPlayPrev = useCallback(() => {
     padInit();
-    ledInit();
+    ledInit(AUTO_PLAY_INPUT);
     autoPlayRemoveGuide();
     autoPlayRunnerRef.current?.progressOffset(-40);
   }, [padInit, ledInit, autoPlayRemoveGuide]);
 
   const autoPlayNext = useCallback(() => {
     padInit();
-    ledInit();
+    ledInit(AUTO_PLAY_INPUT);
     autoPlayRemoveGuide();
     autoPlayRunnerRef.current?.progressOffset(40);
   }, [padInit, ledInit, autoPlayRemoveGuide]);
@@ -1259,7 +1261,6 @@ export function useUniPadEngine() {
             }));
           },
           onPadTouchOn: (x: number, y: number, pressedAt: number) => {
-            playerHoldsRef.current.autoPlayPressed(x, y);
             padTouchOn(x, y, AUTO_PLAY_INPUT, pressedAt);
           },
           onPadTouchOff: (x: number, y: number, releasedAt: number) => { padTouchOff(x, y, AUTO_PLAY_INPUT, releasedAt); },

@@ -1002,3 +1002,51 @@ for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
     await info.attach('audio-requests', { body: JSON.stringify(await page.evaluate(() => window.browserProbe.audio)), contentType: 'application/json' });
   });
 }
+
+for (const action of ['off', 'pause']) {
+  test(`autoplay ${action} keeps a player's looping light until release`, async ({ page }, info) => {
+    await open(page, 'd 10000\no 2 2', false, {
+      keySound: '1 1 1 tone.wav 0',
+      leds: { '1 1 1 0': 'o 1 2 FF0000\nd 500\nf 1 2\nd 500' },
+    });
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1);
+    await page.keyboard.down('1');
+    await page.clock.runFor(1);
+    const light = padLight(page, '0,1');
+    await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+    if (action === 'off') await mode(page, 'Auto').dispatchEvent('click');
+    else await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(1);
+    await capture(page, info);
+    await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+    await page.clock.runFor(1000);
+    await expect(light).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+    await page.keyboard.up('1');
+    await page.clock.runFor(1);
+    await expect(light).toHaveCount(0);
+  });
+}
+
+for (const action of ['off', 'pause']) {
+  test(`autoplay ${action} stops its replacement loop while the player still holds the pad`, async ({ page }, info) => {
+    await open(page, 'd 100\no 1 1\nd 10000\nf 1 1', false, { keySound: '1 1 1 tone.wav 0', leds: {} });
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(1);
+    await page.keyboard.down('1');
+    await page.clock.runFor(100);
+    const sounding = () => page.evaluate(() => {
+      const { starts, stops } = window.browserProbe.audio;
+      return starts.filter(s => s.loop && !stops.includes(s.id)).map(s => s.id);
+    });
+    expect(await sounding()).toHaveLength(1);
+    expect(await soundRequests(page)).toBe(2);
+    if (action === 'off') await mode(page, 'Auto').dispatchEvent('click');
+    else await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await capture(page, info);
+    await info.attach('audio-ownership', { body: JSON.stringify(await page.evaluate(() => ({ starts: window.browserProbe.audio.starts, stops: window.browserProbe.audio.stops }))), contentType: 'application/json' });
+    expect(await sounding()).toEqual([]);
+    await page.keyboard.up('1');
+    expect(await sounding()).toEqual([]);
+  });
+}

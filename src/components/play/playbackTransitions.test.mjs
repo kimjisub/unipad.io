@@ -1433,3 +1433,54 @@ for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
     }
   });
 }
+
+for (const action of ['off', 'pause']) {
+  test(`autoplay ${action} preserves the player's endless sound and light`, async () => {
+    const { result } = await mount({
+      autoPlay: 'd 10000\no 2 2', keySound: '1 1 1 a.wav 0',
+      leds: { '1 1 1 0': 'o 1 2 FF0000\nd 500\nf 1 2\nd 500' },
+    });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+    assert.equal(sources.at(-1).stopped, false);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    await tick(1); await draw();
+    assert.equal(sources.at(-1).stopped, false);
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+    await tick(1000); await draw();
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)', 'the next loop still runs');
+    await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    await tick(4); await draw();
+    assert.equal(sources.at(-1).stopped, true);
+    assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+  });
+
+  test(`autoplay ${action} stops a loop it replaced while the player still holds the pad`, async () => {
+    const { result } = await mount({ autoPlay: 'd 100\no 1 1\nd 10000\nf 1 1', keySound: '1 1 1 a.wav 0' });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(100);
+    assert.deepEqual(sources.map(s => s.stopped), [true, false]);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    assert.deepEqual(sources.map(s => s.stopped), [true, true]);
+    await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    assert.deepEqual(sources.map(s => s.stopped), [true, true]);
+  });
+
+  test(`autoplay ${action} does not cancel a pending manual wormhole`, async () => {
+    const { result } = await mount({ wormhole: true });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(50);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    await tick(49);
+    assert.equal(result.current.state.chain, 0);
+    await tick(1);
+    assert.equal(result.current.state.chain, 1);
+  });
+}
