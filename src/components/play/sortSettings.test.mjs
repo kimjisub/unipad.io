@@ -42,11 +42,11 @@ const props = { savedPacks: packs, savedThemes: [], onPlay: noop, onOpenStore: n
   onApplyTheme: noop, onClearTheme: noop, onToggleBookmark: noop };
 const flush = async action => act(async () => { action?.(); });
 const rows = view => view.getAllByRole('option').map(row => row.dataset.packId);
-function mount(values = {}, failed = false) {
+function mount(values = {}, failed = false, overrides = {}) {
   storage = new Map(Object.entries(values)); writes = []; failRead = failed;
   let release;
   readGate = new Promise(resolve => { release = resolve; });
-  const view = render(React.createElement(React.StrictMode, null, React.createElement(MainScreen, props)));
+  const view = render(React.createElement(React.StrictMode, null, React.createElement(MainScreen, { ...props, ...overrides })));
   return { view, release };
 }
 function choose(view, method) {
@@ -70,6 +70,7 @@ for (const [method, asc, expected] of cases) {
   test(`slow restoration preserves ${method}/${asc} without writing defaults`, async () => {
     const values = { sortMethod: method, sortOrder: String(asc) };
     const { view, release } = mount(values);
+    assert.equal(view.queryAllByRole('option').length, 0, 'rows must wait for saved sorting');
     assert.deepEqual(writes, [], 'mount must not overwrite saved sorting while reads are pending');
     await flush(release);
     assert.deepEqual(rows(view), expected);
@@ -85,11 +86,25 @@ for (const action of ['method', 'direction']) {
     const { view, release } = mount({ sortMethod: 'producer', sortOrder: 'false' });
     if (action === 'method') choose(view, 'Title');
     else fireEvent.click(view.getByRole('button', { name: 'sortDescending' }));
+    assert.deepEqual(rows(view), action === 'method' ? ['favorite', 'a', 'b', 'c'] : ['favorite', 'c', 'a', 'b']);
     await flush(release);
     assert.deepEqual(rows(view), action === 'method' ? ['favorite', 'a', 'b', 'c'] : ['favorite', 'c', 'a', 'b']);
     assert.deepEqual(Object.fromEntries(storage), { sortMethod: action === 'method' ? 'title' : 'date', sortOrder: 'true' });
   });
 }
+
+test('pending rows keep their selection without responding to list shortcuts', async () => {
+  const plays = [];
+  const { view, release } = mount({ sortMethod: 'title', sortOrder: 'true' }, false,
+    { lastPlayedPackId: 'b', onPlay: id => plays.push(id) });
+  for (const key of ['ArrowDown', 'Enter', 'Delete']) fireEvent.keyDown(window, { key });
+  assert.deepEqual(plays, []);
+  assert.equal(view.queryByRole('dialog'), null);
+  fireEvent.keyDown(window, { key: '/' });
+  assert.equal(document.activeElement, view.getByRole('textbox', { name: 'searchAriaLabel' }));
+  await flush(release);
+  assert.equal(view.getAllByRole('option').find(row => row.dataset.packId === 'b').getAttribute('aria-selected'), 'true');
+});
 
 test('changes after restoration are saved and survive a remount', async () => {
   const { view, release } = mount({ sortMethod: 'producer', sortOrder: 'false' });

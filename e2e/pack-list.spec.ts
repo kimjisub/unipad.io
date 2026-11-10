@@ -137,6 +137,73 @@ for (const [method, ascending, titles] of sortCases) {
   });
 }
 
+test('list reentry first shows saved sorting when sort reads arrive after packs', async ({ page }, info) => {
+  await page.goto('/play');
+  await seedSavedPacks(page, [
+    { id: 'alpha', title: 'Alpha', producerName: 'Charlie', addedAt: 20 },
+    { id: 'bravo', title: 'Bravo', producerName: 'Alpha', addedAt: 30 },
+    { id: 'charlie', title: 'Charlie', producerName: 'Bravo', addedAt: 10 },
+    { id: 'favorite', title: 'Favorite', producerName: 'Zulu', addedAt: 40, bookmark: true },
+  ]);
+  await page.reload();
+  await expect(list(page).getByRole('option')).toHaveCount(4);
+  await page.getByRole('button', { name: /^(Title|Producer|Date)$/ }).click();
+  await page.getByRole('button', { name: 'Title', exact: true }).last().click();
+  await expect.poll(() => readSortSettings(page)).toEqual({ sortMethod: 'title', sortOrder: 'true' });
+  await page.addInitScript(() => {
+    const held: (() => void)[] = [];
+    let released = false;
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (...args) {
+      const request = get.apply(this, args);
+      if (this.name === 'settings' && ['sortMethod', 'sortOrder'].includes(String(args[0]))) {
+        request.addEventListener('success', event => {
+          event.stopImmediatePropagation();
+          held.push(() => request.onsuccess?.call(request, event));
+          document.documentElement.dataset.heldSortReads = String(held.length);
+        }, { once: true });
+      }
+      return request;
+    };
+    const observations: { ids: string[]; released: boolean; at: number }[] = [];
+    Object.assign(window, { sortEntryObservations: observations });
+    const observe = () => {
+      const ids = Array.from(document.querySelectorAll<HTMLElement>('[role="option"][data-pack-id]'))
+        .map(row => row.dataset.packId!);
+      if (ids.length && observations.at(-1)?.ids.join() !== ids.join()) {
+        observations.push({ ids, released, at: performance.now() });
+      }
+    };
+    new MutationObserver(observe).observe(document, { childList: true, subtree: true });
+    window.addEventListener('release-sort-reads', () => {
+      released = true;
+      held.forEach(release => release());
+    }, { once: true });
+  });
+  await page.goto('about:blank');
+  await page.goto('/play');
+  try {
+    await expect(page.locator('html')).toHaveAttribute('data-held-sort-reads', '2');
+    // The toolbar needs the saved packs: its presence proves pack loading finished while
+    // only the two native sort responses are held. No clock or timeout is changed.
+    await expect(page.getByRole('button', { name: 'Date', exact: true })).toBeVisible();
+    await info.attach('pending-sort-reads', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.evaluate(() => window.dispatchEvent(new Event('release-sort-reads')));
+    await expect(page.getByRole('button', { name: 'Title', exact: true })).toBeVisible();
+    await expect(list(page).getByRole('option')).toHaveCount(4);
+    const observations = await page.evaluate(() => (window as unknown as {
+      sortEntryObservations: { ids: string[]; released: boolean; at: number }[];
+    }).sortEntryObservations);
+    await info.attach('first-row-orders', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' });
+    await info.attach('restored-sort', { body: await page.screenshot(), contentType: 'image/png' });
+    expect(observations[0]).toMatchObject({ ids: ['favorite', 'alpha', 'bravo', 'charlie'], released: true });
+  } finally {
+    // Retain the order record even when a readiness assertion fails.
+    await info.attach('sort-entry-record', { body: JSON.stringify(await page.evaluate(() =>
+      (window as unknown as { sortEntryObservations: unknown }).sortEntryObservations), null, 2), contentType: 'application/json' });
+  }
+});
+
 // The basic test pack under another title.
 async function packTitled(title: string): Promise<PackFile> {
   const zip = await JSZip.loadAsync(readFileSync(resolve(packs[0][0])));
