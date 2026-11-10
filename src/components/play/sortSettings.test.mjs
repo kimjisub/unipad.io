@@ -7,6 +7,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https
 for (const name of ['window', 'document', 'HTMLElement', 'Element', 'SVGElement']) globalThis[name] = dom.window[name];
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 const errors = [];
 mock.method(console, 'error', (...args) => errors.push(args.join(' ')));
