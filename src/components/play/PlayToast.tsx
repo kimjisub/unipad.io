@@ -13,14 +13,15 @@ interface PlayToastProps {
  * is part of the animated transform: framer-motion writes `transform` inline, which would
  * drop a `-translate-x-1/2` class and leave the notice starting at the screen's middle.
  * It sits above the Launchpad settings dialog (85) so a notice raised from it stays readable,
- * and below the portrait rotation hint (90).
+ * and below the portrait rotation hint (90). It has nothing to press, so presses reach the pads
+ * and buttons under it while it is shown.
  */
 export function PlayToast({ message, rightInset = 0 }: PlayToastProps) {
   return (
     <AnimatePresence>
       {message && (
         <motion.div
-          className="fixed bottom-6 z-[88] w-max px-4 py-2 rounded-2xl bg-black/80 text-xs text-center text-white border border-white/15"
+          className="pointer-events-none fixed bottom-6 z-[88] w-max px-4 py-2 rounded-2xl bg-black/80 text-xs text-center text-white border border-white/15"
           style={{ left: `calc(50% - ${rightInset / 2}px)`, maxWidth: `calc(100% - ${rightInset}px - 2rem)` }}
           initial={{ opacity: 0, x: '-50%', y: 10, scale: 0.97 }}
           animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}

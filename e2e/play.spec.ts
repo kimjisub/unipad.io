@@ -677,9 +677,14 @@ test('unsupported Web MIDI shows a clear notice above the menu and settings dial
   const notice = page.getByText(message, { exact: true });
   const expectNoticeOnTop = async () => {
     await expect(notice).toBeVisible();
-    await expect.poll(() => notice.evaluate(element => {
+    // The notice lets presses through, so hit testing skips it; take presses for the check only
+    // to see that nothing is drawn over its middle.
+    await expect.poll(() => notice.evaluate((element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
-      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+      element.style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      element.style.pointerEvents = '';
+      return top === element;
     })).toBe(true);
   };
 

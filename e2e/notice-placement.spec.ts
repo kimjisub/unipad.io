@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, expectSavedPlaybackPack } from './browser';
+import { openBasicWith } from './basic-pack';
 
 const packInput = 'input[data-unipack-import]';
 const fixture = path.resolve('e2e/fixtures/basic.uni');
@@ -84,5 +85,38 @@ for (const locale of ['en', 'ko']) for (const viewport of [{ width: 820, height:
     await info.attach('notice-beside-menu', { body: await page.screenshot(), contentType: 'image/png' });
     // The icon side of Quit is the part the notice used to cover.
     await quit.click({ position: { x: 34, y: 20 }, trial: true });
+  });
+}
+
+// The notice has nothing to press: while it is shown, the pads under it still play.
+const everyPadSounds = Array.from({ length: 64 }, (_, i) => `1 ${Math.floor(i / 8) + 1} ${(i % 8) + 1} tone.wav 0`).join('\n');
+for (const viewport of [{ width: 1280, height: 800 }, { width: 844, height: 390 }]) {
+  test(`${viewport.width}x${viewport.height}: a pad under the bottom notice still plays`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openBasicWith(page, { keySound: everyPadSounds });
+    await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.1]);
+    const notice = await showInvalidImportNotice(page);
+
+    // The middle of the overlap between the notice and a pad it covers, once the entrance settles.
+    let point: { x: number; y: number } | null = null;
+    await expect.poll(async () => {
+      const box = await notice.boundingBox();
+      point = !box ? null : await page.evaluate(box => {
+        for (const pad of document.querySelectorAll('[data-pad]')) {
+          const rect = pad.getBoundingClientRect();
+          const left = Math.max(rect.left, box.x), right = Math.min(rect.right, box.x + box.width);
+          const top = Math.max(rect.top, box.y), bottom = Math.min(rect.bottom, box.y + box.height);
+          if (right - left >= 4 && bottom - top >= 4) return { x: (left + right) / 2, y: (top + bottom) / 2 };
+        }
+        return null;
+      }, box);
+      return point;
+    }, { message: 'the notice covers a pad at this size' }).not.toBeNull();
+
+    await page.mouse.move(point!.x, point!.y);
+    await page.mouse.down();
+    await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+    await page.mouse.up();
+    await expect(notice).toBeVisible();
   });
 }
