@@ -1463,3 +1463,29 @@ test('one Play after a hidden tab returns to step practice chosen directly, unli
   assert.deepEqual([interrupted.autoPlayPlaying, interrupted.stepPractice], [false, true], 'the step choice survives');
   assert.deepEqual([uninterrupted.sounds, interrupted.sounds], [0, 0]);
 });
+
+test('a mode switch refused by the audio output keeps one Play resuming the paused guide after a hidden tab', async () => {
+  const run = async interrupted => {
+    const view = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });
+    const { result } = view;
+    await flush(() => result.current.switchPlayMode('guidePlay'));
+    await tick(1); await tick(300);
+    await flush(() => result.current.autoPlayPlayPause()); await tick(1); await draw();
+    const resume = audio.resume;
+    audio.state = 'suspended';
+    audio.resume = async () => { throw new Error('denied'); };
+    await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1);
+    const refused = [result.current.state.autoPlayPlaying, result.current.state.stepPractice];
+    audio.resume = resume; audio.state = 'running';
+    if (interrupted) { await visibility(true); await tick(1); await visibility(false); await tick(1); }
+    const before = starts.length;
+    await flush(() => result.current.autoPlayPlayPause()); await tick(1); await draw();
+    const { autoPlayPlaying, stepPractice } = result.current.state;
+    view.unmount();
+    return { refused, autoPlayPlaying, stepPractice, sounds: starts.length - before };
+  };
+  const uninterrupted = await run(false);
+  assert.deepEqual(uninterrupted.refused, [false, true], 'the refused switch leaves step practice');
+  assert.deepEqual(await run(true), uninterrupted);
+  assert.deepEqual([uninterrupted.autoPlayPlaying, uninterrupted.stepPractice, uninterrupted.sounds], [true, false, 0]);
+});

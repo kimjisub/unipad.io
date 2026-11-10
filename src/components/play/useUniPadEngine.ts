@@ -900,9 +900,9 @@ export function useUniPadEngine() {
 
     const mode = targetMode === currentMode ? 'none' : targetMode;
     if (mode === 'autoPlay') usageTracker.autoplayStarted();
-    pausedGuideRef.current = false;
 
     if (mode === 'none') {
+      pausedGuideRef.current = false;
       interruptionRevisionRef.current++;
       runner.practiceGuide = false;
       runner.stepMode = false;
@@ -925,6 +925,7 @@ export function useUniPadEngine() {
     }
 
     if (!await activatePlaybackAudio()) return;
+    pausedGuideRef.current = false;
     interruptedRef.current = false;
     runner.setSuspended(false);
     ledRunnerRef.current?.setSuspended(false);
@@ -1316,6 +1317,7 @@ export function useUniPadEngine() {
             setState((prev) => ({ ...prev, autoPlayProgress: progress }));
           },
           onEnd: () => {
+            pausedGuideRef.current = false;
             if (autoPlayRunnerRef.current) {
               autoPlayRunnerRef.current.practiceGuide = false;
               // stepMode stayed on, so pad presses were still consumed as step input.
