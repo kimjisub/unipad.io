@@ -730,6 +730,10 @@ export function PlayPage() {
 
   const handleConnectMidi = useCallback(async () => {
     if (midiConnecting) return;
+    if (typeof navigator.requestMIDIAccess !== 'function') {
+      showToast(tToast('midiUnsupported'));
+      return;
+    }
     setMidiConnecting(true);
     try {
       const ok = await connectMidi();
@@ -1789,7 +1793,7 @@ export function PlayPage() {
       <AnimatePresence>
         {toast && (
           <motion.div
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[88] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
             initial={{ opacity: 0, y: 10, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
