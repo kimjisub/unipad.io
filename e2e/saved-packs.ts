@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type JSHandle, type Page } from '@playwright/test';
+import { type JSHandle, type Locator, type Page } from '@playwright/test';
 import { expect, expectPads, stateTimeout } from './browser';
 
 export interface SavedRecord { id: string; storeCode?: string; zipBytes: number }
@@ -74,6 +74,22 @@ async function withExistingPackDatabase<T>(page: Page, stores: string[], action:
     await database.evaluate(db => db?.close());
     await database.dispose();
   }
+}
+
+/** Waits for both saved metadata keys and rendered rows, so a failure distinguishes loss from rendering delay. */
+export async function expectSavedPackListCount(page: Page, rows: Locator, count: number) {
+  await expect.poll(async () => {
+    const savedPackKeys = await withExistingPackDatabase(page, ['unipackMetadata'], database => database.evaluate(db => {
+      if (!db) return 0;
+      return new Promise<number>((resolve, reject) => {
+        const transaction = db.transaction('unipackMetadata');
+        const keys = transaction.objectStore('unipackMetadata').getAllKeys();
+        transaction.oncomplete = () => resolve(keys.result.length);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }));
+    return { savedPackKeys, renderedRows: await rows.count() };
+  }, { timeout: stateTimeout }).toEqual({ savedPackKeys: count, renderedRows: count });
 }
 
 export type PackFile = string | { name: string; mimeType: string; buffer: Buffer };
