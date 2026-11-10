@@ -55,6 +55,8 @@ export function MainScreen({
   const packListRef = useRef<HTMLDivElement | null>(null);
   const detailsPanelRef = useRef<HTMLDivElement | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
+  const listKeyboardDisabled = keyboardDisabled || deleteConfirmId !== null || deleteThemeConfirmId !== null;
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMethod, setSortMethod] = useState<SortMethod>('date');
@@ -148,7 +150,7 @@ export function MainScreen({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (keyboardDisabled) return;
+      if (listKeyboardDisabled) return;
 
       if (event.key === 'Escape' && showSortMenu) {
         setShowSortMenu(false);
@@ -186,12 +188,12 @@ export function MainScreen({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filteredAndSortedPacks, onPlay, selectedId, keyboardDisabled, showSortMenu, selectPackRow, sortReady]);
+  }, [filteredAndSortedPacks, onPlay, selectedId, listKeyboardDisabled, showSortMenu, selectPackRow, sortReady]);
 
   // Listbox keys for the focused row: arrows, Home and End move focus and selection together,
   // Space selects, Enter plays.
   const handlePackListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (keyboardDisabled) return;
+    if (listKeyboardDisabled) return;
     const focusedId = (event.target as HTMLElement).closest<HTMLElement>('[data-pack-id]')?.dataset.packId;
     if (!focusedId) return;
 
@@ -267,7 +269,7 @@ export function MainScreen({
             packs={savedPacks}
             themes={savedThemes}
             activeThemeId={activeThemeId}
-            onDeleteTheme={onDeleteTheme}
+            onRequestDeleteTheme={setDeleteThemeConfirmId}
             onApplyTheme={onApplyTheme}
             onClearTheme={onClearTheme}
           />
@@ -437,6 +439,18 @@ export function MainScreen({
             onCancel={() => setDeleteConfirmId(null)}
           />
         )}
+        {deleteThemeConfirmId && (
+          <ConfirmDialog
+            message={t('confirmDeleteTheme', {
+              name: savedThemes.find((theme) => theme.id === deleteThemeConfirmId)?.name ?? t('confirmDeleteThemeFallback'),
+            })}
+            onConfirm={() => {
+              onDeleteTheme(deleteThemeConfirmId);
+              setDeleteThemeConfirmId(null);
+            }}
+            onCancel={() => setDeleteThemeConfirmId(null)}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -446,21 +460,20 @@ function TotalPanel({
   packs,
   themes,
   activeThemeId,
-  onDeleteTheme,
+  onRequestDeleteTheme,
   onApplyTheme,
   onClearTheme,
 }: {
   packs: StoredUniPack[];
   themes: StoredTheme[];
   activeThemeId?: string | null;
-  onDeleteTheme: (id: string) => void;
+  onRequestDeleteTheme: (id: string) => void;
   onApplyTheme: (id: string) => void;
   onClearTheme: () => void;
 }) {
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
   const tBadge = useTranslations('play.badge');
-  const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
   const ledCount = packs.filter((p) => p.keyLedExist).length;
   const apCount = packs.filter((p) => p.autoPlayExist).length;
   const totalPlays = packs.reduce((sum, p) => sum + (p.openCount ?? 0), 0);
@@ -540,7 +553,7 @@ function TotalPanel({
                   )}
                   <button
                     className="p-1 text-white/30 hover:text-red-400 transition-colors"
-                    onClick={() => setDeleteThemeConfirmId(theme.id)}
+                    onClick={() => onRequestDeleteTheme(theme.id)}
                     aria-label={t('deleteTheme')}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -562,21 +575,6 @@ function TotalPanel({
         <span className="text-white/10">·</span>
         <a href={EXTERNAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="text-[10px] text-white/25 hover:text-white/60 transition-colors">{t('github')}</a>
       </div>
-
-      <AnimatePresence>
-        {deleteThemeConfirmId && (
-          <ConfirmDialog
-            message={t('confirmDeleteTheme', {
-              name: themes.find((theme) => theme.id === deleteThemeConfirmId)?.name ?? t('confirmDeleteThemeFallback'),
-            })}
-            onConfirm={() => {
-              onDeleteTheme(deleteThemeConfirmId);
-              setDeleteThemeConfirmId(null);
-            }}
-            onCancel={() => setDeleteThemeConfirmId(null)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }
