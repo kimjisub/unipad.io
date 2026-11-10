@@ -7,7 +7,7 @@ import { useUniPadEngine } from './useUniPadEngine';
 import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
 import { ControlPanel } from './ControlPanel';
-import { OptionPanel } from './OptionPanel';
+import { OptionPanel, OPTION_PANEL_WIDTH_PX } from './OptionPanel';
 import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
@@ -1779,7 +1779,7 @@ export function PlayPage() {
       <AnimatePresence>{autoPlayEditDialog}</AnimatePresence>
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
-      <PlayToast message={toast} />
+      <PlayToast message={toast} rightInset={optionPanelOpen ? OPTION_PANEL_WIDTH_PX : 0} />
 
       {/* Portrait orientation hint (below 600px, the phone width class; tablets play in portrait) */}
       <div className="fixed inset-0 z-[90] bg-black/90 flex-col items-center justify-center gap-4 text-white hidden max-[599px]:portrait:flex">
