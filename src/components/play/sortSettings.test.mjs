@@ -110,20 +110,36 @@ test('pending rows keep their selection without responding to list shortcuts', a
 // A browser paints restored rows before React runs passive effects, so a key pressed as soon as
 // the rows appear must already reach a handler that knows the list is ready.
 test('list shortcuts work from the moment restored rows appear', async () => {
-  const { view, release } = mount({ sortMethod: 'title', sortOrder: 'true' }, false, { lastPlayedPackId: 'b' });
-  const handled = await new Promise((resolve) => {
-    const observer = new window.MutationObserver(() => {
-      if (!view.queryAllByRole('option').length) return;
-      observer.disconnect();
-      resolve(!fireEvent.keyDown(window, { key: 'Delete' }));
+  const deleted = [];
+  const { view, release } = mount({ sortMethod: 'title', sortOrder: 'true' }, false,
+    { lastPlayedPackId: 'b', onDeletePack: id => deleted.push(id) });
+  let observer, deadline;
+  const handled = await new Promise((resolve, reject) => {
+    observer = new window.MutationObserver(() => {
+      try {
+        if (!view.queryAllByRole('option').length) return;
+        observer.disconnect();
+        resolve(!fireEvent.keyDown(window, { key: 'Delete' }));
+      } catch (error) {
+        reject(error);
+      }
     });
     observer.observe(view.container, { childList: true, subtree: true });
+    // Rows that never appear must fail this test instead of leaving it waiting forever.
+    deadline = setTimeout(() => reject(new Error('restored rows did not appear within 10 s')), 10_000);
     globalThis.IS_REACT_ACT_ENVIRONMENT = false;
     release();
-  }).finally(() => { globalThis.IS_REACT_ACT_ENVIRONMENT = true; });
+  }).finally(() => {
+    observer.disconnect();
+    clearTimeout(deadline);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  });
   assert.equal(handled, true, 'Delete pressed on the first painted rows must open the confirmation');
   await flush();
-  assert.ok(view.getByRole('alertdialog'));
+  const dialog = view.getByRole('alertdialog');
+  assert.deepEqual(deleted, [], 'Delete must only ask for confirmation');
+  await flush(() => fireEvent.click([...dialog.querySelectorAll('button')].at(-1)));
+  assert.deepEqual(deleted, ['b'], 'the confirmation must target the restored selection');
 });
 
 test('changes after restoration are saved and survive a remount', async () => {
