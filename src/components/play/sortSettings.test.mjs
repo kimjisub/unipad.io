@@ -99,7 +99,7 @@ test('pending rows keep their selection without responding to list shortcuts', a
     { lastPlayedPackId: 'b', onPlay: id => plays.push(id) });
   for (const key of ['ArrowDown', 'Enter', 'Delete']) fireEvent.keyDown(window, { key });
   assert.deepEqual(plays, []);
-  assert.equal(view.queryByRole('dialog'), null);
+  assert.equal(view.queryByRole('alertdialog'), null);
   fireEvent.keyDown(window, { key: '/' });
   assert.equal(document.activeElement, view.getByRole('textbox', { name: 'searchAriaLabel' }));
   await flush(release);
