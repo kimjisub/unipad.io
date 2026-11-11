@@ -40,6 +40,10 @@ let prepared: PreparedContext | null = null;
  */
 export function prepareAudioContext(): void {
   if (typeof AudioContext === 'undefined') return;
+  // Firefox retains the opening click's activation across file reads. Let the pack start its
+  // context once: warming and parking it here adds an unnecessary native stop/restart.
+  // Firefox on iOS identifies as FxiOS and uses WebKit, so it still needs the tap preparation.
+  if (typeof navigator !== 'undefined' && /\bFirefox\//.test(navigator.userAgent)) return;
   const entry = prepared ??= { context: createAudioContext(), parking: null };
   const { context } = entry;
   if (context.state === 'running') return;

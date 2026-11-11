@@ -6,9 +6,21 @@ import { test, expect, expectAudioOutputRunning, expectPads, stateTimeout } from
 
 declare global { interface Window {
   transitionAudio: AudioContext;
+  transitionAudioEvents: { action: string; state: AudioContextState | null; time: number; hidden: boolean; focused: boolean; active: boolean; contextId: number | null; soundTime: number | null; requestId?: number }[];
   transitionNativeAudioTime?: () => number;
   wakeProbe: { requests: { released: boolean; resolved: boolean }[]; reply: (index: number) => void };
 } }
+
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const observed = await page.evaluate(() => ({
+    events: window.transitionAudioEvents,
+    state: window.transitionAudio?.state,
+    nativeTime: window.transitionNativeAudioTime?.() ?? window.transitionAudio?.currentTime,
+    hidden: document.hidden, focused: document.hasFocus(),
+  })).catch(error => ({ captureError: String(error) }));
+  await info.attach('audio-output-setup', { body: JSON.stringify(observed), contentType: 'application/json' });
+});
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 /**
@@ -26,8 +38,43 @@ async function freezeClock(page: Page): Promise<number> {
 }
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string; leds?: Record<string, string> } = {}) {
   await page.addInitScript(() => {
+    const events: Window['transitionAudioEvents'] = window.transitionAudioEvents = [];
+    const contexts = new WeakMap<AudioContext, number>();
+    const nativeTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'currentTime')!.get!;
+    let nextContext = 0;
+    let nextRequest = 0;
+    const mark = (context: AudioContext | undefined, action: string, requestId?: number): void => {
+      if (context && !contexts.has(context)) {
+        contexts.set(context, ++nextContext);
+        context.addEventListener('statechange', () => mark(context, 'statechange'));
+      }
+      events.push({
+        action, state: context?.state ?? null, time: performance.now(), hidden: document.hidden,
+        focused: document.hasFocus(), active: navigator.userActivation?.isActive ?? false,
+        contextId: context ? contexts.get(context)! : null,
+        soundTime: context ? nativeTime.call(context) : null, requestId,
+      });
+    };
+    for (const action of ['blur', 'focus', 'pagehide', 'pageshow', 'pointerdown']) {
+      window.addEventListener(action, () => mark(window.transitionAudio, action));
+    }
+    document.addEventListener('visibilitychange', () => mark(window.transitionAudio, 'visibilitychange'));
+    for (const action of ['resume', 'suspend'] as const) {
+      const native = AudioContext.prototype[action];
+      AudioContext.prototype[action] = function () {
+        const requestId = ++nextRequest;
+        mark(this, action, requestId);
+        const pending = native.call(this);
+        void pending.then(() => mark(this, `${action}-resolved`, requestId), () => mark(this, `${action}-rejected`, requestId));
+        return pending;
+      };
+    }
     const gain = AudioContext.prototype.createGain;
-    AudioContext.prototype.createGain = function () { window.transitionAudio = this; return gain.call(this); };
+    AudioContext.prototype.createGain = function () {
+      window.transitionAudio = this;
+      mark(this, 'output-created');
+      return gain.call(this);
+    };
   });
   const zip = await JSZip.loadAsync(await readFile('e2e/fixtures/basic.uni'));
   zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=3'));

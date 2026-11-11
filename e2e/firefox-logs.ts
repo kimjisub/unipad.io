@@ -4,15 +4,18 @@ import path from 'node:path';
 import { firefox, type LaunchOptions, type TestInfo } from '@playwright/test';
 
 /**
- * Firefox's own storage diagnostics, written to the test result folder:
+ * Firefox's own storage and audio diagnostics, written to the test result folder:
  * - `firefox.moz_log` (main process) and `firefox.child-N.moz_log` (content processes) from MOZ_LOG.
  *   Quota manager failures (`QM_TRY failure ... resultName ...`) reach the browser console, which the
  *   PageMessages module copies to the log; IndexedDB:2 lists every database request, QuotaManager:3
- *   each origin's storage initialization. `sync` writes each line at once, so a failing test can read it.
+ *   each origin's storage initialization. Autoplay:5 records whether a resume was allowed, cubeb:4 when
+ *   the audio device opened, and MediaTrackGraph:3 audio thread underruns, which separate an output that
+ *   was refused from one whose device opened but never started rendering. `sync` writes each line at
+ *   once, so a failing test can read it.
  * - `stderr.log`: the browser's standard error, through `firefox-stderr.sh` (not on Windows).
  * Set E2E_FIREFOX_LOGS=0 to launch Firefox without them.
  */
-export const firefoxLogModules = 'timestamp,sync,PageMessages:5,QuotaManager:3,IndexedDB:2';
+export const firefoxLogModules = 'timestamp,sync,PageMessages:5,QuotaManager:3,IndexedDB:2,Autoplay:5,cubeb:4,MediaTrackGraph:3';
 
 export const firefoxLogsEnabled = (browserName: string) =>
   browserName === 'firefox' && process.platform !== 'win32' && process.env.E2E_FIREFOX_LOGS !== '0';
