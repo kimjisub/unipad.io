@@ -66,46 +66,49 @@ for (const answer of ['Enter', 'Escape']) test(`connection help and shared confi
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
-  await page.goto('/play?code=browser-pack');
   // Act on each rendered setup button in the document, without a browser round trip between
   // renders. The real five-second lookup clock still runs; no app state or timers are replaced.
-  await page.evaluate(() => new Promise<void>(resolve => {
-    let step = 0;
-    const observer = new MutationObserver(advance);
-    observer.observe(document, { childList: true, subtree: true });
-    function advance() {
-      if (step === 0) {
-        const row = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(row => row.textContent?.includes('Saved before link'));
-        if (!row) return;
-        step++;
-        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      } else if (step === 1) {
-        const menu = document.querySelector<HTMLButtonElement>('button[aria-label="Open menu"]');
-        if (!menu) return;
-        step++;
-        menu.click();
-      } else if (step === 2) {
-        const settings = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Menu"] button')).find(button => button.textContent?.startsWith('Launchpad Settings'));
-        if (!settings) return;
-        step++;
-        settings.click();
-      } else if (step === 3) {
-        const help = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Launchpad Settings"] button')).find(button => button.textContent === 'Connection and light help');
-        if (!help) return;
-        step++;
-        help.click();
-      } else {
-        const close = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close help');
-        const region = close?.closest('[role="dialog"]')?.querySelector<HTMLElement>('[role="region"]');
-        if (!region) return;
-        region.focus();
-        observer.disconnect();
-        // Return the held network response at this render, before another driver round trip.
-        void (Reflect.get(window, 'releaseMixedDialogLookup') as () => Promise<void>)().then(resolve);
+  await page.addInitScript(() => {
+    Object.assign(window, { mixedDialogsReady: new Promise<void>(resolve => {
+      let step = 0;
+      const observer = new MutationObserver(advance);
+      observer.observe(document, { childList: true, subtree: true });
+      function advance() {
+        if (step === 0) {
+          const row = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(row => row.textContent?.includes('Saved before link'));
+          if (!row) return;
+          step++;
+          row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        } else if (step === 1) {
+          const menu = document.querySelector<HTMLButtonElement>('button[aria-label="Open menu"]');
+          if (!menu) return;
+          step++;
+          menu.click();
+        } else if (step === 2) {
+          const settings = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Menu"] button')).find(button => button.textContent?.startsWith('Launchpad Settings'));
+          if (!settings) return;
+          step++;
+          settings.click();
+        } else if (step === 3) {
+          const help = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Launchpad Settings"] button')).find(button => button.textContent === 'Connection and light help');
+          if (!help) return;
+          step++;
+          help.click();
+        } else {
+          const close = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close help');
+          const region = close?.closest('[role="dialog"]')?.querySelector<HTMLElement>('[role="region"]');
+          if (!region) return;
+          region.focus();
+          observer.disconnect();
+          // Return the held network response at this render, before another driver round trip.
+          void (Reflect.get(window, 'releaseMixedDialogLookup') as () => Promise<void>)().then(resolve);
+        }
       }
-    }
-    advance();
-  }));
+      advance();
+    }) });
+  });
+  await page.goto('/play?code=browser-pack');
+  await page.evaluate(() => Reflect.get(window, 'mixedDialogsReady') as Promise<void>);
   const help = page.getByRole('dialog', { name: 'Connection and light help', exact: true });
   const previous = help.getByRole('region');
   const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
