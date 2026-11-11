@@ -3,16 +3,172 @@ import { afterEach, test } from 'node:test';
 import { mainScreenCallbacks, require, stub } from './mainScreenTestPage.mjs';
 
 const React = await import('react');
-const { render, cleanup, fireEvent, act, within } = await import('@testing-library/react');
+const { render, cleanup, fireEvent, act, within, waitFor } = await import('@testing-library/react');
 stub('../../lib/unipack/storage.ts', { getSetting: async () => null, setSetting: async () => {} });
 const { NextIntlClientProvider } = require('next-intl');
 const { MainScreen, ConfirmDialog } = require('./MainScreen.tsx');
+const { LaunchpadConnectionHelp } = require('./LaunchpadConnectionHelp.tsx');
 const messages = (await import('../../i18n/messages/en.json', { with: { type: 'json' } })).default;
 const packs = ['Alpha', 'Bravo', 'Charlie'].map((title, index) => ({
   id: title, title, producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1,
   addedAt: index, lastOpenedAt: 0,
 }));
 afterEach(cleanup);
+
+test('the confirmation owns focus, search defaults and outside keys until it unmounts', async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const background = [];
+  const record = event => background.push(event.key);
+  window.addEventListener('keydown', record);
+  const dialog = round => React.createElement(React.StrictMode, null,
+    React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      React.createElement(ConfirmDialog, { message: `Question ${round}`, onConfirm() {}, onCancel() {} })));
+  try {
+    const view = render(dialog(0));
+    const buttons = within(view.getByRole('alertdialog')).getAllByRole('button');
+    assert.equal(document.activeElement, buttons[1]);
+    assert.equal(fireEvent.keyDown(buttons[1], { key: 'Tab' }), false);
+    assert.equal(document.activeElement, buttons[0]);
+    assert.equal(fireEvent.keyDown(buttons[0], { key: 'Tab', shiftKey: true }), false);
+    assert.equal(document.activeElement, buttons[1]);
+    for (const shortcut of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'K', metaKey: true }]) {
+      assert.equal(fireEvent.keyDown(buttons[1], shortcut), false);
+    }
+    for (const key of ['q', 'ArrowDown', 'Delete']) fireEvent.keyDown(opener, { key });
+    assert.deepEqual(background, []);
+    opener.focus();
+    assert.equal(document.activeElement, buttons[1], 'programmatic focus cannot escape');
+    buttons[0].focus();
+    view.rerender(dialog(1));
+    assert.equal(document.activeElement, buttons[0], 'a render preserves the chosen button');
+    view.unmount();
+    assert.equal(document.activeElement, opener);
+    fireEvent.keyDown(opener, { key: 'q' });
+    assert.deepEqual(background, ['q'], 'the guard is removed when closed');
+  } finally {
+    window.removeEventListener('keydown', record);
+    opener.remove();
+  }
+});
+
+for (const closeLowerFirst of [false, true]) test(`only the newest confirmation owns focus and keys (remove lower first: ${closeLowerFirst})`, async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const calls = [];
+  const screen = (lower, upper) => React.createElement(React.StrictMode, null,
+    React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      lower && React.createElement(ConfirmDialog, {
+        key: 'lower', message: 'Delete?', label: 'Lower',
+        onConfirm: () => calls.push('delete'), onCancel: () => calls.push('cancel delete'),
+      }),
+      upper && React.createElement(ConfirmDialog, {
+        key: 'upper', message: 'Install?', label: 'Upper',
+        onConfirm: () => calls.push('install'), onCancel: () => calls.push('cancel install'),
+      })));
+  try {
+    const view = render(screen(true, false));
+    const lowerCancel = within(view.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' });
+    lowerCancel.focus();
+    const errors = listenerErrors(() => view.rerender(screen(true, true)));
+    assert.deepEqual(errors, [], 'opening the upper dialog must not start a focus loop');
+    const upper = view.getByRole('alertdialog', { name: 'Upper' });
+    assert.ok(upper.contains(document.activeElement));
+    for (const shiftKey of [false, true]) {
+      fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey });
+      assert.ok(upper.contains(document.activeElement));
+    }
+    if (closeLowerFirst) {
+      view.rerender(screen(false, true));
+      assert.ok(upper.contains(document.activeElement), 'removing a covered dialog leaves focus on the upper dialog');
+    }
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    assert.deepEqual(calls, ['install', 'cancel install']);
+    view.rerender(screen(!closeLowerFirst, false));
+    if (!closeLowerFirst) {
+      assert.equal(document.activeElement, lowerCancel);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      assert.deepEqual(calls, ['install', 'cancel install', 'cancel delete']);
+    }
+    view.unmount();
+    assert.equal(document.activeElement, closeLowerFirst ? document.body : opener);
+  } finally {
+    opener.remove();
+  }
+});
+
+for (const helpFirst of [true, false]) test(`help and confirmation share focus, keys and visible order (help first: ${helpFirst})`, async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const calls = [];
+  const returnFocusRef = { current: opener };
+  function Screen() {
+    const [both, setBoth] = React.useState(false);
+    const [help, setHelp] = React.useState(true);
+    const [confirmation, setConfirmation] = React.useState(true);
+    return React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      React.createElement('button', { onClick: () => setBoth(true) }, 'Open second'),
+      help && (helpFirst || both) && React.createElement(LaunchpadConnectionHelp, {
+        requestedProfile: 'auto', modelLabel: 'Auto Detect', returnFocusRef,
+        onClose: () => { calls.push('help'); setHelp(false); },
+      }),
+      confirmation && (!helpFirst || both) && React.createElement(ConfirmDialog, {
+        message: 'Install?', onConfirm: () => calls.push('install'),
+        onCancel: () => { calls.push('confirmation'); setConfirmation(false); },
+      }));
+  }
+  try {
+    const view = render(React.createElement(React.StrictMode, null, React.createElement(Screen)));
+    const lower = view.getByRole(helpFirst ? 'dialog' : 'alertdialog');
+    const previous = helpFirst ? within(lower).getByRole('region') : within(lower).getByRole('button', { name: 'Cancel' });
+    previous.focus();
+    const errors = listenerErrors(() => fireEvent.click(view.getByText('Open second')));
+    assert.deepEqual(errors, [], 'mixed dialogs must not fight for focus');
+    const upper = view.getByRole(helpFirst ? 'alertdialog' : 'dialog');
+    assert.ok(upper.contains(document.activeElement), 'the newest dialog owns focus');
+    assert.ok(Number(upper.parentElement.style.zIndex) > Number(lower.parentElement.style.zIndex), 'keyboard order matches visible order');
+    for (const shiftKey of [false, true]) {
+      assert.deepEqual(listenerErrors(() => fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey })), []);
+      assert.ok(upper.contains(document.activeElement));
+    }
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => assert.equal(upper.isConnected, false));
+    assert.deepEqual(calls, [helpFirst ? 'confirmation' : 'help']);
+    assert.equal(document.activeElement, previous, 'closing the upper dialog restores the lower selection');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => assert.equal(lower.isConnected, false));
+    assert.equal(document.activeElement, opener);
+  } finally {
+    cleanup();
+    await waitFor(() => assert.equal(Boolean(window.history.state?.connectionHelp), false));
+    opener.remove();
+  }
+});
+
+test('outside keys keep browser defaults while search defaults and page listeners stay blocked', () => {
+  render(React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(ConfirmDialog, { message: 'Question', onConfirm() {}, onCancel() {} })));
+  const received = [];
+  const record = event => received.push(event.key);
+  window.addEventListener('keydown', record);
+  try {
+    for (const shortcut of [
+      { key: 'r', ctrlKey: true }, { key: 'F5' }, { key: '=', ctrlKey: true },
+      { key: '-', ctrlKey: true }, { key: 'c', ctrlKey: true },
+      { key: 'c', metaKey: true }, { key: 'p', ctrlKey: true },
+    ]) assert.equal(fireEvent.keyDown(document.body, shortcut), true, JSON.stringify(shortcut));
+    for (const shortcut of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'k', metaKey: true }]) {
+      assert.equal(fireEvent.keyDown(document.body, shortcut), false);
+    }
+    assert.deepEqual(received, []);
+  } finally {
+    window.removeEventListener('keydown', record);
+  }
+});
 
 async function mount(theme = false) {
   const deletedPacks = [], deletedThemes = [], played = [];

@@ -9,6 +9,7 @@ import { packAccessibleName, packDisplayTitle, packIdentifyingTitle } from '@/li
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
 import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
+import { useModalKeyboard } from '@/hooks/useModalKeyboard';
 import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
 import { isSearchShortcut, isTextEntryTarget } from './keyboardShortcuts';
 
@@ -158,11 +159,7 @@ export function MainScreen({
 
   useWindowKeyDown((event) => {
     const searchShortcut = isSearchShortcut(event);
-    if (listKeyboardDisabled) {
-      // Firefox's native quick find can take focus even when the app ignores the shortcut.
-      if (deleteConfirmationOpen && searchShortcut) event.preventDefault();
-      return;
-    }
+    if (listKeyboardDisabled) return;
 
     if (event.key === 'Escape' && showSortMenu) {
       setShowSortMenu(false);
@@ -1025,24 +1022,22 @@ export function ConfirmDialog({
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
-  // The dialog takes Escape and Enter before the page does. Enter on one of its own buttons is
-  // left to that button, so a focused Cancel cancels instead of confirming.
-  useWindowKeyDown((e) => {
-    if (e.key === 'Escape') {
-      e.stopImmediatePropagation();
-      onCancel();
-    }
-    if (e.key === 'Enter') {
-      e.stopImmediatePropagation();
-      if (targetHandlesOwnKeys(e) && dialogRef.current?.contains(e.target as Node)) return;
-      e.preventDefault();
+  const layerRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard({
+    dialogRef, layerRef, initialFocusRef: confirmRef, onEscape: onCancel,
+    onEnter: (event, inside) => {
+      // Native button activation stays intact, so Enter on Cancel still cancels.
+      if (inside && targetHandlesOwnKeys(event)) return;
+      event.preventDefault();
       onConfirm();
-    }
-  }, { capture: true });
+    },
+  });
 
   return (
     <motion.div
+      ref={layerRef}
       className="fixed inset-0 z-[80] flex items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -1070,13 +1065,13 @@ export function ConfirmDialog({
             {tCommon('cancel')}
           </button>
           <button
+            ref={confirmRef}
             className={
               tone === 'danger'
                 ? 'px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors'
                 : 'px-4 py-2.5 rounded-xl text-xs text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 transition-colors'
             }
             onClick={onConfirm}
-            autoFocus
           >
             {confirmText ?? tCommon('delete')}
           </button>

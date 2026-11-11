@@ -4,6 +4,19 @@ import { delayImportStages, expectImportStageDelays, readImportStages } from './
 import { test, expect, expectPads } from './browser';
 import { importSavedPacks } from './saved-packs';
 import { measureElements, reachable } from './layout';
+import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+
+test('deletion confirmation contains keyboard focus and restores its opener', async ({ page }, info) => {
+  await observeConfirmationKeys(page);
+  await importFocusPacks(page);
+  const opener = page.getByRole('button', { name: 'Delete UniPack', exact: true });
+  await opener.focus();
+  await page.keyboard.press('Enter');
+  await expectConfirmationKeyboard(page, page.getByRole('alertdialog'), info);
+  await expect(opener).toBeFocused();
+  await expect(page.getByRole('option', { selected: true })).toContainText('Chain Release v1 manual');
+  await expect(page.getByRole('option')).toHaveCount(2);
+});
 
 const importFocusPacks = (page: Page) => importSavedPacks(page, [
   resolve('e2e/fixtures/basic.uni'),
