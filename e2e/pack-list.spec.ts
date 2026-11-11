@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { expectSavedPackListCount, importSavedPacks, type PackFile, seedSavedPacks, storedPackRecords } from './saved-packs';
+import { expectSavedPackListCount, importSavedPacks, type PackFile, seedSavedPacks, seedSavedThemes, storedPackRecords } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -808,17 +808,7 @@ for (const theme of [false, true]) test(`${theme ? 'theme' : 'pack'} deletion bl
     { id: 'bravo', title: 'Bravo', producerName: 'Tests', addedAt: 2 },
     { id: 'charlie', title: 'Charlie', producerName: 'Tests', addedAt: 3 },
   ]);
-  if (theme) await page.evaluate(() => new Promise<void>((resolve, reject) => {
-    const open = indexedDB.open('unipad');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const tx = db.transaction('themes', 'readwrite');
-      tx.objectStore('themes').put({ id: 'test-theme', name: 'Test theme', author: 'Tests', zipData: new ArrayBuffer(0), addedAt: 1 });
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onabort = () => { db.close(); reject(tx.error); };
-    };
-  }));
+  if (theme) await seedSavedThemes(page, [{ id: 'test-theme', name: 'Test theme', author: 'Tests', addedAt: 1 }]);
   await page.reload();
   await expect(list(page).getByRole('option')).toHaveCount(3);
   const selected = option(page, 'Bravo by Tests');

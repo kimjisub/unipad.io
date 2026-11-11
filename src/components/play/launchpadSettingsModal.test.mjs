@@ -119,6 +119,21 @@ test('reading help preserves requested model, storage, settings scroll and every
   assert.ok(view.getByRole('button', { name: 'Connect', exact: true }));
 });
 
+test('closing help restores focus after the covered settings stop being inert', async () => {
+  // jsdom does not enforce inert. Match the browser's refusal to focus a covered control.
+  const nativeFocus = HTMLElement.prototype.focus;
+  mock.method(HTMLElement.prototype, 'focus', function (...args) {
+    if (!this.closest('[inert]')) nativeFocus.apply(this, args);
+  });
+  const view = render(wrapped());
+  const { entry } = openHelp(view);
+  assert.ok(entry.closest('[inert]'));
+  fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  await waitFor(() => assert.equal(view.queryByRole('dialog', { name: 'Connection and light help' }) === null, true));
+  assert.equal(entry.closest('[inert]'), null);
+  assert.equal(document.activeElement === entry, true);
+});
+
 test('Mini help traps both Tab directions, prevents parent Escape and preserves help on failed external open', async () => {
   const view = render(wrapped({ requestedProfile: 'launchpad_mini_mk3', midiConnected: true }));
   const { entry, help } = openHelp(view);

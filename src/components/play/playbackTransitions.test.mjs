@@ -1434,6 +1434,113 @@ for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
   });
 }
 
+for (const action of ['off', 'pause']) {
+  test(`autoplay ${action} preserves the player's endless sound and light`, async () => {
+    const { result } = await mount({
+      autoPlay: 'd 10000\no 2 2', keySound: '1 1 1 a.wav 0',
+      leds: { '1 1 1 0': 'o 1 2 FF0000\nd 500\nf 1 2\nd 500' },
+    });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(1); await draw();
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+    assert.equal(sources.at(-1).stopped, false);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    await tick(1); await draw();
+    assert.equal(sources.at(-1).stopped, false);
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+    await tick(1000); await draw();
+    assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)', 'the next loop still runs');
+    await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    await tick(4); await draw();
+    assert.equal(sources.at(-1).stopped, true);
+    assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+  });
+
+  test(`autoplay ${action} stops a loop it replaced while the player still holds the pad`, async () => {
+    const { result } = await mount({ autoPlay: 'd 100\no 1 1\nd 10000\nf 1 1', keySound: '1 1 1 a.wav 0' });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(100);
+    assert.deepEqual(sources.map(s => s.stopped), [true, false]);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    assert.deepEqual(sources.map(s => s.stopped), [true, true]);
+    await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+    assert.deepEqual(sources.map(s => s.stopped), [true, true]);
+  });
+
+  test(`autoplay ${action} does not cancel a pending manual wormhole`, async () => {
+    const { result } = await mount({ wormhole: true });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(1);
+    await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+    await tick(50);
+    await flush(() => action === 'off' ? result.current.switchPlayMode('autoPlay') : result.current.autoPlayPlayPause());
+    await tick(49);
+    assert.equal(result.current.state.chain, 0);
+    await tick(1);
+    assert.equal(result.current.state.chain, 1);
+  });
+}
+
+for (const action of ['off', 'pause', 'next', 'previous']) for (const finished of [false, true]) {
+  test(`autoplay ${action} clears ${finished ? 'finished' : 'running finite'} lights and preserves player lights`, async () => {
+    const { result } = await mount({
+      autoPlay: 't 1 1\nd 10000\nt 2 2',
+      leds: {
+        '1 1 1': `o 1 2 FF0000\no * 10 FF0000${finished ? '' : '\nd 5000\no 2 2 FF0000\no * 11 FF0000'}`,
+        '1 2 1 0': 'o 2 1 00FF00\no * 2 00FF00\nd 1000',
+      },
+    });
+    await flush(() => { result.current.setWatermark(false); result.current.toggleProLightMode(); });
+    await flush(() => result.current.switchPlayMode('autoPlay'));
+    await tick(4); await tick(4);
+    await flush(() => result.current.padTouchOn(1, 0, 'finger'));
+    // Finished animations have already left the runner's late-input history after one second.
+    await tick(1200); await draw();
+    const state = () => result.current.state;
+    assert.equal(state().padStates[0][1].color, 'rgba(255,0,0,1.00)');
+    assert.equal(state().chainStates[9].color, 'rgba(255,0,0,1.00)');
+    await flush(() => {
+      if (action === 'off') result.current.switchPlayMode('autoPlay');
+      else result.current[{ pause: 'autoPlayPlayPause', next: 'autoPlayNext', previous: 'autoPlayPrev' }[action]]();
+    });
+    await draw();
+    assert.equal(state().padStates[0][1].color, 'transparent');
+    assert.equal(state().chainStates[9].color, 'transparent');
+    assert.equal(state().padStates[1][0].color, 'rgba(0,255,0,1.00)');
+    assert.equal(state().chainStates[1].color, 'rgba(0,255,0,1.00)');
+    // Freeze the sequencer after a seek, then let any uncancelled finite LED event become due.
+    if (action === 'next' || action === 'previous') await flush(() => result.current.autoPlayPlayPause());
+    await tick(5004); await draw();
+    assert.equal(state().padStates[1][1].color, 'transparent');
+    assert.equal(state().chainStates[10].color, 'transparent');
+    assert.equal(state().padStates[1][0].color, 'rgba(0,255,0,1.00)');
+  });
+}
+
+test('a constant-on endless light remains player-owned after autoplay pauses', async () => {
+  const { result } = await mount({
+    autoPlay: 'd 10000\no 2 2', keySound: '1 1 1 a.wav 0',
+    leds: { '1 1 1 0': 'o 1 2 FF0000\nd 1000' },
+  });
+  await flush(() => result.current.switchPlayMode('autoPlay'));
+  await tick(4);
+  await flush(() => result.current.padTouchOn(0, 0, 'finger'));
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await flush(() => result.current.autoPlayPlayPause());
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await tick(1004); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'rgba(255,0,0,1.00)');
+  await flush(() => result.current.padTouchOff(0, 0, 'finger'));
+  await tick(4); await draw();
+  assert.equal(result.current.state.padStates[0][1].color, 'transparent');
+});
+
 /** Mode, guides and new sounds right after one Play, from guide paused at 301 ms or step practice chosen directly. */
 async function afterOnePlay(entry, interrupted) {
   const view = await mount({ autoPlay: 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000' });

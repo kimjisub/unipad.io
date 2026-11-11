@@ -14,7 +14,6 @@ import { admissionObservation, mappingObservation, type Operation } from './conf
 import { fingerprintOf } from './fingerprint.mjs';
 import { LedRunner, LedRunnerListener } from './LedRunner';
 import { parseUniPack } from './parser';
-import { PlayerHolds } from './PlayerHolds';
 import { SoundEngine, AUTO_PLAY_INPUT } from './SoundEngine';
 import type { Sound, UniPackData } from './types';
 
@@ -407,7 +406,6 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
   const checkpoints: Json[] = [];
   let led: LedRunner | null = null;
   let autoPlay: AutoPlayRunner | null = null;
-  const playerHolds = new PlayerHolds();
   const startedAt = new Map<StartedSource, [number, number]>();
 
   try {
@@ -460,21 +458,20 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
         startedAt.set(started, [x, y]);
         events.push(['sound', at, x, y, file, loop]);
       }
-      scenarioLed.eventOn(x, y, pressedAt);
+      scenarioLed.eventOn(x, y, pressedAt, input);
     };
     const releasePad = (x: number, y: number, input?: string, releasedAt?: number) => {
       engine.soundOff(x, y, input);
-      scenarioLed.eventOff(x, y, releasedAt);
+      scenarioLed.eventOff(x, y, releasedAt, input);
     };
 
     for (const step of c.scenario ?? []) {
       switch (step.do) {
         case 'press':
-          playerHolds.press(step.x!, step.y!);
           pressPad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'release':
-          releasePad(step.x!, step.y!, playerHolds.release(step.x!, step.y!) ? undefined : PLAYER_INPUT);
+          releasePad(step.x!, step.y!, PLAYER_INPUT);
           break;
         case 'chain':
           switchChain(step.c!, null);
@@ -509,7 +506,6 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
             onPadTouchOn: (x, y, pressedAt) => {
               events.push(['autoOn', x, y]);
               if (toPads) {
-                playerHolds.autoPlayPressed(x, y);
                 pressPad(x, y, AUTO_PLAY_INPUT, pressedAt);
               }
             },
@@ -529,10 +525,12 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           engine.destroy();
           break;
         case 'autoplayOff':
-          // useUniPadEngine turning autoplay off: the runner stops and padInit releases every pad the
-          // player is not holding.
+          // As in the play screen, release auto-play independently of player contacts.
           autoPlay?.stop();
-          playerHolds.releaseOthers(pack.info.buttonX, pack.info.buttonY, (x, y) => releasePad(x, y));
+          for (let x = 0; x < pack.info.buttonX; x++) {
+            for (let y = 0; y < pack.info.buttonY; y++) releasePad(x, y, AUTO_PLAY_INPUT);
+          }
+          led.clearInput(AUTO_PLAY_INPUT);
           break;
         case 'looping': {
           const looping = FakeAudioContext.started

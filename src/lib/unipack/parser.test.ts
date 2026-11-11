@@ -563,3 +563,19 @@ describe('parseUniPack', () => {
   });
 
 });
+
+for (const name of ['fx/../a.wav', 'fx/deep/../../a.wav', String.raw`fx\..\a.wav`]) {
+  test(`S-11 resolves parent components inside sounds: ${name}`, async () => {
+    const pack = await parseUniPack(await packZip({ info: INFO_2X2_2CHAIN, keySound: `1 1 1 ${name}`, 'sounds/a.wav': SILENT_WAV }));
+    assert.equal(pack.soundCount, 1);
+    assert.equal(pack.soundTable[0][0][0]![0].file, 'sounds/a.wav');
+    assert.deepEqual(pack.errors, []);
+  });
+}
+for (const name of ['../a.wav', 'fx/../../a.wav', '../sounds/a.wav', String.raw`..\sounds\a.wav`]) {
+  test(`S-11 treats paths escaping sounds as missing: ${name}`, async () => {
+    const pack = await parseUniPack(await packZip({ info: INFO_2X2_2CHAIN, keySound: `1 1 1 ${name}`, 'sounds/a.wav': SILENT_WAV, 'a.wav': SILENT_WAV }));
+    assert.equal(pack.soundCount, 0);
+    assert.match(pack.errors.join('\n'), /sound.*not found/i);
+  });
+}

@@ -8,7 +8,10 @@ import type { StoredUniPack, StoredTheme } from '@/lib/unipack';
 import { packAccessibleName, packDisplayTitle, packIdentifyingTitle } from '@/lib/unipack/packTitle';
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
+import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
+import { useModalKeyboard } from '@/hooks/useModalKeyboard';
 import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
+import { isSearchShortcut, isTextEntryTarget } from './keyboardShortcuts';
 
 interface MainScreenProps {
   savedPacks: StoredUniPack[];
@@ -30,6 +33,12 @@ interface MainScreenProps {
 }
 
 type SortMethod = 'title' | 'producer' | 'date';
+
+/** The saved pack or theme waiting for the user to confirm its deletion. */
+interface PendingDeletion {
+  kind: 'pack' | 'theme';
+  id: string;
+}
 
 export function MainScreen({
   savedPacks,
@@ -54,9 +63,8 @@ export function MainScreen({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const packListRef = useRef<HTMLDivElement | null>(null);
   const detailsPanelRef = useRef<HTMLDivElement | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [deleteThemeConfirmId, setDeleteThemeConfirmId] = useState<string | null>(null);
-  const deleteConfirmationOpen = deleteConfirmId !== null || deleteThemeConfirmId !== null;
+  const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null);
+  const deleteConfirmationOpen = pendingDeletion !== null;
   const listKeyboardDisabled = keyboardDisabled || deleteConfirmationOpen;
   const [selectedId, setSelectedId] = useState<string | null>(lastPlayedPackId ?? null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,54 +157,42 @@ export function MainScreen({
     setSelectedId(null);
   }
 
-  // Attached during the commit that shows the rows: a passive effect would leave the previous
-  // handler, which still sees the rows as pending, in place until after the browser paints them.
-  useLayoutEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const isSearchShortcut = event.key === '/' || (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey));
-      if (listKeyboardDisabled) {
-        // Firefox's native quick find can take focus even when the app ignores the shortcut.
-        if (deleteConfirmationOpen && isSearchShortcut) event.preventDefault();
-        return;
-      }
+  useWindowKeyDown((event) => {
+    const searchShortcut = isSearchShortcut(event);
+    if (listKeyboardDisabled) return;
 
-      if (event.key === 'Escape' && showSortMenu) {
-        setShowSortMenu(false);
-        return;
-      }
+    if (event.key === 'Escape' && showSortMenu) {
+      setShowSortMenu(false);
+      return;
+    }
 
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName?.toLowerCase();
-      const isTextInput = tag === 'input' || tag === 'textarea';
-      if (isSearchShortcut && !isTextInput) {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
+    const isTextInput = isTextEntryTarget(event);
+    if (searchShortcut && !isTextInput) {
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
 
-      if (isTextInput || !sortReady || filteredAndSortedPacks.length === 0) return;
+    if (isTextInput || !sortReady || filteredAndSortedPacks.length === 0) return;
 
-      // Up and down select from anywhere on the page; inside the list the list itself handles them.
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const selectedIndex = filteredAndSortedPacks.findIndex((pack) => pack.id === selectedId);
-        const target = listboxTargetIndex(event.key, selectedIndex, filteredAndSortedPacks.length);
-        if (target !== null) selectPackRow(filteredAndSortedPacks[target].id, false);
-        return;
-      }
-      if (targetHandlesOwnKeys(event)) return;
-      if (event.key === 'Enter' && selectedId) {
-        const selected = filteredAndSortedPacks.find((pack) => pack.id === selectedId);
-        if (selected) onPlay(selected.id);
-      }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
-        event.preventDefault();
-        setDeleteConfirmId(selectedId);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filteredAndSortedPacks, onPlay, selectedId, listKeyboardDisabled, deleteConfirmationOpen, showSortMenu, selectPackRow, sortReady]);
+    // Up and down select from anywhere on the page; inside the list the list itself handles them.
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const selectedIndex = filteredAndSortedPacks.findIndex((pack) => pack.id === selectedId);
+      const target = listboxTargetIndex(event.key, selectedIndex, filteredAndSortedPacks.length);
+      if (target !== null) selectPackRow(filteredAndSortedPacks[target].id, false);
+      return;
+    }
+    if (targetHandlesOwnKeys(event)) return;
+    if (event.key === 'Enter' && selectedId) {
+      const selected = filteredAndSortedPacks.find((pack) => pack.id === selectedId);
+      if (selected) onPlay(selected.id);
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
+      event.preventDefault();
+      setPendingDeletion({ kind: 'pack', id: selectedId });
+    }
+  });
 
   // Listbox keys for the focused row: arrows, Home and End move focus and selection together,
   // Space selects, Enter plays.
@@ -230,15 +226,33 @@ export function MainScreen({
   }, [onPlay]);
 
   const handleDelete = useCallback((id: string) => {
-    setDeleteConfirmId(id);
+    setPendingDeletion({ kind: 'pack', id });
   }, []);
 
-  const confirmDelete = useCallback(() => {
-    if (!deleteConfirmId) return;
-    if (selectedId === deleteConfirmId) setSelectedId(null);
-    onDeletePack(deleteConfirmId);
-    setDeleteConfirmId(null);
-  }, [deleteConfirmId, selectedId, onDeletePack]);
+  const handleDeleteTheme = useCallback((id: string) => {
+    setPendingDeletion({ kind: 'theme', id });
+  }, []);
+
+  const confirmDeletion = () => {
+    if (!pendingDeletion) return;
+    if (pendingDeletion.kind === 'pack') {
+      if (selectedId === pendingDeletion.id) setSelectedId(null);
+      onDeletePack(pendingDeletion.id);
+    } else {
+      onDeleteTheme(pendingDeletion.id);
+    }
+    setPendingDeletion(null);
+  };
+
+  const deletionMessage = (deletion: PendingDeletion) => (
+    deletion.kind === 'pack'
+      ? t('confirmDeletePack', {
+        title: packIdentifyingTitle(savedPacks.find((p) => p.id === deletion.id)) ?? t('confirmDeletePackFallback'),
+      })
+      : t('confirmDeleteTheme', {
+        name: savedThemes.find((theme) => theme.id === deletion.id)?.name ?? t('confirmDeleteThemeFallback'),
+      })
+  );
 
   const sortLabel = sortMethod === 'title' ? 'Title' : sortMethod === 'producer' ? 'Producer' : 'Date';
 
@@ -277,7 +291,7 @@ export function MainScreen({
             packs={savedPacks}
             themes={savedThemes}
             activeThemeId={activeThemeId}
-            onRequestDeleteTheme={setDeleteThemeConfirmId}
+            onRequestDeleteTheme={handleDeleteTheme}
             onApplyTheme={onApplyTheme}
             onClearTheme={onClearTheme}
           />
@@ -438,25 +452,12 @@ export function MainScreen({
       </div>
 
       <AnimatePresence>
-        {deleteConfirmId && (
+        {pendingDeletion && (
           <ConfirmDialog
-            message={t('confirmDeletePack', {
-              title: packIdentifyingTitle(savedPacks.find((p) => p.id === deleteConfirmId)) ?? t('confirmDeletePackFallback'),
-            })}
-            onConfirm={confirmDelete}
-            onCancel={() => setDeleteConfirmId(null)}
-          />
-        )}
-        {deleteThemeConfirmId && (
-          <ConfirmDialog
-            message={t('confirmDeleteTheme', {
-              name: savedThemes.find((theme) => theme.id === deleteThemeConfirmId)?.name ?? t('confirmDeleteThemeFallback'),
-            })}
-            onConfirm={() => {
-              onDeleteTheme(deleteThemeConfirmId);
-              setDeleteThemeConfirmId(null);
-            }}
-            onCancel={() => setDeleteThemeConfirmId(null)}
+            key={`${pendingDeletion.kind}:${pendingDeletion.id}`}
+            message={deletionMessage(pendingDeletion)}
+            onConfirm={confirmDeletion}
+            onCancel={() => setPendingDeletion(null)}
           />
         )}
       </AnimatePresence>
@@ -1021,28 +1022,22 @@ export function ConfirmDialog({
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
-  // The dialog takes Escape and Enter before the page does. Enter on one of its own buttons is
-  // left to that button, so a focused Cancel cancels instead of confirming.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopImmediatePropagation();
-        onCancel();
-      }
-      if (e.key === 'Enter') {
-        e.stopImmediatePropagation();
-        if (targetHandlesOwnKeys(e) && dialogRef.current?.contains(e.target as Node)) return;
-        e.preventDefault();
-        onConfirm();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [onConfirm, onCancel]);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard({
+    dialogRef, layerRef, initialFocusRef: confirmRef, onEscape: onCancel,
+    onEnter: (event, inside) => {
+      // Native button activation stays intact, so Enter on Cancel still cancels.
+      if (inside && targetHandlesOwnKeys(event)) return;
+      event.preventDefault();
+      onConfirm();
+    },
+  });
 
   return (
     <motion.div
+      ref={layerRef}
       className="fixed inset-0 z-[80] flex items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -1070,13 +1065,13 @@ export function ConfirmDialog({
             {tCommon('cancel')}
           </button>
           <button
+            ref={confirmRef}
             className={
               tone === 'danger'
                 ? 'px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors'
                 : 'px-4 py-2.5 rounded-xl text-xs text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 transition-colors'
             }
             onClick={onConfirm}
-            autoFocus
           >
             {confirmText ?? tCommon('delete')}
           </button>
