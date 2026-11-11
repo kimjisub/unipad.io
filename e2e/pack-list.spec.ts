@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, expectPads, stateTimeout } from './browser';
 import { resize } from './layout';
-import { expectSavedPackListCount, importSavedPacks, type PackFile, seedSavedPacks, seedSavedThemes, storedPackRecords } from './saved-packs';
+import { expectSavedPackListCount, importSavedPackForPlayback, importSavedPacks, type PackFile, seedSavedPacks, seedSavedThemes, storedPackRecords, themeFile, themeSetting } from './saved-packs';
 import { duration, loadInputPack } from './input-fixture';
 import { rotatePrompt, showsRotatePrompt } from './touch';
 
@@ -850,4 +850,51 @@ for (const theme of [false, true]) test(`${theme ? 'theme' : 'pack'} deletion bl
   await selected.focus();
   await page.keyboard.press('ArrowDown');
   await expect(option(page, 'Alpha by Tests')).toHaveAttribute('aria-selected', 'true');
+});
+
+const resetTheme = (page: Page) => page.getByRole('button', { name: 'Reset', exact: true });
+const applyTheme = (page: Page) => page.getByRole('button', { name: 'Apply', exact: true });
+
+test('a reopened page marks the saved theme and resets it without opening a pack', async ({ page }, info) => {
+  await page.goto('/play');
+  await importSavedPackForPlayback(page, packs[0][0], 1);
+  await page.locator('input[type=file][accept=".zip"]').setInputFiles(await themeFile('Saved theme'));
+  await expect.poll(() => themeSetting(page), { timeout: stateTimeout }).toMatch(/.+/);
+  const savedThemeId = await themeSetting(page);
+
+  await page.goto('/play');
+  // The last played pack opens selected; selecting it again shows the library summary with its themes.
+  await option(page, last).click();
+  await expect(option(page, last)).toHaveAttribute('aria-selected', 'false');
+  await expect(page.getByText('Saved theme', { exact: true })).toBeVisible();
+  await info.attach('reopened', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(resetTheme(page)).toBeVisible();
+  await expect(applyTheme(page)).toHaveCount(0);
+  expect(await themeSetting(page)).toBe(savedThemeId);
+
+  await resetTheme(page).click();
+  await expect(resetTheme(page)).toHaveCount(0);
+  await expect(applyTheme(page)).toBeVisible();
+  await expect.poll(() => themeSetting(page)).toBe('');
+  await info.attach('reset', { body: await page.screenshot(), contentType: 'image/png' });
+
+  // Resetting keeps the imported theme and pack.
+  await page.reload();
+  await option(page, last).click();
+  await expect(option(page, last)).toHaveAttribute('aria-selected', 'false');
+  await expect(page.getByText('Saved theme', { exact: true })).toBeVisible();
+  await expect(applyTheme(page)).toBeVisible();
+  await expect(resetTheme(page)).toHaveCount(0);
+});
+
+test('a saved theme setting whose theme is gone marks nothing', async ({ page }) => {
+  await page.goto('/play');
+  await expect(page.getByRole('button', { name: 'Theme', exact: true })).toBeVisible();
+  await expect(resetTheme(page)).toHaveCount(0);
+
+  await seedSavedThemes(page, [{ id: 'kept-theme', name: 'Kept theme', author: 'Tests', addedAt: 1 }], 'deleted-theme');
+  await page.reload();
+  await expect(page.getByText('Kept theme', { exact: true })).toBeVisible();
+  await expect(applyTheme(page)).toBeVisible();
+  await expect(resetTheme(page)).toHaveCount(0);
 });

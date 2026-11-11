@@ -113,6 +113,7 @@ export function PlayPage() {
   const [dragOver, setDragOver] = useState(false);
   const [savedPacks, setSavedPacks] = useState<StoredUniPack[]>([]);
   const [savedThemes, setSavedThemes] = useState<StoredTheme[]>([]);
+  const [activeThemeId, setActiveThemeId] = useState<string | null>(null);
   const [restoringFromStorage, setRestoringFromStorage] = useState(true);
   const [optionPanelOpen, setOptionPanelOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
@@ -170,7 +171,6 @@ export function PlayPage() {
   const prevRecordingRef = useRef(false);
   const prevRecordingPackRef = useRef(state.unipack);
   const currentPackIdRef = useRef<string | null>(null);
-  const currentThemeIdRef = useRef<string | null>(null);
   const storeUnsubscribeRef = useRef<(() => void) | null>(null);
   const storeItemsRef = useRef<StoreItem[]>([]);
   const toastTimerRef = useRef<number | null>(null);
@@ -245,8 +245,10 @@ export function PlayPage() {
       const [packs, themes] = await Promise.all([listUniPacks(), listThemes()]);
       setSavedPacks(packs);
       setSavedThemes(themes);
+      return themes;
     } catch {
       /* IndexedDB unavailable */
+      return [];
     }
   }, []);
 
@@ -255,7 +257,12 @@ export function PlayPage() {
     let cancelled = false;
     (async () => {
       try {
-        await refreshLists();
+        const themes = await refreshLists();
+        // The list marks the saved theme a pack opens with; a deleted theme leaves only its setting.
+        const savedThemeId = await getSetting('lastThemeId');
+        if (!cancelled && savedThemeId && themes.some((theme) => theme.id === savedThemeId)) {
+          setActiveThemeId(savedThemeId);
+        }
         const savedMidiProfile = await getSetting(MIDI_PROFILE_SETTING_KEY);
         if (isLaunchpadProfile(savedMidiProfile)) {
           setMidiProfile(savedMidiProfile);
@@ -341,14 +348,14 @@ export function PlayPage() {
     if (!isCurrent() || !lastThemeId) return;
     const theme = await getTheme(lastThemeId);
     if (!isCurrent() || !theme) return;
-    currentThemeIdRef.current = lastThemeId;
+    setActiveThemeId(lastThemeId);
     try {
       // Decoding the theme also waits; the engine must check before applying its result.
       await loadTheme(theme.zipData, isCurrent);
     } catch {
       if (!isCurrent()) return;
       showToast(tToast('skinFailed'));
-      currentThemeIdRef.current = null;
+      setActiveThemeId(null);
       await setSetting('lastThemeId', '');
     }
   }, [loadTheme, showToast, tToast]);
@@ -448,12 +455,12 @@ export function PlayPage() {
         const { loadThemeFromZip } = await import('@/lib/unipack');
         const parsed = await loadThemeFromZip(buffer.slice(0));
         const id = await saveTheme(buffer, parsed.metadata);
-        currentThemeIdRef.current = id;
+        setActiveThemeId(id);
         await setSetting('lastThemeId', id);
         await refreshLists();
       } catch {
         showToast(tToast('skinFailed'));
-        currentThemeIdRef.current = null;
+        setActiveThemeId(null);
         await setSetting('lastThemeId', '').catch(() => {});
       }
     },
@@ -531,13 +538,13 @@ export function PlayPage() {
   const handleDeleteTheme = useCallback(
     async (id: string) => {
       await deleteTheme(id);
-      if (currentThemeIdRef.current === id) {
-        currentThemeIdRef.current = null;
+      if (activeThemeId === id) {
+        setActiveThemeId(null);
         await setSetting('lastThemeId', '');
       }
       await refreshLists();
     },
-    [refreshLists],
+    [activeThemeId, refreshLists],
   );
 
   const handleApplyTheme = useCallback(
@@ -545,14 +552,14 @@ export function PlayPage() {
       try {
         const theme = await getTheme(id);
         if (!theme) return;
-        currentThemeIdRef.current = id;
+        setActiveThemeId(id);
         await setSetting('lastThemeId', id);
         if (state.loaded) {
           try {
             await loadTheme(theme.zipData);
           } catch {
             showToast(tToast('skinFailed'));
-            currentThemeIdRef.current = null;
+            setActiveThemeId(null);
             await setSetting('lastThemeId', '');
           }
         }
@@ -566,7 +573,7 @@ export function PlayPage() {
 
   const handleClearTheme = useCallback(
     async () => {
-      currentThemeIdRef.current = null;
+      setActiveThemeId(null);
       await setSetting('lastThemeId', '');
       await refreshLists();
     },
@@ -1131,7 +1138,7 @@ export function PlayPage() {
         <MainScreen
           savedPacks={savedPacks}
           savedThemes={savedThemes}
-          activeThemeId={currentThemeIdRef.current}
+          activeThemeId={activeThemeId}
           lastPlayedPackId={lastPlayedPackId}
           keyboardDisabled={storeOpen || dialogOpen}
           onPlay={handlePlay}

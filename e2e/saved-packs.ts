@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import JSZip from 'jszip';
 import { type JSHandle, type Locator, type Page } from '@playwright/test';
 import { expect, expectPads, stateTimeout } from './browser';
 
@@ -172,15 +173,41 @@ export async function seedSavedPacks(page: Page, packs: readonly SeededPack[]) {
 /** A saved theme as the list shows it; its archive is left empty, which the list never reads. */
 export interface SeededTheme { id: string; name: string; author: string; addedAt: number }
 
-/** Writes saved themes straight into the app's own database, once the app has created it. */
-export async function seedSavedThemes(page: Page, themes: readonly SeededTheme[]) {
-  await expect.poll(() => withExistingPackDatabase(page, ['themes'], database => database.evaluate((db, themes) => {
+/**
+ * Writes saved themes straight into the app's own database, once the app has created it.
+ * `savedThemeId` is stored as the theme the next pack opens with; it may name a theme that is not saved.
+ */
+export async function seedSavedThemes(page: Page, themes: readonly SeededTheme[], savedThemeId?: string) {
+  await expect.poll(() => withExistingPackDatabase(page, ['themes', 'settings'], database => database.evaluate((db, { themes, savedThemeId }) => {
     if (!db) return false;
     return new Promise<boolean>((resolve, reject) => {
-      const transaction = db.transaction('themes', 'readwrite');
+      const transaction = db.transaction(['themes', 'settings'], 'readwrite');
       for (const theme of themes) transaction.objectStore('themes').put({ ...theme, zipData: new ArrayBuffer(0) });
+      if (savedThemeId !== undefined) transaction.objectStore('settings').put({ key: 'lastThemeId', value: savedThemeId });
       transaction.oncomplete = () => resolve(true);
       transaction.onabort = () => reject(transaction.error);
     });
-  }, themes)), { timeout: stateTimeout }).toBe(true);
+  }, { themes, savedThemeId })), { timeout: stateTimeout }).toBe(true);
+}
+
+/** A minimal theme archive the theme import accepts. */
+export async function themeFile(name = 'Test theme') {
+  const zip = new JSZip();
+  zip.file('theme.json', JSON.stringify({ name, author: 'Test' }));
+  zip.file('colors.json', JSON.stringify({ checkbox: '#ff0000' }));
+  return { name: 'theme.zip', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
+}
+
+/** The stored theme the next pack opens with, or null when none was ever stored. */
+export async function themeSetting(page: Page) {
+  return page.evaluate(() => new Promise<string | null>((resolve, reject) => {
+    const request = indexedDB.open('unipad');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction('settings').objectStore('settings').get('lastThemeId');
+      read.onsuccess = () => { resolve(read.result?.value ?? null); db.close(); };
+      read.onerror = () => { reject(read.error); db.close(); };
+    };
+  }));
 }

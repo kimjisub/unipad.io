@@ -3,6 +3,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, expectSavedPlaybackPack } from './browser';
+import { themeFile, themeSetting } from './saved-packs';
 
 const packInput = 'input[data-unipack-import]';
 const themeInput = 'input[type=file][accept=".zip"]';
@@ -21,26 +22,6 @@ async function counts(page: Page) {
       const packs = transaction.objectStore('unipacks').count();
       const themes = transaction.objectStore('themes').count();
       transaction.oncomplete = () => { resolve([packs.result, themes.result]); db.close(); };
-    };
-  }));
-}
-
-async function themeFile(name = 'Test theme') {
-  const zip = new JSZip();
-  zip.file('theme.json', JSON.stringify({ name, author: 'Test' }));
-  zip.file('colors.json', JSON.stringify({ checkbox: '#ff0000' }));
-  return { name: 'theme.zip', mimeType: 'application/zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) };
-}
-
-async function themeSetting(page: Page) {
-  return page.evaluate(() => new Promise<string | null>((resolve, reject) => {
-    const request = indexedDB.open('unipad');
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const read = db.transaction('settings').objectStore('settings').get('lastThemeId');
-      read.onsuccess = () => { resolve(read.result?.value ?? null); db.close(); };
-      read.onerror = () => { reject(read.error); db.close(); };
     };
   }));
 }
