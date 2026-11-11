@@ -11,18 +11,18 @@ declare global { interface Window {
 } }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
-/** Stops the page clock where it is, a second ahead so the command may arrive late, and returns that time. */
+/**
+ * Stops the page clock and returns the time it stopped at. It aims a second ahead so a late command still
+ * lands; one later than that stops the clock where it is, since pauseAt stops before it fast-forwards and
+ * only then refuses to step back in time.
+ */
 async function freezeClock(page: Page): Promise<number> {
-  for (let attempt = 1; ; attempt++) {
-    const pausedAt = await page.evaluate(() => Date.now()) + 1000;
-    try {
-      await page.clock.pauseAt(pausedAt);
-      return pausedAt;
-    } catch (error) {
-      // A command later than the margin would step back in time, which the clock refuses; read it again.
-      if (attempt === 3 || !(error instanceof Error && error.message.includes('Cannot fast-forward to the past'))) throw error;
-    }
+  try {
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes('Cannot fast-forward to the past'))) throw error;
   }
+  return page.evaluate(() => Date.now());
 }
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string; leds?: Record<string, string> } = {}) {
   await page.addInitScript(() => {
@@ -366,13 +366,15 @@ test('interruption cancels a pending sound chain move', async ({ page }, info) =
   await info.attach('cancelled-chain-move', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 });
 
-test('clock initialization stays deterministic when its pause command is delayed 200 ms', async ({ page }, info) => {
+// A command later than the second freezeClock aims ahead is refused and must still leave the clock stopped.
+for (const commandDelay of [200, 1100]) test(`clock initialization stays deterministic when its pause command is delayed ${commandDelay} ms`, async ({ page }, info) => {
   const pauseAt = page.clock.pauseAt.bind(page.clock);
   let delayedCommands = 0;
+  let refused = false;
   page.clock.pauseAt = async time => {
     delayedCommands++;
-    await delay(200);
-    await pauseAt(time);
+    await delay(commandDelay);
+    await pauseAt(time).catch((error: unknown) => { refused = true; throw error; });
   };
   const pausedAt = await open(page, 'd 10000\no 1 1\nf 1 1');
   const stopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
@@ -380,8 +382,9 @@ test('clock initialization stays deterministic when its pause command is delayed
   const stillStopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
   await page.clock.runFor(50);
   const advanced = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
-  await info.attach('delayed-clock-initialization', { body: JSON.stringify({ delayedCommands, stopped, stillStopped, advanced }, null, 2), contentType: 'application/json' });
+  await info.attach('delayed-clock-initialization', { body: JSON.stringify({ delayedCommands, refused, stopped, stillStopped, advanced }, null, 2), contentType: 'application/json' });
   expect(delayedCommands).toBe(1);
+  if (commandDelay > 1000) expect(refused).toBe(true);
   expect(stopped.date).toBe(pausedAt);
   expect(stillStopped).toEqual(stopped);
   expect(advanced.date - stopped.date).toBe(50);
