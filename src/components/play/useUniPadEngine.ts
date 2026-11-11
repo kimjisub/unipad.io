@@ -273,6 +273,8 @@ export function useUniPadEngine() {
   // A dialog over the player owns the keyboard; see setKeyboardBlocked.
   const keyboardBlockedRef = useRef(false);
   const interruptedRef = useRef(false);
+  // Step practice reached by pausing guide play, whose Play continues the guide even after an interruption.
+  const pausedGuideRef = useRef(false);
   const interruptionRevisionRef = useRef(0);
   // Each unload ends the pack load in progress; see loadUniPack.
   const loadRevisionRef = useRef(0);
@@ -902,6 +904,7 @@ export function useUniPadEngine() {
     if (mode === 'autoPlay') usageTracker.autoplayStarted();
 
     if (mode === 'none') {
+      pausedGuideRef.current = false;
       interruptionRevisionRef.current++;
       runner.practiceGuide = false;
       runner.stepMode = false;
@@ -924,6 +927,7 @@ export function useUniPadEngine() {
     }
 
     if (!await activatePlaybackAudio()) return;
+    pausedGuideRef.current = false;
     interruptedRef.current = false;
     runner.setSuspended(false);
     ledRunnerRef.current?.setSuspended(false);
@@ -977,12 +981,13 @@ export function useUniPadEngine() {
       if (!await activatePlaybackAudio()) return;
       interruptedRef.current = false;
       runner.setSuspended(false);
-      if (!runner.isPlaying && !runner.stepMode) runner.play();
+      if (!runner.isPlaying && (!runner.stepMode || pausedGuideRef.current)) runner.play();
+      pausedGuideRef.current = false;
       ledRunnerRef.current?.setSuspended(false);
       runner.restoreGuideOutput();
       syncMidiStateToDevice();
       if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
-      setState(prev => ({ ...prev, autoPlayPlaying: runner.isPlaying }));
+      setState(prev => ({ ...prev, autoPlayPlaying: runner.isPlaying, stepPractice: prev.stepPractice && runner.stepMode }));
       return;
     }
     if (runner.isPlaying) {
@@ -992,10 +997,12 @@ export function useUniPadEngine() {
       autoPlayRemoveGuide();
       if (stateRef.current.practiceMode) {
         runner.stepMode = true;
+        pausedGuideRef.current = true;
       }
       setState((prev) => ({ ...prev, autoPlayPlaying: false, stepPractice: prev.practiceMode }));
     } else {
       if (!await activatePlaybackAudio()) return;
+      pausedGuideRef.current = false;
       autoPlayRemoveGuide();
       padInit();
       ledInit(AUTO_PLAY_INPUT);
@@ -1035,6 +1042,7 @@ export function useUniPadEngine() {
     pendingInterruptionClearRef.current = null;
     interruptionRevisionRef.current++;
     interruptedRef.current = false;
+    pausedGuideRef.current = false;
     soundEngineRef.current?.destroy();
     playerHoldsRef.current.clear();
     autoPlayPadsRef.current.clear();
@@ -1310,6 +1318,7 @@ export function useUniPadEngine() {
             setState((prev) => ({ ...prev, autoPlayProgress: progress }));
           },
           onEnd: () => {
+            pausedGuideRef.current = false;
             if (autoPlayRunnerRef.current) {
               autoPlayRunnerRef.current.practiceGuide = false;
               // stepMode stayed on, so pad presses were still consumed as step input.
