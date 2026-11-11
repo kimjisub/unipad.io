@@ -27,8 +27,8 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
   database.holdReplies();
   await page.goto('/play?code=browser-pack');
   const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
-  await opener.click();
-  await opener.focus();
+  // Select through the keyboard without waiting for the row's entrance animation.
+  await opener.press('Space');
   await page.keyboard.press('Delete');
   const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
   const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
