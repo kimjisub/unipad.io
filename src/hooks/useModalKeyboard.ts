@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { useWindowKeyDown } from './useWindowKeyDown';
 import { isSearchShortcut } from '../components/play/keyboardShortcuts';
 
@@ -6,6 +6,7 @@ interface ModalEntry {
   element: HTMLElement;
   layer: HTMLElement;
   focus: () => void;
+  restoreFocus?: () => void;
 }
 
 // All guarded dialogs share one order for focus, keyboard input and painting.
@@ -34,7 +35,7 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
     const returnFocus = active && previous?.element.contains(active) ? active : (returnFocusRef?.current ?? active);
     const originalZIndex = layer.style.zIndex;
     layer.style.zIndex = String(previous ? Number(previous.layer.style.zIndex) + 1 : 100);
-    const entry = { element, layer, focus: () => initialFocusRef.current?.focus({ preventScroll: true }) };
+    const entry: ModalEntry = { element, layer, focus: () => initialFocusRef.current?.focus({ preventScroll: true }) };
     entryRef.current = entry;
     openModals.push(entry);
     entry.focus();
@@ -49,11 +50,20 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
       if (index !== -1) openModals.splice(index, 1);
       entryRef.current = null;
       layer.style.zIndex = originalZIndex;
-      if (wasTop) {
+      const uncovered = openModals.at(-1);
+      entry.restoreFocus = () => {
+        // A dialog mounted in the same commit already owns focus.
+        if (!wasTop || openModals.at(-1) !== uncovered) return;
         if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-        else openModals.at(-1)?.focus();
-      }
+        else uncovered?.focus();
+      };
     };
+  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef]);
+
+  useEffect(() => {
+    const entry = entryRef.current;
+    // React must finish removing inert from a covered parent before it can take focus.
+    return () => entry?.restoreFocus?.();
   }, [dialogRef, layerRef, initialFocusRef, returnFocusRef]);
 
   useWindowKeyDown(event => {
