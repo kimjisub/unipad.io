@@ -11,6 +11,19 @@ declare global { interface Window {
 } }
 
 const mode = (page: Page, name: string) => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
+/** Stops the page clock where it is, a second ahead so the command may arrive late, and returns that time. */
+async function freezeClock(page: Page): Promise<number> {
+  for (let attempt = 1; ; attempt++) {
+    const pausedAt = await page.evaluate(() => Date.now()) + 1000;
+    try {
+      await page.clock.pauseAt(pausedAt);
+      return pausedAt;
+    } catch (error) {
+      // A command later than the margin would step back in time, which the clock refuses; read it again.
+      if (attempt === 3 || !(error instanceof Error && error.message.includes('Cannot fast-forward to the past'))) throw error;
+    }
+  }
+}
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string; leds?: Record<string, string> } = {}) {
   await page.addInitScript(() => {
     const gain = AudioContext.prototype.createGain;
@@ -23,6 +36,10 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   const leds = options.leds ?? { [`1 1 1${options.endless ? ' 0' : ''}`]: options.led ?? 'o 1 2 a 5\nd 1000\nf 1 2\nd 1000\no 1 3 a 9' };
   for (const [name, content] of Object.entries(leds)) zip.file(`keyLED/${name}`, content);
   zip.file('autoPlay', autoPlay);
+  // The clock cannot cancel or catch up with timers the page started before it was installed: they
+  // keep real time and fire at random points of a case, such as the controller's first light redraw
+  // or a playback loop step. Installing it first keeps every timer on the virtual timeline.
+  await page.clock.install({ time: new Date('2024-01-01T00:00:00.000Z') });
   await page.goto('/play', { waitUntil: 'domcontentloaded' });
   await page.locator('input[data-unipack-import]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
@@ -31,8 +48,7 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   // cases would then count virtual time the song never ran, or wait for a Pause button that never appears.
   // A hidden page keeps its output suspended until it returns.
   if (!await page.evaluate(() => document.hidden)) await expectAudioOutputRunning(page);
-  // pauseAt also installs the clock, so no host-time deadline can expire in transit.
-  await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
+  const pausedAt = await freezeClock(page);
   // These cases assert virtual timer commands and DOM changes. Keep the audio control clock
   // on the same virtual timeline: page.clock does not freeze native Web Audio rendering.
   // audio-visibility.spec.ts checks the unmodified clock and real output signal separately.
@@ -62,6 +78,7 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
       update(context.state === 'running');
     };
   });
+  return pausedAt;
 }
 async function visibility(page: Page, hidden: boolean) {
   await page.evaluate(value => {
@@ -357,7 +374,7 @@ test('clock initialization stays deterministic when its pause command is delayed
     await delay(200);
     await pauseAt(time);
   };
-  await open(page, 'd 10000\no 1 1\nf 1 1');
+  const pausedAt = await open(page, 'd 10000\no 1 1\nf 1 1');
   const stopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
   await delay(200);
   const stillStopped = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
@@ -365,7 +382,7 @@ test('clock initialization stays deterministic when its pause command is delayed
   const advanced = await page.evaluate(() => ({ date: Date.now(), ticks: performance.now() }));
   await info.attach('delayed-clock-initialization', { body: JSON.stringify({ delayedCommands, stopped, stillStopped, advanced }, null, 2), contentType: 'application/json' });
   expect(delayedCommands).toBe(1);
-  expect(stopped.date).toBe(Date.parse('2024-01-01T00:00:00.000Z'));
+  expect(stopped.date).toBe(pausedAt);
   expect(stillStopped).toEqual(stopped);
   expect(advanced.date - stopped.date).toBe(50);
   expect(advanced.ticks - stopped.ticks).toBe(50);
