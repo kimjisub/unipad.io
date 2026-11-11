@@ -168,3 +168,19 @@ export async function seedSavedPacks(page: Page, packs: readonly SeededPack[]) {
     });
   }, { archive, packs })), { timeout: stateTimeout }).toBe(true);
 }
+
+/** A saved theme as the list shows it; its archive is left empty, which the list never reads. */
+export interface SeededTheme { id: string; name: string; author: string; addedAt: number }
+
+/** Writes saved themes straight into the app's own database, once the app has created it. */
+export async function seedSavedThemes(page: Page, themes: readonly SeededTheme[]) {
+  await expect.poll(() => withExistingPackDatabase(page, ['themes'], database => database.evaluate((db, themes) => {
+    if (!db) return false;
+    return new Promise<boolean>((resolve, reject) => {
+      const transaction = db.transaction('themes', 'readwrite');
+      for (const theme of themes) transaction.objectStore('themes').put({ ...theme, zipData: new ArrayBuffer(0) });
+      transaction.oncomplete = () => resolve(true);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }, themes)), { timeout: stateTimeout }).toBe(true);
+}

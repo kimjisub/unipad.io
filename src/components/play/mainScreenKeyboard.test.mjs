@@ -1,43 +1,27 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import { afterEach, test } from 'node:test';
-import { JSDOM } from 'jsdom';
+import { mainScreenCallbacks, require, stub } from './mainScreenTestPage.mjs';
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
-for (const name of ['window', 'document', 'HTMLElement', 'Element', 'SVGElement']) globalThis[name] = dom.window[name];
-Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-globalThis.CSS = { escape: value => value };
-globalThis.ResizeObserver = class { observe() {} disconnect() {} };
-HTMLElement.prototype.scrollIntoView = () => {};
-window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 const React = await import('react');
 const { render, cleanup, fireEvent, act, within } = await import('@testing-library/react');
-const require = createRequire(import.meta.url);
-const storageId = require.resolve('../../lib/unipack/storage.ts');
-require.cache[storageId] = { id: storageId, filename: storageId, loaded: true, exports: {
-  getSetting: async () => null, setSetting: async () => {},
-} };
+stub('../../lib/unipack/storage.ts', { getSetting: async () => null, setSetting: async () => {} });
 const { NextIntlClientProvider } = require('next-intl');
-require('framer-motion').MotionGlobalConfig.skipAnimations = true;
-const { MainScreen } = require('./MainScreen.tsx');
+const { MainScreen, ConfirmDialog } = require('./MainScreen.tsx');
 const messages = (await import('../../i18n/messages/en.json', { with: { type: 'json' } })).default;
 const packs = ['Alpha', 'Bravo', 'Charlie'].map((title, index) => ({
   id: title, title, producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1,
   addedAt: index, lastOpenedAt: 0,
 }));
-const noop = () => {};
 afterEach(cleanup);
 
 async function mount(theme = false) {
   const deletedPacks = [], deletedThemes = [], played = [];
   const view = render(React.createElement(React.StrictMode, null,
     React.createElement(NextIntlClientProvider, { locale: 'en', messages }, React.createElement(MainScreen, {
+      ...mainScreenCallbacks,
       savedPacks: packs, savedThemes: [{ id: 'theme', name: 'Test theme', author: 'Tests' }],
       lastPlayedPackId: theme ? null : 'Bravo', onPlay: id => played.push(id),
       onDeletePack: id => deletedPacks.push(id), onDeleteTheme: id => deletedThemes.push(id),
-      onOpenStore: noop, onImport: noop, onImportTheme: noop, onApplyTheme: noop,
-      onClearTheme: noop, onToggleBookmark: noop,
     }))));
   await view.findByRole('option', { name: 'Bravo by Tests' });
   await act(async () => {});
@@ -83,4 +67,109 @@ for (const theme of [false, true]) test(`${theme ? 'theme' : 'pack'} deletion st
   assert.deepEqual(deletedPacks, theme ? [] : ['Bravo']);
   assert.deepEqual(deletedThemes, theme ? ['theme'] : []);
   assert.deepEqual(played, []);
+});
+
+/** Exceptions thrown inside window listeners while `action` runs; jsdom reports them as error events. */
+function listenerErrors(action) {
+  const errors = [];
+  const record = event => { errors.push(event.error?.message ?? event.message); event.preventDefault(); };
+  window.addEventListener('error', record);
+  try { action(); } finally { window.removeEventListener('error', record); }
+  return errors;
+}
+
+/** Counts window keydown listeners attached and removed while `action` runs. */
+async function countKeyDownListeners(action) {
+  const counts = { added: 0, removed: 0 };
+  const { addEventListener, removeEventListener } = window;
+  window.addEventListener = function (type, ...rest) {
+    if (type === 'keydown') counts.added++;
+    return addEventListener.call(this, type, ...rest);
+  };
+  window.removeEventListener = function (type, ...rest) {
+    if (type === 'keydown') counts.removed++;
+    return removeEventListener.call(this, type, ...rest);
+  };
+  try { await action(); } finally {
+    window.addEventListener = addEventListener;
+    window.removeEventListener = removeEventListener;
+  }
+  return counts;
+}
+
+for (const confirming of [false, true]) test(`a keydown without a key, as autofill sends, is ignored ${confirming ? 'during deletion' : 'by the list'}`, async () => {
+  const { view } = await mount(false);
+  if (!confirming) fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  await act(async () => {});
+  const errors = listenerErrors(() => {
+    window.dispatchEvent(new window.Event('keydown', { bubbles: true }));
+    view.getByRole('textbox').dispatchEvent(new window.Event('keydown', { bubbles: true }));
+  });
+  assert.deepEqual(errors, []);
+});
+
+test('moving the selection 50 times keeps the list\'s window key handler attached once', async () => {
+  const { view } = await mount(false);
+  fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  await act(async () => {});
+  const counts = await countKeyDownListeners(async () => {
+    for (let step = 0; step < 50; step++) {
+      fireEvent.keyDown(window, { key: 'ArrowDown' });
+      await act(async () => {});
+    }
+  });
+  assert.deepEqual(counts, { added: 0, removed: 0 });
+  // Newest first the rows are Charlie, Bravo, Alpha; 50 steps down from Bravo wrap round to Charlie.
+  const selected = view.getAllByRole('option').filter(row => row.getAttribute('aria-selected') === 'true');
+  assert.deepEqual(selected.map(row => row.dataset.packId), ['Charlie']);
+});
+
+test('a confirmation re-rendered 50 times keeps one listener, answers with the latest callbacks and still goes first', async () => {
+  const calls = [];
+  const background = [];
+  const onBackground = event => background.push(event.key);
+  window.addEventListener('keydown', onBackground);
+  const dialog = round => React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(ConfirmDialog, {
+      message: 'Delete?', onConfirm: () => calls.push(`confirm ${round}`), onCancel: () => calls.push(`cancel ${round}`),
+    }));
+  try {
+    let view;
+    const counts = await countKeyDownListeners(async () => {
+      view = render(dialog(0));
+      for (let round = 1; round <= 50; round++) view.rerender(dialog(round));
+      fireEvent.keyDown(document.body, { key: 'Enter' });
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      view.unmount();
+    });
+    assert.deepEqual(counts, { added: 1, removed: 1 });
+    assert.deepEqual(calls, ['confirm 50', 'cancel 50']);
+  } finally {
+    window.removeEventListener('keydown', onBackground);
+  }
+  assert.deepEqual(background, [], 'page listeners attached before the dialog must not see its keys');
+});
+
+test('while the store is open the list ignores its keys, and takes them again once it closes', async () => {
+  const played = [], deleted = [];
+  const screen = keyboardDisabled => React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(MainScreen, {
+      ...mainScreenCallbacks, savedPacks: packs, savedThemes: [], lastPlayedPackId: 'Bravo', keyboardDisabled,
+      onPlay: id => played.push(id), onDeletePack: id => deleted.push(id),
+    }));
+  const view = render(screen(false));
+  await view.findByRole('option', { name: 'Bravo by Tests' });
+  await act(async () => {});
+  const selectedIds = () => view.getAllByRole('option').filter(row => row.getAttribute('aria-selected') === 'true').map(row => row.dataset.packId);
+  view.rerender(screen(true));
+  for (const key of ['ArrowDown', 'ArrowUp', 'Enter', 'Delete', '/']) fireEvent.keyDown(window, { key });
+  await act(async () => {});
+  assert.deepEqual(selectedIds(), ['Bravo']);
+  assert.equal(view.queryByRole('alertdialog'), null);
+  assert.ok(document.activeElement !== view.getByRole('textbox'));
+  assert.deepEqual([played, deleted], [[], []]);
+  view.rerender(screen(false));
+  fireEvent.keyDown(window, { key: 'ArrowDown' });
+  await act(async () => {});
+  assert.deepEqual(selectedIds(), ['Alpha']);
 });
