@@ -19,6 +19,63 @@ const led = (page: Page, position: string) => pad(page, position).locator('div[s
 const pressed = (page: Page, position: string) => pad(page, position).locator('img[src="/theme/btn_.png"]');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 
+declare global { interface Window {
+  openingAudio: { context: AudioContext | null; events: { action: string; state: AudioContextState; time: number }[] };
+} }
+
+for (const stalledRestart of [false, true]) test(`the opening click readies the first pad without another gesture${stalledRestart ? ' when a parked restart stalls' : ''}`, async ({ page, browserName }, info) => {
+  test.skip(stalledRestart && browserName !== 'firefox', 'Firefox restart regression; other engines retain tap preparation');
+  await page.addInitScript(stall => {
+    window.openingAudio = { context: null, events: [] };
+    const parked = new WeakSet<AudioContext>();
+    for (const action of ['resume', 'suspend'] as const) {
+      const native = AudioContext.prototype[action];
+      AudioContext.prototype[action] = function () {
+        window.openingAudio.events.push({ action, state: this.state, time: performance.now() });
+        // Reproduce the observed pending restart while keeping the first start and all audio
+        // rendering native. A second trusted click must not be needed to open this pack.
+        if (stall && action === 'resume' && parked.has(this)) return new Promise<void>(() => {});
+        if (action === 'suspend') parked.add(this);
+        return native.call(this);
+      };
+    }
+    const gain = AudioContext.prototype.createGain;
+    AudioContext.prototype.createGain = function () {
+      window.openingAudio.context = this;
+      return gain.call(this);
+    };
+  }, stalledRestart);
+  const zip = await JSZip.loadAsync(await readFile(pack));
+  zip.file('keySound', '1 1 1 tone.wav 0');
+  await page.goto('/play');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '+ Import', exact: true }).click();
+  await (await chooser).setFiles({ name: 'first-sound.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  try {
+    await expectPads(page);
+    await expectAudioOutputRunning(page);
+    const before = await page.evaluate(() => window.openingAudio.context!.currentTime);
+    await expect.poll(() => page.evaluate(() => window.openingAudio.context!.currentTime)).toBeGreaterThan(before);
+    expect(await starts(page)).toBe(0);
+    if (browserName === 'firefox') expect(await page.evaluate(() => window.openingAudio.events.filter(e => e.action === 'suspend'))).toEqual([]);
+    const first = pad(page, '0,0');
+    const box = (await first.boundingBox())!;
+    const pointer = { pointerId: 1, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+    // Synthetic pad input cannot grant autoplay permission: only the opening click did that.
+    await first.dispatchEvent('pointerdown', pointer);
+    await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputRms())).toBeGreaterThan(0.001);
+    await first.dispatchEvent('pointerup', pointer);
+    expect(await starts(page)).toBe(1);
+    await info.attach('first-pad-screen', { body: await page.screenshot(), contentType: 'image/png' });
+  } finally {
+    await info.attach('opening-output', { body: JSON.stringify(await page.evaluate(() => ({
+      events: window.openingAudio.events, state: window.openingAudio.context?.state,
+      soundTime: window.openingAudio.context?.currentTime, starts: window.browserProbe.audio.starts,
+      hidden: document.hidden, focused: document.hasFocus(),
+    }))), contentType: 'application/json' });
+  }
+});
+
 for (const reconnect of [true, false]) {
   test(`pads pressed before controller lights settle stay held after ${reconnect ? 'reconnect' : 'a model change'}`, async ({ page }, info) => {
     await skipWithoutWebMidi(page);

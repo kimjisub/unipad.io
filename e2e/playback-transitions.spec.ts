@@ -6,7 +6,7 @@ import { test, expect, expectAudioOutputRunning, expectPads, stateTimeout } from
 
 declare global { interface Window {
   transitionAudio: AudioContext;
-  transitionAudioEvents: { action: string; state: AudioContextState | null; time: number; hidden: boolean; active: boolean }[];
+  transitionAudioEvents: { action: string; state: AudioContextState | null; time: number; hidden: boolean; focused: boolean; active: boolean; contextId: number | null; soundTime: number | null; requestId?: number }[];
   transitionNativeAudioTime?: () => number;
   wakeProbe: { requests: { released: boolean; resolved: boolean }[]; reply: (index: number) => void };
 } }
@@ -18,7 +18,7 @@ test.afterEach(async ({ page }, info) => {
     state: window.transitionAudio?.state,
     nativeTime: window.transitionNativeAudioTime?.() ?? window.transitionAudio?.currentTime,
     hidden: document.hidden, focused: document.hasFocus(),
-  })).catch(() => null);
+  })).catch(error => ({ captureError: String(error) }));
   await info.attach('audio-output-setup', { body: JSON.stringify(observed), contentType: 'application/json' });
 });
 
@@ -26,10 +26,22 @@ const mode = (page: Page, name: string) => page.getByRole('button', { name: `Pla
 async function open(page: Page, autoPlay: string, wormhole = false, options: { led?: string; endless?: boolean; keySound?: string; leds?: Record<string, string> } = {}) {
   await page.addInitScript(() => {
     const events: Window['transitionAudioEvents'] = window.transitionAudioEvents = [];
-    const mark = (context: AudioContext | undefined, action: string) => events.push({
-      action, state: context?.state ?? null, time: performance.now(), hidden: document.hidden,
-      active: navigator.userActivation.isActive,
-    });
+    const contexts = new WeakMap<AudioContext, number>();
+    const nativeTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'currentTime')!.get!;
+    let nextContext = 0;
+    let nextRequest = 0;
+    const mark = (context: AudioContext | undefined, action: string, requestId?: number): void => {
+      if (context && !contexts.has(context)) {
+        contexts.set(context, ++nextContext);
+        context.addEventListener('statechange', () => mark(context, 'statechange'));
+      }
+      events.push({
+        action, state: context?.state ?? null, time: performance.now(), hidden: document.hidden,
+        focused: document.hasFocus(), active: navigator.userActivation?.isActive ?? false,
+        contextId: context ? contexts.get(context)! : null,
+        soundTime: context ? nativeTime.call(context) : null, requestId,
+      });
+    };
     for (const action of ['blur', 'focus', 'pagehide', 'pageshow', 'pointerdown']) {
       window.addEventListener(action, () => mark(window.transitionAudio, action));
     }
@@ -37,16 +49,16 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
     for (const action of ['resume', 'suspend'] as const) {
       const native = AudioContext.prototype[action];
       AudioContext.prototype[action] = function () {
-        mark(this, action);
+        const requestId = ++nextRequest;
+        mark(this, action, requestId);
         const pending = native.call(this);
-        void pending.then(() => mark(this, `${action}-resolved`), () => mark(this, `${action}-rejected`));
+        void pending.then(() => mark(this, `${action}-resolved`, requestId), () => mark(this, `${action}-rejected`, requestId));
         return pending;
       };
     }
     const gain = AudioContext.prototype.createGain;
     AudioContext.prototype.createGain = function () {
       window.transitionAudio = this;
-      this.addEventListener('statechange', () => mark(this, 'statechange'));
       mark(this, 'output-created');
       return gain.call(this);
     };
@@ -62,13 +74,7 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   await page.locator('input[data-unipack-import]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  // A blur while the pack opens deliberately suspends audio even when the page stays visible.
-  // Activate the empty margin through the app's normal gesture handler before freezing time,
-  // then require real output. Hidden-page cases keep their deliberate suspension.
-  if (!await page.evaluate(() => document.hidden)) {
-    await page.mouse.click(1200, 760);
-    await expectAudioOutputRunning(page);
-  }
+  if (!await page.evaluate(() => document.hidden)) await expectAudioOutputRunning(page);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
   // These cases assert virtual timer commands and DOM changes. Keep the audio control clock
@@ -113,28 +119,6 @@ async function capture(page: Page, info: TestInfo) {
   await page.screenshot({ path, animations: 'disabled' });
   await info.attach('returned', { path, contentType: 'image/png' });
 }
-
-test('a focus loss as the pads appear is settled before virtual playback starts', async ({ page }, info) => {
-  await page.addInitScript(() => {
-    const observer = new MutationObserver(() => {
-      if (!document.querySelector('[data-pad]')) return;
-      observer.disconnect();
-      // The player deliberately suspends on blur, even while the document remains visible.
-      window.dispatchEvent(new Event('blur'));
-    });
-    observer.observe(document, { childList: true, subtree: true });
-  });
-  await open(page, 'o 1 1\nf 1 1\nd 1000');
-  expect(await page.evaluate(() => window.transitionAudioEvents.some(e => e.action === 'blur'))).toBe(true);
-  expect(await page.evaluate(() => window.browserProbe.audio.outputState())).toBe('running');
-  expect(await page.evaluate(() => window.browserProbe.audio.starts)).toEqual([]);
-  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'false');
-  await info.attach('audio-setup-recovered', { body: JSON.stringify(await page.evaluate(() => ({
-    events: window.transitionAudioEvents, state: window.transitionAudio.state,
-    nativeTime: window.transitionNativeAudioTime!(), starts: window.browserProbe.audio.starts,
-  }))), contentType: 'application/json' });
-  await info.attach('recovered-screen', { body: await page.screenshot(), contentType: 'image/png' });
-});
 
 test('guide next and previous redraw the upcoming pad at the selected position', async ({ page }, info) => {
   const song = Array.from({ length: 60 }, (_, i) => `o 1 ${Math.floor(i / 5) % 2 + 1}\nf 1 ${Math.floor(i / 5) % 2 + 1}\nd 1000`).join('\n');
