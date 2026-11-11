@@ -49,7 +49,7 @@ src/
 
 ## Verification
 
-Use Node.js **24.15.0** and pnpm **9.11.0**, matching GitHub Actions:
+Use Node.js **24.15.0** and pnpm **10.34.9**, matching GitHub Actions:
 
 ```bash
 pnpm install --frozen-lockfile
