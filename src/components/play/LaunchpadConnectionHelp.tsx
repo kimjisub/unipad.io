@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { useTranslations } from 'next-intl';
 
+import { useModalKeyboard } from '@/hooks/useModalKeyboard';
+
 import type { LaunchpadProfile } from '@/lib/unipack';
 
 interface LaunchpadConnectionHelpProps {
@@ -17,6 +19,7 @@ const MINI_GUIDE = 'https://userguides.novationmusic.com/hc/en-gb/articles/23731
 export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFocusRef, onClose }: LaunchpadConnectionHelpProps) {
   const t = useTranslations('play.launchpad.help');
   const id = useId();
+  const layerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const closingRef = useRef(false);
@@ -34,55 +37,26 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
     else onClose();
   }, [id, onClose]);
 
+  useModalKeyboard({ dialogRef, layerRef, initialFocusRef: closeRef, returnFocusRef, onEscape: close });
+
   useEffect(() => {
     if (cleanupRef.current !== null) {
       clearTimeout(cleanupRef.current);
       cleanupRef.current = null;
     }
-    const returnFocus = returnFocusRef.current;
     // A same-URL entry lets browser Back dismiss only this help. Preserve Next's
     // existing history fields; no settings or device state is stored here.
     if (window.history.state?.connectionHelp !== id) {
       window.history.pushState({ ...window.history.state, connectionHelp: id }, '');
     }
-    closeRef.current?.focus({ preventScroll: true });
     const pop = () => {
       if (window.history.state?.connectionHelp === id) return;
       closingRef.current = true;
       onClose();
     };
-    const focus = (event: FocusEvent) => {
-      if (!dialogRef.current?.contains(event.target as Node)) closeRef.current?.focus({ preventScroll: true });
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        close();
-      } else if (event.key === 'Tab') {
-        const targets = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], [tabindex="0"]') ?? []);
-        const first = targets[0];
-        const last = targets.at(-1);
-        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
-          event.preventDefault();
-          first?.focus();
-        }
-      } else if (!dialogRef.current?.contains(event.target as Node)) {
-        // Clicking the title, model line or backdrop leaves focus on the body,
-        // outside the dialog's own guard; keep player shortcuts from acting behind the help.
-        event.stopImmediatePropagation();
-      }
-    };
     window.addEventListener('popstate', pop);
-    window.addEventListener('keydown', key, true);
-    window.addEventListener('focusin', focus);
     return () => {
       window.removeEventListener('popstate', pop);
-      window.removeEventListener('keydown', key, true);
-      window.removeEventListener('focusin', focus);
       // Strict Mode immediately reinstalls this effect. Let that installation
       // cancel cleanup and reuse the entry; only a real unmount removes it.
       cleanupRef.current = setTimeout(() => {
@@ -92,7 +66,6 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
           window.history.back();
         }
       }, 0);
-      returnFocus?.focus({ preventScroll: true });
     };
   }, [close, id, onClose, returnFocusRef]);
 
@@ -111,7 +84,7 @@ export function LaunchpadConnectionHelp({ requestedProfile, modelLabel, returnFo
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4">
+    <div ref={layerRef} className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-model`} onKeyDown={event => event.stopPropagation()}
         className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-white/10 bg-[#151c28] text-white shadow-2xl">
         <div className="shrink-0 border-b border-white/10 p-4">

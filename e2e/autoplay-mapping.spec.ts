@@ -3,6 +3,20 @@ import { storedPackRecords, expectSavedPackCount } from './saved-packs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
+import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+
+test('auto mapping confirmation contains keyboard focus and restores its opener', async ({ page }, info) => {
+  await observeConfirmationKeys(page);
+  const imported = await importBasicPack(page);
+  await openMenu(page);
+  await autoMapping(page).focus();
+  await page.keyboard.press('Enter');
+  const starts = await page.evaluate(() => window.browserProbe.audio.starts.length);
+  await expectConfirmationKeyboard(page, page.getByRole('alertdialog', { name: 'Confirm auto mapping', exact: true }), info);
+  await expect(autoMapping(page)).toBeFocused();
+  expect(await storedPack(page)).toEqual([imported]);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(starts);
+});
 
 // basic.uni plays its 100 ms tone on pads (0,0), (1,0), (0,0) with 3.2 s between them. Auto mapping
 // starts 1 s in and waits one tone length between presses, each press followed by its release.

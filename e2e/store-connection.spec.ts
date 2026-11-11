@@ -4,7 +4,150 @@ import { undecodablePack } from './basic-pack';
 import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
-import { storedPackRecords } from './saved-packs';
+import { seedSavedPacks, storedPackRecords } from './saved-packs';
+import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+
+test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
+  await observeConfirmationKeys(page);
+  await connectStore(context);
+  await openConnectedSharedLink(page);
+  const dialog = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  // This confirmation opens from navigation, so its previous focus is the document body.
+  await expectConfirmationKeyboard(page, dialog, info);
+  await expect(page.locator('body')).toBeFocused();
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  expect(await storedPackRecords(page)).toEqual([]);
+});
+
+for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
+  const database = await connectStore(context);
+  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  await page.goto('/play?code=browser-pack');
+  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
+  // Select through the keyboard without waiting for the row's entrance animation.
+  await opener.press('Space');
+  await page.keyboard.press('Delete');
+  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(deletion).toBeVisible();
+  await lowerCancel.focus();
+  await database.releaseReplies();
+  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(installation).toBeVisible();
+  await info.attach('overlapping-confirmations', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(installation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
+  for (const key of ['Tab', 'Shift+Tab', 'Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key);
+    expect(await installation.evaluate(element => element.contains(document.activeElement)), `${key} stays in the upper dialog`).toBe(true);
+  }
+  await page.keyboard.press(answer);
+  if (answer === 'Enter') {
+    await expectPads(page);
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+  } else {
+    await expect(installation).toHaveCount(0);
+    await expect(lowerCancel).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(deletion).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect(page.getByRole('option')).toHaveCount(1);
+  }
+  expect((await storedPackRecords(page)).some(pack => pack.id === 'saved-before-link')).toBe(true);
+  await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
+  const database = await connectStore(context);
+  await page.exposeFunction('releaseMixedDialogLookup', () => database.releaseReplies());
+  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  // Act on each rendered setup button in the document, without a browser round trip between
+  // renders. The real five-second lookup clock still runs; no app state or timers are replaced.
+  await page.addInitScript(() => {
+    Object.assign(window, { mixedDialogsReady: new Promise<void>(resolve => {
+      let step = 0;
+      const observer = new MutationObserver(advance);
+      observer.observe(document, { childList: true, subtree: true });
+      function advance() {
+        if (step === 0) {
+          const row = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(row => row.textContent?.includes('Saved before link'));
+          if (!row) return;
+          step++;
+          row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        } else if (step === 1) {
+          const menu = document.querySelector<HTMLButtonElement>('button[aria-label="Open menu"]');
+          if (!menu) return;
+          step++;
+          menu.click();
+        } else if (step === 2) {
+          const settings = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Menu"] button')).find(button => button.textContent?.startsWith('Launchpad Settings'));
+          if (!settings) return;
+          step++;
+          settings.click();
+        } else if (step === 3) {
+          const help = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Launchpad Settings"] button')).find(button => button.textContent === 'Connection and light help');
+          if (!help) return;
+          step++;
+          help.click();
+        } else {
+          const close = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close help');
+          const region = close?.closest('[role="dialog"]')?.querySelector<HTMLElement>('[role="region"]');
+          if (!region) return;
+          region.focus();
+          observer.disconnect();
+          // Return the held network response at this render, before another driver round trip.
+          void (Reflect.get(window, 'releaseMixedDialogLookup') as () => Promise<void>)().then(resolve);
+        }
+      }
+      advance();
+    }) });
+  });
+  await page.goto('/play?code=browser-pack');
+  await page.evaluate(() => Reflect.get(window, 'mixedDialogsReady') as Promise<void>);
+  const help = page.getByRole('dialog', { name: 'Connection and light help', exact: true });
+  const previous = help.getByRole('region');
+  const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(confirmation).toBeVisible();
+  // Record errors and focus before assertions so the old implementation's focus loop is preserved.
+  await page.keyboard.press('Tab');
+  await info.attach('mixed-dialog-errors-and-focus', {
+    body: JSON.stringify({ errors: checkedPage.errors, focus: await page.evaluate(() => document.activeElement?.textContent) }),
+    contentType: 'application/json',
+  });
+  await info.attach('mixed-dialogs', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(checkedPage.errors).toEqual([]);
+  expect(await confirmation.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  for (const key of ['Shift+Tab', 'Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key);
+    expect(await confirmation.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  }
+  // A centre hit must land on the same dialog that receives keys, above the help and settings.
+  expect(await confirmation.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+  })).toBe(true);
+  await confirmation.getByRole('button', { name: 'Install', exact: true }).focus();
+  await page.keyboard.press(answer);
+  await expect(confirmation).toHaveCount(0);
+  if (answer === 'Enter') {
+    // Loading another pack unmounts the old player's help. The install must run only once.
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+    await expectPads(page);
+  } else {
+    await expect(previous).toBeFocused();
+    expect((await storedPackRecords(page)).length).toBe(1);
+    await page.keyboard.press('Tab');
+    expect(await help.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(help).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Connection and light help', exact: true })).toBeFocused();
+  }
+});
 
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',
