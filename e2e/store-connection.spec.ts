@@ -415,14 +415,11 @@ test('ends a stalled shared pack download and retries it', async ({ page, contex
 });
 
 
-test('ends store loading while Firebase initialization is blocked', async ({ page, context }, testInfo) => {
+test('ends store loading while Firebase initialization is blocked', async ({ page, context }) => {
   const database = await connectStore(context);
-  await verifyDatabase(page);
   database.block();
-  // Close the old SDK handles, then remove its persisted remote-config cache
-  // before the next document initializes Firebase. Keep the new request pending.
-  await page.goto('about:blank');
-  await context.addInitScript(() => { indexedDB.deleteDatabase('firebase_remote_config'); });
+  // A new context has no saved remote configuration, so the first document fetches it
+  // while initializing Firebase. Keep that request pending.
   let pendingConfigurationRequests = 0;
   await context.route('**/firebaseremoteconfig.googleapis.com/**', route => {
     if (route.request().url().includes('/namespaces/firebase:fetch')) {
@@ -434,13 +431,9 @@ test('ends store loading while Firebase initialization is blocked', async ({ pag
   await page.goto('/play');
   await page.getByRole('button', { name: /^Store/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Store', exact: true });
-  try {
-    await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
-    await expect(dialog.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-    expect(pendingConfigurationRequests).toBeGreaterThan(0);
-  } finally {
-    await testInfo.attach('blocked-firebase-initialization', { body: await page.screenshot(), contentType: 'image/png' });
-  }
+  await expect(dialog.getByText(/Cannot connect to the store/)).toBeVisible({ timeout: 6500 });
+  await expect(dialog.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  expect(pendingConfigurationRequests).toBeGreaterThan(0);
 });
 
 
