@@ -26,7 +26,15 @@ function deferred() {
  * pending. Once started in a tap it resumes without one, a little later as the device starts.
  * With `holdParking` the first suspension waits until the test calls `releaseParking`.
  */
-function installWebKitContext(t: TestContext, options: { holdParking?: boolean; lateStateChange?: boolean } = {}) {
+function installWebKitContext(t: TestContext, options: { holdParking?: boolean; lateStateChange?: boolean; stickyActivation?: boolean; stalledRestart?: boolean; userAgent?: string } = {}) {
+  if (options.userAgent) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: options.userAgent } });
+    t.after(() => {
+      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      else Reflect.deleteProperty(globalThis, 'navigator');
+    });
+  }
   const made: WebKitContext[] = [];
   const page = { tapping: false };
   const parkingStarted = deferred();
@@ -42,7 +50,8 @@ function installWebKitContext(t: TestContext, options: { holdParking?: boolean; 
     constructor() { made.push(this); }
     createGain() { return { gain: { value: 1 }, connect() {} }; }
     async resume() {
-      if (!this.started && !page.tapping) return new Promise<void>(() => {});
+      if (!this.started && !page.tapping && !options.stickyActivation) return new Promise<void>(() => {});
+      if (this.started && options.stalledRestart) return new Promise<void>(() => {});
       if (this.started) await new Promise(done => setTimeout(done, 5));
       this.started = true;
       this.state = 'running';
@@ -89,8 +98,8 @@ function installWebKitContext(t: TestContext, options: { holdParking?: boolean; 
   };
 }
 
-test('a pack opened by a tap plays from its first press although its sounds were set up after the tap', async t => {
-  const { made, tap, nextChange } = installWebKitContext(t);
+for (const userAgent of ['Safari/605.1.15', 'FxiOS/145.0 Mobile/15E148 Safari/605.1.15']) test(`a pack opened by a tap plays from its first press after file reads (${userAgent})`, async t => {
+  const { made, tap, nextChange } = installWebKitContext(t, { userAgent });
   const pack = await parseWithLeds({});
   tap(prepareAudioContext);
   assert.equal(made.length, 1, 'the opening tap starts a context');
@@ -143,4 +152,21 @@ test('a context a tap started for a file that did not open is the one the next p
   assert.equal(made.length, 1, 'the pack plays through that context');
   await running;
   assert.equal(engine.context.state, 'running');
+});
+
+// Models the observed Firefox sequence: its first resume succeeds, parking succeeds, but the
+// restart never settles. Firefox permits the initial start after the opening click's task.
+test('Firefox opens a pack without depending on a parked output restarting', async t => {
+  const { tap } = installWebKitContext(t, {
+    userAgent: 'Mozilla/5.0 Gecko/20100101 Firefox/155.0',
+    stickyActivation: true, stalledRestart: true,
+  });
+  const pack = await parseWithLeds({});
+  tap(prepareAudioContext);
+  // The file is read after the click, so preparation and any parking have settled first.
+  await new Promise<void>(done => setImmediate(done));
+  const engine = new SoundEngine(pack, () => 0, () => {});
+  t.after(() => engine.destroy());
+  await new Promise<void>(done => setImmediate(done));
+  assert.equal(engine.context.state, 'running', 'ready for the first pad without another click');
 });
