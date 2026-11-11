@@ -5,6 +5,19 @@ import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
 import { storedPackRecords } from './saved-packs';
+import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+
+test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
+  await observeConfirmationKeys(page);
+  await connectStore(context);
+  await openConnectedSharedLink(page);
+  const dialog = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  // This confirmation opens from navigation, so its previous focus is the document body.
+  await expectConfirmationKeyboard(page, dialog, info);
+  await expect(page.locator('body')).toBeFocused();
+  await expect(page.locator('[data-pad]')).toHaveCount(0);
+  expect(await storedPackRecords(page)).toEqual([]);
+});
 
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',

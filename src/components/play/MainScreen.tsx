@@ -158,11 +158,7 @@ export function MainScreen({
 
   useWindowKeyDown((event) => {
     const searchShortcut = isSearchShortcut(event);
-    if (listKeyboardDisabled) {
-      // Firefox's native quick find can take focus even when the app ignores the shortcut.
-      if (deleteConfirmationOpen && searchShortcut) event.preventDefault();
-      return;
-    }
+    if (listKeyboardDisabled) return;
 
     if (event.key === 'Escape' && showSortMenu) {
       setShowSortMenu(false);
@@ -1025,19 +1021,43 @@ export function ConfirmDialog({
   const t = useTranslations('play.main');
   const tCommon = useTranslations('play.common');
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
-  // The dialog takes Escape and Enter before the page does. Enter on one of its own buttons is
-  // left to that button, so a focused Cancel cancels instead of confirming.
+  useLayoutEffect(() => {
+    // Capture the opener before moving focus, including during Strict Mode's effect replay.
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    confirmRef.current?.focus({ preventScroll: true });
+    const keepFocus = (event: FocusEvent) => {
+      if (!dialogRef.current?.contains(event.target as Node)) confirmRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener('focusin', keepFocus);
+    return () => {
+      window.removeEventListener('focusin', keepFocus);
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    };
+  }, []);
+
+  // Capture every key before either a page listener or a focused background row can act.
+  // Native button activation stays intact, so Enter on Cancel still cancels.
   useWindowKeyDown((e) => {
+    e.stopImmediatePropagation();
+    const inside = e.target instanceof window.Node && dialogRef.current?.contains(e.target);
     if (e.key === 'Escape') {
-      e.stopImmediatePropagation();
+      e.preventDefault();
       onCancel();
-    }
-    if (e.key === 'Enter') {
-      e.stopImmediatePropagation();
-      if (targetHandlesOwnKeys(e) && dialogRef.current?.contains(e.target as Node)) return;
+    } else if (e.key === 'Enter') {
+      if (inside && targetHandlesOwnKeys(e)) return;
       e.preventDefault();
       onConfirm();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.shiftKey ? (index <= 0 ? buttons.length - 1 : index - 1) : (index + 1) % buttons.length;
+      buttons[next]?.focus({ preventScroll: true });
+    } else if (isSearchShortcut(e) || !inside) {
+      // Stopping propagation alone does not stop Firefox quick find or native search shortcuts.
+      e.preventDefault();
     }
   }, { capture: true });
 
@@ -1070,13 +1090,13 @@ export function ConfirmDialog({
             {tCommon('cancel')}
           </button>
           <button
+            ref={confirmRef}
             className={
               tone === 'danger'
                 ? 'px-4 py-2.5 rounded-xl text-xs text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors'
                 : 'px-4 py-2.5 rounded-xl text-xs text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 transition-colors'
             }
             onClick={onConfirm}
-            autoFocus
           >
             {confirmText ?? tCommon('delete')}
           </button>

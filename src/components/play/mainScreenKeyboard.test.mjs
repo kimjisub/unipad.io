@@ -14,6 +14,44 @@ const packs = ['Alpha', 'Bravo', 'Charlie'].map((title, index) => ({
 }));
 afterEach(cleanup);
 
+test('the confirmation owns focus, search defaults and outside keys until it unmounts', async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const background = [];
+  const record = event => background.push(event.key);
+  window.addEventListener('keydown', record);
+  const dialog = round => React.createElement(React.StrictMode, null,
+    React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      React.createElement(ConfirmDialog, { message: `Question ${round}`, onConfirm() {}, onCancel() {} })));
+  try {
+    const view = render(dialog(0));
+    const buttons = within(view.getByRole('alertdialog')).getAllByRole('button');
+    assert.equal(document.activeElement, buttons[1]);
+    assert.equal(fireEvent.keyDown(buttons[1], { key: 'Tab' }), false);
+    assert.equal(document.activeElement, buttons[0]);
+    assert.equal(fireEvent.keyDown(buttons[0], { key: 'Tab', shiftKey: true }), false);
+    assert.equal(document.activeElement, buttons[1]);
+    for (const shortcut of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'K', metaKey: true }]) {
+      assert.equal(fireEvent.keyDown(buttons[1], shortcut), false);
+    }
+    for (const key of ['q', 'ArrowDown', 'Delete']) fireEvent.keyDown(opener, { key });
+    assert.deepEqual(background, []);
+    opener.focus();
+    assert.equal(document.activeElement, buttons[1], 'programmatic focus cannot escape');
+    buttons[0].focus();
+    view.rerender(dialog(1));
+    assert.equal(document.activeElement, buttons[0], 'a render preserves the chosen button');
+    view.unmount();
+    assert.equal(document.activeElement, opener);
+    fireEvent.keyDown(opener, { key: 'q' });
+    assert.deepEqual(background, ['q'], 'the guard is removed when closed');
+  } finally {
+    window.removeEventListener('keydown', record);
+    opener.remove();
+  }
+});
+
 async function mount(theme = false) {
   const deletedPacks = [], deletedThemes = [], played = [];
   const view = render(React.createElement(React.StrictMode, null,
