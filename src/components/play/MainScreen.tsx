@@ -1001,6 +1001,10 @@ function MarqueeText({ children, className }: { children: React.ReactNode; class
   );
 }
 
+// An async store lookup can open an installation confirmation above a deletion confirmation.
+// Only the most recently opened confirmation may move focus or handle keyboard input.
+const openConfirmations: { element: HTMLDivElement; focus: () => void }[] = [];
+
 export function ConfirmDialog({
   message,
   onConfirm,
@@ -1026,20 +1030,31 @@ export function ConfirmDialog({
   useLayoutEffect(() => {
     // Capture the opener before moving focus, including during Strict Mode's effect replay.
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    confirmRef.current?.focus({ preventScroll: true });
+    const element = dialogRef.current;
+    if (!element) return;
+    const entry = { element, focus: () => confirmRef.current?.focus({ preventScroll: true }) };
+    openConfirmations.push(entry);
+    entry.focus();
     const keepFocus = (event: FocusEvent) => {
-      if (!dialogRef.current?.contains(event.target as Node)) confirmRef.current?.focus({ preventScroll: true });
+      if (openConfirmations.at(-1) === entry && !element.contains(event.target as Node)) entry.focus();
     };
     window.addEventListener('focusin', keepFocus);
     return () => {
       window.removeEventListener('focusin', keepFocus);
-      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+      const wasTop = openConfirmations.at(-1) === entry;
+      openConfirmations.splice(openConfirmations.indexOf(entry), 1);
+      // Removing a covered dialog must not steal focus from the one still on top.
+      if (wasTop) {
+        if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+        else openConfirmations.at(-1)?.focus();
+      }
     };
   }, []);
 
   // Capture every key before either a page listener or a focused background row can act.
   // Native button activation stays intact, so Enter on Cancel still cancels.
   useWindowKeyDown((e) => {
+    if (openConfirmations.at(-1)?.element !== dialogRef.current) return;
     e.stopImmediatePropagation();
     const inside = e.target instanceof window.Node && dialogRef.current?.contains(e.target);
     if (e.key === 'Escape') {
@@ -1055,7 +1070,7 @@ export function ConfirmDialog({
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       const next = e.shiftKey ? (index <= 0 ? buttons.length - 1 : index - 1) : (index + 1) % buttons.length;
       buttons[next]?.focus({ preventScroll: true });
-    } else if (isSearchShortcut(e) || !inside) {
+    } else if (isSearchShortcut(e)) {
       // Stopping propagation alone does not stop Firefox quick find or native search shortcuts.
       e.preventDefault();
     }

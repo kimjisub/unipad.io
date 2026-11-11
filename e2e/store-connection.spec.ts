@@ -4,7 +4,7 @@ import { undecodablePack } from './basic-pack';
 import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
-import { storedPackRecords } from './saved-packs';
+import { seedSavedPacks, storedPackRecords } from './saved-packs';
 import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
 
 test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
@@ -17,6 +17,46 @@ test('shared install confirmation contains keyboard focus and restores its opene
   await expect(page.locator('body')).toBeFocused();
   await expect(page.locator('[data-pad]')).toHaveCount(0);
   expect(await storedPackRecords(page)).toEqual([]);
+});
+
+for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
+  const database = await connectStore(context);
+  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  await page.goto('/play?code=browser-pack');
+  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
+  await opener.click();
+  await opener.focus();
+  await page.keyboard.press('Delete');
+  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(deletion).toBeVisible();
+  await lowerCancel.focus();
+  await database.releaseReplies();
+  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(installation).toBeVisible();
+  await info.attach('overlapping-confirmations', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(installation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
+  for (const key of ['Tab', 'Shift+Tab', 'Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key);
+    expect(await installation.evaluate(element => element.contains(document.activeElement)), `${key} stays in the upper dialog`).toBe(true);
+  }
+  await page.keyboard.press(answer);
+  if (answer === 'Enter') {
+    await expectPads(page);
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+  } else {
+    await expect(installation).toHaveCount(0);
+    await expect(lowerCancel).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(deletion).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect(page.getByRole('option')).toHaveCount(1);
+  }
+  expect((await storedPackRecords(page)).some(pack => pack.id === 'saved-before-link')).toBe(true);
+  await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
 const storeItem = {

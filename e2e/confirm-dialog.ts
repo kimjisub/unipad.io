@@ -44,6 +44,26 @@ export async function expectConfirmationKeyboard(page: Page, dialog: Locator, in
     return received;
   });
   expect(escaped).toEqual([]);
+  // Clicking non-focusable dialog text can leave the next event targeted at the body.
+  // Synthetic events measure cancellation without actually refreshing, printing or zooming.
+  await dialog.locator('p').click();
+  await expect(page.locator('body')).toBeFocused();
+  const browserDefaults = await page.evaluate(() => {
+    const received: string[] = [];
+    const record = (event: KeyboardEvent) => received.push(event.key);
+    window.addEventListener('keydown', record);
+    const shortcuts = [
+      { key: 'r', ctrlKey: true }, { key: 'F5' }, { key: '=', ctrlKey: true },
+      { key: '-', ctrlKey: true }, { key: 'c', ctrlKey: true },
+      { key: 'c', metaKey: true }, { key: 'p', ctrlKey: true },
+    ];
+    const allowed = shortcuts.map(shortcut => document.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { ...shortcut, bubbles: true, cancelable: true })));
+    window.removeEventListener('keydown', record);
+    return { allowed, received };
+  });
+  await info.attach('confirmation-browser-defaults', { body: JSON.stringify(browserDefaults), contentType: 'application/json' });
+  expect(browserDefaults).toEqual({ allowed: Array(7).fill(true), received: [] });
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);

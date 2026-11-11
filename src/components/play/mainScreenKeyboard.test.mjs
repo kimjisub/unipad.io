@@ -52,6 +52,74 @@ test('the confirmation owns focus, search defaults and outside keys until it unm
   }
 });
 
+for (const closeLowerFirst of [false, true]) test(`only the newest confirmation owns focus and keys (remove lower first: ${closeLowerFirst})`, async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const calls = [];
+  const screen = (lower, upper) => React.createElement(React.StrictMode, null,
+    React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      lower && React.createElement(ConfirmDialog, {
+        key: 'lower', message: 'Delete?', label: 'Lower',
+        onConfirm: () => calls.push('delete'), onCancel: () => calls.push('cancel delete'),
+      }),
+      upper && React.createElement(ConfirmDialog, {
+        key: 'upper', message: 'Install?', label: 'Upper',
+        onConfirm: () => calls.push('install'), onCancel: () => calls.push('cancel install'),
+      })));
+  try {
+    const view = render(screen(true, false));
+    const lowerCancel = within(view.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' });
+    lowerCancel.focus();
+    const errors = listenerErrors(() => view.rerender(screen(true, true)));
+    assert.deepEqual(errors, [], 'opening the upper dialog must not start a focus loop');
+    const upper = view.getByRole('alertdialog', { name: 'Upper' });
+    assert.ok(upper.contains(document.activeElement));
+    for (const shiftKey of [false, true]) {
+      fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey });
+      assert.ok(upper.contains(document.activeElement));
+    }
+    if (closeLowerFirst) {
+      view.rerender(screen(false, true));
+      assert.ok(upper.contains(document.activeElement), 'removing a covered dialog leaves focus on the upper dialog');
+    }
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    assert.deepEqual(calls, ['install', 'cancel install']);
+    view.rerender(screen(!closeLowerFirst, false));
+    if (!closeLowerFirst) {
+      assert.equal(document.activeElement, lowerCancel);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      assert.deepEqual(calls, ['install', 'cancel install', 'cancel delete']);
+    }
+    view.unmount();
+    assert.equal(document.activeElement, closeLowerFirst ? document.body : opener);
+  } finally {
+    opener.remove();
+  }
+});
+
+test('outside keys keep browser defaults while search defaults and page listeners stay blocked', () => {
+  render(React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(ConfirmDialog, { message: 'Question', onConfirm() {}, onCancel() {} })));
+  const received = [];
+  const record = event => received.push(event.key);
+  window.addEventListener('keydown', record);
+  try {
+    for (const shortcut of [
+      { key: 'r', ctrlKey: true }, { key: 'F5' }, { key: '=', ctrlKey: true },
+      { key: '-', ctrlKey: true }, { key: 'c', ctrlKey: true },
+      { key: 'c', metaKey: true }, { key: 'p', ctrlKey: true },
+    ]) assert.equal(fireEvent.keyDown(document.body, shortcut), true, JSON.stringify(shortcut));
+    for (const shortcut of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'k', metaKey: true }]) {
+      assert.equal(fireEvent.keyDown(document.body, shortcut), false);
+    }
+    assert.deepEqual(received, []);
+  } finally {
+    window.removeEventListener('keydown', record);
+  }
+});
+
 async function mount(theme = false) {
   const deletedPacks = [], deletedThemes = [], played = [];
   const view = render(React.createElement(React.StrictMode, null,
