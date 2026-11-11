@@ -74,6 +74,9 @@ async function open(page: Page, autoPlay: string, wormhole = false, options: { l
   await page.locator('input[data-unipack-import]').setInputFiles({ name: 'transitions.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
   await expectPads(page);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  // A mode starts only once the output runs. Firefox can open the device after a mode tap or never; the
+  // cases would then count virtual time the song never ran, or wait for a Pause button that never appears.
+  // A hidden page keeps its output suspended until it returns.
   if (!await page.evaluate(() => document.hidden)) await expectAudioOutputRunning(page);
   // pauseAt also installs the clock, so no host-time deadline can expire in transit.
   await page.clock.pauseAt(new Date('2024-01-01T00:00:00.000Z'));
