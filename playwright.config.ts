@@ -3,7 +3,7 @@ import { serverCommand, serverReady } from './e2e/server';
 
 export const windowsPlaybackTests = ['play.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'home.spec.ts'];
 
-const portableTests = ['analytics-collection.spec.ts', 'storage-migration.spec.ts', 'storage-seed.spec.ts', 'page-errors.spec.ts', 'import-compatibility.spec.ts', 'import-failure.spec.ts', 'audio-visibility.spec.ts', 'docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts', 'store-keyboard.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'pack-list-focus.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'sound-loading.spec.ts', 'sound-formats-opus.spec.ts'];
+const portableTests = ['analytics-collection.spec.ts', 'notice-placement.spec.ts', 'storage-migration.spec.ts', 'storage-seed.spec.ts', 'page-errors.spec.ts', 'import-compatibility.spec.ts', 'import-failure.spec.ts', 'audio-visibility.spec.ts', 'docs.spec.ts', 'home.spec.ts', 'large-text.spec.ts', 'rectangular-pad-layout.spec.ts', 'play.spec.ts', 'input-boundaries.spec.ts', 'store-keyboard.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'pack-list-focus.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'sound-loading.spec.ts', 'sound-formats-opus.spec.ts'];
 
 export default defineConfig({
   testDir: './e2e',

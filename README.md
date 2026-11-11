@@ -72,7 +72,8 @@ Every pull request (including drafts) runs the fixed **Web checks** job in
 **Browser playback tests** job builds with the browser-test configuration below and
 runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
 `e2e/socket-failure-record.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
-`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, `e2e/home.spec.ts`, and
+`e2e/notice-placement.spec.ts`
 on Linux in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
@@ -389,6 +390,16 @@ reader when rolling back other changes.
 `e2e/storage-migration.spec.ts` covers migration, quota failure, explicit
 transaction interruption, retry, existing theme/settings preservation and pack
 reopening in Chromium, WebKit and Firefox. It does not simulate an OS crash.
+The six interrupted archive-write checks attach a `storage-rollback` report with the
+last operation, replacement chunk count, injected write error and unexpected error.
+A failure while saving the initial archive is a setup failure; it does not show that
+a replacement or rollback ever ran. Unexpected setup and verification failures both
+fail the check, without retries. A Firefox-only regression unlinks `storage.sqlite`
+in its own disposable profile after warmup to reproduce a read-only quota-cache
+connection: the first app database open must be identified as `save-previous`, with
+zero replacement chunks. A separate check keeps a read failure after the second
+chunk's injected quota error classified as a verification failure.
+
 Its legacy database is written by `seedDatabase` (`e2e/storage-seed.ts`) on an
 empty page; when that fails, the test gets a `storage-seed-failure` attachment
 with the error name, the failing request (open, upgrade or write), whether the

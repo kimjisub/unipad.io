@@ -8,6 +8,9 @@ import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
 import { websiteUrl } from '@/lib/unipack/websiteUrl';
 
+/** Width of the menu sheet on the right edge; notices shown beside it stay left of it. */
+export const OPTION_PANEL_WIDTH_PX = 280;
+
 interface OptionPanelProps {
   visible: boolean;
   unipackInfo: UniPackInfo;
@@ -143,7 +146,7 @@ export function OptionPanel({
       />
 
       {/* Panel */}
-      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 w-[280px] backdrop-blur-md z-50 flex flex-col border-l border-white/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ backgroundColor: 'rgba(22,30,43,0.94)' }}>
+      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 backdrop-blur-md z-50 flex flex-col border-l border-white/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ width: OPTION_PANEL_WIDTH_PX, backgroundColor: 'rgba(22,30,43,0.94)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0">
           <span className="text-[22px] font-normal text-white">{t('title')}</span>
