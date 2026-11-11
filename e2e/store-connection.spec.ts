@@ -66,15 +66,46 @@ for (const answer of ['Enter', 'Escape']) test(`connection help and shared confi
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
   await page.goto('/play?code=browser-pack');
-  // Setup uses the buttons' actions without waiting for entrance animations during the bounded lookup.
-  await page.getByRole('option', { name: 'Saved before link by Tests', exact: true }).dispatchEvent('dblclick');
-  await expectPads(page);
-  await page.getByRole('button', { name: 'Open menu', exact: true }).dispatchEvent('click');
-  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings Open', exact: true }).dispatchEvent('click');
-  await page.getByRole('button', { name: 'Connection and light help', exact: true }).dispatchEvent('click');
+  // Act on each rendered setup button in the document, without a browser round trip between
+  // renders. The real five-second lookup clock still runs; no app state or timers are replaced.
+  await page.evaluate(() => new Promise<void>(resolve => {
+    let step = 0;
+    const observer = new MutationObserver(advance);
+    observer.observe(document, { childList: true, subtree: true });
+    function advance() {
+      if (step === 0) {
+        const row = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(row => row.textContent?.includes('Saved before link'));
+        if (!row) return;
+        step++;
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      } else if (step === 1) {
+        const menu = document.querySelector<HTMLButtonElement>('button[aria-label="Open menu"]');
+        if (!menu) return;
+        step++;
+        menu.click();
+      } else if (step === 2) {
+        const settings = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Menu"] button')).find(button => button.textContent?.startsWith('Launchpad Settings'));
+        if (!settings) return;
+        step++;
+        settings.click();
+      } else if (step === 3) {
+        const help = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Launchpad Settings"] button')).find(button => button.textContent === 'Connection and light help');
+        if (!help) return;
+        step++;
+        help.click();
+      } else {
+        const close = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close help');
+        const region = close?.closest('[role="dialog"]')?.querySelector<HTMLElement>('[role="region"]');
+        if (!region) return;
+        region.focus();
+        observer.disconnect();
+        resolve();
+      }
+    }
+    advance();
+  }));
   const help = page.getByRole('dialog', { name: 'Connection and light help', exact: true });
   const previous = help.getByRole('region');
-  await previous.focus();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await database.releaseReplies();
   const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
