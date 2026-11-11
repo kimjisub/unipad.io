@@ -61,6 +61,7 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
 
 for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
   const database = await connectStore(context);
+  await page.exposeFunction('releaseMixedDialogLookup', () => database.releaseReplies());
   await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
@@ -99,15 +100,14 @@ for (const answer of ['Enter', 'Escape']) test(`connection help and shared confi
         if (!region) return;
         region.focus();
         observer.disconnect();
-        resolve();
+        // Return the held network response at this render, before another driver round trip.
+        void (Reflect.get(window, 'releaseMixedDialogLookup') as () => Promise<void>)().then(resolve);
       }
     }
     advance();
   }));
   const help = page.getByRole('dialog', { name: 'Connection and light help', exact: true });
   const previous = help.getByRole('region');
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  await database.releaseReplies();
   const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   await expect(confirmation).toBeVisible();
   // Record errors and focus before assertions so the old implementation's focus loop is preserved.
