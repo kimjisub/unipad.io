@@ -788,17 +788,21 @@ export function useUniPadEngine() {
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
     if (!unipack || !cm) return;
+    if (input !== undefined) {
+      lr?.clearInput(input);
+      return;
+    }
     for (let x = 0; x < unipack.info.buttonX; x++) {
       for (let y = 0; y < unipack.info.buttonY; y++) {
-        if (lr) lr.eventOff(x, y, undefined, input);
-        if (input === undefined) cm.remove(x, y, Channel.LED);
+        if (lr) lr.eventOff(x, y);
+        cm.remove(x, y, Channel.LED);
         refreshPad(x, y);
       }
     }
     const chainLedCount = Math.max(unipack.info.chain, 36);
     for (let c = 0; c < chainLedCount; c++) {
-      if (lr) lr.eventOff(-1, c, undefined, input);
-      if (input === undefined) cm.remove(-1, c, Channel.LED);
+      if (lr) lr.eventOff(-1, c);
+      cm.remove(-1, c, Channel.LED);
       refreshChain(c);
     }
     scheduleFlush();

@@ -530,6 +530,7 @@ async function runScenario(c: CorpusCase, pack: UniPackData, deps: Deps): Promis
           for (let x = 0; x < pack.info.buttonX; x++) {
             for (let y = 0; y < pack.info.buttonY; y++) releasePad(x, y, AUTO_PLAY_INPUT);
           }
+          led.clearInput(AUTO_PLAY_INPUT);
           break;
         case 'looping': {
           const looping = FakeAudioContext.started

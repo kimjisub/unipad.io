@@ -1018,6 +1018,25 @@ for (const finalGroup of [false, true]) for (const hiddenFor of [1000, 10000]) {
   });
 }
 
+for (const action of ['off', 'pause']) for (const finished of [false, true]) {
+  test(`autoplay ${action} clears ${finished ? 'finished' : 'running finite'} lights`, async ({ page }, info) => {
+    await open(page, 't 1 1\nd 10000\nt 2 2', false, {
+      leds: { '1 1 1': `o 1 2 FF0000${finished ? '' : '\nd 5000\no 2 2 FF0000'}` },
+    });
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(8);
+    await page.clock.fastForward(1200);
+    await expect(padLight(page, '0,1')).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+    if (action === 'off') await mode(page, 'Auto').dispatchEvent('click');
+    else await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(4);
+    await capture(page, info);
+    await expect(padLight(page, '0,1')).toHaveCount(0);
+    await page.clock.fastForward(5004);
+    await expect(padLight(page, '1,1')).toHaveCount(0);
+  });
+}
+
 for (const action of ['off', 'pause']) {
   test(`autoplay ${action} keeps a player's looping light until release`, async ({ page }, info) => {
     await open(page, 'd 10000\no 2 2', false, {
