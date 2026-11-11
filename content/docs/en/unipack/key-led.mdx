@@ -118,7 +118,7 @@ off * 1
 - The `on` command requires either `color` (4 tokens) or `auto` + `velocity` (5 tokens).
   A logo line (`l`) without `y` is the exception: `on l FF0000` (3 tokens) and `on l auto 72` (4 tokens) are valid.
 - Unrecognized commands are skipped.
-- An `on` or `off` line whose coordinates are outside the pad grid (0, negative, or greater than `buttonX` / `buttonY`) is kept without a warning and skipped when the animation plays; the other lines of the file still play.
+- Numeric `on 0 n` and `off 0 n` select round buttons, not pads: `n` from 1 to 36 is accepted, including the logo at 33. Other coordinates outside the pad grid (a zero second coordinate, negatives, or greater than `buttonX` / `buttonY`) and round indices outside 1–36 are kept without a warning and skipped when the animation plays; the other lines of the file still play.
 - A warning is logged if `loop` is negative.
 </Callout>
 

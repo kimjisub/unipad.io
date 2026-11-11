@@ -55,6 +55,36 @@ describe('LedRunner', () => {
     assert.deepEqual(outputs, [['padOn', 0, 0, RED, 5], ['padOff', 0, 0]]);
   });
 
+  test('clearing an input cancels queued lights even while suspended', async () => {
+    const { runner, outputs } = await startRunner({ '1 1 1': 'd 100\no 1 2 a 5\no * 2 a 5' });
+    runner.setSuspended(true);
+    runner.eventOn(0, 0, undefined, 'autoplay');
+    runner.clearInput('autoplay');
+    clock.tick(1000);
+    runner.setSuspended(false);
+    clock.tick(1000);
+    assert.deepEqual(outputs, []);
+  });
+
+  test('clearing the previous input preserves lights replaced by a player on the same origin', async () => {
+    const { runner, outputs, setChain } = await startRunner({ '1 1 1 0': 'o 1 2 a 5\no * 2 a 5\nd 1000' });
+    runner.eventOn(0, 0, undefined, 'autoplay');
+    clock.tick(4);
+    runner.eventOn(0, 0, undefined, 'finger');
+    clock.tick(4);
+    const before = outputs.length;
+    setChain(1);
+    runner.clearInput('autoplay');
+    assert.equal(outputs.length, before);
+    clock.tick(1000);
+    assert.deepEqual(outputs.slice(before), [['padOn', 0, 1, RED, 5], ['chainOn', 1, RED, 5]]);
+    runner.clearInput('finger');
+    assert.deepEqual(outputs.slice(-2), [['padOff', 0, 1], ['chainOff', 1]]);
+    const cleared = outputs.length;
+    clock.tick(1000);
+    assert.equal(outputs.length, cleared);
+  });
+
   test('plays every repeat of an animation whose pass takes time', async () => {
     const { outputs, press } = await startRunner({ '1 1 1 3': 'o 1 1 a 5\nd 10\nf 1 1\nd 10' });
 

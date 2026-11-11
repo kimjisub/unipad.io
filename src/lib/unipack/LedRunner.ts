@@ -5,6 +5,7 @@ interface Led {
   buttonX: number;
   buttonY: number;
   chain: number;
+  input: string;
 }
 
 interface LedAnimationState {
@@ -210,11 +211,11 @@ export class LedRunner {
           // and iOS.
           if (this.btnLed[event.x]?.[event.y] === undefined) break;
           this.listener.onPadLedTurnOn(event.x, event.y, event.color, event.velocity);
-          this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
+          this.btnLed[event.x][event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation, input: state.input };
         } else {
           if (this.cirLed[event.y] === undefined) break;
           this.listener.onChainLedTurnOn(event.y, event.color, event.velocity);
-          this.cirLed[event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation };
+          this.cirLed[event.y] = { buttonX: state.buttonX, buttonY: state.buttonY, chain: state.chainAtCreation, input: state.input };
         }
         break;
       }
@@ -244,10 +245,14 @@ export class LedRunner {
   }
 
   private cleanupState(state: LedAnimationState): void {
+    this.clearLights((led) => led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation);
+  }
+
+  private clearLights(matches: (led: Led) => boolean): void {
     for (let x = 0; x < this.unipack.info.buttonX; x++) {
       for (let y = 0; y < this.unipack.info.buttonY; y++) {
         const led = this.btnLed[x][y];
-        if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
+        if (led && matches(led)) {
           this.listener.onPadLedTurnOff(x, y);
           this.btnLed[x][y] = null;
         }
@@ -255,11 +260,24 @@ export class LedRunner {
     }
     for (let y = 0; y < this.cirLed.length; y++) {
       const led = this.cirLed[y];
-      if (led && led.buttonX === state.buttonX && led.buttonY === state.buttonY && led.chain === state.chainAtCreation) {
+      if (led && matches(led)) {
         this.listener.onChainLedTurnOff(y);
         this.cirLed[y] = null;
       }
     }
+  }
+
+  /** Cancel this input's queued and running animations, including lights left by finished ones. */
+  clearInput(input: string): void {
+    const keep = (state: LedAnimationState) => {
+      if (state.input !== input) return true;
+      state.remove = true;
+      this.suspendedStates.delete(state);
+      return false;
+    };
+    this.ledAnimationStates = this.ledAnimationStates.filter(keep);
+    this.ledAnimationStatesAdd = this.ledAnimationStatesAdd.filter(keep);
+    this.clearLights((led) => led.input === input);
   }
 
   private schedule(run: () => void): number {
