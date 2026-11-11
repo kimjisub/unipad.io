@@ -3,10 +3,11 @@ import { afterEach, test } from 'node:test';
 import { mainScreenCallbacks, require, stub } from './mainScreenTestPage.mjs';
 
 const React = await import('react');
-const { render, cleanup, fireEvent, act, within } = await import('@testing-library/react');
+const { render, cleanup, fireEvent, act, within, waitFor } = await import('@testing-library/react');
 stub('../../lib/unipack/storage.ts', { getSetting: async () => null, setSetting: async () => {} });
 const { NextIntlClientProvider } = require('next-intl');
 const { MainScreen, ConfirmDialog } = require('./MainScreen.tsx');
+const { LaunchpadConnectionHelp } = require('./LaunchpadConnectionHelp.tsx');
 const messages = (await import('../../i18n/messages/en.json', { with: { type: 'json' } })).default;
 const packs = ['Alpha', 'Bravo', 'Charlie'].map((title, index) => ({
   id: title, title, producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1,
@@ -95,6 +96,55 @@ for (const closeLowerFirst of [false, true]) test(`only the newest confirmation 
     view.unmount();
     assert.equal(document.activeElement, closeLowerFirst ? document.body : opener);
   } finally {
+    opener.remove();
+  }
+});
+
+for (const helpFirst of [true, false]) test(`help and confirmation share focus, keys and visible order (help first: ${helpFirst})`, async () => {
+  const opener = document.createElement('button');
+  document.body.append(opener);
+  opener.focus();
+  const calls = [];
+  const returnFocusRef = { current: opener };
+  function Screen() {
+    const [both, setBoth] = React.useState(false);
+    const [help, setHelp] = React.useState(true);
+    const [confirmation, setConfirmation] = React.useState(true);
+    return React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+      React.createElement('button', { onClick: () => setBoth(true) }, 'Open second'),
+      help && (helpFirst || both) && React.createElement(LaunchpadConnectionHelp, {
+        requestedProfile: 'auto', modelLabel: 'Auto Detect', returnFocusRef,
+        onClose: () => { calls.push('help'); setHelp(false); },
+      }),
+      confirmation && (!helpFirst || both) && React.createElement(ConfirmDialog, {
+        message: 'Install?', onConfirm: () => calls.push('install'),
+        onCancel: () => { calls.push('confirmation'); setConfirmation(false); },
+      }));
+  }
+  try {
+    const view = render(React.createElement(React.StrictMode, null, React.createElement(Screen)));
+    const lower = view.getByRole(helpFirst ? 'dialog' : 'alertdialog');
+    const previous = helpFirst ? within(lower).getByRole('region') : within(lower).getByRole('button', { name: 'Cancel' });
+    previous.focus();
+    const errors = listenerErrors(() => fireEvent.click(view.getByText('Open second')));
+    assert.deepEqual(errors, [], 'mixed dialogs must not fight for focus');
+    const upper = view.getByRole(helpFirst ? 'alertdialog' : 'dialog');
+    assert.ok(upper.contains(document.activeElement), 'the newest dialog owns focus');
+    assert.ok(Number(upper.parentElement.style.zIndex) > Number(lower.parentElement.style.zIndex), 'keyboard order matches visible order');
+    for (const shiftKey of [false, true]) {
+      assert.deepEqual(listenerErrors(() => fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey })), []);
+      assert.ok(upper.contains(document.activeElement));
+    }
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => assert.equal(upper.isConnected, false));
+    assert.deepEqual(calls, [helpFirst ? 'confirmation' : 'help']);
+    assert.equal(document.activeElement, previous, 'closing the upper dialog restores the lower selection');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => assert.equal(lower.isConnected, false));
+    assert.equal(document.activeElement, opener);
+  } finally {
+    cleanup();
+    await waitFor(() => assert.equal(Boolean(window.history.state?.connectionHelp), false));
     opener.remove();
   }
 });

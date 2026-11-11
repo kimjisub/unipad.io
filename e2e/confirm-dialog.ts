@@ -32,7 +32,7 @@ export async function expectConfirmationKeyboard(page: Page, dialog: Locator, in
     await expect(dialog.getByRole('button').last()).toBeFocused();
   }
   // A title/backdrop can leave a key targeted outside the dialog. Neither window nor row
-  // shortcuts may receive it, even when another listener was attached before the dialog.
+  // shortcuts may receive it; the bubbling observer below must remain silent.
   const escaped = await page.evaluate(() => {
     const received: string[] = [];
     const record = (event: KeyboardEvent) => received.push(event.key);

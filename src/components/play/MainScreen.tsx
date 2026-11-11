@@ -9,6 +9,7 @@ import { packAccessibleName, packDisplayTitle, packIdentifyingTitle } from '@/li
 import { getSetting, setSetting } from '@/lib/unipack/storage';
 import { EXTERNAL_LINKS, GET_STARTED_PATH } from '@/lib/constants';
 import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
+import { useModalKeyboard } from '@/hooks/useModalKeyboard';
 import { listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
 import { isSearchShortcut, isTextEntryTarget } from './keyboardShortcuts';
 
@@ -1001,10 +1002,6 @@ function MarqueeText({ children, className }: { children: React.ReactNode; class
   );
 }
 
-// An async store lookup can open an installation confirmation above a deletion confirmation.
-// Only the most recently opened confirmation may move focus or handle keyboard input.
-const openConfirmations: { element: HTMLDivElement; focus: () => void }[] = [];
-
 export function ConfirmDialog({
   message,
   onConfirm,
@@ -1027,57 +1024,20 @@ export function ConfirmDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
-  useLayoutEffect(() => {
-    // Capture the opener before moving focus, including during Strict Mode's effect replay.
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const element = dialogRef.current;
-    if (!element) return;
-    const entry = { element, focus: () => confirmRef.current?.focus({ preventScroll: true }) };
-    openConfirmations.push(entry);
-    entry.focus();
-    const keepFocus = (event: FocusEvent) => {
-      if (openConfirmations.at(-1) === entry && !element.contains(event.target as Node)) entry.focus();
-    };
-    window.addEventListener('focusin', keepFocus);
-    return () => {
-      window.removeEventListener('focusin', keepFocus);
-      const wasTop = openConfirmations.at(-1) === entry;
-      openConfirmations.splice(openConfirmations.indexOf(entry), 1);
-      // Removing a covered dialog must not steal focus from the one still on top.
-      if (wasTop) {
-        if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-        else openConfirmations.at(-1)?.focus();
-      }
-    };
-  }, []);
-
-  // Capture every key before either a page listener or a focused background row can act.
-  // Native button activation stays intact, so Enter on Cancel still cancels.
-  useWindowKeyDown((e) => {
-    if (openConfirmations.at(-1)?.element !== dialogRef.current) return;
-    e.stopImmediatePropagation();
-    const inside = e.target instanceof window.Node && dialogRef.current?.contains(e.target);
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onCancel();
-    } else if (e.key === 'Enter') {
-      if (inside && targetHandlesOwnKeys(e)) return;
-      e.preventDefault();
+  const layerRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard({
+    dialogRef, layerRef, initialFocusRef: confirmRef, onEscape: onCancel,
+    onEnter: (event, inside) => {
+      // Native button activation stays intact, so Enter on Cancel still cancels.
+      if (inside && targetHandlesOwnKeys(event)) return;
+      event.preventDefault();
       onConfirm();
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      const next = e.shiftKey ? (index <= 0 ? buttons.length - 1 : index - 1) : (index + 1) % buttons.length;
-      buttons[next]?.focus({ preventScroll: true });
-    } else if (isSearchShortcut(e)) {
-      // Stopping propagation alone does not stop Firefox quick find or native search shortcuts.
-      e.preventDefault();
-    }
-  }, { capture: true });
+    },
+  });
 
   return (
     <motion.div
+      ref={layerRef}
       className="fixed inset-0 z-[80] flex items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}

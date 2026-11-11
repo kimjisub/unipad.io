@@ -59,6 +59,61 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
   await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
+for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
+  const database = await connectStore(context);
+  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  await page.goto('/play?code=browser-pack');
+  // Keyboard activation avoids pointer waits for entrance animations during the bounded lookup.
+  await page.getByRole('option', { name: 'Saved before link by Tests', exact: true }).press('Enter');
+  await expectPads(page);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).press('Enter');
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings', exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Connection and light help', exact: true }).press('Enter');
+  const help = page.getByRole('dialog', { name: 'Connection and light help', exact: true });
+  const previous = help.getByRole('region');
+  await previous.focus();
+  await database.releaseReplies();
+  const confirmation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(confirmation).toBeVisible();
+  // Record errors and focus before assertions so the old implementation's focus loop is preserved.
+  await page.keyboard.press('Tab');
+  await info.attach('mixed-dialog-errors-and-focus', {
+    body: JSON.stringify({ errors: checkedPage.errors, focus: await page.evaluate(() => document.activeElement?.textContent) }),
+    contentType: 'application/json',
+  });
+  await info.attach('mixed-dialogs', { body: await page.screenshot(), contentType: 'image/png' });
+  expect(checkedPage.errors).toEqual([]);
+  expect(await confirmation.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  for (const key of ['Shift+Tab', 'Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key);
+    expect(await confirmation.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  }
+  // A centre hit must land on the same dialog that receives keys, above the help and settings.
+  expect(await confirmation.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+  })).toBe(true);
+  await confirmation.getByRole('button', { name: 'Install', exact: true }).focus();
+  await page.keyboard.press(answer);
+  await expect(confirmation).toHaveCount(0);
+  if (answer === 'Enter') {
+    // Loading another pack unmounts the old player's help. The install must run only once.
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+    await expectPads(page);
+  } else {
+    await expect(previous).toBeFocused();
+    expect((await storedPackRecords(page)).length).toBe(1);
+    await page.keyboard.press('Tab');
+    expect(await help.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(help).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Connection and light help', exact: true })).toBeFocused();
+  }
+});
+
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',
   isAutoPlay: true, isLED: true, downloadCount: 42,
