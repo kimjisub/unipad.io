@@ -1,25 +1,12 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import { afterEach, mock, test } from 'node:test';
-import { JSDOM } from 'jsdom';
+import { mainScreenCallbacks, require, stub } from './mainScreenTestPage.mjs';
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://unipad-ci.invalid/play' });
-for (const name of ['window', 'document', 'HTMLElement', 'Element', 'SVGElement']) globalThis[name] = dom.window[name];
-Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-globalThis.ResizeObserver = class { observe() {} disconnect() {} };
-window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 const errors = [];
 mock.method(console, 'error', (...args) => errors.push(args.join(' ')));
 const React = await import('react');
 const { render, cleanup, fireEvent, act } = await import('@testing-library/react');
-const require = createRequire(import.meta.url);
-const stub = (path, exports) => {
-  const id = require.resolve(path);
-  require.cache[id] = { id, filename: id, loaded: true, exports };
-};
 stub('next-intl', { useTranslations: () => key => key });
-require('framer-motion').MotionGlobalConfig.skipAnimations = true;
 let storage, writes, readGate, failRead;
 stub('../../lib/unipack/storage.ts', {
   getSetting: async key => {
@@ -31,16 +18,13 @@ stub('../../lib/unipack/storage.ts', {
   setSetting: async (key, value) => { writes.push([key, value]); storage.set(key, value); },
 });
 const { MainScreen } = require('./MainScreen.tsx');
-const noop = () => {};
 const packs = [
   { id: 'a', title: 'Alpha', producerName: 'Charlie', addedAt: 20 },
   { id: 'b', title: 'Bravo', producerName: 'Alpha', addedAt: 30 },
   { id: 'c', title: 'Charlie', producerName: 'Bravo', addedAt: 10 },
   { id: 'favorite', title: 'Zulu', producerName: 'Zulu', addedAt: 40, bookmark: true },
 ].map(pack => ({ buttonX: 8, buttonY: 8, chain: 1, lastOpenedAt: 0, zipData: new ArrayBuffer(0), ...pack }));
-const props = { savedPacks: packs, savedThemes: [], onPlay: noop, onOpenStore: noop,
-  onImport: noop, onImportTheme: noop, onDeletePack: noop, onDeleteTheme: noop,
-  onApplyTheme: noop, onClearTheme: noop, onToggleBookmark: noop };
+const props = { ...mainScreenCallbacks, savedPacks: packs, savedThemes: [] };
 const flush = async action => act(async () => { action?.(); });
 const rows = view => view.getAllByRole('option').map(row => row.dataset.packId);
 function mount(values = {}, failed = false, overrides = {}) {

@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useClientReady } from '@/hooks/useClientReady';
+import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
 import type { StoreItem } from '@/lib/store';
 import { isComposingKey, listboxTargetIndex, targetHandlesOwnKeys } from './listboxNavigation';
+import { isSearchShortcut, isTextEntryTarget } from './keyboardShortcuts';
 
 const STORE_UI_PREF_KEY = 'store_ui_pref_v1';
 
@@ -177,30 +179,21 @@ export function StoreModal({
     else onDownload(selectedItem);
   }, [visibleItems, selectedIndex, selectedItem, downloadingCode, failedCode, downloadedCodes, onPlayDownloaded, onRetryFailed, onDownload]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName?.toLowerCase();
-      const isTextInput = tag === 'input' || tag === 'textarea';
+  useWindowKeyDown((event) => {
+    const isTextInput = isTextEntryTarget(event);
 
-      if ((event.key === '/' || (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey))) && !isTextInput) {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
+    if (isSearchShortcut(event) && !isTextInput) {
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
 
-      if (event.key === 'Escape' && !downloadingCode) {
-        onClose();
-        return;
-      }
-      if (!isTextInput) handleSelectionKey(event);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [visible, downloadingCode, onClose, handleSelectionKey]);
+    if (event.key === 'Escape' && !downloadingCode) {
+      onClose();
+      return;
+    }
+    if (!isTextInput) handleSelectionKey(event);
+  }, { enabled: visible });
 
   return (
     <AnimatePresence>

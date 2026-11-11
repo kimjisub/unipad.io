@@ -1,19 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
 import { useUniPadEngine } from './useUniPadEngine';
 import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
 import { ControlPanel } from './ControlPanel';
-import { OptionPanel } from './OptionPanel';
+import { OptionPanel, OPTION_PANEL_WIDTH_PX } from './OptionPanel';
 import { MainScreen, ConfirmDialog } from './MainScreen';
 import { StoreModal } from './StoreModal';
 import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { PackErrorDialog } from './PackErrorDialog';
 import { SoundLoadNotice } from './SoundLoadNotice';
+import { PlayToast } from './PlayToast';
+import { toastDurationMs } from './toastDuration';
 import { allSoundsFailed, type SoundLoadReport } from '@/lib/unipack/soundLoading';
 import { fitPadUnit, padGroupOffsetX } from './padGroupOffset';
 import { describeStoreError } from './storeError';
@@ -230,7 +233,7 @@ export function PlayPage() {
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
-    }, 2000);
+    }, toastDurationMs(message));
   }, []);
 
   const trackStoreEvent = useCallback((name: string, params?: Record<string, string | number | boolean>) => {
@@ -663,53 +666,42 @@ export function PlayPage() {
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
-  useEffect(() => {
-    if (!state.loaded) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur?.();
-        if (soundNoticeShown && soundDetailsOpen) {
-          setSoundDetailsOpen(false);
-          setDismissedSoundReport(soundReport);
-        } else if (errorDialogShown) {
-          if (!state.criticalError) setErrorDialogShown(false);
-        } else if (launchpadSettingsOpen) {
-          setLaunchpadSettingsOpen(false);
-        } else if (state.hideUI) {
-          toggleHideUI();
-        } else if (optionPanelOpen) {
-          setOptionPanelOpen(false);
-        } else {
-          setOptionPanelOpen(true);
-        }
-        return;
+  useWindowKeyDown((e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      (document.activeElement as HTMLElement)?.blur?.();
+      if (soundNoticeShown && soundDetailsOpen) {
+        setSoundDetailsOpen(false);
+        setDismissedSoundReport(soundReport);
+      } else if (errorDialogShown) {
+        if (!state.criticalError) setErrorDialogShown(false);
+      } else if (launchpadSettingsOpen) {
+        setLaunchpadSettingsOpen(false);
+      } else if (state.hideUI) {
+        toggleHideUI();
+      } else if (optionPanelOpen) {
+        setOptionPanelOpen(false);
+      } else {
+        setOptionPanelOpen(true);
       }
-      if (dialogOpen) return;
+      return;
+    }
+    if (dialogOpen) return;
 
-      // Android function key equivalents (Backtick + number)
-      if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        switch (e.key) {
-          case 'f': e.preventDefault(); toggleFeedbackLight(); break;
-          case 'l': e.preventDefault(); toggleLed(); break;
-          case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
-          case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
-          case 'h': e.preventDefault(); toggleHideUI(); break;
-          case 'w': e.preventDefault(); toggleWatermark(); break;
-          case 'p': e.preventDefault(); toggleProLightMode(); break;
-          case 'r': e.preventDefault(); toggleRecording(); break;
-        }
+    // Android function key equivalents (Backtick + number)
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      switch (e.key) {
+        case 'f': e.preventDefault(); toggleFeedbackLight(); break;
+        case 'l': e.preventDefault(); toggleLed(); break;
+        case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
+        case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
+        case 'h': e.preventDefault(); toggleHideUI(); break;
+        case 'w': e.preventDefault(); toggleWatermark(); break;
+        case 'p': e.preventDefault(); toggleProLightMode(); break;
+        case 'r': e.preventDefault(); toggleRecording(); break;
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    state.loaded, state.hideUI, state.criticalError,
-    toggleHideUI, toggleFeedbackLight, toggleLed, switchPlayMode,
-    toggleWatermark, toggleProLightMode, toggleRecording,
-    errorDialogShown, launchpadSettingsOpen, optionPanelOpen, dialogOpen,
-    soundNoticeShown, soundDetailsOpen, soundReport,
-  ]);
+    }
+  }, { enabled: state.loaded });
 
   useEffect(() => {
     const base = 'UniPad Web Player';
@@ -1188,19 +1180,7 @@ export function PlayPage() {
         {errorDialog}
         {soundNotice}
 
-        <AnimatePresence>
-          {toast && (
-            <motion.div
-              className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
-              initial={{ opacity: 0, y: 10, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ duration: 0.2 }}
-            >
-              {toast}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <PlayToast message={toast} />
 
         {dragOver && (
           <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500/30 flex items-center justify-center z-50 pointer-events-none">
@@ -1789,20 +1769,7 @@ export function PlayPage() {
       <AnimatePresence>{autoPlayEditDialog}</AnimatePresence>
       <AnimatePresence>{shareInstallDialog}</AnimatePresence>
 
-      {/* Toast */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[88] px-4 py-2 rounded-full bg-black/80 text-xs text-white border border-white/15"
-            initial={{ opacity: 0, y: 10, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.2 }}
-          >
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PlayToast message={toast} rightInset={optionPanelOpen ? OPTION_PANEL_WIDTH_PX : 0} />
 
       {/* Portrait orientation hint (below 600px, the phone width class; tablets play in portrait) */}
       <div className="fixed inset-0 z-[90] bg-black/90 flex-col items-center justify-center gap-4 text-white hidden max-[599px]:portrait:flex">
