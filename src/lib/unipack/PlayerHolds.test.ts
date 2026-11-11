@@ -61,7 +61,7 @@ describe('PlayerHolds', () => {
   /**
    * A 2 x 2 pack: pad 0,0 loops endlessly, 1,0 repeats three times and 1,1 plays once, all pressed by
    * autoPlay and held for a second; 0,1 loops endlessly for the player. The pads are wired as the play
-   * screen wires them, and turning autoPlay off releases every pad the player is not holding.
+   * screen wires them, and turning autoPlay off releases only its own presses.
    */
   async function playScreen() {
     const pack = await parseUniPack(await packZip({
@@ -76,15 +76,15 @@ describe('PlayerHolds', () => {
     const soundOn = (x: number, y: number, input: string) => { audio.startingPad(x, y); engine.soundOn(x, y, input); };
     const runner = new AutoPlayRunner(pack, {
       onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {},
-      onPadTouchOn: (x, y) => { holds.autoPlayPressed(x, y); soundOn(x, y, AUTO_PLAY_INPUT); },
+      onPadTouchOn: (x, y) => { soundOn(x, y, AUTO_PLAY_INPUT); },
       onPadTouchOff: (x, y) => engine.soundOff(x, y, AUTO_PLAY_INPUT),
       onGuidePadOn() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {}, onRemoveGuide() {},
     }, () => 0, () => {}, () => {}, () => {});
     return {
       playerPress: (x: number, y: number) => { holds.press(x, y); soundOn(x, y, 'player'); },
-      playerRelease: (x: number, y: number) => { engine.soundOff(x, y, holds.release(x, y) ? undefined : 'player'); },
+      playerRelease: (x: number, y: number) => { holds.release(x, y); engine.soundOff(x, y, 'player'); },
       startAutoPlay: () => { runner.launch(); clock.tick(1); },
-      turnAutoPlayOff: () => { runner.stop(); holds.releaseOthers(2, 2, (x, y) => engine.soundOff(x, y)); },
+      turnAutoPlayOff: () => { runner.stop(); for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) engine.soundOff(x, y, AUTO_PLAY_INPUT); },
     };
   }
   const state = (pad: string) => sources.filter((s) => s.pad === pad).map((s) => (s.stopped ? 'stopped' : s.scheduledEnd ? 'ends by itself' : 'sounding'));
@@ -102,15 +102,15 @@ describe('PlayerHolds', () => {
     assert.deepEqual(state('0,1'), ['stopped']);
   });
 
-  test('a pad the player also holds keeps sounding when autoPlay is turned off', async () => {
+  test('autoPlay owns a replaced loop even while the player holds its pad', async () => {
     const screen = await playScreen();
     screen.playerPress(0, 0);
     screen.startAutoPlay();
-    // autoPlay's press restarts the pad's loop; the player still holds the pad.
+    // autoPlay replaces the player's sound; its owner is now autoPlay.
     assert.deepEqual(state('0,0'), ['stopped', 'sounding']);
 
     screen.turnAutoPlayOff();
-    assert.deepEqual(state('0,0'), ['stopped', 'sounding']);
+    assert.deepEqual(state('0,0'), ['stopped', 'stopped']);
 
     screen.playerRelease(0, 0);
     assert.deepEqual(state('0,0'), ['stopped', 'stopped']);
@@ -131,31 +131,4 @@ describe('PlayerHolds', () => {
     assert.equal(holds.isHeld(1, 1), false);
   });
 
-  test('the last release of a held pad autoPlay stopped over releases autoPlay\'s press too', () => {
-    const holds = new PlayerHolds();
-    holds.press(0, 0);
-    holds.press(0, 0);
-    holds.press(0, 1);
-    holds.releaseOthers(2, 2, () => {});
-    assert.equal(holds.release(0, 0), false);
-    assert.equal(holds.release(0, 0), true);
-    // autoPlay pressing the pad again takes its press back from the player's release.
-    holds.autoPlayPressed(0, 1);
-    assert.equal(holds.release(0, 1), false);
-    // A pad held only after autoPlay stopped is the player's alone.
-    holds.press(1, 1);
-    assert.equal(holds.release(1, 1), false);
-  });
-
-  test('releaseOthers visits every pad of the grid except the held ones', () => {
-    const holds = new PlayerHolds();
-    holds.press(0, 1);
-    const released: string[] = [];
-    holds.releaseOthers(2, 2, (x, y) => released.push(`${x},${y}`));
-    assert.deepEqual(released, ['0,0', '1,0', '1,1']);
-    holds.clear();
-    released.length = 0;
-    holds.releaseOthers(2, 2, (x, y) => released.push(`${x},${y}`));
-    assert.deepEqual(released, ['0,0', '0,1', '1,0', '1,1']);
-  });
 });

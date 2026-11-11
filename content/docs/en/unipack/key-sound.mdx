@@ -1,6 +1,8 @@
 The `keySound` file maps sound files to each button.
 Write one mapping per line, separated by spaces.
 
+Sound paths are relative to `sounds/`. Resolve `..` as a parent folder within it: `fx/../kick.wav` finds `kick.wav`. If resolution would leave `sounds/`, the sound is missing and the line is skipped with a warning; files outside that folder are never searched.
+
 ## Syntax
 
 ```
