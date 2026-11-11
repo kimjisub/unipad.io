@@ -45,7 +45,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5"
   },
-  "packageManager": "pnpm@9.11.0",
+  "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=24.15.0"
   },
@@ -56,6 +56,14 @@
         "CVE-2026-101916"
       ]
     },
+    "ignoredBuiltDependencies": [
+      "@firebase/util",
+      "@parcel/watcher",
+      "@swc/core",
+      "esbuild",
+      "protobufjs",
+      "unrs-resolver"
+    ],
     "overrides": {
       "@tailwindcss/typography>postcss-selector-parser": "6.1.5",
       "@typescript-eslint/typescript-estree>minimatch": "^11.0.5"
