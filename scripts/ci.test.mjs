@@ -62,7 +62,8 @@ test('Linux runs playback, offline, sound, multi-touch and layout tests in Chrom
     'e2e/sound-formats.spec.ts',
     'e2e/socket-failure-record.spec.ts',
     ...playbackFiles.filter(file => file !== 'play.spec.ts').map(file => `e2e/${file}`),
-  ], 'Browser playback tests must run all nine spec files in order');
+    'e2e/notice-placement.spec.ts',
+  ], 'Browser playback tests must run all ten spec files in order');
   const description = readme.match(/\*\*Browser playback tests\*\* job\b([\s\S]*?)\bin Chromium;/);
   assert.ok(description, 'README must describe the Browser playback tests job');
   const documentedFiles = [...description[1].matchAll(/`(e2e\/[^`]+\.spec\.ts)`/g)].map(match => match[1]);

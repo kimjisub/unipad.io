@@ -54,7 +54,7 @@ async function openMenu(page: Page) {
 async function confirm(page: Page, dialogName: string, action: string, message: string) {
   const dialog = page.getByRole('alertdialog', { name: dialogName, exact: true });
   await expect(dialog).toBeVisible();
-  // Retain a visible 2 s toast even if the click response or dialog exit arrives later.
+  // Retain a visible toast even if the click response or dialog exit arrives later.
   // Arm this before clicking, but give the action its own time before the usual assertion budget.
   const notice = await page.evaluateHandle(message => {
     const observation = { visible: false, disconnect: () => observer.disconnect() };

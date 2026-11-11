@@ -72,7 +72,8 @@ Every pull request (including drafts) runs the fixed **Web checks** job in
 **Browser playback tests** job builds with the browser-test configuration below and
 runs `e2e/play.spec.ts`, `e2e/offline-play.spec.ts`, `e2e/sound-formats.spec.ts`,
 `e2e/socket-failure-record.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
-`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
+`e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, `e2e/home.spec.ts`, and
+`e2e/notice-placement.spec.ts`
 on Linux in Chromium; on failure it
 uploads the Playwright report and traces as an artifact. A separate **Windows playback**
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
