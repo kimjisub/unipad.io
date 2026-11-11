@@ -686,6 +686,21 @@ test('paused guide finishes after the last manual step', async ({ page }, info) 
   await expect(mode(page, 'Step')).toHaveAttribute('aria-pressed', 'false');
 });
 
+for (const interrupted of [false, true]) test(`one Play after a paused guide resumes the guide ${interrupted ? 'after' : 'without'} a hidden tab`, async ({ page }, info) => {
+  await open(page, 'd 1000\no 1 1\nf 1 1\nd 1000\no 1 2\nf 1 2\nd 10000');
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(301);
+  await page.getByRole('button', { name: 'Pause', exact: true }).dispatchEvent('click'); await page.clock.runFor(5);
+  await expect(mode(page, 'Step')).toHaveAttribute('aria-pressed', 'true');
+  if (interrupted) { await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false); await page.clock.runFor(16); }
+  await page.getByTitle('Play', { exact: true }).dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => window.transitionAudio.state)).toBe('running');
+  await page.clock.runFor(16);
+  await snapshot(page, info, `resumed-guide-${interrupted ? 'after' : 'without'}-hidden-tab`);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(0);
+});
+
 test('returning manual play requests screen wake protection again', async ({ page }, info) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'wakeRequests', { value: 0, writable: true });

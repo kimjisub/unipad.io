@@ -1,9 +1,11 @@
 import ts from 'typescript';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { test, expect, expectPads } from './browser';
 import type { Page } from '@playwright/test';
 import { storedPackRecords } from './saved-packs';
 import { seedDatabase } from './storage-seed';
+import { checkArchiveRollback, StorageRollbackError } from './storage-rollback';
+import { withFirefoxLogs, logOffsets, attachLogsSince } from './firefox-logs';
 
 async function seedLegacyPacks(page: Page) {
   const bytes = Array.from(await readFile('e2e/fixtures/basic.uni'));
@@ -180,38 +182,7 @@ for (const saving of ['import', 'store'] as const) {
   for (const failure of ['quota', 'abort', 'exception'] as const) {
     test(`${saving} keeps the previous archive when the second chunk fails with ${failure}`, async ({ page }) => {
       await openStorageModule(page);
-      const result = await page.evaluate(async ({ saving, failure }) => {
-        const path = '/storage-module.mjs';
-        const api = await import(path) as typeof import('../src/lib/unipack/storage');
-        const info = { title: 'Existing archive', producerName: 'Tests', buttonX: 8, buttonY: 8, chain: 1, storeCode: 'test-store' };
-        const oldId = await api.saveStoreUniPack(new Uint8Array([1, 2, 3]).buffer, info);
-        await api.toggleUniPackBookmark(oldId);
-        const previous = await api.getUniPack(oldId);
-        const put = IDBObjectStore.prototype.put;
-        let chunks = 0;
-        IDBObjectStore.prototype.put = function (value, key) {
-          if (this.name === 'unipackChunks' && chunks === 1) {
-            chunks++;
-            if (failure !== 'abort') throw new DOMException('Injected storage failure.', failure === 'quota' ? 'QuotaExceededError' : 'DataCloneError');
-            const request = put.call(this, value, key);
-            request.addEventListener('success', () => this.transaction.abort(), { once: true });
-            return request;
-          }
-          const request = put.call(this, value, key);
-          if (this.name === 'unipackChunks') chunks++;
-          return request;
-        };
-        let error = '';
-        try {
-          const bytes = new Uint8Array(16 * 1024 * 1024 + 7).buffer;
-          if (saving === 'store') await api.saveStoreUniPack(bytes, info);
-          else await api.saveUniPack(bytes, info);
-        } catch (cause) { error = (cause as Error).name; }
-        const after = await api.getUniPack(oldId);
-        const records = await api.listUniPacks();
-        const sameBytes = after && Array.from(new Uint8Array(after.zipData));
-        return { error, chunks, sameBytes, unchanged: JSON.stringify(previous) === JSON.stringify(after), ids: records.map(r => r.id), oldId };
-      }, { saving, failure });
+      const result = await checkArchiveRollback(page, saving, failure);
       expect(result.error).toBe(failure === 'quota' ? 'QuotaExceededError' : failure === 'exception' ? 'DataCloneError' : 'AbortError');
       expect(result.chunks).toBe(2);
       expect(result.sameBytes).toEqual([1, 2, 3]);
@@ -304,3 +275,63 @@ for (const saving of ['import', 'store'] as const) {
     expect(result).toEqual({ sameId: true, bytes: [1, 2, 3], count: 1 });
   });
 }
+
+// Reproduce the browser's READ_ONLY origin-initialization failure without mocking IndexedDB.
+// This profile belongs only to this test; no ordinary browser profile is touched.
+test('Firefox origin initialization failure is reported before any rollback fault is injected', async ({ browserName, playwright, baseURL }, info) => {
+  test.skip(browserName !== 'firefox', 'Firefox quota manager failure.');
+  test.skip(process.platform === 'win32', 'The standard error wrapper is a shell script.');
+  const profile = info.outputPath('profile');
+  const logs = info.outputPath('firefox-logs');
+  await mkdir(profile, { recursive: true });
+  const context = await playwright.firefox.launchPersistentContext(profile, { ...withFirefoxLogs({ headless: true }, logs), baseURL });
+  try {
+    const page = context.pages()[0];
+    // Initialize storage.sqlite on a different origin, then leave Firefox's open connection
+    // pointing at its unlinked file. The next origin upsert sees a read-only cache connection.
+    await page.route('http://127.0.0.1/storage-warmup', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><p>Warmup</p>' }));
+    await page.goto('http://127.0.0.1/storage-warmup');
+    await page.evaluate(() => new Promise<void>((resolve, reject) => {
+      const open = indexedDB.open('warmup', 1);
+      open.onsuccess = () => { open.result.close(); resolve(); };
+      open.onerror = () => reject(open.error);
+    }));
+    await unlink(`${profile}/storage.sqlite`);
+    const since = logOffsets(logs);
+    await openStorageModule(page);
+    const error = await checkArchiveRollback(page, 'import', 'quota').catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(StorageRollbackError);
+    expect((error as StorageRollbackError).report).toMatchObject({ phase: 'save-previous', chunks: 0, replacementError: '', failure: { name: 'UnknownError' } });
+    expect((error as Error).message).toContain('save-previous');
+    expect((error as Error).message).toContain('UnknownError');
+    await attachLogsSince(info, logs, since);
+    const parent = info.attachments.find(item => item.name === 'firefox-log-firefox.moz_log');
+    expect(String(parent?.body)).toContain('NS_ERROR_FILE_READ_ONLY');
+    expect(String(parent?.body)).toContain('DirectoryLockFailed');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a read failure after the injected quota error remains a rollback verification failure', async ({ page }) => {
+  await openStorageModule(page);
+  await page.evaluate(() => {
+    let aborted = false;
+    const abort = IDBTransaction.prototype.abort;
+    IDBTransaction.prototype.abort = function () {
+      abort.call(this);
+      aborted = true;
+    };
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (key) {
+      if (aborted) throw new DOMException('Injected read failure after abort.', 'UnknownError');
+      return get.call(this, key);
+    };
+  });
+  const error = await checkArchiveRollback(page, 'import', 'quota').catch((cause: unknown) => cause);
+  expect(error).toBeInstanceOf(StorageRollbackError);
+  expect((error as StorageRollbackError).report).toMatchObject({
+    phase: 'read-previous-after-failure', chunks: 2, replacementError: 'QuotaExceededError',
+    failure: { name: 'UnknownError', message: 'Injected read failure after abort.' },
+  });
+});
