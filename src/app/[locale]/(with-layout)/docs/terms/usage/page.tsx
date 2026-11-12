@@ -1,5 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { DocsContentPage } from '@/components/docs/DocsContentPage';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/docs/terms/usage');
 
 export default async function UsageScopePage({
   params,

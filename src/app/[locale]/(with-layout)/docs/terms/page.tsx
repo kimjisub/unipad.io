@@ -1,6 +1,9 @@
 import { Link } from '@/i18n/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { ChevronLeft, Shield, AppWindow } from 'lucide-react';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/docs/terms');
 
 const termPages = [
   {

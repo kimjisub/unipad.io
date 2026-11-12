@@ -8,6 +8,7 @@ import { FeaturesSection } from '@/components/introduce/FeaturesSection';
 import { HeroSection } from '@/components/introduce/HeroSection';
 import { HowItWorksSection } from '@/components/introduce/HowItWorksSection';
 import { StatsSection } from '@/components/introduce/StatsSection';
+import { pageMetadata } from '@/lib/seo';
 
 export async function generateMetadata({
   params,
@@ -22,9 +23,7 @@ export async function generateMetadata({
   return {
     title,
     description,
-    alternates: {
-      canonical: 'https://unipad.io',
-    },
+    ...pageMetadata(''),
     openGraph: {
       title,
       description,

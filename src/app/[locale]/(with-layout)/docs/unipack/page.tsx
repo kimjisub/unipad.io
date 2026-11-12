@@ -1,5 +1,8 @@
 import { Link } from '@/i18n/navigation';
 import { setRequestLocale } from 'next-intl/server';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/docs/unipack');
 
 const pages = [
   { href: '/docs/unipack/playback', title: 'Playback', emoji: '🎵', description: '공통 연주·중단·설정·자동 맞춤 동작 기준' },
