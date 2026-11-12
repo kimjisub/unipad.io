@@ -3,6 +3,9 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Music, Palette, Rocket, Shield } from 'lucide-react';
 
 import { GET_STARTED_PATH } from '@/lib/constants';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/docs');
 
 const docSections = [
   {

@@ -4,9 +4,15 @@ import { ArrowLeft, Calendar, Tag } from 'lucide-react';
 
 import { Link } from '@/i18n/navigation';
 import { getAllNoticePosts, getNoticePost } from '@/data/notices';
+import { pageMetadata } from '@/lib/seo';
 
 export function generateStaticParams() {
   return getAllNoticePosts().map((post) => ({ slug: post.slug }));
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  return pageMetadata(`/notices/${slug}`);
 }
 
 export default async function NoticePostPage({

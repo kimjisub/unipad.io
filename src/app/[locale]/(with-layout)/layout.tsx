@@ -17,22 +17,20 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 import TopBar from '@/components/TopBar';
 import { AnimatePresenceWrapper } from '@/components/motion/AnimatePresenceWrapper';
 import { routing } from '@/i18n/routing';
-
-const siteUrl = 'https://unipad.io';
+import { SITE_URL } from '@/lib/seo';
 
 export const metadata: Metadata = {
-	metadataBase: new URL(siteUrl),
+	metadataBase: new URL(SITE_URL),
 	title: {
 		default: 'UniPad - Play Rhythm',
 		template: '%s | UniPad',
 	},
 	description: 'Turn your device into a Launchpad. Play, create, and share music with 9.2M+ downloads worldwide. Free, open-source, with LED guides, auto-play, custom skins, and the UniPack ecosystem.',
 	keywords: ['UniPad', 'Launchpad', 'UniPack', 'Music', 'Rhythm', 'Android', 'Web', 'MIDI', 'LED', 'Free', 'Open Source', 'Music Game', 'Pad', 'DJ'],
-	authors: [{ name: 'UniPad Team', url: siteUrl }],
+	authors: [{ name: 'UniPad Team', url: SITE_URL }],
 	creator: 'UniPad Team',
 	openGraph: {
 		type: 'website',
-		url: siteUrl,
 		siteName: 'UniPad',
 		title: 'UniPad - Play Rhythm',
 		description: 'Turn your device into a Launchpad. 9.2M+ downloads. Free & open-source with LED guides, custom skins, and the UniPack ecosystem.',
@@ -46,12 +44,6 @@ export const metadata: Metadata = {
 	robots: {
 		index: true,
 		follow: true,
-	},
-	alternates: {
-		languages: {
-			en: `${siteUrl}/en`,
-			ko: `${siteUrl}/ko`,
-		},
 	},
 };
 

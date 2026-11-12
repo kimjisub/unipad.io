@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteUrl = 'https://unipad.io';
+import { SITE_URL } from '@/lib/seo';
 
 export default function robots(): MetadataRoute.Robots {
 	return {
@@ -11,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
 				disallow: ['/_next/'],
 			},
 		],
-		sitemap: `${siteUrl}/sitemap.xml`,
-		host: siteUrl,
+		sitemap: `${SITE_URL}/sitemap.xml`,
+		host: SITE_URL,
 	};
 }

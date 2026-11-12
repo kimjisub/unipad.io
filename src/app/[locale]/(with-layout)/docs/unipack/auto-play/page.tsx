@@ -1,4 +1,7 @@
 import { DocsContentPage } from '@/components/docs/DocsContentPage';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/docs/unipack/auto-play');
 
 export default async function AutoPlayPage({
   params,

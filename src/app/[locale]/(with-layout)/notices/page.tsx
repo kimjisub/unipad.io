@@ -3,6 +3,9 @@ import { Calendar, Tag } from 'lucide-react';
 
 import { Link } from '@/i18n/navigation';
 import { getAllNoticePosts } from '@/data/notices';
+import { pageMetadata } from '@/lib/seo';
+
+export const metadata = pageMetadata('/notices');
 
 export default async function NoticesPage({
   params,
