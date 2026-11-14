@@ -53,6 +53,28 @@ const DEFAULT_THEME: ThemeAssets = {
   isChainLed: true,
 };
 
+type ThemeImageKey = {
+  [K in keyof ThemeAssets]: ThemeAssets[K] extends string | null ? K : never;
+}[keyof ThemeAssets];
+
+/**
+ * The images a theme ZIP can set and the file stems read for each, in lookup order.
+ * The first stem is the documented file name (content/docs/<locale>/theme.mdx).
+ */
+export const THEME_IMAGES: ReadonlyArray<readonly [ThemeImageKey, readonly string[]]> = [
+  ['icon', ['theme_ic']],
+  ['playbg', ['playbg']],
+  ['customLogo', ['custom_logo', 'custom-logo', 'logo']],
+  ['btn', ['btn']],
+  ['btnPressed', ['btn_']],
+  ['chainled', ['chainled']],
+  ['chain', ['chain']],
+  ['chainSelected', ['chain_']],
+  ['chainGuide', ['chain__']],
+  ['phantom', ['phantom']],
+  ['phantomVariant', ['phantom_']],
+];
+
 // Images the apps draw only when the theme ZIP has them: without chainled the chain buttons are
 // drawn from the chain images, and without custom_logo or phantom_ nothing is drawn in their place.
 const ZIP_ONLY_IMAGES = { customLogo: null, chainled: null, phantomVariant: null } as const;
@@ -161,21 +183,7 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
   }
 
   // Load image assets
-  const imageMap: Array<[keyof ThemeAssets, string[]]> = [
-    ['icon', ['theme_ic']],
-    ['playbg', ['playbg']],
-    ['customLogo', ['custom_logo', 'custom-logo', 'logo']],
-    ['btn', ['btn']],
-    ['btnPressed', ['btn_']],
-    ['chainled', ['chainled']],
-    ['chain', ['chain']],
-    ['chainSelected', ['chain_']],
-    ['chainGuide', ['chain__']],
-    ['phantom', ['phantom']],
-    ['phantomVariant', ['phantom_']],
-  ];
-
-  for (const [key, stems] of imageMap) {
+  for (const [key, stems] of THEME_IMAGES) {
     const candidates: string[] = [];
     for (const stem of stems) {
       candidates.push(`${stem}.png`, `${stem}.webp`, `${stem}.jpg`, `${stem}.jpeg`);
@@ -184,8 +192,7 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
     if (file) {
       try {
         const data = await file.async('uint8array');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (theme as any)[key] = toDataUrl(data, getMimeType(file.name));
+        theme[key] = toDataUrl(data, getMimeType(file.name));
       } catch {
         console.warn(`Failed to load theme image: ${candidates.join(', ')}`);
       }
@@ -233,14 +240,9 @@ function findFile(zip: JSZip, prefix: string, names: string[]): JSZip.JSZipObjec
 }
 
 export function releaseThemeUrls(theme: ThemeAssets): void {
-  const urlFields: (keyof ThemeAssets)[] = [
-    'icon', 'playbg', 'customLogo', 'btn', 'btnPressed',
-    'chainled', 'chain', 'chainSelected', 'chainGuide',
-    'phantom', 'phantomVariant',
-  ];
-  for (const field of urlFields) {
+  for (const [field] of THEME_IMAGES) {
     const url = theme[field];
-    if (typeof url === 'string' && url.startsWith('blob:')) {
+    if (url?.startsWith('blob:')) {
       URL.revokeObjectURL(url);
     }
   }

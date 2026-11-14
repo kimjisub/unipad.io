@@ -1,18 +1,20 @@
 The UniPad theme system lets you customize the appearance of the play screen.
 Themes are distributed as ZIP files and can change button images, backgrounds, chain area visuals, and UI colors.
+The same theme ZIP works in the Android app, the iOS app and the [web player](/play). Where they differ, each section says so.
 
 ## File Structure
 
 ```
 my-theme.zip
-├── theme.json          (Required) Theme metadata
-├── theme_ic.png        (Required) Theme icon/thumbnail
+├── theme.json          (Required)    Theme name and author
+├── theme_ic.png        (Recommended) Theme list icon
 ├── playbg.png          Background image
 ├── btn.png             Pad button (default state)
 ├── btn_.png            Pad button (pressed state)
 ├── phantom.png         Guide overlay
 ├── phantom_.png        Guide overlay variant (optional)
-├── custom_logo.png     Custom logo (optional)
+├── custom_logo.png     Top-right screen logo (optional)
+├── logo_led.png        Pro Light Mode logo cell (optional, next Android version)
 ├── chainled.png        Chain LED mode image (Mode A)
 ├── chain.png           Chain default state (Mode B)
 ├── chain_.png          Chain selected state (Mode B)
@@ -20,11 +22,13 @@ my-theme.zip
 └── colors.json         UI color customization (optional)
 ```
 
-## Required Files
+Everything except `theme.json` may be left out. Write the file names in lowercase, exactly as above.
+
+## Theme Information
 
 ### theme.json
 
-A JSON file containing the theme's name, author, and version information.
+A JSON file containing the theme's name, author, and version information. It is the only file a theme ZIP must contain.
 
 ```json
 {
@@ -38,18 +42,35 @@ A JSON file containing the theme's name, author, and version information.
 |-------|------|----------|-------------|
 | `name` | string | O | Theme display name |
 | `author` | string | O | Creator name |
-| `version` | string | | Version (default: `"1.0"`) |
+| `version` | string | O | Version string (e.g. `"1.0.0"`) |
+
+Always include all three fields. When one is missing, each app behaves differently:
+
+- **iOS app**: if `theme.json` is not valid JSON or lacks any of `name`, `author` or `version`, the import fails.
+- **Android app**: a missing `version` becomes `"1.0"`. If `theme.json` is not valid JSON or lacks `name` or `author`, the import finishes but the theme never appears in the list.
+- **Web player**: a missing `name` or `author` becomes `Unknown`, and a missing `version` becomes `"1.0"`. If `theme.json` is absent or not valid JSON, the theme is listed under the default theme's name (`Default`, by `UniPad`).
 
 ### theme\_ic.png
 
 The icon displayed in the theme selection list. Rendered at 44dp with rounded corners.
+A theme without it can still be imported; the list then shows the default theme icon.
 
 - Recommended size: 132x132px (xxhdpi)
 - Square images recommended
+- Use a `.png` file for the icon. The Android theme list reads only `theme_ic.png`.
 
 ## Image Resources
 
-All image files must be in **PNG format**. Any missing resources will fall back to the app's default theme.
+**PNG** is recommended. The Android app and the web player also read WebP, JPG and JPEG files of the same name (looking for PNG, then WebP, JPG, JPEG), but the iOS app reads PNG only (except for the icon, where `theme_ic.webp` also works).
+Use PNG for any image that needs transparency.
+
+Any missing resources will fall back to the app's default theme, with three exceptions:
+
+- Without `phantom_.png`, every pad uses `phantom.png`.
+- Without `custom_logo.png`, no logo is shown.
+- Without `chainled.png`, the chain area switches to Mode B (`chain.png`, `chain_.png`, `chain__.png`). See **Chain Area** below.
+
+The web player does not follow these three exceptions yet and shows the default theme's image in place of each missing file (a fix is in progress). If you try a theme in the browser first, keep in mind that it may look different in the Android and iOS apps.
 
 ### Pad Area
 
@@ -60,7 +81,60 @@ All image files must be in **PNG format**. Any missing resources will fall back 
 | `btn_.png` | Pad button pressed state | When a pad is touched/pressed |
 | `phantom.png` | Guide overlay | Used for autoplay guides, etc. |
 | `phantom_.png` | Guide overlay variant | Alternates with phantom.png in a 2x2 pattern on even-sized pads (optional) |
-| `custom_logo.png` | Custom logo | Displayed as an overlay on the play screen (optional) |
+| `custom_logo.png` | Screen logo | Displayed in the top-right corner of the play screen (optional) |
+
+### Screen Logo (custom\_logo.png)
+
+A decorative logo in the top-right corner of the play screen, shown in the image's own colors.
+
+- It is about 90dp wide and shrinks where it would cover the pads or chain buttons.
+- Turning on **Hide UI** in the options hides it.
+- In the web player it is always 90px wide and never shrinks, and it is hidden while the options panel is open.
+- Without this file, no logo is shown.
+- The logo that lights up with the pack's logo light is `logo_led.png`, below. Neither image stands in for the other.
+
+### Pro Light Mode Logo Cell (logo\_led.png)
+
+<Callout title="Availability">
+Supported from the next Android version. The iOS app and the web player do not draw this cell yet and ignore the file.
+</Callout>
+
+With **Pro Light Mode** turned on in the options, round buttons surround the pads, and a logo cell appears at the corner where the top and right rows meet.
+Like the logo light on a real Launchpad, it lights up in the color the pack's LED files send to the logo (`on l auto 5`, `on l FF0000` and so on; see the [LED documentation](/docs/unipack/key-led)).
+`logo_led.png` sets the shape drawn in this cell. It is not a button.
+
+**Making one**
+
+- Use **one square PNG** with a white shape on a transparent background, at least **128x128 pixels**, with little transparent padding.
+- The app uses only the image's transparency. The original colors are ignored and every visible part takes the current logo light color; semi-transparent pixels and soft edges are kept.
+- No separate images for the lit and unlit states are needed.
+
+**How it lights up**
+
+- When the pack sends a color to the logo, the whole shape takes that color. `on l auto 5`, for example, turns it red.
+- When the logo light is off (`off l`), or the **Led** option is off, the shape shows the theme's **unlit pad color**: the average color of `btn.png`, where fully transparent pixels do not count and semi-transparent pixels count less. A patterned pad image gives one average color; the pattern is not copied into the logo. If `btn.png` is missing, unreadable or entirely transparent, the default theme's pad color is used.
+- Chain Mode A and Mode B behave the same.
+
+**Size and position**
+
+- The image is fitted, without cropping or stretching, inside a square about 70% of the size of the round button next to it. Transparent padding counts as part of the image.
+- A non-square image is scaled to fit inside that square. On unusually shaped pad layouts the cell can be smaller still, so it never covers the buttons.
+- Normal mode never shows it. With **Hide UI** on, it stays visible together with the round buttons.
+
+**Without the file**
+
+- If the file is absent or cannot be decoded, the app uses the default UniPad logo (a four-part mark). Existing themes need no changes.
+- `custom_logo.png` is never used in its place.
+- An opaque JPG lights the whole square; a fully transparent image hides the logo cell.
+
+```
+diamond-theme.zip
+├── theme.json
+├── theme_ic.png
+└── logo_led.png        a white diamond on a transparent 128x128 PNG
+```
+
+With this theme the diamond turns red on `on l auto 5` and returns to the unlit pad color on `off l`.
 
 ### Chain Area
 
@@ -79,6 +153,7 @@ Uses the pad button (`btn.png`) as background, places `chainled.png` on the phan
 
 Activated when `chainled.png` does not exist.
 Displays different images directly for each state.
+When `chainled.png` is missing, the web player does not use the theme's `chain*.png` files yet and draws Mode A with the default `chainled.png` instead (a fix is in progress).
 
 | File | Description |
 |------|-------------|
@@ -91,7 +166,9 @@ Displays different images directly for each state.
 ### colors.json
 
 You can customize the colors of UI elements. All fields are optional; unspecified fields will use default colors.
-Color values should be hex strings in `#RRGGBB` or `#AARRGGBB` format.
+Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The web player reads an 8-digit value as `#RRGGBBAA` (alpha last), so it shows a different color there. To get the same color on the web too, use `#RRGGBB` (6 digits).
+The Android and iOS apps replace a string they cannot read with the default color for that field only. An empty string `""`, however, makes the Android app fail to open the theme and fall back to the default theme, so leave out a field you do not want to change instead of leaving it empty. The apps accept different other formats (the Android app, for example, also takes color names such as `red`), so stick to hex.
+The file itself must be valid JSON, and color values must be strings, not numbers. If the JSON is broken or a value is not a string, the iOS app ignores the whole file and the Android app cannot open the theme and returns to the default theme. The web player ignores a broken file and keeps the default color for any value that is not a string.
 
 ```json
 {
@@ -104,16 +181,18 @@ Color values should be hex strings in `#RRGGBB` or `#AARRGGBB` format.
 
 | Field | Description |
 |-------|-------------|
-| `checkbox` | Option checkbox color |
-| `trace_log` | Trace log text color |
+| `checkbox` | Option checkbox color (in the web player, the control panel on the left of the play screen) |
+| `trace_log` | Color of the numbers and lines the **Trace recording** option leaves on the pads |
 | `option_window` | Option panel background color |
 | `option_window_checkbox` | Checkbox color inside the option panel |
+
+The web player does not apply `option_window` (options panel background) yet; that color changes only in the Android and iOS apps.
 
 ## Screen Layout
 
 ```
 ┌──────────────────────────────────┐
-│           playbg.png             │
+│ playbg.png        custom_logo.png│
 │  ┌─────────────────────┐ ┌───┐  │
 │  │  8x8 Pad Grid       │ │ C │  │
 │  │  ┌───┬───┬───┬───┐  │ │ h │  │
@@ -127,21 +206,21 @@ Color values should be hex strings in `#RRGGBB` or `#AARRGGBB` format.
 │  │  └───┴───┴───┴───┘  │ └───┘  │
 │  │   phantom overlay    │        │
 │  └─────────────────────┘        │
-│         custom_logo.png         │
 └──────────────────────────────────┘
 ```
 
+In Pro Light Mode, rows of round buttons also appear above and to the right of the pads, and `logo_led.png` sits in the top-right corner where those rows meet.
+
 ## Examples
 
-### Minimal Setup (Required Files Only)
+### Minimal Setup
 
 ```
 minimal-theme.zip
-├── theme.json
-└── theme_ic.png
+└── theme.json
 ```
 
-All resources will fall back to the app's default theme. Only the icon and name will appear in the theme list.
+Put `name`, `author` and `version` in `theme.json`. All resources will fall back to the app's default theme. The theme list shows the name with the default icon; add `theme_ic.png` to show your own icon.
 
 ### Full Setup
 
@@ -156,25 +235,26 @@ full-theme.zip
 ├── phantom.png
 ├── phantom_.png
 ├── custom_logo.png
+├── logo_led.png
 └── chainled.png
 ```
 
 ## Installation
 
 1. Prepare your files according to the structure above.
-2. Compress all files into a single ZIP file. Files must be located at the ZIP root (do not place them inside a subfolder).
-3. In the UniPad app, go to **Theme → Add Theme → Import ZIP file**.
+2. Compress all files into a single ZIP file. Put the files at the ZIP root; the Android app does not look inside subfolders.
+3. In the apps (Android and iOS), go to **Theme → Add Theme → Import ZIP file**. In the web player, press the **Theme** button on the start screen.
 4. Select the ZIP file and it will be automatically validated and installed.
 
 ## Validation
 
-The following items are validated during import:
+To work in the Android and iOS apps, a theme must meet these conditions:
 
-- `theme.json` must exist at the ZIP root.
-- `theme_ic.png` must exist at the ZIP root.
-- `theme.json` must be valid JSON with `name` and `author` fields required.
+- `theme.json` must exist at the ZIP root. Without it the theme is not installed and an error message is shown.
+- `theme.json` must be valid JSON with `name`, `author` and `version` (`version` is required by the iOS app). See the theme.json section above for what each app does when they are missing.
 
-If validation fails, the theme will not be installed and an error message will be displayed.
+Image files, `theme_ic.png` included, are not checked. A missing or unreadable image falls back to the default theme's image.
+The web player is more lenient and imports a ZIP even without `theme.json`, but follow the conditions above so the theme also works in the apps.
 
 <Callout title="Design Tips">
 - Using transparent backgrounds (alpha channel) in images allows LED colors to blend naturally.
@@ -182,4 +262,5 @@ If validation fails, the theme will not be installed and an error message will b
 - `phantom_.png` alternates with `phantom.png` in a 2x2 pattern when the pad size is even (e.g., 8x8). Use a slightly different design for visual distinction.
 - Chain Mode A (LED mode) dynamically applies LED colors to a single image, allowing diverse states with just one image.
 - Chain Mode B (Drawable mode) gives you direct control over each state's image, enabling more creative freedom in design.
+- `logo_led.png` sets only the shape, not the color. Drawing it in white with little padding keeps it sharp in the small cell.
 </Callout>
