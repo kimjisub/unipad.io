@@ -29,7 +29,7 @@ const screens = (optionWindow: string): Rgb[] =>
 
 /** `#rrggbb`, `rgba(…)` or the panel's content colour at a percentage, as [colour, opacity]. */
 function resolve(css: string, ink: string): [Rgb, number] {
-  const inkMix = /var\(--panel-ink\) (\d+)%/.exec(css);
+  const inkMix = /var\(--panel-ink\) ([\d.]+)%/.exec(css);
   if (inkMix) return [rgbOf(ink), Number(inkMix[1]) / 100];
   const rgba = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(css);
   if (rgba) return [[1, 2, 3].map((i) => Number(rgba[i])) as Rgb, Number(rgba[4])];
@@ -51,12 +51,15 @@ test('without a theme options panel colour every panel colour stays as the play 
     background: DEFAULT_OPTION_PANEL_BACKGROUND,
     ink: '#ffffff',
     inkSecondary: panelInk(65),
+    volumeValue: panelInk(40),
+    hint: panelInk(35),
+    linkIcon: panelInk(30),
     ...OPTION_PANEL_MARKS,
     accent: ACCENT,
     accentSwitch: { track: 'rgba(65, 79, 102, 0.5)', thumb: 'var(--panel-ink)' },
     recordSwitch: { track: 'rgba(239, 68, 68, 0.5)', thumb: 'var(--panel-ink)' },
     switchOff: { track: panelInk(10), thumb: panelInk(70) },
-    segmentActive: { fill: ACCENT, text: '#000000' },
+    segment: { track: panelInk(6), fill: ACCENT, text: '#000000', idleText: panelInk(70) },
     drawnVolumeSlider: false,
   });
 });
@@ -93,7 +96,7 @@ test('on a dark panel colours that already read keep their exact values', () => 
   assert.equal(colors.midiConnected, OPTION_PANEL_MARKS.midiConnected);
   assert.equal(colors.accentSwitch.track, 'rgba(79, 195, 247, 0.5)');
   assert.deepEqual(colors.switchOff, { track: panelInk(10), thumb: panelInk(70) });
-  assert.deepEqual(colors.segmentActive, { fill: '#4FC3F7', text: '#000000' });
+  assert.deepEqual(colors.segment, { track: panelInk(6), fill: '#4FC3F7', text: '#000000', idleText: panelInk(70) });
   assert.equal(colors.drawnVolumeSlider, false);
 });
 
@@ -106,7 +109,7 @@ test('the red close and Quit marks darken on a white panel only as far as 3:1, a
   assert.ok(r > g + 50 && r > b + 50, `${danger} is no longer red`);
 });
 
-const PANELS = ['#ffffff', '#ffeb3b', '#777777', '#424242', '#0d47a1', '#808080', '#9e9e9e'];
+const PANELS = ['#ffffff', '#ffeb3b', '#777777', '#424242', '#0d47a1', '#2196f3', '#808080', '#9e9e9e'];
 
 /** Mid greys where neither black nor white reaches 4.5:1 over both screens; white, the better one, is kept. */
 const NO_READABLE_TEXT = new Set(['#777777']);
@@ -138,11 +141,38 @@ test('marks for a control or its state reach 3:1 on every panel colour', () => {
         assert.ok(worst(panel, thumb, ink, track) >= MIN_GRAPHIC_CONTRAST, `${panel}/${accent}: ${key} thumb ${thumb} on ${track}`);
       }
       assert.ok(worst(panel, colors.switchOff.thumb, ink) >= MIN_GRAPHIC_CONTRAST, `${panel}: switched-off thumb`);
-      const { fill, text } = colors.segmentActive;
+      const { fill, text } = colors.segment;
       assert.ok(worst(panel, fill, ink) >= MIN_GRAPHIC_CONTRAST, `${panel}/${accent}: chosen segment ${fill}`);
       assert.ok(worst(panel, text, ink, fill) >= MIN_TEXT_CONTRAST, `${panel}/${accent}: chosen segment text ${text} on ${fill}`);
     }
   }
+});
+
+test('the volume level, hints and segments not chosen reach 4.5:1, and the link icons 3:1, on every panel colour', () => {
+  for (const panel of PANELS) {
+    const { ink, volumeValue, hint, linkIcon, segment } = optionPanelColors(panel, ACCENT);
+    assert.ok(worst(panel, linkIcon, ink) >= MIN_GRAPHIC_CONTRAST, `${panel}: link icon ${linkIcon}`);
+    if (NO_READABLE_TEXT.has(panel)) continue;
+    assert.ok(worst(panel, volumeValue, ink) >= MIN_TEXT_CONTRAST, `${panel}: volume level ${volumeValue}`);
+    assert.ok(worst(panel, hint, ink) >= MIN_TEXT_CONTRAST, `${panel}: hint ${hint}`);
+    assert.ok(worst(panel, segment.idleText, ink, segment.track) >= MIN_TEXT_CONTRAST, `${panel}: segment not chosen ${segment.idleText}`);
+  }
+});
+
+test('faint content that already reads keeps its value, and the rest moves only as far as needed', () => {
+  assert.equal(optionPanelColors('#000000', ACCENT).segment.idleText, panelInk(70));
+  assert.equal(optionPanelColors('#ffffff', ACCENT).segment.idleText, panelInk(70));
+  assert.equal(optionPanelColors('#2196f3', ACCENT).segment.track, panelInk(6));
+  const { ink, volumeValue } = optionPanelColors('#2196f3', ACCENT);
+  assert.ok(worst('#2196f3', panelInk(40), ink) < MIN_TEXT_CONTRAST, 'the old volume level already read on blue');
+  assert.ok(worst('#2196f3', volumeValue, ink) < MIN_TEXT_CONTRAST + 0.3, `${volumeValue} moved further than needed`);
+});
+
+test('on a mid grey the track behind the segments is thinned so their text can read, as the Android app thins its fills', () => {
+  const { ink, segment } = optionPanelColors('#808080', ACCENT);
+  assert.ok(worst('#808080', '#000000', ink, panelInk(6)) < MIN_TEXT_CONTRAST, 'black already read on the full track');
+  assert.notEqual(segment.track, panelInk(6));
+  assert.ok(worst('#808080', segment.idleText, ink, segment.track) >= MIN_TEXT_CONTRAST, `${segment.idleText} on ${segment.track}`);
 });
 
 test('the panel draws the volume slider itself only where its content is dark', () => {

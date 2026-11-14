@@ -25,6 +25,7 @@ const panelStyle = (colors: OptionPanelColors): React.CSSProperties => ({
   ['--panel-ink-secondary' as string]: colors.inkSecondary,
   ['--panel-youtube' as string]: colors.youtube,
   ['--panel-website' as string]: colors.website,
+  ['--panel-link' as string]: colors.linkIcon,
 });
 
 interface OptionPanelProps {
@@ -208,7 +209,7 @@ export function OptionPanel({
                   href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-[color:var(--panel-youtube)] transition-colors"
+                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-[color:var(--panel-link)] hover:text-[color:var(--panel-youtube)] transition-colors"
                   aria-label={t('youtube')}
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -220,7 +221,7 @@ export function OptionPanel({
                     href={website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-[color:var(--panel-website)] transition-colors"
+                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-[color:var(--panel-link)] hover:text-[color:var(--panel-website)] transition-colors"
                     aria-label={t('website')}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -253,7 +254,7 @@ export function OptionPanel({
                   the radio relationship and matches the ControlPanel + mobile apps. */}
               <PlayModeSegmented
                 playMode={playMode}
-                colors={panelColors.segmentActive}
+                colors={panelColors.segment}
                 onSwitch={(mode) => {
                   onSwitchPlayMode(mode);
                   onClose();
@@ -320,7 +321,7 @@ export function OptionPanel({
               className={`flex-1 h-1 accent-panel-ink/80 cursor-pointer${panelColors.drawnVolumeSlider ? ' drawn-volume' : ''}`}
               style={panelColors.drawnVolumeSlider ? { ['--volume-fill' as string]: `${(volumeLevel / VOLUME_MAX) * 100}%` } : undefined}
             />
-            <span className="text-[10px] text-panel-ink/40 w-3 text-right font-mono">{volumeLevel}</span>
+            <span className="text-[10px] w-3 text-right font-mono" style={{ color: panelColors.volumeValue }}>{volumeLevel}</span>
           </div>
         </Section>
 
@@ -340,7 +341,7 @@ export function OptionPanel({
               <SegmentedChoice
                 options={TRACE_LOG_STYLES.map(({ style, labelKey }) => ({ value: style, label: t(labelKey) }))}
                 value={traceLogStyle}
-                colors={panelColors.segmentActive}
+                colors={panelColors.segment}
                 ariaLabel={(label) => t('traceLogStyleAriaLabel', { style: label })}
                 onChange={onTraceLogStyleChange}
               />
@@ -369,7 +370,7 @@ export function OptionPanel({
             onClick={onOpenLaunchpadSettings}
           >
             <span className="text-sm text-panel-ink">{t('launchpadSettings')}</span>
-            <span className="text-xs text-panel-ink/35">{tCommon('open')}</span>
+            <span className="text-xs" style={{ color: panelColors.hint }}>{tCommon('open')}</span>
           </button>
         </Section>
 
@@ -474,7 +475,6 @@ function SegmentedChoice<T extends string>({
 }: {
   options: { value: T; label: string }[];
   value: T;
-  /** The chosen segment's fill and text. */
   colors: SegmentColors;
   ariaLabel: (label: string) => string;
   onChange: (value: T) => void;
@@ -482,7 +482,7 @@ function SegmentedChoice<T extends string>({
   return (
     <div
       className="mx-6 my-1 flex items-stretch gap-0.5 rounded-md p-0.5"
-      style={{ backgroundColor: panelInk(6) }}
+      style={{ backgroundColor: colors.track }}
     >
       {options.map((option) => {
         const active = value === option.value;
@@ -493,7 +493,7 @@ function SegmentedChoice<T extends string>({
             className="flex-1 px-2 py-2 rounded text-xs font-semibold transition-colors select-none"
             style={{
               backgroundColor: active ? colors.fill : 'transparent',
-              color: active ? colors.text : panelInk(70),
+              color: active ? colors.text : colors.idleText,
             }}
             onClick={() => onChange(option.value)}
             aria-pressed={active}
