@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import type { PadState, TraceLogStyle } from './useUniPadEngine';
-import { getDefaultTheme, type ThemeAssets } from '@/lib/unipack';
+import type { ThemeAssets } from '@/lib/unipack';
 import { SkinImage } from './SkinImage';
 
 /** The default skin's tap order numbers: light text with a thin dark edge, readable on an unlit pad. */
@@ -341,8 +341,8 @@ export function PadGrid({
     () => (traceLogStyle === 'numbers' && traceLogSequence ? traceNumbersByPad(traceLogSequence) : null),
     [traceLogStyle, traceLogSequence],
   );
-  // A skin's own trace colour is used as it is; the default skin's numbers get their own colour.
-  const traceNumberColor = theme?.colors && theme.colors !== getDefaultTheme().colors ? theme.colors.traceLog ?? null : null;
+  // A skin's own trace colour is used as it is; without one the numbers get their own colour.
+  const traceNumberColor = theme?.colors?.traceLog ?? null;
 
   const tracePoints = useMemo(() => {
     if (traceLogStyle !== 'lines' || !traceLogSequence || traceLogSequence.length === 0 || gridSize.width === 0 || gridSize.height === 0) return [];

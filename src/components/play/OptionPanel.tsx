@@ -129,7 +129,7 @@ export function OptionPanel({
     onClose();
   };
 
-  const accentColor = theme.colors.optionWindowCheckbox || '#E8A44A';
+  const accentColor = theme.colors.optionWindowCheckbox;
   const squareButton = unipackInfo.squareButton;
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;

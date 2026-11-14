@@ -245,9 +245,10 @@ function CheckItem({
     >
       {/* Dot indicator (Android style) */}
       <div
-        className="w-2 h-2 rounded-full shrink-0 transition-colors"
+        className="w-2 h-2 rounded-full shrink-0 transition"
         style={{
-          backgroundColor: checked ? color : `${color}40`,
+          backgroundColor: color,
+          opacity: checked ? 1 : 0.25,
         }}
       />
       <span
