@@ -79,7 +79,7 @@ test('option panel opens, keeps its exit animation, reopens and unmounts after c
 test('a theme colour with its own opacity colours the switched-on option switches, half as strong', () => {
   const props = {
     visible: true, unipackInfo: { title: 'CI pack', squareButton: true },
-    theme: { colors: { checkbox: '#a6b4c9', optionWindow: '#ffffff', optionWindowCheckbox: '#ff00ff80' } },
+    theme: { colors: { checkbox: '#a6b4c9', optionWindowCheckbox: '#ff00ff80' } },
     feedbackLight: true, slideMode: false, onClose: noop, onVolumeChange: noop,
   };
   const view = render(wrapped(OptionPanel, props));
@@ -106,6 +106,49 @@ test('the options panel takes the theme option_window colour, with content that 
   const dark = panel({ checkbox: '#a6b4c9', optionWindow: '#424242', optionWindowCheckbox: '#414F66' });
   assert.equal(dark.backgroundColor, 'rgba(66, 66, 66, 0.94)');
   assert.equal(dark.ink, '#ffffff');
+  const faintLight = panel({ checkbox: '#a6b4c9', optionWindow: '#ffffff10', optionWindowCheckbox: '#414F66' });
+  assert.equal(faintLight.backgroundColor, 'rgba(255, 255, 255, 0.94)');
+  assert.equal(faintLight.ink, '#161e2b');
+  const halfBlue = panel({ checkbox: '#a6b4c9', optionWindow: '#0d47a180', optionWindowCheckbox: '#414F66' });
+  assert.equal(halfBlue.backgroundColor, 'rgba(13, 71, 161, 0.94)');
+  assert.equal(halfBlue.ink, '#ffffff');
+});
+
+test('on a light options panel the red marks, switches and volume slider are drawn to read on it', () => {
+  const props = {
+    visible: true, unipackInfo: { title: 'CI pack', squareButton: true }, keyLedExist: true,
+    ledEnabled: true, slideMode: false, volumeLevel: 7, traceLogStyle: 'numbers', onClose: noop, onVolumeChange: noop,
+  };
+  const drawn = (colors) => {
+    const view = render(wrapped(OptionPanel, { ...props, theme: { colors } }));
+    const dialog = view.getByRole('dialog');
+    const track = (label) => view.getByText(label, { exact: true }).closest('button').querySelector('.rounded-full');
+    const result = {
+      quit: view.getByText('Quit', { exact: true }).closest('button').style.color,
+      close: view.getByRole('button', { name: 'Close menu' }).querySelector('svg').style.color,
+      on: track('LED').style.backgroundColor,
+      onThumb: track('LED').firstElementChild.style.backgroundColor,
+      chosen: view.getByRole('button', { name: /Numbers/, pressed: true }).style.color,
+      slider: dialog.querySelector('input[type=range]'),
+    };
+    view.unmount();
+    return result;
+  };
+  const builtIn = drawn({ checkbox: '#a6b4c9', optionWindowCheckbox: '#414F66' });
+  assert.equal(builtIn.quit, 'rgb(255, 107, 107)');
+  assert.equal(builtIn.close, 'rgb(255, 107, 107)');
+  assert.equal(builtIn.on, 'rgba(65, 79, 102, 0.5)');
+  assert.equal(builtIn.onThumb, 'var(--panel-ink)');
+  assert.equal(builtIn.chosen, 'rgb(0, 0, 0)');
+  assert.doesNotMatch(builtIn.slider.className, /drawn-volume/);
+  const light = drawn({ checkbox: '#a6b4c9', optionWindow: '#ffffff', optionWindowCheckbox: '#414F66' });
+  assert.equal(light.quit, 'rgb(228, 95, 95)');
+  assert.equal(light.close, 'rgb(228, 95, 95)');
+  assert.equal(light.on, 'rgb(132, 138, 148)');
+  assert.equal(light.onThumb, 'rgb(22, 30, 43)');
+  assert.equal(light.chosen, 'rgb(255, 255, 255)');
+  assert.match(light.slider.className, /drawn-volume/);
+  assert.equal(light.slider.style.getPropertyValue('--volume-fill'), '100%');
 });
 
 const items = [

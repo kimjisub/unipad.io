@@ -41,6 +41,8 @@ const config: Config = {
         ring: withAlpha('--ring'),
         // Content colour of the play screen's options panel, set on the panel from its background.
         'panel-ink': withAlpha('--panel-ink'),
+        // Its secondary text colour, which may be adjusted separately to stay readable.
+        'panel-ink-secondary': 'var(--panel-ink-secondary)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
