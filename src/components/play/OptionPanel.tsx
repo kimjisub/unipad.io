@@ -3,17 +3,29 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
-import { fadeThemeColor, type ThemeAssets } from '@/lib/unipack/ThemeManager';
+import type { ThemeAssets } from '@/lib/unipack/ThemeManager';
 import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
-import { optionPanelColors } from './optionPanelColors';
+import { optionPanelColors, panelInk, type OptionPanelColors, type SegmentColors, type SwitchColors } from './optionPanelColors';
 import { websiteUrl } from '@/lib/unipack/websiteUrl';
 
 /** Width of the menu sheet on the right edge; notices shown beside it stay left of it. */
 export const OPTION_PANEL_WIDTH_PX = 280;
 
-/** The panel's content colour (`--panel-ink`, set on the panel) at `percent` opacity. */
-const panelInk = (percent: number) => `color-mix(in srgb, var(--panel-ink) ${percent}%, transparent)`;
+const VOLUME_MAX = 7;
+
+/** The filled and the remaining part of the volume slider the panel draws itself. */
+const VOLUME_FILL = panelInk(80);
+const VOLUME_REST = panelInk(20);
+
+/** The panel's background and the colours its children read from it. */
+const panelStyle = (colors: OptionPanelColors): React.CSSProperties => ({
+  backgroundColor: colors.background,
+  ['--panel-ink' as string]: colors.ink,
+  ['--panel-ink-secondary' as string]: colors.inkSecondary,
+  ['--panel-youtube' as string]: colors.youtube,
+  ['--panel-website' as string]: colors.website,
+});
 
 interface OptionPanelProps {
   visible: boolean;
@@ -133,8 +145,7 @@ export function OptionPanel({
     onClose();
   };
 
-  const accentColor = theme.colors.optionWindowCheckbox;
-  const panelColors = optionPanelColors(theme.colors.optionWindow);
+  const panelColors = optionPanelColors(theme.colors.optionWindow, theme.colors.optionWindowCheckbox);
   const squareButton = unipackInfo.squareButton;
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;
@@ -151,7 +162,7 @@ export function OptionPanel({
       />
 
       {/* Panel */}
-      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 backdrop-blur-md z-50 flex flex-col border-l border-panel-ink/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ width: OPTION_PANEL_WIDTH_PX, backgroundColor: panelColors.background, ['--panel-ink' as string]: panelColors.ink }}>
+      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 backdrop-blur-md z-50 flex flex-col border-l border-panel-ink/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ width: OPTION_PANEL_WIDTH_PX, ...panelStyle(panelColors) }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0">
           <span className="text-[22px] font-normal text-panel-ink">{t('title')}</span>
@@ -160,7 +171,7 @@ export function OptionPanel({
             onClick={onClose}
             aria-label={t('close')}
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: '#FF6B6B' }}>
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: panelColors.danger }}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -192,12 +203,12 @@ export function OptionPanel({
           {infoExpanded && (
             <div className="px-4 pb-3 pt-1">
               <div className="flex items-center gap-2">
-                <div className="text-[13px] text-panel-ink/65 truncate flex-1">{unipackInfo.producerName}</div>
+                <div className="text-[13px] text-panel-ink-secondary truncate flex-1">{unipackInfo.producerName}</div>
                 <a
                   href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-red-400 transition-colors"
+                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-[color:var(--panel-youtube)] transition-colors"
                   aria-label={t('youtube')}
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -209,7 +220,7 @@ export function OptionPanel({
                     href={website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-blue-400 transition-colors"
+                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-[color:var(--panel-website)] transition-colors"
                     aria-label={t('website')}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -218,7 +229,7 @@ export function OptionPanel({
                   </a>
                 )}
               </div>
-              <div className="flex gap-3 mt-2 text-xs text-panel-ink/65">
+              <div className="flex gap-3 mt-2 text-xs text-panel-ink-secondary">
                 <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
                 <span>{t('chainCount', { count: unipackInfo.chain })}</span>
               </div>
@@ -229,11 +240,11 @@ export function OptionPanel({
         {/* Performance Section */}
         <Section title={t('sectionPerformance')}>
           {showFeedback && (
-            <OptionSwitch label={t('feedbackLight')} checked={feedbackLight} color={accentColor} onChange={onToggleFeedbackLight} />
+            <OptionSwitch label={t('feedbackLight')} checked={feedbackLight} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleFeedbackLight} />
           )}
-          <OptionSwitch label={t('slideMode')} checked={slideMode} color={accentColor} onChange={onToggleSlideMode} />
+          <OptionSwitch label={t('slideMode')} checked={slideMode} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleSlideMode} />
           {showLed && (
-            <OptionSwitch label={t('led')} checked={ledEnabled} color={accentColor} onChange={onToggleLed} />
+            <OptionSwitch label={t('led')} checked={ledEnabled} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleLed} />
           )}
           {showAutoPlay && (
             <>
@@ -242,7 +253,7 @@ export function OptionPanel({
                   the radio relationship and matches the ControlPanel + mobile apps. */}
               <PlayModeSegmented
                 playMode={playMode}
-                color={accentColor}
+                colors={panelColors.segmentActive}
                 onSwitch={(mode) => {
                   onSwitchPlayMode(mode);
                   onClose();
@@ -261,12 +272,12 @@ export function OptionPanel({
                     : t('autoMapping')}
                 </span>
                 {autoMappingActive ? (
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" style={{ color: accentColor }}>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" style={{ color: panelColors.accent }}>
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: panelColors.accent }}>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
@@ -282,10 +293,10 @@ export function OptionPanel({
                     {autoPlayRestoring ? t('autoPlayRestoring') : t('restoreAutoPlay')}
                   </span>
                   {!autoPlayBackupAvailable && (
-                    <span id="restore-auto-play-no-backup" className="text-xs text-panel-ink/65">{t('restoreAutoPlayNoBackup')}</span>
+                    <span id="restore-auto-play-no-backup" className="text-xs text-panel-ink-secondary">{t('restoreAutoPlayNoBackup')}</span>
                   )}
                 </span>
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: panelColors.accent }}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 010 10H9M3 10l4-4M3 10l4 4" />
                 </svg>
               </button>
@@ -302,11 +313,12 @@ export function OptionPanel({
             <input
               type="range"
               min={0}
-              max={7}
+              max={VOLUME_MAX}
               step={1}
               value={volumeLevel}
               onChange={(e) => onVolumeChange(Number(e.target.value))}
-              className="flex-1 h-1 accent-panel-ink/80 cursor-pointer"
+              className={`flex-1 h-1 accent-panel-ink/80 cursor-pointer${panelColors.drawnVolumeSlider ? ' drawn-volume' : ''}`}
+              style={panelColors.drawnVolumeSlider ? { ['--volume-fill' as string]: `${(volumeLevel / VOLUME_MAX) * 100}%` } : undefined}
             />
             <span className="text-[10px] text-panel-ink/40 w-3 text-right font-mono">{volumeLevel}</span>
           </div>
@@ -314,21 +326,21 @@ export function OptionPanel({
 
         {/* Display Section */}
         <Section title={t('sectionDisplay')}>
-          <OptionSwitch label={t('hideUI')} checked={hideUI} color={accentColor} onChange={onToggleHideUI} />
-          <OptionSwitch label={t('watermark')} checked={watermark} color={accentColor} onChange={onToggleWatermark} />
-          <OptionSwitch label={t('proLightMode')} checked={proLightMode} color={accentColor} onChange={onToggleProLightMode} />
+          <OptionSwitch label={t('hideUI')} checked={hideUI} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleHideUI} />
+          <OptionSwitch label={t('watermark')} checked={watermark} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleWatermark} />
+          <OptionSwitch label={t('proLightMode')} checked={proLightMode} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleProLightMode} />
         </Section>
 
         {/* Tools Section */}
         <Section title={t('sectionTools')}>
           {showTrace && (
             <>
-              <OptionSwitch label={t('traceLog')} checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
-              <div className="px-6 pt-1 text-xs text-panel-ink/65">{t('traceLogStyle')}</div>
+              <OptionSwitch label={t('traceLog')} checked={traceLog} colors={panelColors.accentSwitch} offColors={panelColors.switchOff} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
+              <div className="px-6 pt-1 text-xs text-panel-ink-secondary">{t('traceLogStyle')}</div>
               <SegmentedChoice
                 options={TRACE_LOG_STYLES.map(({ style, labelKey }) => ({ value: style, label: t(labelKey) }))}
                 value={traceLogStyle}
-                color={accentColor}
+                colors={panelColors.segmentActive}
                 ariaLabel={(label) => t('traceLogStyleAriaLabel', { style: label })}
                 onChange={onTraceLogStyleChange}
               />
@@ -342,7 +354,7 @@ export function OptionPanel({
             </>
           )}
           {showRecord && (
-            <OptionSwitch label={t('record')} checked={recording} color="#ef4444" onChange={onToggleRecording} />
+            <OptionSwitch label={t('record')} checked={recording} colors={panelColors.recordSwitch} offColors={panelColors.switchOff} onChange={onToggleRecording} />
           )}
           <button
             className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors"
@@ -350,7 +362,7 @@ export function OptionPanel({
             disabled={midiConnecting}
           >
             <span className="text-sm text-panel-ink">{midiConnecting ? t('midiConnecting') : (midiConnected ? t('midiConnected') : t('midiConnect'))}</span>
-            <span className={`w-2 h-2 rounded-full ${midiConnected ? 'bg-green-500' : 'bg-panel-ink/20'}`} />
+            <span className={`w-2 h-2 rounded-full ${midiConnected ? '' : 'bg-panel-ink/20'}`} style={midiConnected ? { backgroundColor: panelColors.midiConnected } : undefined} />
           </button>
           <button
             className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors"
@@ -367,7 +379,7 @@ export function OptionPanel({
         <div className="shrink-0">
           <button
             className="flex items-center gap-3 w-full px-6 py-4 hover:bg-panel-ink/[0.04] transition-colors"
-            style={{ color: '#FF6B6B' }}
+            style={{ color: panelColors.danger }}
             onClick={onQuit}
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -387,6 +399,20 @@ export function OptionPanel({
         .animate-fade-out { animation: fade-out 250ms ease-in forwards; }
         .animate-slide-in-right { animation: slide-in-right 300ms ease-out; }
         .animate-slide-out-right { animation: slide-out-right 250ms ease-in forwards; }
+        /* The volume slider on a light panel: thumb in the content colour, filled up to --volume-fill,
+           16px tall to hold the thumb yet taking the 4px of the browser's slider in the layout. */
+        .drawn-volume { -webkit-appearance: none; appearance: none; background: transparent; height: 16px; margin: -6px 0; }
+        .drawn-volume::-webkit-slider-runnable-track {
+          height: 4px; border-radius: 2px;
+          background: linear-gradient(to right, ${VOLUME_FILL} 0 var(--volume-fill), ${VOLUME_REST} var(--volume-fill) 100%);
+        }
+        .drawn-volume::-webkit-slider-thumb {
+          -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -6px;
+          border: none; border-radius: 50%; background: var(--panel-ink);
+        }
+        .drawn-volume::-moz-range-track { height: 4px; border-radius: 2px; background: ${VOLUME_REST}; }
+        .drawn-volume::-moz-range-progress { height: 4px; border-radius: 2px; background: ${VOLUME_FILL}; }
+        .drawn-volume::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background: var(--panel-ink); }
       `}</style>
     </>
   );
@@ -396,7 +422,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="mb-1">
       {/* Section labels: bumped from 0.4 to 0.65 alpha for better WCAG contrast */}
-      <div className="px-6 text-[11px] font-bold text-panel-ink/65 uppercase tracking-wider mb-1 mt-4">{title}</div>
+      <div className="px-6 text-[11px] font-bold text-panel-ink-secondary uppercase tracking-wider mb-1 mt-4">{title}</div>
       <div>{children}</div>
     </div>
   );
@@ -418,11 +444,11 @@ const TRACE_LOG_STYLES: { style: TraceLogStyle; labelKey: 'traceLogNumbers' | 't
  *  the radio relationship between the three play modes. */
 function PlayModeSegmented({
   playMode,
-  color,
+  colors,
   onSwitch,
 }: {
   playMode: PlayMode;
-  color: string;
+  colors: SegmentColors;
   onSwitch: (mode: PlayMode) => void;
 }) {
   const t = useTranslations('play.playMode');
@@ -431,7 +457,7 @@ function PlayModeSegmented({
     <SegmentedChoice
       options={PANEL_PLAY_MODES.map(({ mode, labelKey }) => ({ value: mode, label: t(labelKey) }))}
       value={playMode}
-      color={color}
+      colors={colors}
       ariaLabel={(label) => t('ariaLabel', { mode: label })}
       onChange={onSwitch}
     />
@@ -442,13 +468,14 @@ function PlayModeSegmented({
 function SegmentedChoice<T extends string>({
   options,
   value,
-  color,
+  colors,
   ariaLabel,
   onChange,
 }: {
   options: { value: T; label: string }[];
   value: T;
-  color: string;
+  /** The chosen segment's fill and text. */
+  colors: SegmentColors;
   ariaLabel: (label: string) => string;
   onChange: (value: T) => void;
 }) {
@@ -465,8 +492,8 @@ function SegmentedChoice<T extends string>({
             type="button"
             className="flex-1 px-2 py-2 rounded text-xs font-semibold transition-colors select-none"
             style={{
-              backgroundColor: active ? color : 'transparent',
-              color: active ? '#000000' : panelInk(70),
+              backgroundColor: active ? colors.fill : 'transparent',
+              color: active ? colors.text : panelInk(70),
             }}
             onClick={() => onChange(option.value)}
             aria-pressed={active}
@@ -483,13 +510,16 @@ function SegmentedChoice<T extends string>({
 function OptionSwitch({
   label,
   checked,
-  color,
+  colors,
+  offColors,
   onChange,
   onLongPress,
 }: {
   label: string;
   checked: boolean;
-  color: string;
+  /** Track and thumb when switched on, and when off. */
+  colors: SwitchColors;
+  offColors: SwitchColors;
   onChange: () => void;
   onLongPress?: () => void;
 }) {
@@ -538,14 +568,14 @@ function OptionSwitch({
       <div
         className="w-9 h-5 rounded-full relative transition-colors"
         style={{
-          backgroundColor: checked ? fadeThemeColor(color, 0.5) : panelInk(10),
+          backgroundColor: checked ? colors.track : offColors.track,
         }}
       >
         <div
           className="absolute top-0.5 w-4 h-4 rounded-full transition-all shadow-sm"
           style={{
             left: checked ? '18px' : '2px',
-            backgroundColor: checked ? 'var(--panel-ink)' : panelInk(70),
+            backgroundColor: checked ? colors.thumb : offColors.thumb,
           }}
         />
       </div>
