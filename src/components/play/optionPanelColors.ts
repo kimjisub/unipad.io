@@ -30,6 +30,8 @@ const SECONDARY_TEXT_PERCENT = 65;
 const VOLUME_VALUE_PERCENT = 40;
 const HINT_PERCENT = 35;
 const LINK_ICON_PERCENT = 30;
+/** The tint behind a hovered link icon (`hover:bg-panel-ink/[0.08]` in the panel). */
+const LINK_HOVER_PERCENT = 8;
 const SEGMENT_TRACK_PERCENT = 6;
 const INFO_CARD_PERCENT = 6;
 const SEGMENT_IDLE_TEXT_PERCENT = 70;
@@ -52,6 +54,11 @@ export interface SegmentColors {
   idleText: string;
 }
 
+export interface LinkColors {
+  youtube: string;
+  website: string;
+}
+
 export interface CardColors {
   /** The tint of the content colour the pack info card is filled with. */
   fill: string;
@@ -60,6 +67,8 @@ export interface CardColors {
   secondaryText: string;
   /** The YouTube and website link icons while not hovered. */
   linkIcon: string;
+  /** The same icons while hovered, on the card with the hover tint behind them. */
+  linkHover: LinkColors;
 }
 
 export interface OptionPanelColors {
@@ -76,8 +85,6 @@ export interface OptionPanelColors {
   danger: string;
   /** Icons drawn in the theme's accent. */
   accent: string;
-  youtube: string;
-  website: string;
   midiConnected: string;
   accentSwitch: SwitchColors;
   recordSwitch: SwitchColors;
@@ -233,9 +240,9 @@ function switchOn(color: string, ink: string, backdrops: Color[]): SwitchColors 
  * app, each colour drawn on the panel keeps its value where it reads on every backdrop the panel can
  * have (text 4.5:1, marks 3:1) and is otherwise moved in lightness until it does; the track behind
  * the segments and the pack info card are thinned on mid greys so their text can read, and what is
-drawn on them is measured on them. The faint content
- * colours count too: the volume level, hints and segments not chosen are text; the link icons stand
- * for links. The speaker icon, the expand arrow and the MIDI dot add nothing their row does not say,
+ * drawn on them is measured on them, the hovered link icons with the hover tint as well. The faint
+ * content colours count too: the volume level, hints and segments not chosen are text; the link icons
+ * stand for links. The speaker icon, the expand arrow and the MIDI dot add nothing their row does not say,
  * so they keep their faint colour, as the Android app's expand arrow does.
  * Without a theme colour, the panel keeps its own dark background and its colours as they are.
  */
@@ -249,8 +256,9 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
       inkSecondary: panelInk(SECONDARY_TEXT_PERCENT),
       volumeValue: panelInk(VOLUME_VALUE_PERCENT),
       hint: panelInk(HINT_PERCENT),
-      ...OPTION_PANEL_MARKS,
+      danger: OPTION_PANEL_MARKS.danger,
       accent,
+      midiConnected: OPTION_PANEL_MARKS.midiConnected,
       accentSwitch: { track: fadeThemeColor(accent, SWITCH_TRACK_ON_FACTOR), thumb: thumbOn },
       recordSwitch: { track: fadeThemeColor(OPTION_PANEL_MARKS.record, SWITCH_TRACK_ON_FACTOR), thumb: thumbOn },
       switchOff,
@@ -260,6 +268,7 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
         text: 'var(--panel-ink)',
         secondaryText: panelInk(SECONDARY_TEXT_PERCENT),
         linkIcon: panelInk(LINK_ICON_PERCENT),
+        linkHover: { youtube: OPTION_PANEL_MARKS.youtube, website: OPTION_PANEL_MARKS.website },
       },
       drawnVolumeSlider: false,
     };
@@ -271,7 +280,7 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
   const ink = readable(content, channels(content), backdrops, MIN_TEXT_CONTRAST);
   const inkColor = channels(ink);
   const towards = directionOf(inkColor);
-  const mark = (css: string) => readable(css, channels(css), backdrops, MIN_GRAPHIC_CONTRAST);
+  const mark = (css: string, on = backdrops) => readable(css, channels(css), on, MIN_GRAPHIC_CONTRAST);
   const accentMark = mark(accent);
   /** The content colour at `percent` where it reaches `minRatio` on `on`, else moved further from the panel. */
   const faintInk = (percent: number, minRatio: number, on = backdrops) =>
@@ -283,6 +292,7 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
   };
   const track = fill(SEGMENT_TRACK_PERCENT);
   const card = fill(INFO_CARD_PERCENT);
+  const hoveredLink = card.on.map((backdrop) => over(withAlpha(inkColor, LINK_HOVER_PERCENT / 100), backdrop));
 
   return {
     background: fadeThemeColor(optionWindow.slice(0, 7), OPTION_PANEL_OPACITY),
@@ -292,8 +302,6 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
     hint: faintInk(HINT_PERCENT, MIN_TEXT_CONTRAST),
     danger: mark(OPTION_PANEL_MARKS.danger),
     accent: accentMark,
-    youtube: mark(OPTION_PANEL_MARKS.youtube),
-    website: mark(OPTION_PANEL_MARKS.website),
     midiConnected: mark(OPTION_PANEL_MARKS.midiConnected),
     accentSwitch: switchOn(accent, ink, backdrops),
     recordSwitch: switchOn(OPTION_PANEL_MARKS.record, ink, backdrops),
@@ -312,6 +320,10 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
       text: readable(ink, inkColor, card.on, MIN_TEXT_CONTRAST, towards),
       secondaryText: faintInk(SECONDARY_TEXT_PERCENT, MIN_TEXT_CONTRAST, card.on),
       linkIcon: faintInk(LINK_ICON_PERCENT, MIN_GRAPHIC_CONTRAST, card.on),
+      linkHover: {
+        youtube: mark(OPTION_PANEL_MARKS.youtube, hoveredLink),
+        website: mark(OPTION_PANEL_MARKS.website, hoveredLink),
+      },
     },
     drawnVolumeSlider: towards === BLACK,
   };

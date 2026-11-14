@@ -164,6 +164,8 @@ test('on a mid blue options panel the volume level, the Open hint, unchosen segm
       hint: view.getByText('Open', { exact: true }).style.color,
       idle: view.getByRole('button', { name: /Lines/, pressed: false }).style.color,
       link: view.getByRole('dialog').style.getPropertyValue('--panel-link'),
+      youtubeHover: view.getByRole('dialog').style.getPropertyValue('--panel-youtube'),
+      websiteHover: view.getByRole('dialog').style.getPropertyValue('--panel-website'),
       card: view.getByRole('dialog').style.getPropertyValue('--panel-card'),
       producer: view.getByText('CI', { exact: true }).className,
       linkClass: view.getByRole('link', { name: 'YouTube' }).className,
@@ -177,6 +179,8 @@ test('on a mid blue options panel the volume level, the Open hint, unchosen segm
   assert.equal(builtIn.hint, faint(35));
   assert.equal(builtIn.idle, faint(70));
   assert.equal(builtIn.link, faint(30));
+  assert.equal(builtIn.youtubeHover, '#f87171');
+  assert.equal(builtIn.websiteHover, '#60a5fa');
   assert.match(builtIn.linkClass, /text-\[color:var\(--panel-link\)\]/);
   assert.equal(builtIn.card, faint(6));
   assert.match(builtIn.producer, /text-\[color:var\(--panel-card-secondary\)\]/);
@@ -185,6 +189,8 @@ test('on a mid blue options panel the volume level, the Open hint, unchosen segm
   assert.equal(blue.hint, 'rgb(5, 35, 61)');
   assert.equal(blue.idle, 'rgb(7, 27, 46)');
   assert.equal(blue.link, '#0c3a61');
+  assert.equal(blue.youtubeHover, '#501f1f');
+  assert.equal(blue.websiteHover, '#193251');
 });
 
 const items = [

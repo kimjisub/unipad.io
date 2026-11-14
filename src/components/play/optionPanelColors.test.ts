@@ -36,12 +36,17 @@ function resolve(css: string, ink: string): [Rgb, number] {
   return [rgbOf(css === 'var(--panel-ink)' ? ink : css), 1];
 }
 
-/** The lowest contrast `css` has against what is right behind it, over every possible play screen. */
-function worst(optionWindow: string, css: string, ink: string, under?: string): number {
+/**
+ * The lowest contrast `css` has against what is right behind it, over every possible play screen:
+ * the panel, then each of `under` laid on it from the bottom up.
+ */
+function worst(optionWindow: string, css: string, ink: string, under: string | string[] = []): number {
   const [color, alpha] = resolve(css, ink);
   return Math.min(...screens(optionWindow).map((panel) => {
-    const [base, baseAlpha] = under ? resolve(under, ink) : [panel, 1];
-    const behind = mix(base, baseAlpha, panel);
+    const behind = [under].flat().reduce((below, layer) => {
+      const [base, baseAlpha] = resolve(layer, ink);
+      return mix(base, baseAlpha, below);
+    }, panel);
     return ratio(mix(color, alpha, behind), behind);
   }));
 }
@@ -53,13 +58,20 @@ test('without a theme options panel colour every panel colour stays as the play 
     inkSecondary: panelInk(65),
     volumeValue: panelInk(40),
     hint: panelInk(35),
-    ...OPTION_PANEL_MARKS,
+    danger: OPTION_PANEL_MARKS.danger,
     accent: ACCENT,
+    midiConnected: OPTION_PANEL_MARKS.midiConnected,
     accentSwitch: { track: 'rgba(65, 79, 102, 0.5)', thumb: 'var(--panel-ink)' },
     recordSwitch: { track: 'rgba(239, 68, 68, 0.5)', thumb: 'var(--panel-ink)' },
     switchOff: { track: panelInk(10), thumb: panelInk(70) },
     segment: { track: panelInk(6), fill: ACCENT, text: '#000000', idleText: panelInk(70) },
-    card: { fill: panelInk(6), text: 'var(--panel-ink)', secondaryText: panelInk(65), linkIcon: panelInk(30) },
+    card: {
+      fill: panelInk(6),
+      text: 'var(--panel-ink)',
+      secondaryText: panelInk(65),
+      linkIcon: panelInk(30),
+      linkHover: { youtube: OPTION_PANEL_MARKS.youtube, website: OPTION_PANEL_MARKS.website },
+    },
     drawnVolumeSlider: false,
   });
 });
@@ -91,8 +103,7 @@ test('on a dark panel colours that already read keep their exact values', () => 
   assert.equal(colors.inkSecondary, panelInk(65));
   assert.equal(colors.danger, OPTION_PANEL_MARKS.danger);
   assert.equal(colors.accent, '#4FC3F7');
-  assert.equal(colors.youtube, OPTION_PANEL_MARKS.youtube);
-  assert.equal(colors.website, OPTION_PANEL_MARKS.website);
+  assert.deepEqual(colors.card.linkHover, { youtube: OPTION_PANEL_MARKS.youtube, website: OPTION_PANEL_MARKS.website });
   assert.equal(colors.midiConnected, OPTION_PANEL_MARKS.midiConnected);
   assert.equal(colors.accentSwitch.track, 'rgba(79, 195, 247, 0.5)');
   assert.deepEqual(colors.switchOff, { track: panelInk(10), thumb: panelInk(70) });
@@ -132,7 +143,7 @@ test('marks for a control or its state reach 3:1 on every panel colour', () => {
     for (const accent of [ACCENT, '#ffeb3b', '#ff00ff80']) {
       const colors = optionPanelColors(panel, accent);
       const { ink } = colors;
-      for (const key of ['danger', 'accent', 'youtube', 'website', 'midiConnected'] as const) {
+      for (const key of ['danger', 'accent', 'midiConnected'] as const) {
         assert.ok(worst(panel, colors[key], ink) >= MIN_GRAPHIC_CONTRAST, `${panel}/${accent}: ${key} ${colors[key]}`);
       }
       for (const key of ['accentSwitch', 'recordSwitch'] as const) {
@@ -164,6 +175,19 @@ test('the link icons reach 3:1 on the pack info card they sit on, not just on th
   for (const panel of DARK_PANELS) {
     const { ink, card } = optionPanelColors(panel, ACCENT);
     assert.ok(worst(panel, card.linkIcon, ink, card.fill) >= MIN_GRAPHIC_CONTRAST, `${panel}: link icon ${card.linkIcon} on ${card.fill}`);
+  }
+});
+
+/** The tint behind a link icon while it is hovered (`hover:bg-panel-ink/[0.08]`). */
+const LINK_HOVER = panelInk(8);
+
+test('the hovered link icons reach 3:1 on the pack info card with the hover tint behind them', () => {
+  for (const panel of DARK_PANELS) {
+    const { ink, card } = optionPanelColors(panel, ACCENT);
+    for (const key of ['youtube', 'website'] as const) {
+      const hovered = card.linkHover[key];
+      assert.ok(worst(panel, hovered, ink, [card.fill, LINK_HOVER]) >= MIN_GRAPHIC_CONTRAST, `${panel}: hovered ${key} ${hovered}`);
+    }
   }
 });
 
