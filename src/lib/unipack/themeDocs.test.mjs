@@ -62,7 +62,8 @@ const THEME_JSON_REQUIRED = ['name', 'author', 'version'];
 
 test('theme.json fields the iOS app requires are marked required in both languages', () => {
   for (const locale of LOCALES) {
-    const rows = doc(locale).split('\n').filter(line => /^\| `\w+` \| string \|/.test(line));
+    const section = doc(locale).split('### theme.json')[1]?.split(/\n#{2,3} /)[0] ?? '';
+    const rows = section.split('\n').filter(line => /^\| `\w+` \| string \|/.test(line));
     const required = rows
       .map(line => line.split('|').map(cell => cell.trim()))
       .filter(cells => cells[3] === 'O')

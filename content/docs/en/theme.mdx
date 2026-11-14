@@ -46,7 +46,7 @@ A JSON file containing the theme's name, author, and version information. It is 
 
 Always include all three fields. When one is missing, each app behaves differently:
 
-- **iOS app**: if `theme.json` is not valid JSON or lacks any of `name`, `author` or `version`, the import fails. `version` is currently required too.
+- **iOS app**: if `theme.json` is not valid JSON or lacks any of `name`, `author` or `version`, the import fails.
 - **Android app**: a missing `version` becomes `"1.0"`. If `theme.json` is not valid JSON or lacks `name` or `author`, the import finishes but the theme never appears in the list.
 - **Web player**: a missing `name` or `author` becomes `Unknown`, and a missing `version` becomes `"1.0"`. If `theme.json` is absent or not valid JSON, the theme is listed under the default theme's name (`Default`, by `UniPad`).
 
@@ -153,7 +153,7 @@ Uses the pad button (`btn.png`) as background, places `chainled.png` on the phan
 
 Activated when `chainled.png` does not exist.
 Displays different images directly for each state.
-The web player still draws Mode A with the default chain image when `chainled.png` is missing (a fix is in progress).
+When `chainled.png` is missing, the web player does not use the theme's `chain*.png` files yet and draws Mode A with the default `chainled.png` instead (a fix is in progress).
 
 | File | Description |
 |------|-------------|
@@ -166,7 +166,8 @@ The web player still draws Mode A with the default chain image when `chainled.pn
 ### colors.json
 
 You can customize the colors of UI elements. All fields are optional; unspecified fields will use default colors.
-Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The Android and iOS apps replace a string they cannot read with the default color for that field only. The apps accept different other formats (the Android app, for example, also takes color names such as `red`), so stick to hex.
+Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The web player reads an 8-digit value as `#RRGGBBAA` (alpha last), so it shows a different color there. To get the same color on the web too, use `#RRGGBB` (6 digits).
+The Android and iOS apps replace a string they cannot read with the default color for that field only. An empty string `""`, however, makes the Android app fail to open the theme and fall back to the default theme, so leave out a field you do not want to change instead of leaving it empty. The apps accept different other formats (the Android app, for example, also takes color names such as `red`), so stick to hex.
 The file itself must be valid JSON, and color values must be strings, not numbers. If the JSON is broken or a value is not a string, the iOS app ignores the whole file and the Android app cannot open the theme and returns to the default theme. The web player ignores a broken file and keeps the default color for any value that is not a string.
 
 ```json
@@ -180,12 +181,12 @@ The file itself must be valid JSON, and color values must be strings, not number
 
 | Field | Description |
 |-------|-------------|
-| `checkbox` | Option checkbox color |
+| `checkbox` | Option checkbox color (in the web player, the control panel on the left of the play screen) |
 | `trace_log` | Color of the numbers and lines the **Trace recording** option leaves on the pads |
 | `option_window` | Option panel background color |
 | `option_window_checkbox` | Checkbox color inside the option panel |
 
-The web player currently applies only `trace_log` and `option_window_checkbox`; the other two colors change only in the Android and iOS apps.
+The web player does not apply `option_window` (options panel background) yet; that color changes only in the Android and iOS apps.
 
 ## Screen Layout
 
