@@ -23,12 +23,13 @@ const panelStyle = (colors: OptionPanelColors): React.CSSProperties => ({
   backgroundColor: colors.background,
   ['--panel-ink' as string]: colors.ink,
   ['--panel-ink-secondary' as string]: colors.inkSecondary,
-  ['--panel-youtube' as string]: colors.youtube,
-  ['--panel-website' as string]: colors.website,
+  ['--panel-youtube' as string]: colors.card.linkHover.youtube,
+  ['--panel-website' as string]: colors.card.linkHover.website,
   ['--panel-card' as string]: colors.card.fill,
   ['--panel-card-ink' as string]: colors.card.text,
   ['--panel-card-secondary' as string]: colors.card.secondaryText,
   ['--panel-link' as string]: colors.card.linkIcon,
+  ['--panel-link-hover-fill' as string]: colors.card.linkHoverFill,
 });
 
 interface OptionPanelProps {
@@ -215,7 +216,7 @@ export function OptionPanel({
                   href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-[color:var(--panel-link)] hover:text-[color:var(--panel-youtube)] transition-colors"
+                  className="shrink-0 p-1 rounded hover:bg-[color:var(--panel-link-hover-fill)] text-[color:var(--panel-link)] hover:text-[color:var(--panel-youtube)] transition-colors"
                   aria-label={t('youtube')}
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -227,7 +228,7 @@ export function OptionPanel({
                     href={website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-[color:var(--panel-link)] hover:text-[color:var(--panel-website)] transition-colors"
+                    className="shrink-0 p-1 rounded hover:bg-[color:var(--panel-link-hover-fill)] text-[color:var(--panel-link)] hover:text-[color:var(--panel-website)] transition-colors"
                     aria-label={t('website')}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
