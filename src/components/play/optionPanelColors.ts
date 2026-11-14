@@ -30,7 +30,6 @@ const SECONDARY_TEXT_PERCENT = 65;
 const VOLUME_VALUE_PERCENT = 40;
 const HINT_PERCENT = 35;
 const LINK_ICON_PERCENT = 30;
-/** The tint behind a hovered link icon (`hover:bg-panel-ink/[0.08]` in the panel). */
 const LINK_HOVER_PERCENT = 8;
 const SEGMENT_TRACK_PERCENT = 6;
 const INFO_CARD_PERCENT = 6;
@@ -67,6 +66,8 @@ export interface CardColors {
   secondaryText: string;
   /** The YouTube and website link icons while not hovered. */
   linkIcon: string;
+  /** The tint behind a link icon while it is hovered. */
+  linkHoverFill: string;
   /** The same icons while hovered, on the card with the hover tint behind them. */
   linkHover: LinkColors;
 }
@@ -129,6 +130,10 @@ function contrastRatio(a: Color, b: Color): number {
   const [la, lb] = [luminance(a), luminance(b)];
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
+
+/** Each opaque backdrop with `ink` at `percent` opacity laid over it. */
+const tinted = (ink: Color, percent: number, backdrops: Color[]) =>
+  backdrops.map((backdrop) => over(withAlpha(ink, percent / 100), backdrop));
 
 /** The lowest contrast `color`, drawn over each opaque backdrop, has against it. */
 function worstContrast(color: Color, backdrops: Color[]): number {
@@ -207,10 +212,9 @@ const TRACK_STEPS = 24;
  * the fills on its options panel.
  */
 function tintPercentUnder(ink: Color, towards: Color, backdrops: Color[], nominalPercent: number): number {
-  const tinted = (percent: number) => backdrops.map((backdrop) => over(withAlpha(ink, percent / 100), backdrop));
   for (let step = 0; step <= TRACK_STEPS; step++) {
     const percent = (nominalPercent * (TRACK_STEPS - step)) / TRACK_STEPS;
-    if (worstContrast(towards, tinted(percent)) >= MIN_TEXT_CONTRAST) return percent;
+    if (worstContrast(towards, tinted(ink, percent, backdrops)) >= MIN_TEXT_CONTRAST) return percent;
   }
   return nominalPercent;
 }
@@ -241,9 +245,10 @@ function switchOn(color: string, ink: string, backdrops: Color[]): SwitchColors 
  * have (text 4.5:1, marks 3:1) and is otherwise moved in lightness until it does; the track behind
  * the segments and the pack info card are thinned on mid greys so their text can read, and what is
  * drawn on them is measured on them, the hovered link icons with the hover tint as well. The faint
- * content colours count too: the volume level, hints and segments not chosen are text; the link icons
- * stand for links. The speaker icon, the expand arrow and the MIDI dot add nothing their row does not say,
- * so they keep their faint colour, as the Android app's expand arrow does.
+ * content colours count too: the volume level, hints and segments not chosen are text; the link
+ * icons stand for links, and while hovered stay light where the content colour is light and dark
+ * where it is dark. The speaker icon, the expand arrow and the MIDI dot add nothing their row does
+ * not say, so they keep their faint colour, as the Android app's expand arrow does.
  * Without a theme colour, the panel keeps its own dark background and its colours as they are.
  */
 export function optionPanelColors(optionWindow: string | undefined, accent: string): OptionPanelColors {
@@ -268,6 +273,7 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
         text: 'var(--panel-ink)',
         secondaryText: panelInk(SECONDARY_TEXT_PERCENT),
         linkIcon: panelInk(LINK_ICON_PERCENT),
+        linkHoverFill: panelInk(LINK_HOVER_PERCENT),
         linkHover: { youtube: OPTION_PANEL_MARKS.youtube, website: OPTION_PANEL_MARKS.website },
       },
       drawnVolumeSlider: false,
@@ -280,7 +286,7 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
   const ink = readable(content, channels(content), backdrops, MIN_TEXT_CONTRAST);
   const inkColor = channels(ink);
   const towards = directionOf(inkColor);
-  const mark = (css: string, on = backdrops) => readable(css, channels(css), on, MIN_GRAPHIC_CONTRAST);
+  const mark = (css: string, on = backdrops, toward?: Color) => readable(css, channels(css), on, MIN_GRAPHIC_CONTRAST, toward);
   const accentMark = mark(accent);
   /** The content colour at `percent` where it reaches `minRatio` on `on`, else moved further from the panel. */
   const faintInk = (percent: number, minRatio: number, on = backdrops) =>
@@ -288,11 +294,11 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
   /** A tint of the content colour laid behind text, and the backdrops that text then has. */
   const fill = (nominalPercent: number) => {
     const percent = tintPercentUnder(inkColor, towards, backdrops, nominalPercent);
-    return { css: panelInk(percent), on: backdrops.map((backdrop) => over(withAlpha(inkColor, percent / 100), backdrop)) };
+    return { css: panelInk(percent), on: tinted(inkColor, percent, backdrops) };
   };
   const track = fill(SEGMENT_TRACK_PERCENT);
   const card = fill(INFO_CARD_PERCENT);
-  const hoveredLink = card.on.map((backdrop) => over(withAlpha(inkColor, LINK_HOVER_PERCENT / 100), backdrop));
+  const hoveredLink = tinted(inkColor, LINK_HOVER_PERCENT, card.on);
 
   return {
     background: fadeThemeColor(optionWindow.slice(0, 7), OPTION_PANEL_OPACITY),
@@ -320,9 +326,10 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
       text: readable(ink, inkColor, card.on, MIN_TEXT_CONTRAST, towards),
       secondaryText: faintInk(SECONDARY_TEXT_PERCENT, MIN_TEXT_CONTRAST, card.on),
       linkIcon: faintInk(LINK_ICON_PERCENT, MIN_GRAPHIC_CONTRAST, card.on),
+      linkHoverFill: panelInk(LINK_HOVER_PERCENT),
       linkHover: {
-        youtube: mark(OPTION_PANEL_MARKS.youtube, hoveredLink),
-        website: mark(OPTION_PANEL_MARKS.website, hoveredLink),
+        youtube: mark(OPTION_PANEL_MARKS.youtube, hoveredLink, towards),
+        website: mark(OPTION_PANEL_MARKS.website, hoveredLink, towards),
       },
     },
     drawnVolumeSlider: towards === BLACK,
