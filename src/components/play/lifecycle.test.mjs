@@ -151,6 +151,42 @@ test('on a light options panel the red marks, switches and volume slider are dra
   assert.equal(light.slider.style.getPropertyValue('--volume-fill'), '100%');
 });
 
+test('on a mid blue options panel the volume level, the Open hint, unchosen segments and the link icons on the pack info card are drawn to read where they sit', () => {
+  const props = {
+    visible: true, unipackInfo: { title: 'CI pack', producerName: 'CI', squareButton: true },
+    volumeLevel: 3, traceLogStyle: 'numbers', onClose: noop, onVolumeChange: noop,
+  };
+  const drawn = (colors) => {
+    const view = render(wrapped(OptionPanel, { ...props, theme: { colors } }));
+    fireEvent.click(view.getByRole('button', { name: 'Toggle pack info' }));
+    const result = {
+      volume: view.getByText('3', { exact: true }).style.color,
+      hint: view.getByText('Open', { exact: true }).style.color,
+      idle: view.getByRole('button', { name: /Lines/, pressed: false }).style.color,
+      link: view.getByRole('dialog').style.getPropertyValue('--panel-link'),
+      card: view.getByRole('dialog').style.getPropertyValue('--panel-card'),
+      producer: view.getByText('CI', { exact: true }).className,
+      linkClass: view.getByRole('link', { name: 'YouTube' }).className,
+    };
+    view.unmount();
+    return result;
+  };
+  const faint = (percent) => `color-mix(in srgb, var(--panel-ink) ${percent}%, transparent)`;
+  const builtIn = drawn({ checkbox: '#a6b4c9', optionWindowCheckbox: '#414F66' });
+  assert.equal(builtIn.volume, faint(40));
+  assert.equal(builtIn.hint, faint(35));
+  assert.equal(builtIn.idle, faint(70));
+  assert.equal(builtIn.link, faint(30));
+  assert.match(builtIn.linkClass, /text-\[color:var\(--panel-link\)\]/);
+  assert.equal(builtIn.card, faint(6));
+  assert.match(builtIn.producer, /text-\[color:var\(--panel-card-secondary\)\]/);
+  const blue = drawn({ checkbox: '#a6b4c9', optionWindow: '#2196f3', optionWindowCheckbox: '#414F66' });
+  assert.equal(blue.volume, 'rgb(5, 35, 60)');
+  assert.equal(blue.hint, 'rgb(5, 35, 61)');
+  assert.equal(blue.idle, 'rgb(7, 27, 46)');
+  assert.equal(blue.link, '#0c3a61');
+});
+
 const items = [
   { code: 'first', title: 'First', producerName: 'CI', isLED: false, isAutoPlay: false, downloadCount: 10 },
   { code: 'second', title: 'Second', producerName: 'CI', isLED: true, isAutoPlay: true, downloadCount: 5 },
