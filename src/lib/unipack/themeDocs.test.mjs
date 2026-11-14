@@ -55,3 +55,18 @@ test('each app-only file is described in both languages', () => {
     }
   }
 });
+
+// The iOS app decodes theme.json with Swift's synthesized Codable, which ignores property defaults,
+// so every field below fails the import there when missing. Shrink this once the iOS app accepts gaps.
+const THEME_JSON_REQUIRED = ['name', 'author', 'version'];
+
+test('theme.json fields the iOS app requires are marked required in both languages', () => {
+  for (const locale of LOCALES) {
+    const rows = doc(locale).split('\n').filter(line => /^\| `\w+` \| string \|/.test(line));
+    const required = rows
+      .map(line => line.split('|').map(cell => cell.trim()))
+      .filter(cells => cells[3] === 'O')
+      .map(cells => cells[1].replaceAll('`', ''));
+    assert.deepEqual(required, THEME_JSON_REQUIRED, locale);
+  }
+});

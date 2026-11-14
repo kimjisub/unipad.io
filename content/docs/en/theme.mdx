@@ -42,9 +42,13 @@ A JSON file containing the theme's name, author, and version information. It is 
 |-------|------|----------|-------------|
 | `name` | string | O | Theme display name |
 | `author` | string | O | Creator name |
-| `version` | string | | Version (default: `"1.0"`) |
+| `version` | string | O | Version string (e.g. `"1.0.0"`) |
 
-If `theme.json` is not valid JSON or lacks `name` or `author`, the Android app finishes the import but the theme never appears in the list, and the iOS app rejects the import. The web player shows the missing values as `Unknown`.
+Always include all three fields. When one is missing, each app behaves differently:
+
+- **iOS app**: if `theme.json` is not valid JSON or lacks any of `name`, `author` or `version`, the import fails. `version` is currently required too.
+- **Android app**: a missing `version` becomes `"1.0"`. If `theme.json` is not valid JSON or lacks `name` or `author`, the import finishes but the theme never appears in the list.
+- **Web player**: a missing `name` or `author` becomes `Unknown`, and a missing `version` becomes `"1.0"`. If `theme.json` is absent or not valid JSON, the theme is listed under the default theme's name (`Default`, by `UniPad`).
 
 ### theme\_ic.png
 
@@ -57,10 +61,16 @@ A theme without it can still be imported; the list then shows the default theme 
 
 ## Image Resources
 
-**PNG** is recommended. The Android app and the web player also read WebP, JPG and JPEG files of the same name (looking for PNG, then WebP, JPG, JPEG), but the iOS app reads PNG only.
+**PNG** is recommended. The Android app and the web player also read WebP, JPG and JPEG files of the same name (looking for PNG, then WebP, JPG, JPEG), but the iOS app reads PNG only (except for the icon, where `theme_ic.webp` also works).
 Use PNG for any image that needs transparency.
 
-Any missing resources will fall back to the app's default theme, with two exceptions: without `phantom_.png` every pad uses `phantom.png`, and without `custom_logo.png` no logo is shown.
+Any missing resources will fall back to the app's default theme, with three exceptions:
+
+- Without `phantom_.png`, every pad uses `phantom.png`.
+- Without `custom_logo.png`, no logo is shown.
+- Without `chainled.png`, the chain area switches to Mode B (`chain.png`, `chain_.png`, `chain__.png`). See **Chain Area** below.
+
+The web player does not follow these three exceptions yet and shows the default theme's image in place of each missing file (a fix is in progress). If you try a theme in the browser first, keep in mind that it may look different in the Android and iOS apps.
 
 ### Pad Area
 
@@ -79,6 +89,7 @@ A decorative logo in the top-right corner of the play screen, shown in the image
 
 - It is about 90dp wide and shrinks where it would cover the pads or chain buttons.
 - Turning on **Hide UI** in the options hides it.
+- In the web player it is always 90px wide and never shrinks, and it is hidden while the options panel is open.
 - Without this file, no logo is shown.
 - The logo that lights up with the pack's logo light is `logo_led.png`, below. Neither image stands in for the other.
 
@@ -142,6 +153,7 @@ Uses the pad button (`btn.png`) as background, places `chainled.png` on the phan
 
 Activated when `chainled.png` does not exist.
 Displays different images directly for each state.
+The web player still draws Mode A with the default chain image when `chainled.png` is missing (a fix is in progress).
 
 | File | Description |
 |------|-------------|
@@ -154,8 +166,8 @@ Displays different images directly for each state.
 ### colors.json
 
 You can customize the colors of UI elements. All fields are optional; unspecified fields will use default colors.
-Color values should be hex strings in `#RRGGBB` or `#AARRGGBB` format. A color in any other format falls back to the default color.
-The file itself must be valid JSON. If it is not, the iOS app and the web player ignore just this file, but the Android app cannot open the theme and returns to the default theme.
+Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The Android and iOS apps replace a string they cannot read with the default color for that field only. The apps accept different other formats (the Android app, for example, also takes color names such as `red`), so stick to hex.
+The file itself must be valid JSON, and color values must be strings, not numbers. If the JSON is broken or a value is not a string, the iOS app ignores the whole file and the Android app cannot open the theme and returns to the default theme. The web player ignores a broken file and keeps the default color for any value that is not a string.
 
 ```json
 {
@@ -172,6 +184,8 @@ The file itself must be valid JSON. If it is not, the iOS app and the web player
 | `trace_log` | Color of the numbers and lines the **Trace recording** option leaves on the pads |
 | `option_window` | Option panel background color |
 | `option_window_checkbox` | Checkbox color inside the option panel |
+
+The web player currently applies only `trace_log` and `option_window_checkbox`; the other two colors change only in the Android and iOS apps.
 
 ## Screen Layout
 
@@ -205,7 +219,7 @@ minimal-theme.zip
 └── theme.json
 ```
 
-All resources will fall back to the app's default theme. The theme list shows the name with the default icon; add `theme_ic.png` to show your own icon.
+Put `name`, `author` and `version` in `theme.json`. All resources will fall back to the app's default theme. The theme list shows the name with the default icon; add `theme_ic.png` to show your own icon.
 
 ### Full Setup
 
@@ -236,7 +250,7 @@ full-theme.zip
 To work in the Android and iOS apps, a theme must meet these conditions:
 
 - `theme.json` must exist at the ZIP root. Without it the theme is not installed and an error message is shown.
-- `theme.json` must be valid JSON with `name` and `author`. See the theme.json section above for what each app does when they are missing.
+- `theme.json` must be valid JSON with `name`, `author` and `version` (`version` is required by the iOS app). See the theme.json section above for what each app does when they are missing.
 
 Image files, `theme_ic.png` included, are not checked. A missing or unreadable image falls back to the default theme's image.
 The web player is more lenient and imports a ZIP even without `theme.json`, but follow the conditions above so the theme also works in the apps.
