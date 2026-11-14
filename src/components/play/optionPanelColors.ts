@@ -3,7 +3,7 @@ import { fadeThemeColor } from '@/lib/unipack/ThemeManager';
 /** The play screen's own options panel background, shown when the theme sets no `option_window`. */
 export const DEFAULT_OPTION_PANEL_BACKGROUND = 'rgba(22,30,43,0.94)';
 
-/** The Android and iOS apps draw a theme's `option_window` at 94% opacity. */
+/** The apps draw a theme's `option_window` at 94% opacity. */
 const OPTION_PANEL_OPACITY = 0.94;
 
 const LIGHT_INK = '#ffffff';
@@ -35,16 +35,16 @@ function contrastRatio(a: number, b: number): number {
 
 /**
  * The options panel colours for a loaded theme colour (`#rrggbb` or `#rrggbbaa`): the theme's
- * `option_window` at 94% of its own opacity, with the content colour the Android app picks for it
- * (opacity is ignored there, as the panel is drawn nearly opaque). Without one, the panel keeps
- * its own dark background and white content.
+ * `option_window` at 94% opacity, replacing any opacity of its own as the Android app does, so the
+ * panel is always nearly opaque and the content colour picked for the colour is the one seen.
+ * Without one, the panel keeps its own dark background and white content.
  */
 export function optionPanelColors(optionWindow: string | undefined): OptionPanelColors {
   if (!optionWindow) return { background: DEFAULT_OPTION_PANEL_BACKGROUND, ink: LIGHT_INK };
   const panel = luminance(rgbOf(optionWindow));
   const darkReadsBetter = contrastRatio(luminance(rgbOf(DARK_INK)), panel) >= contrastRatio(1, panel);
   return {
-    background: fadeThemeColor(optionWindow, OPTION_PANEL_OPACITY),
+    background: fadeThemeColor(optionWindow.slice(0, 7), OPTION_PANEL_OPACITY),
     ink: darkReadsBetter ? DARK_INK : LIGHT_INK,
   };
 }
