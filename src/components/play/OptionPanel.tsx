@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { UniPackInfo } from '@/lib/unipack/types';
-import type { ThemeAssets } from '@/lib/unipack';
+import { fadeThemeColor, type ThemeAssets } from '@/lib/unipack/ThemeManager';
 import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
 import { websiteUrl } from '@/lib/unipack/websiteUrl';
@@ -533,7 +533,7 @@ function OptionSwitch({
       <div
         className="w-9 h-5 rounded-full relative transition-colors"
         style={{
-          backgroundColor: checked ? `${color}80` : 'rgba(255,255,255,0.1)',
+          backgroundColor: checked ? fadeThemeColor(color, 0.5) : 'rgba(255,255,255,0.1)',
         }}
       >
         <div

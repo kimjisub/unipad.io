@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import JSZip from 'jszip';
-import { getDefaultTheme, loadThemeFromJSZip } from './ThemeManager';
+import { fadeThemeColor, getDefaultTheme, loadThemeFromJSZip } from './ThemeManager';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -90,4 +90,9 @@ test('a theme without its own trace colour draws the trace like the built-in the
   assert.equal((await loadThemeFromJSZip(themeZip({}))).colors.traceLog, undefined);
   const theme = await loadThemeFromJSZip(themeZip({ 'colors.json': JSON.stringify({ checkbox: '#123456' }) }));
   assert.equal(theme.colors.traceLog, undefined);
+});
+
+test('a fainter theme colour keeps its hue and multiplies its own opacity', () => {
+  assert.equal(fadeThemeColor('#414f66', 0.5), 'rgba(65, 79, 102, 0.5)');
+  assert.equal(fadeThemeColor('#ff00ff80', 0.5), 'rgba(255, 0, 255, 0.251)');
 });

@@ -66,6 +66,15 @@ function parseThemeColor(value: unknown): string | null {
   return hex.length === 8 ? `#${hex.slice(2)}${hex.slice(0, 2)}` : `#${hex}`;
 }
 
+/** A loaded theme colour with its opacity multiplied by `factor`, for fainter variants of it. */
+export function fadeThemeColor(color: string, factor: number): string {
+  const hex = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color);
+  if (!hex) return color;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+  const alpha = (hex[2] ? parseInt(hex[2], 16) / 255 : 1) * factor;
+  return `rgba(${r}, ${g}, ${b}, ${Number(alpha.toFixed(3))})`;
+}
+
 function getMimeType(filename: string): string {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.webp')) return 'image/webp';
