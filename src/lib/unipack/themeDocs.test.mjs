@@ -81,7 +81,8 @@ const WEB_UNUSED_SENTENCE = {
 };
 
 const snakeCase = name => name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-const COLOR_FIELDS = Object.keys(getDefaultTheme().colors).map(snakeCase);
+// traceLog has no default: without it the play screen draws the trace in its own colours.
+const COLOR_FIELDS = Object.keys({ ...getDefaultTheme().colors, traceLog: undefined }).map(snakeCase);
 
 /** colors.json fields web code reads off a theme, as `theme.colors.traceLog` or `themeColors?.checkbox`. */
 function webPaintedColors() {

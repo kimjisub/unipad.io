@@ -76,6 +76,18 @@ test('option panel opens, keeps its exit animation, reopens and unmounts after c
   assert.equal(view.queryByRole('dialog'), null);
 });
 
+test('a theme colour with its own opacity colours the switched-on option switches, half as strong', () => {
+  const props = {
+    visible: true, unipackInfo: { title: 'CI pack', squareButton: true },
+    theme: { colors: { checkbox: '#a6b4c9', optionWindow: '#ffffff', optionWindowCheckbox: '#ff00ff80' } },
+    feedbackLight: true, slideMode: false, onClose: noop, onVolumeChange: noop,
+  };
+  const view = render(wrapped(OptionPanel, props));
+  const track = (label) => view.getByText(label, { exact: true }).closest('button').querySelector('.rounded-full').style.backgroundColor;
+  assert.equal(track('Feedback Light'), 'rgba(255, 0, 255, 0.251)');
+  assert.equal(track('Slide across pads'), 'rgba(255, 255, 255, 0.1)');
+});
+
 const items = [
   { code: 'first', title: 'First', producerName: 'CI', isLED: false, isAutoPlay: false, downloadCount: 10 },
   { code: 'second', title: 'Second', producerName: 'CI', isLED: true, isAutoPlay: true, downloadCount: 5 },

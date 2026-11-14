@@ -57,6 +57,11 @@ test('the default skin draws light numbers with a dark edge, other skins keep th
   assert.equal(own.style.color, 'rgb(230, 233, 237)');
   assert.match(own.style.textShadow, /#161e2b|rgb\(22, 30, 43\)/i);
   cleanup();
+  view = grid({ theme: { ...getDefaultTheme(), colors: { ...getDefaultTheme().colors } } });
+  const copied = numbers(view, '0,0');
+  assert.equal(copied.style.color, 'rgb(230, 233, 237)', 'a loaded skin without its own trace colour draws numbers like the default skin');
+  assert.match(copied.style.textShadow, /#161e2b|rgb\(22, 30, 43\)/i);
+  cleanup();
   view = grid({ theme: { ...getDefaultTheme(), colors: { traceLog: '#ff0000' } } });
   const skin = numbers(view, '0,0');
   assert.equal(skin.style.color, 'rgb(255, 0, 0)');

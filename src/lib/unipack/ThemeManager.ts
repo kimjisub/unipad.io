@@ -6,11 +6,13 @@ export interface ThemeMetadata {
   version: string;
 }
 
+/** CSS colours. A theme writes them as `#RRGGBB` or `#AARRGGBB` (opacity first, as the apps read them). */
 export interface ThemeColors {
-  checkbox?: string;
+  checkbox: string;
+  /** The theme's own trace colour; without one the play screen draws the trace in its own colours. */
   traceLog?: string;
-  optionWindow?: string;
-  optionWindowCheckbox?: string;
+  optionWindow: string;
+  optionWindowCheckbox: string;
 }
 
 export interface ThemeAssets {
@@ -34,7 +36,6 @@ const DEFAULT_THEME: ThemeAssets = {
   metadata: { name: 'Default', author: 'UniPad', version: '1.0' },
   colors: {
     checkbox: '#a6b4c9',
-    traceLog: '#ffffff',
     optionWindow: '#FFFFFF',
     optionWindowCheckbox: '#414F66',
   },
@@ -73,6 +74,28 @@ export const THEME_IMAGES: ReadonlyArray<readonly [ThemeImageKey, readonly strin
   ['phantom', ['phantom']],
   ['phantomVariant', ['phantom_']],
 ];
+
+// Images the apps draw only when the theme ZIP has them: without chainled the chain buttons are
+// drawn from the chain images, and without custom_logo or phantom_ nothing is drawn in their place.
+const ZIP_ONLY_IMAGES = { customLogo: null, chainled: null, phantomVariant: null } as const;
+
+/** Reads `#RRGGBB` or `#AARRGGBB` (the `#` optional) into a CSS colour, or null when it is neither. */
+function parseThemeColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = /^#?([0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value.trim());
+  if (!match) return null;
+  const hex = match[1].toLowerCase();
+  return hex.length === 8 ? `#${hex.slice(2)}${hex.slice(0, 2)}` : `#${hex}`;
+}
+
+/** A loaded theme colour with its opacity multiplied by `factor`, for fainter variants of it. */
+export function fadeThemeColor(color: string, factor: number): string {
+  const hex = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color);
+  if (!hex) return color;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+  const alpha = (hex[2] ? parseInt(hex[2], 16) / 255 : 1) * factor;
+  return `rgba(${r}, ${g}, ${b}, ${Number(alpha.toFixed(3))})`;
+}
 
 function getMimeType(filename: string): string {
   const lower = filename.toLowerCase();
@@ -119,6 +142,7 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
   const resolvedPrefix = detectThemePrefix(zip, prefix);
   const theme: ThemeAssets = {
     ...DEFAULT_THEME,
+    ...ZIP_ONLY_IMAGES,
     colors: { ...DEFAULT_THEME.colors },
   };
 
@@ -144,20 +168,15 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
     try {
       const text = await colorsJsonFile.async('text');
       const parsed = parseJsonLoose<Record<string, unknown>>(text);
+      const color = (...keys: string[]) => parseThemeColor(keys.map((key) => parsed[key]).find((v) => v != null));
+      const defaults = DEFAULT_THEME.colors;
       theme.colors = {
-        checkbox: typeof (parsed.checkbox ?? parsed.checkBox) === 'string'
-          ? String(parsed.checkbox ?? parsed.checkBox)
-          : undefined,
-        traceLog: typeof (parsed.trace_log ?? parsed.traceLog) === 'string'
-          ? String(parsed.trace_log ?? parsed.traceLog)
-          : undefined,
-        optionWindow: typeof (parsed.option_window ?? parsed.optionWindow) === 'string'
-          ? String(parsed.option_window ?? parsed.optionWindow)
-          : undefined,
-        optionWindowCheckbox: typeof (parsed.option_window_checkbox ?? parsed.optionWindowCheckbox) === 'string'
-          ? String(parsed.option_window_checkbox ?? parsed.optionWindowCheckbox)
-          : undefined,
+        checkbox: color('checkbox', 'checkBox') ?? defaults.checkbox,
+        optionWindow: color('option_window', 'optionWindow') ?? defaults.optionWindow,
+        optionWindowCheckbox: color('option_window_checkbox', 'optionWindowCheckbox') ?? defaults.optionWindowCheckbox,
       };
+      const traceLog = color('trace_log', 'traceLog');
+      if (traceLog) theme.colors.traceLog = traceLog;
     } catch {
       console.warn('Failed to parse colors.json');
     }
