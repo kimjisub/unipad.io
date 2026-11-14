@@ -25,7 +25,10 @@ const panelStyle = (colors: OptionPanelColors): React.CSSProperties => ({
   ['--panel-ink-secondary' as string]: colors.inkSecondary,
   ['--panel-youtube' as string]: colors.youtube,
   ['--panel-website' as string]: colors.website,
-  ['--panel-link' as string]: colors.linkIcon,
+  ['--panel-card' as string]: colors.card.fill,
+  ['--panel-card-ink' as string]: colors.card.text,
+  ['--panel-card-secondary' as string]: colors.card.secondaryText,
+  ['--panel-link' as string]: colors.card.linkIcon,
 });
 
 interface OptionPanelProps {
@@ -126,6 +129,10 @@ export function OptionPanel({
   const t = useTranslations('play.menu');
   const tCommon = useTranslations('play.common');
   const website = useMemo(() => websiteUrl(unipackInfo.website), [unipackInfo.website]);
+  const panelColors = useMemo(
+    () => optionPanelColors(theme.colors.optionWindow, theme.colors.optionWindowCheckbox),
+    [theme.colors.optionWindow, theme.colors.optionWindowCheckbox],
+  );
   const [mounted, setMounted] = useState(false);
   const closing = !visible;
   if (visible && !mounted) setMounted(true);
@@ -146,7 +153,6 @@ export function OptionPanel({
     onClose();
   };
 
-  const panelColors = optionPanelColors(theme.colors.optionWindow, theme.colors.optionWindowCheckbox);
   const squareButton = unipackInfo.squareButton;
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;
@@ -181,7 +187,7 @@ export function OptionPanel({
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto min-h-0">
         {/* UniPack Info — collapsed by default; expanded reveals producer, links, dimensions */}
-        <div className="mx-6 mt-2 mb-2 rounded-xl bg-panel-ink/[0.06]">
+        <div className="mx-6 mt-2 mb-2 rounded-xl bg-[color:var(--panel-card)]">
           <button
             type="button"
             className="w-full flex items-center gap-2 px-4 py-3 text-left"
@@ -190,7 +196,7 @@ export function OptionPanel({
             aria-label={t('togglePackInfo')}
           >
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-panel-ink truncate">{playMenuTitle(unipackInfo.title)}</div>
+              <div className="text-sm font-semibold text-[color:var(--panel-card-ink)] truncate">{playMenuTitle(unipackInfo.title)}</div>
             </div>
             <svg
               className={`w-4 h-4 text-panel-ink/50 shrink-0 transition-transform ${infoExpanded ? 'rotate-180' : ''}`}
@@ -204,7 +210,7 @@ export function OptionPanel({
           {infoExpanded && (
             <div className="px-4 pb-3 pt-1">
               <div className="flex items-center gap-2">
-                <div className="text-[13px] text-panel-ink-secondary truncate flex-1">{unipackInfo.producerName}</div>
+                <div className="text-[13px] text-[color:var(--panel-card-secondary)] truncate flex-1">{unipackInfo.producerName}</div>
                 <a
                   href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
                   target="_blank"
@@ -230,7 +236,7 @@ export function OptionPanel({
                   </a>
                 )}
               </div>
-              <div className="flex gap-3 mt-2 text-xs text-panel-ink-secondary">
+              <div className="flex gap-3 mt-2 text-xs text-[color:var(--panel-card-secondary)]">
                 <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
                 <span>{t('chainCount', { count: unipackInfo.chain })}</span>
               </div>

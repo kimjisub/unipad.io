@@ -31,6 +31,7 @@ const VOLUME_VALUE_PERCENT = 40;
 const HINT_PERCENT = 35;
 const LINK_ICON_PERCENT = 30;
 const SEGMENT_TRACK_PERCENT = 6;
+const INFO_CARD_PERCENT = 6;
 const SEGMENT_IDLE_TEXT_PERCENT = 70;
 const SWITCH_TRACK_ON_FACTOR = 0.5;
 const SWITCH_TRACK_OFF_PERCENT = 10;
@@ -51,6 +52,16 @@ export interface SegmentColors {
   idleText: string;
 }
 
+export interface CardColors {
+  /** The tint of the content colour the pack info card is filled with. */
+  fill: string;
+  /** The pack title, and the producer and size lines below it. */
+  text: string;
+  secondaryText: string;
+  /** The YouTube and website link icons while not hovered. */
+  linkIcon: string;
+}
+
 export interface OptionPanelColors {
   background: string;
   /** Text, icons, fills and switch parts on the panel. */
@@ -61,8 +72,6 @@ export interface OptionPanelColors {
   volumeValue: string;
   /** Faint text beside a row's label, such as "Open". */
   hint: string;
-  /** The YouTube and website link icons while not hovered. */
-  linkIcon: string;
   /** The close and Quit marks. */
   danger: string;
   /** Icons drawn in the theme's accent. */
@@ -74,6 +83,8 @@ export interface OptionPanelColors {
   recordSwitch: SwitchColors;
   switchOff: SwitchColors;
   segment: SegmentColors;
+  /** The pack info card, which tints the panel behind its text. */
+  card: CardColors;
   /**
    * Safari draws the volume slider's thumb white whatever its accent colour, which is lost on a light
    * panel; there the panel draws the slider itself in its content colour.
@@ -221,7 +232,8 @@ function switchOn(color: string, ink: string, backdrops: Color[]): SwitchColors 
  * Android app does, with content in whichever of white or dark reads better on it. As in the Android
  * app, each colour drawn on the panel keeps its value where it reads on every backdrop the panel can
  * have (text 4.5:1, marks 3:1) and is otherwise moved in lightness until it does; the track behind
- * the segments is thinned on mid greys so their text can read. The faint content
+ * the segments and the pack info card are thinned on mid greys so their text can read, and what is
+drawn on them is measured on them. The faint content
  * colours count too: the volume level, hints and segments not chosen are text; the link icons stand
  * for links. The speaker icon, the expand arrow and the MIDI dot add nothing their row does not say,
  * so they keep their faint colour, as the Android app's expand arrow does.
@@ -237,13 +249,18 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
       inkSecondary: panelInk(SECONDARY_TEXT_PERCENT),
       volumeValue: panelInk(VOLUME_VALUE_PERCENT),
       hint: panelInk(HINT_PERCENT),
-      linkIcon: panelInk(LINK_ICON_PERCENT),
       ...OPTION_PANEL_MARKS,
       accent,
       accentSwitch: { track: fadeThemeColor(accent, SWITCH_TRACK_ON_FACTOR), thumb: thumbOn },
       recordSwitch: { track: fadeThemeColor(OPTION_PANEL_MARKS.record, SWITCH_TRACK_ON_FACTOR), thumb: thumbOn },
       switchOff,
       segment: { track: panelInk(SEGMENT_TRACK_PERCENT), fill: accent, text: SEGMENT_TEXT, idleText: panelInk(SEGMENT_IDLE_TEXT_PERCENT) },
+      card: {
+        fill: panelInk(INFO_CARD_PERCENT),
+        text: 'var(--panel-ink)',
+        secondaryText: panelInk(SECONDARY_TEXT_PERCENT),
+        linkIcon: panelInk(LINK_ICON_PERCENT),
+      },
       drawnVolumeSlider: false,
     };
   }
@@ -259,8 +276,13 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
   /** The content colour at `percent` where it reaches `minRatio` on `on`, else moved further from the panel. */
   const faintInk = (percent: number, minRatio: number, on = backdrops) =>
     readable(panelInk(percent), withAlpha(inkColor, percent / 100), on, minRatio, towards);
-  const trackPercent = tintPercentUnder(inkColor, towards, backdrops, SEGMENT_TRACK_PERCENT);
-  const trackBackdrops = backdrops.map((backdrop) => over(withAlpha(inkColor, trackPercent / 100), backdrop));
+  /** A tint of the content colour laid behind text, and the backdrops that text then has. */
+  const fill = (nominalPercent: number) => {
+    const percent = tintPercentUnder(inkColor, towards, backdrops, nominalPercent);
+    return { css: panelInk(percent), on: backdrops.map((backdrop) => over(withAlpha(inkColor, percent / 100), backdrop)) };
+  };
+  const track = fill(SEGMENT_TRACK_PERCENT);
+  const card = fill(INFO_CARD_PERCENT);
 
   return {
     background: fadeThemeColor(optionWindow.slice(0, 7), OPTION_PANEL_OPACITY),
@@ -268,7 +290,6 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
     inkSecondary: faintInk(SECONDARY_TEXT_PERCENT, MIN_TEXT_CONTRAST),
     volumeValue: faintInk(VOLUME_VALUE_PERCENT, MIN_TEXT_CONTRAST),
     hint: faintInk(HINT_PERCENT, MIN_TEXT_CONTRAST),
-    linkIcon: faintInk(LINK_ICON_PERCENT, MIN_GRAPHIC_CONTRAST),
     danger: mark(OPTION_PANEL_MARKS.danger),
     accent: accentMark,
     youtube: mark(OPTION_PANEL_MARKS.youtube),
@@ -281,10 +302,16 @@ export function optionPanelColors(optionWindow: string | undefined, accent: stri
       thumb: faintInk(SWITCH_THUMB_OFF_PERCENT, MIN_GRAPHIC_CONTRAST),
     },
     segment: {
-      track: panelInk(Number(trackPercent.toFixed(2))),
+      track: track.css,
       fill: accentMark,
       text: contentOn(channels(accentMark), backdrops, SEGMENT_TEXT, MIN_TEXT_CONTRAST),
-      idleText: faintInk(SEGMENT_IDLE_TEXT_PERCENT, MIN_TEXT_CONTRAST, trackBackdrops),
+      idleText: faintInk(SEGMENT_IDLE_TEXT_PERCENT, MIN_TEXT_CONTRAST, track.on),
+    },
+    card: {
+      fill: card.css,
+      text: readable(ink, inkColor, card.on, MIN_TEXT_CONTRAST, towards),
+      secondaryText: faintInk(SECONDARY_TEXT_PERCENT, MIN_TEXT_CONTRAST, card.on),
+      linkIcon: faintInk(LINK_ICON_PERCENT, MIN_GRAPHIC_CONTRAST, card.on),
     },
     drawnVolumeSlider: towards === BLACK,
   };

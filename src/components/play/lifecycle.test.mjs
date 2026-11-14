@@ -151,7 +151,7 @@ test('on a light options panel the red marks, switches and volume slider are dra
   assert.equal(light.slider.style.getPropertyValue('--volume-fill'), '100%');
 });
 
-test('on a mid blue options panel the volume level, the Open hint, unchosen segments and link icons are drawn to read on it', () => {
+test('on a mid blue options panel the volume level, the Open hint, unchosen segments and the link icons on the pack info card are drawn to read where they sit', () => {
   const props = {
     visible: true, unipackInfo: { title: 'CI pack', producerName: 'CI', squareButton: true },
     volumeLevel: 3, traceLogStyle: 'numbers', onClose: noop, onVolumeChange: noop,
@@ -164,6 +164,8 @@ test('on a mid blue options panel the volume level, the Open hint, unchosen segm
       hint: view.getByText('Open', { exact: true }).style.color,
       idle: view.getByRole('button', { name: /Lines/, pressed: false }).style.color,
       link: view.getByRole('dialog').style.getPropertyValue('--panel-link'),
+      card: view.getByRole('dialog').style.getPropertyValue('--panel-card'),
+      producer: view.getByText('CI', { exact: true }).className,
       linkClass: view.getByRole('link', { name: 'YouTube' }).className,
     };
     view.unmount();
@@ -176,11 +178,13 @@ test('on a mid blue options panel the volume level, the Open hint, unchosen segm
   assert.equal(builtIn.idle, faint(70));
   assert.equal(builtIn.link, faint(30));
   assert.match(builtIn.linkClass, /text-\[color:var\(--panel-link\)\]/);
+  assert.equal(builtIn.card, faint(6));
+  assert.match(builtIn.producer, /text-\[color:var\(--panel-card-secondary\)\]/);
   const blue = drawn({ checkbox: '#a6b4c9', optionWindow: '#2196f3', optionWindowCheckbox: '#414F66' });
   assert.equal(blue.volume, 'rgb(5, 35, 60)');
   assert.equal(blue.hint, 'rgb(5, 35, 61)');
   assert.equal(blue.idle, 'rgb(7, 27, 46)');
-  assert.equal(blue.link, '#0d406a');
+  assert.equal(blue.link, '#0c3a61');
 });
 
 const items = [

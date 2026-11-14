@@ -53,13 +53,13 @@ test('without a theme options panel colour every panel colour stays as the play 
     inkSecondary: panelInk(65),
     volumeValue: panelInk(40),
     hint: panelInk(35),
-    linkIcon: panelInk(30),
     ...OPTION_PANEL_MARKS,
     accent: ACCENT,
     accentSwitch: { track: 'rgba(65, 79, 102, 0.5)', thumb: 'var(--panel-ink)' },
     recordSwitch: { track: 'rgba(239, 68, 68, 0.5)', thumb: 'var(--panel-ink)' },
     switchOff: { track: panelInk(10), thumb: panelInk(70) },
     segment: { track: panelInk(6), fill: ACCENT, text: '#000000', idleText: panelInk(70) },
+    card: { fill: panelInk(6), text: 'var(--panel-ink)', secondaryText: panelInk(65), linkIcon: panelInk(30) },
     drawnVolumeSlider: false,
   });
 });
@@ -148,14 +148,32 @@ test('marks for a control or its state reach 3:1 on every panel colour', () => {
   }
 });
 
-test('the volume level, hints and segments not chosen reach 4.5:1, and the link icons 3:1, on every panel colour', () => {
+test('the volume level, hints and segments not chosen reach 4.5:1 on every panel colour', () => {
   for (const panel of PANELS) {
-    const { ink, volumeValue, hint, linkIcon, segment } = optionPanelColors(panel, ACCENT);
-    assert.ok(worst(panel, linkIcon, ink) >= MIN_GRAPHIC_CONTRAST, `${panel}: link icon ${linkIcon}`);
+    const { ink, volumeValue, hint, segment } = optionPanelColors(panel, ACCENT);
     if (NO_READABLE_TEXT.has(panel)) continue;
     assert.ok(worst(panel, volumeValue, ink) >= MIN_TEXT_CONTRAST, `${panel}: volume level ${volumeValue}`);
     assert.ok(worst(panel, hint, ink) >= MIN_TEXT_CONTRAST, `${panel}: hint ${hint}`);
     assert.ok(worst(panel, segment.idleText, ink, segment.track) >= MIN_TEXT_CONTRAST, `${panel}: segment not chosen ${segment.idleText}`);
+  }
+});
+
+const DARK_PANELS = ['#000000', ...PANELS];
+
+test('the link icons reach 3:1 on the pack info card they sit on, not just on the bare panel', () => {
+  for (const panel of DARK_PANELS) {
+    const { ink, card } = optionPanelColors(panel, ACCENT);
+    assert.ok(worst(panel, card.linkIcon, ink, card.fill) >= MIN_GRAPHIC_CONTRAST, `${panel}: link icon ${card.linkIcon} on ${card.fill}`);
+  }
+});
+
+test('the pack title, producer and size reach 4.5:1 on the pack info card', () => {
+  for (const panel of DARK_PANELS) {
+    if (NO_READABLE_TEXT.has(panel)) continue;
+    const { ink, card } = optionPanelColors(panel, ACCENT);
+    const text = card.text === 'var(--panel-ink)' ? ink : card.text;
+    assert.ok(worst(panel, text, ink, card.fill) >= MIN_TEXT_CONTRAST, `${panel}: title ${text} on ${card.fill}`);
+    assert.ok(worst(panel, card.secondaryText, ink, card.fill) >= MIN_TEXT_CONTRAST, `${panel}: producer ${card.secondaryText} on ${card.fill}`);
   }
 });
 
@@ -173,6 +191,9 @@ test('on a mid grey the track behind the segments is thinned so their text can r
   assert.ok(worst('#808080', '#000000', ink, panelInk(6)) < MIN_TEXT_CONTRAST, 'black already read on the full track');
   assert.notEqual(segment.track, panelInk(6));
   assert.ok(worst('#808080', segment.idleText, ink, segment.track) >= MIN_TEXT_CONTRAST, `${segment.idleText} on ${segment.track}`);
+  const { card } = optionPanelColors('#808080', ACCENT);
+  assert.notEqual(card.fill, panelInk(6));
+  assert.ok(worst('#808080', card.secondaryText, ink, card.fill) >= MIN_TEXT_CONTRAST, `${card.secondaryText} on ${card.fill}`);
 });
 
 test('the panel draws the volume slider itself only where its content is dark', () => {
