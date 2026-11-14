@@ -166,7 +166,7 @@ When `chainled.png` is missing, the web player does not use the theme's `chain*.
 ### colors.json
 
 You can customize the colors of UI elements. All fields are optional; unspecified fields will use default colors.
-Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The web player reads an 8-digit value as `#RRGGBBAA` (alpha last), so it shows a different color there. To get the same color on the web too, use `#RRGGBB` (6 digits).
+Write color values as quoted hex strings in `#RRGGBB` or `#AARRGGBB` format. The web player reads an 8-digit value as `#RRGGBBAA` (alpha last), so it shows a different color there, and in some places (the unlit dots in the control panel on the left, the background of a switched-on option in the options panel) no color is painted at all. To get the same color on the web too, use `#RRGGBB` (6 digits).
 The Android and iOS apps replace a string they cannot read with the default color for that field only. An empty string `""`, however, makes the Android app fail to open the theme and fall back to the default theme, so leave out a field you do not want to change instead of leaving it empty. The apps accept different other formats (the Android app, for example, also takes color names such as `red`), so stick to hex.
 The file itself must be valid JSON, and color values must be strings, not numbers. If the JSON is broken or a value is not a string, the iOS app ignores the whole file and the Android app cannot open the theme and returns to the default theme. The web player ignores a broken file and keeps the default color for any value that is not a string.
 
@@ -179,14 +179,14 @@ The file itself must be valid JSON, and color values must be strings, not number
 }
 ```
 
-| Field | Description |
+| Field | What it colors |
 |-------|-------------|
-| `checkbox` | Option checkbox color (in the web player, the control panel on the left of the play screen) |
+| `checkbox` | The control panel on the left of the play screen. In the Android and iOS apps, only the fill of the autoplay progress bar. In the web player, the progress bar plus the lit dots of the **Feedback**, **LED** and **Trace** buttons, and the selected play mode button |
 | `trace_log` | Color of the numbers and lines the **Trace recording** option leaves on the pads |
-| `option_window` | Option panel background color |
-| `option_window_checkbox` | Checkbox color inside the option panel |
+| `option_window` | Options panel background (Android and iOS apps) |
+| `option_window_checkbox` | Switched-on switches and accent color in the options panel (Android app and web player) |
 
-The web player does not apply `option_window` (options panel background) yet; that color changes only in the Android and iOS apps.
+Not every app uses every color. The web player does not use `option_window`, and the iOS app does not use `option_window_checkbox`; changing them leaves that app on its default color (the iOS app's option switches keep the app's own color).
 
 ## Screen Layout
 
