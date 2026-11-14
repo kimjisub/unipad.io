@@ -52,6 +52,24 @@ const DEFAULT_THEME: ThemeAssets = {
   isChainLed: true,
 };
 
+/**
+ * The images a theme ZIP can set and the file stems read for each, in lookup order.
+ * The first stem is the documented file name (content/docs/<locale>/theme.mdx).
+ */
+export const THEME_IMAGES: ReadonlyArray<readonly [keyof ThemeAssets, readonly string[]]> = [
+  ['icon', ['theme_ic']],
+  ['playbg', ['playbg']],
+  ['customLogo', ['custom_logo', 'custom-logo', 'logo']],
+  ['btn', ['btn']],
+  ['btnPressed', ['btn_']],
+  ['chainled', ['chainled']],
+  ['chain', ['chain']],
+  ['chainSelected', ['chain_']],
+  ['chainGuide', ['chain__']],
+  ['phantom', ['phantom']],
+  ['phantomVariant', ['phantom_']],
+];
+
 function getMimeType(filename: string): string {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.webp')) return 'image/webp';
@@ -142,21 +160,7 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
   }
 
   // Load image assets
-  const imageMap: Array<[keyof ThemeAssets, string[]]> = [
-    ['icon', ['theme_ic']],
-    ['playbg', ['playbg']],
-    ['customLogo', ['custom_logo', 'custom-logo', 'logo']],
-    ['btn', ['btn']],
-    ['btnPressed', ['btn_']],
-    ['chainled', ['chainled']],
-    ['chain', ['chain']],
-    ['chainSelected', ['chain_']],
-    ['chainGuide', ['chain__']],
-    ['phantom', ['phantom']],
-    ['phantomVariant', ['phantom_']],
-  ];
-
-  for (const [key, stems] of imageMap) {
+  for (const [key, stems] of THEME_IMAGES) {
     const candidates: string[] = [];
     for (const stem of stems) {
       candidates.push(`${stem}.png`, `${stem}.webp`, `${stem}.jpg`, `${stem}.jpeg`);
