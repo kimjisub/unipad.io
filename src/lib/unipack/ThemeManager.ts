@@ -11,7 +11,8 @@ export interface ThemeColors {
   checkbox: string;
   /** The theme's own trace colour; without one the play screen draws the trace in its own colours. */
   traceLog?: string;
-  optionWindow: string;
+  /** The theme's own options panel background; without one the panel keeps the play screen's own. */
+  optionWindow?: string;
   optionWindowCheckbox: string;
 }
 
@@ -36,7 +37,6 @@ const DEFAULT_THEME: ThemeAssets = {
   metadata: { name: 'Default', author: 'UniPad', version: '1.0' },
   colors: {
     checkbox: '#a6b4c9',
-    optionWindow: '#FFFFFF',
     optionWindowCheckbox: '#414F66',
   },
   icon: '/theme/theme_ic.png',
@@ -172,11 +172,12 @@ export async function loadThemeFromJSZip(zip: JSZip, prefix = ''): Promise<Theme
       const defaults = DEFAULT_THEME.colors;
       theme.colors = {
         checkbox: color('checkbox', 'checkBox') ?? defaults.checkbox,
-        optionWindow: color('option_window', 'optionWindow') ?? defaults.optionWindow,
         optionWindowCheckbox: color('option_window_checkbox', 'optionWindowCheckbox') ?? defaults.optionWindowCheckbox,
       };
       const traceLog = color('trace_log', 'traceLog');
       if (traceLog) theme.colors.traceLog = traceLog;
+      const optionWindow = color('option_window', 'optionWindow');
+      if (optionWindow) theme.colors.optionWindow = optionWindow;
     } catch {
       console.warn('Failed to parse colors.json');
     }

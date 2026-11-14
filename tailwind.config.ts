@@ -39,6 +39,8 @@ const config: Config = {
         },
         border: withAlpha('--border'),
         ring: withAlpha('--ring'),
+        // Content colour of the play screen's options panel, set on the panel from its background.
+        'panel-ink': withAlpha('--panel-ink'),
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

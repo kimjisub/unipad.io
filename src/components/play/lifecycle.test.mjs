@@ -85,7 +85,27 @@ test('a theme colour with its own opacity colours the switched-on option switche
   const view = render(wrapped(OptionPanel, props));
   const track = (label) => view.getByText(label, { exact: true }).closest('button').querySelector('.rounded-full').style.backgroundColor;
   assert.equal(track('Feedback Light'), 'rgba(255, 0, 255, 0.251)');
-  assert.equal(track('Slide across pads'), 'rgba(255, 255, 255, 0.1)');
+  assert.equal(track('Slide across pads'), 'color-mix(in srgb, var(--panel-ink) 10%, transparent)');
+});
+
+test('the options panel takes the theme option_window colour, with content that reads on it', () => {
+  const props = { visible: true, unipackInfo: { title: 'CI pack', squareButton: true }, onClose: noop, onVolumeChange: noop };
+  const panel = (colors) => {
+    const view = render(wrapped(OptionPanel, { ...props, theme: { colors } }));
+    const { backgroundColor } = view.getByRole('dialog').style;
+    const ink = view.getByRole('dialog').style.getPropertyValue('--panel-ink');
+    view.unmount();
+    return { backgroundColor, ink };
+  };
+  const builtIn = panel({ checkbox: '#a6b4c9', optionWindowCheckbox: '#414F66' });
+  assert.equal(builtIn.backgroundColor, 'rgba(22, 30, 43, 0.94)');
+  assert.equal(builtIn.ink, '#ffffff');
+  const light = panel({ checkbox: '#a6b4c9', optionWindow: '#ffffff', optionWindowCheckbox: '#414F66' });
+  assert.equal(light.backgroundColor, 'rgba(255, 255, 255, 0.94)');
+  assert.equal(light.ink, '#161e2b');
+  const dark = panel({ checkbox: '#a6b4c9', optionWindow: '#424242', optionWindowCheckbox: '#414F66' });
+  assert.equal(dark.backgroundColor, 'rgba(66, 66, 66, 0.94)');
+  assert.equal(dark.ink, '#ffffff');
 });
 
 const items = [

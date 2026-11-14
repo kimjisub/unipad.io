@@ -6,10 +6,14 @@ import type { UniPackInfo } from '@/lib/unipack/types';
 import { fadeThemeColor, type ThemeAssets } from '@/lib/unipack/ThemeManager';
 import type { PlayMode, TraceLogStyle } from './useUniPadEngine';
 import { playMenuTitle } from './packTitle';
+import { optionPanelColors } from './optionPanelColors';
 import { websiteUrl } from '@/lib/unipack/websiteUrl';
 
 /** Width of the menu sheet on the right edge; notices shown beside it stay left of it. */
 export const OPTION_PANEL_WIDTH_PX = 280;
+
+/** The panel's content colour (`--panel-ink`, set on the panel) at `percent` opacity. */
+const panelInk = (percent: number) => `color-mix(in srgb, var(--panel-ink) ${percent}%, transparent)`;
 
 interface OptionPanelProps {
   visible: boolean;
@@ -130,6 +134,7 @@ export function OptionPanel({
   };
 
   const accentColor = theme.colors.optionWindowCheckbox;
+  const panelColors = optionPanelColors(theme.colors.optionWindow);
   const squareButton = unipackInfo.squareButton;
   const showFeedback = squareButton;
   const showLed = squareButton && keyLedExist;
@@ -146,12 +151,12 @@ export function OptionPanel({
       />
 
       {/* Panel */}
-      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 backdrop-blur-md z-50 flex flex-col border-l border-white/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ width: OPTION_PANEL_WIDTH_PX, backgroundColor: 'rgba(22,30,43,0.94)' }}>
+      <div role="dialog" aria-modal="true" aria-label={t('ariaLabel')} className={`fixed right-0 top-0 bottom-0 backdrop-blur-md z-50 flex flex-col border-l border-panel-ink/[0.06] ${closing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`} style={{ width: OPTION_PANEL_WIDTH_PX, backgroundColor: panelColors.background, ['--panel-ink' as string]: panelColors.ink }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0">
-          <span className="text-[22px] font-normal text-white">{t('title')}</span>
+          <span className="text-[22px] font-normal text-panel-ink">{t('title')}</span>
           <button
-            className="p-1.5 rounded-lg hover:bg-white/[0.08] transition-colors"
+            className="p-1.5 rounded-lg hover:bg-panel-ink/[0.08] transition-colors"
             onClick={onClose}
             aria-label={t('close')}
           >
@@ -164,7 +169,7 @@ export function OptionPanel({
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto min-h-0">
         {/* UniPack Info — collapsed by default; expanded reveals producer, links, dimensions */}
-        <div className="mx-6 mt-2 mb-2 rounded-xl bg-white/[0.06]">
+        <div className="mx-6 mt-2 mb-2 rounded-xl bg-panel-ink/[0.06]">
           <button
             type="button"
             className="w-full flex items-center gap-2 px-4 py-3 text-left"
@@ -173,10 +178,10 @@ export function OptionPanel({
             aria-label={t('togglePackInfo')}
           >
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-white truncate">{playMenuTitle(unipackInfo.title)}</div>
+              <div className="text-sm font-semibold text-panel-ink truncate">{playMenuTitle(unipackInfo.title)}</div>
             </div>
             <svg
-              className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${infoExpanded ? 'rotate-180' : ''}`}
+              className={`w-4 h-4 text-panel-ink/50 shrink-0 transition-transform ${infoExpanded ? 'rotate-180' : ''}`}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -187,12 +192,12 @@ export function OptionPanel({
           {infoExpanded && (
             <div className="px-4 pb-3 pt-1">
               <div className="flex items-center gap-2">
-                <div className="text-[13px] text-white/65 truncate flex-1">{unipackInfo.producerName}</div>
+                <div className="text-[13px] text-panel-ink/65 truncate flex-1">{unipackInfo.producerName}</div>
                 <a
                   href={`https://www.youtube.com/results?search_query=UniPad+${encodeURIComponent(unipackInfo.title)}+${encodeURIComponent(unipackInfo.producerName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-red-400 transition-colors"
+                  className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-red-400 transition-colors"
                   aria-label={t('youtube')}
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -204,7 +209,7 @@ export function OptionPanel({
                     href={website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 p-1 rounded hover:bg-white/[0.08] text-white/30 hover:text-blue-400 transition-colors"
+                    className="shrink-0 p-1 rounded hover:bg-panel-ink/[0.08] text-panel-ink/30 hover:text-blue-400 transition-colors"
                     aria-label={t('website')}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -213,7 +218,7 @@ export function OptionPanel({
                   </a>
                 )}
               </div>
-              <div className="flex gap-3 mt-2 text-xs text-white/65">
+              <div className="flex gap-3 mt-2 text-xs text-panel-ink/65">
                 <span>{unipackInfo.buttonX}×{unipackInfo.buttonY}</span>
                 <span>{t('chainCount', { count: unipackInfo.chain })}</span>
               </div>
@@ -244,11 +249,11 @@ export function OptionPanel({
                 }}
               />
               <button
-                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors disabled:opacity-50"
                 onClick={onStartAutoMapping}
                 disabled={autoMappingActive || autoPlayRestoring}
               >
-                <span className="text-sm text-white">
+                <span className="text-sm text-panel-ink">
                   {autoMappingActive
                     ? t('autoMappingActive', {
                         progress: autoMappingTotal > 0 ? `${autoMappingProgress}/${autoMappingTotal}` : '',
@@ -267,17 +272,17 @@ export function OptionPanel({
                 )}
               </button>
               <button
-                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+                className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
                 onClick={onRestoreAutoPlay}
                 disabled={!autoPlayBackupAvailable || autoMappingActive || autoPlayRestoring}
                 aria-describedby={autoPlayBackupAvailable ? undefined : 'restore-auto-play-no-backup'}
               >
                 <span className="flex flex-col items-start text-left">
-                  <span className="text-sm text-white">
+                  <span className="text-sm text-panel-ink">
                     {autoPlayRestoring ? t('autoPlayRestoring') : t('restoreAutoPlay')}
                   </span>
                   {!autoPlayBackupAvailable && (
-                    <span id="restore-auto-play-no-backup" className="text-xs text-white/65">{t('restoreAutoPlayNoBackup')}</span>
+                    <span id="restore-auto-play-no-backup" className="text-xs text-panel-ink/65">{t('restoreAutoPlayNoBackup')}</span>
                   )}
                 </span>
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: accentColor }}>
@@ -291,7 +296,7 @@ export function OptionPanel({
         {/* Volume Section */}
         <Section title={t('sectionVolume')}>
           <div className="flex items-center gap-2.5 px-6 py-2">
-            <svg className="w-3.5 h-3.5 text-white/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-3.5 h-3.5 text-panel-ink/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6l-4 4H4v4h4l4 4V6z" />
             </svg>
             <input
@@ -301,9 +306,9 @@ export function OptionPanel({
               step={1}
               value={volumeLevel}
               onChange={(e) => onVolumeChange(Number(e.target.value))}
-              className="flex-1 h-1 accent-white/80 cursor-pointer"
+              className="flex-1 h-1 accent-panel-ink/80 cursor-pointer"
             />
-            <span className="text-[10px] text-white/40 w-3 text-right font-mono">{volumeLevel}</span>
+            <span className="text-[10px] text-panel-ink/40 w-3 text-right font-mono">{volumeLevel}</span>
           </div>
         </Section>
 
@@ -319,7 +324,7 @@ export function OptionPanel({
           {showTrace && (
             <>
               <OptionSwitch label={t('traceLog')} checked={traceLog} color={accentColor} onChange={onToggleTraceLog} onLongPress={onClearTraceLog} />
-              <div className="px-6 pt-1 text-xs text-white/65">{t('traceLogStyle')}</div>
+              <div className="px-6 pt-1 text-xs text-panel-ink/65">{t('traceLogStyle')}</div>
               <SegmentedChoice
                 options={TRACE_LOG_STYLES.map(({ style, labelKey }) => ({ value: style, label: t(labelKey) }))}
                 value={traceLogStyle}
@@ -329,10 +334,10 @@ export function OptionPanel({
               />
               <button
                 type="button"
-                className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
+                className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors"
                 onClick={onClearTraceLog}
               >
-                <span className="text-sm text-white">{t('clearTraceLog')}</span>
+                <span className="text-sm text-panel-ink">{t('clearTraceLog')}</span>
               </button>
             </>
           )}
@@ -340,19 +345,19 @@ export function OptionPanel({
             <OptionSwitch label={t('record')} checked={recording} color="#ef4444" onChange={onToggleRecording} />
           )}
           <button
-            className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
+            className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors"
             onClick={onConnectMidi}
             disabled={midiConnecting}
           >
-            <span className="text-sm text-white">{midiConnecting ? t('midiConnecting') : (midiConnected ? t('midiConnected') : t('midiConnect'))}</span>
-            <span className={`w-2 h-2 rounded-full ${midiConnected ? 'bg-green-500' : 'bg-white/20'}`} />
+            <span className="text-sm text-panel-ink">{midiConnecting ? t('midiConnecting') : (midiConnected ? t('midiConnected') : t('midiConnect'))}</span>
+            <span className={`w-2 h-2 rounded-full ${midiConnected ? 'bg-green-500' : 'bg-panel-ink/20'}`} />
           </button>
           <button
-            className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-white/[0.04] transition-colors"
+            className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors"
             onClick={onOpenLaunchpadSettings}
           >
-            <span className="text-sm text-white">{t('launchpadSettings')}</span>
-            <span className="text-xs text-white/35">{tCommon('open')}</span>
+            <span className="text-sm text-panel-ink">{t('launchpadSettings')}</span>
+            <span className="text-xs text-panel-ink/35">{tCommon('open')}</span>
           </button>
         </Section>
 
@@ -361,7 +366,7 @@ export function OptionPanel({
         {/* Quit - fixed at bottom */}
         <div className="shrink-0">
           <button
-            className="flex items-center gap-3 w-full px-6 py-4 hover:bg-white/[0.04] transition-colors"
+            className="flex items-center gap-3 w-full px-6 py-4 hover:bg-panel-ink/[0.04] transition-colors"
             style={{ color: '#FF6B6B' }}
             onClick={onQuit}
           >
@@ -391,7 +396,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="mb-1">
       {/* Section labels: bumped from 0.4 to 0.65 alpha for better WCAG contrast */}
-      <div className="px-6 text-[11px] font-bold text-white/65 uppercase tracking-wider mb-1 mt-4">{title}</div>
+      <div className="px-6 text-[11px] font-bold text-panel-ink/65 uppercase tracking-wider mb-1 mt-4">{title}</div>
       <div>{children}</div>
     </div>
   );
@@ -450,7 +455,7 @@ function SegmentedChoice<T extends string>({
   return (
     <div
       className="mx-6 my-1 flex items-stretch gap-0.5 rounded-md p-0.5"
-      style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+      style={{ backgroundColor: panelInk(6) }}
     >
       {options.map((option) => {
         const active = value === option.value;
@@ -461,7 +466,7 @@ function SegmentedChoice<T extends string>({
             className="flex-1 px-2 py-2 rounded text-xs font-semibold transition-colors select-none"
             style={{
               backgroundColor: active ? color : 'transparent',
-              color: active ? '#000000' : 'rgba(255,255,255,0.7)',
+              color: active ? '#000000' : panelInk(70),
             }}
             onClick={() => onChange(option.value)}
             aria-pressed={active}
@@ -493,7 +498,7 @@ function OptionSwitch({
 
   return (
     <button
-      className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-white/[0.04] transition-colors select-none"
+      className="flex items-center justify-between w-full px-6 py-2.5 hover:bg-panel-ink/[0.04] transition-colors select-none"
       onClick={() => {
         if (didLongPress.current) {
           didLongPress.current = false;
@@ -528,19 +533,19 @@ function OptionSwitch({
         }
       }}
     >
-      <span className="text-sm text-white">{label}</span>
+      <span className="text-sm text-panel-ink">{label}</span>
       {/* Toggle switch */}
       <div
         className="w-9 h-5 rounded-full relative transition-colors"
         style={{
-          backgroundColor: checked ? fadeThemeColor(color, 0.5) : 'rgba(255,255,255,0.1)',
+          backgroundColor: checked ? fadeThemeColor(color, 0.5) : panelInk(10),
         }}
       >
         <div
           className="absolute top-0.5 w-4 h-4 rounded-full transition-all shadow-sm"
           style={{
             left: checked ? '18px' : '2px',
-            backgroundColor: checked ? '#ffffff' : 'rgba(255,255,255,0.7)',
+            backgroundColor: checked ? 'var(--panel-ink)' : panelInk(70),
           }}
         />
       </div>

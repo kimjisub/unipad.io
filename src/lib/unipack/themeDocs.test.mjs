@@ -74,15 +74,15 @@ test('theme.json fields the iOS app requires are marked required in both languag
 
 // colors.json fields the web player parses but paints nothing with. The public page must say so in
 // both languages; remove a field here once web code uses it, and the page with it.
-const WEB_UNUSED_COLORS = ['option_window'];
+const WEB_UNUSED_COLORS = [];
 const WEB_UNUSED_SENTENCE = {
   ko: /웹 플레이어는 ((?:`\w+`·?)+)[을를]/,
   en: /The web player does not use ((?:`\w+`(?:,? and |, )?)+)/,
 };
 
 const snakeCase = name => name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-// traceLog has no default: without it the play screen draws the trace in its own colours.
-const COLOR_FIELDS = Object.keys({ ...getDefaultTheme().colors, traceLog: undefined }).map(snakeCase);
+// traceLog and optionWindow have no default: without them the play screen keeps its own colours.
+const COLOR_FIELDS = Object.keys({ ...getDefaultTheme().colors, traceLog: undefined, optionWindow: undefined }).map(snakeCase);
 
 /** colors.json fields web code reads off a theme, as `theme.colors.traceLog` or `themeColors?.checkbox`. */
 function webPaintedColors() {
@@ -114,6 +114,10 @@ for (const locale of LOCALES) {
 
   test(`${locale} theme page names the colors the web player does not use`, () => {
     const sentence = colorsSection(locale).match(WEB_UNUSED_SENTENCE[locale]);
+    if (WEB_UNUSED_COLORS.length === 0) {
+      assert.equal(sentence, null, `${locale}: the page still names a color the web player now uses`);
+      return;
+    }
     assert.ok(sentence, `${locale}: no sentence naming the colors the web player does not use`);
     assert.deepEqual([...sentence[1].matchAll(/`(\w+)`/g)].map(match => match[1]).sort(), [...WEB_UNUSED_COLORS].sort());
   });
