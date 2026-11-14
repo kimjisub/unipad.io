@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { THEME_IMAGES } = require('./ThemeManager.ts');
+const { THEME_IMAGES, getDefaultTheme } = require('./ThemeManager.ts');
 
 const LOCALES = ['ko', 'en'];
 const STRUCTURE_HEADING = { ko: '## 파일 구조', en: '## File Structure' };
@@ -71,3 +71,50 @@ test('theme.json fields the iOS app requires are marked required in both languag
     assert.deepEqual(required, THEME_JSON_REQUIRED, locale);
   }
 });
+
+// colors.json fields the web player parses but paints nothing with. The public page must say so in
+// both languages; remove a field here once web code uses it, and the page with it.
+const WEB_UNUSED_COLORS = ['option_window'];
+const WEB_UNUSED_SENTENCE = {
+  ko: /웹 플레이어는 ((?:`\w+`·?)+)[을를]/,
+  en: /The web player does not use ((?:`\w+`(?:,? and |, )?)+)/,
+};
+
+const snakeCase = name => name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+// traceLog has no default: without it the play screen draws the trace in its own colours.
+const COLOR_FIELDS = Object.keys({ ...getDefaultTheme().colors, traceLog: undefined }).map(snakeCase);
+
+/** colors.json fields web code reads off a theme, as `theme.colors.traceLog` or `themeColors?.checkbox`. */
+function webPaintedColors() {
+  const src = new URL('../../', import.meta.url);
+  const used = new Set();
+  for (const file of readdirSync(src, { recursive: true })) {
+    if (!/\.tsx?$/.test(file) || /\.test\./.test(file)) continue;
+    for (const [, key] of readFileSync(new URL(file, src), 'utf8').matchAll(/\b(?:colors|themeColors)\??\.(\w+)/g)) {
+      used.add(snakeCase(key));
+    }
+  }
+  return used;
+}
+
+function colorsSection(locale) {
+  return doc(locale).split('### colors.json')[1]?.split(/\n## /)[0] ?? '';
+}
+
+test('the web-unused color list matches the colors web code paints with', () => {
+  const painted = webPaintedColors();
+  assert.deepEqual(COLOR_FIELDS.filter(field => !painted.has(field)), WEB_UNUSED_COLORS);
+});
+
+for (const locale of LOCALES) {
+  test(`${locale} colors.json table lists every color the web player parses`, () => {
+    const rows = [...colorsSection(locale).matchAll(/^\| `(\w+)` \|/gm)].map(match => match[1]);
+    assert.deepEqual([...rows].sort(), [...COLOR_FIELDS].sort());
+  });
+
+  test(`${locale} theme page names the colors the web player does not use`, () => {
+    const sentence = colorsSection(locale).match(WEB_UNUSED_SENTENCE[locale]);
+    assert.ok(sentence, `${locale}: no sentence naming the colors the web player does not use`);
+    assert.deepEqual([...sentence[1].matchAll(/`(\w+)`/g)].map(match => match[1]).sort(), [...WEB_UNUSED_COLORS].sort());
+  });
+}

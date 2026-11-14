@@ -176,14 +176,14 @@ The file itself must be valid JSON, and color values must be strings, not number
 }
 ```
 
-| Field | Description |
+| Field | What it colors |
 |-------|-------------|
-| `checkbox` | Option checkbox color (in the web player, the control panel on the left of the play screen) |
+| `checkbox` | The control panel on the left of the play screen. In the Android and iOS apps, only the fill of the autoplay progress bar. In the web player, the progress bar plus the dots of the **Feedback**, **LED** and **Trace** buttons (full color when on, faint when off), and the selected play mode button |
 | `trace_log` | Color of the numbers and lines the **Trace recording** option leaves on the pads |
-| `option_window` | Option panel background color |
-| `option_window_checkbox` | Checkbox color inside the option panel |
+| `option_window` | Options panel background (Android and iOS apps) |
+| `option_window_checkbox` | Switched-on switches and accent color in the options panel (Android app and web player) |
 
-The web player does not apply `option_window` (options panel background) yet; that color changes only in the Android and iOS apps.
+Not every app uses every color. The web player does not use `option_window`, and the iOS app does not use `option_window_checkbox`; changing them leaves that app on its default color (the iOS app's option switches keep the app's own color).
 
 ## Screen Layout
 
