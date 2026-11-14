@@ -79,10 +79,22 @@ test('each colour a theme leaves out or writes wrongly takes the built-in colour
   const builtIn = getDefaultTheme().colors;
   const theme = await loadThemeFromJSZip(themeZip({ 'colors.json': JSON.stringify({ checkbox: 'not a colour' }) }));
   assert.equal(theme.colors.checkbox, builtIn.checkbox);
-  assert.equal(theme.colors.optionWindow, builtIn.optionWindow);
+  assert.equal(theme.colors.optionWindow, undefined);
   assert.equal(theme.colors.optionWindowCheckbox, builtIn.optionWindowCheckbox);
   const withoutFile = await loadThemeFromJSZip(themeZip({}));
   assert.deepEqual(withoutFile.colors, theme.colors);
+});
+
+test('a theme sets the options panel background only when it gives a readable colour', async () => {
+  assert.equal(getDefaultTheme().colors.optionWindow, undefined);
+  assert.equal((await loadThemeFromJSZip(themeZip({}))).colors.optionWindow, undefined);
+  const load = async (colors: Record<string, unknown>) =>
+    (await loadThemeFromJSZip(themeZip({ 'colors.json': JSON.stringify(colors) }))).colors.optionWindow;
+  assert.equal(await load({ option_window: '#424242' }), '#424242');
+  assert.equal(await load({ option_window: '#80FFFFFF' }), '#ffffff80');
+  assert.equal(await load({ option_window: 'grey' }), undefined);
+  assert.equal(await load({ option_window: '' }), undefined);
+  assert.equal(await load({ option_window: 0x424242 }), undefined);
 });
 
 test('a theme without its own trace colour draws the trace like the built-in theme', async () => {
