@@ -19,6 +19,13 @@ export interface MidiConnectionStatus {
   releaseHeldPads?: boolean;
 }
 
+/**
+ * How a connection attempt ended. `connectedWithoutSysEx`: the person refused device control
+ * (SysEx), so pads and plain note/CC lights work but no model's mode switch is sent.
+ * `superseded`: a later connect, disconnect or release made this attempt moot.
+ */
+export type MidiConnectResult = 'connected' | 'connectedWithoutSysEx' | 'noDevice' | 'denied' | 'unsupported' | 'failed' | 'superseded';
+
 type ResolvedProfile = Exclude<LaunchpadProfile, 'auto'>;
 
 /** An output that gets lights, encoded for the model it is. */
@@ -211,6 +218,7 @@ export class MidiConnection {
   /** Mode switches and light redraws still waiting for the controller to settle. */
   private pendingInitTimers: number[] = [];
   private connectionRevision = 0;
+  private sysexAllowed = true;
 
   async connect(
     listener: MidiControllerListener,
@@ -218,20 +226,21 @@ export class MidiConnection {
       profile?: LaunchpadProfile;
       onStatusChange?: (status: MidiConnectionStatus) => void;
     },
-  ): Promise<boolean> {
+  ): Promise<MidiConnectResult> {
     const revision = ++this.connectionRevision;
     this.listener = listener;
     this.requestedProfile = options?.profile ?? 'auto';
     this.onStatusChange = options?.onStatusChange ?? null;
     if (!navigator.requestMIDIAccess) {
       console.warn('Web MIDI API not supported');
-      return false;
+      return 'unsupported';
     }
 
     try {
-      const access = await navigator.requestMIDIAccess({ sysex: true });
-      if (revision !== this.connectionRevision) return false;
+      const { access, sysex } = await requestMidiAccess();
+      if (revision !== this.connectionRevision) return 'superseded';
       this.midiAccess = access;
+      this.sysexAllowed = sysex;
       this.setupDevices();
       this.sendInitSysExToAllOutputs();
       this.midiAccess.onstatechange = () => {
@@ -241,12 +250,13 @@ export class MidiConnection {
         const outputsChanged = this.sendInitSysExToAllOutputs(false, removed);
         if (inputsChanged && !outputsChanged) this.notifyStatus(removed);
       };
-      return this.connected;
+      if (!this.connected) return 'noDevice';
+      return sysex ? 'connected' : 'connectedWithoutSysEx';
     } catch (err) {
-      if (revision !== this.connectionRevision) return false;
+      if (revision !== this.connectionRevision) return 'superseded';
       console.warn('MIDI access denied:', err);
       this.notifyStatus();
-      return false;
+      return isPermissionRefusal(err) ? 'denied' : 'failed';
     }
   }
 
@@ -370,6 +380,7 @@ export class MidiConnection {
   }
 
   private getInitSysExMessages(profile: ResolvedProfile): number[][] {
+    if (!this.sysexAllowed) return [];
     if (profile === 'launchpad_pro_cfw') {
       return [
         [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x21, 0x01, 0xf7],
@@ -699,7 +710,7 @@ export class MidiConnection {
     if (profile === 'launchpad_x' || profile === 'launchpad_mini_mk3' || profile === 'launchpad_pro_mk3') {
       // Their programmer's references name the logo CC 99.
       sendCC(output, 99, velocity);
-    } else if (profile === 'launchpad_pro') {
+    } else if (profile === 'launchpad_pro' && this.sysexAllowed) {
       // Launchpad Pro programmer's reference: the side LED is index 99 (63h), reachable only by the
       // "light LED" SysEx.
       send(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0a, 0x63, clampData(velocity), 0xf7]);
@@ -801,6 +812,26 @@ export class MidiConnection {
     this.outputName = null;
     this.resolvedProfile = 'none';
   }
+}
+
+/**
+ * Chrome asks for MIDI devices and for their control (SysEx) in one prompt, and does not ask again
+ * once refused. A refusal of control alone still leaves pads and plain note/CC lights, so ask again
+ * without it; when that is refused too, the person blocked MIDI devices altogether.
+ */
+async function requestMidiAccess(): Promise<{ access: MIDIAccess; sysex: boolean }> {
+  try {
+    return { access: await navigator.requestMIDIAccess({ sysex: true }), sysex: true };
+  } catch (err) {
+    if (!isPermissionRefusal(err)) throw err;
+    return { access: await navigator.requestMIDIAccess({ sysex: false }), sysex: false };
+  }
+}
+
+/** The Web MIDI spec names a refused permission SecurityError; Chrome rejects with NotAllowedError. */
+function isPermissionRefusal(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'SecurityError' || name === 'NotAllowedError';
 }
 
 function sendNote(output: MIDIOutput, note: number, velocity: number, channel = 0): void {

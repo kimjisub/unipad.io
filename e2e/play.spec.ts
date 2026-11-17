@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import JSZip from 'jszip';
-import type { Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 import { delayImportStages, expectImportStageDelays, readImportStages } from './import-stages';
 import { test, expect, expectAudioOutputRunning, expectPads, expectSavedPlaybackPack } from './browser';
 import { expectLandscapePads } from './pad-layout';
@@ -732,30 +732,96 @@ test('unsupported Web MIDI shows a clear notice above the menu and settings dial
   await expectLoadedPack(page);
   const message = "This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.";
   const notice = page.getByText(message, { exact: true });
-  const expectNoticeOnTop = async () => {
-    await expect(notice).toBeVisible();
-    // The notice lets presses through, so hit testing skips it; take presses for the check only
-    // to see that nothing is drawn over its middle.
-    await expect.poll(() => notice.evaluate((element: HTMLElement) => {
-      const rect = element.getBoundingClientRect();
-      element.style.pointerEvents = 'auto';
-      const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      element.style.pointerEvents = '';
-      return top === element;
-    })).toBe(true);
-  };
 
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'MIDI Connect', exact: true }).click();
-  await expectNoticeOnTop();
+  await expectNoticeOnTop(notice);
   await info.attach('unsupported-midi-menu', { body: await page.screenshot(), contentType: 'image/png' });
   // A two-sentence notice stays on screen longer than the default assertion wait.
   await expect(notice).toHaveCount(0, { timeout: toastDurationMs(message) + 5_000 });
   await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings Open', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
   await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expectNoticeOnTop();
+  await expectNoticeOnTop(notice);
   await info.attach('unsupported-midi-settings', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+async function expectNoticeOnTop(notice: Locator) {
+  await expect(notice).toBeVisible();
+  // Wait out the entrance so a screenshot taken next shows the notice whole.
+  await expect.poll(() => notice.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+  // The notice lets presses through, so hit testing skips it; take presses for the check only
+  // to see that nothing is drawn over its middle.
+  await expect.poll(() => notice.evaluate((element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    element.style.pointerEvents = 'auto';
+    const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    element.style.pointerEvents = '';
+    return top === element;
+  })).toBe(true);
+}
+
+/**
+ * Chrome asks for MIDI devices and for their control (SysEx) in one prompt. `refuse` is what the
+ * person turned down there: only the control, or MIDI devices altogether.
+ */
+async function refuseMidiPermission(page: Page, refuse: 'control' | 'all') {
+  await page.addInitScript(refuse => {
+    const grant = navigator.requestMIDIAccess?.bind(navigator);
+    if (!grant) return;
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+      configurable: true,
+      value: async (options?: MIDIOptions) => {
+        if (refuse === 'all' || options?.sysex) throw new DOMException('Permission to use Web MIDI API was not granted.', 'NotAllowedError');
+        return grant(options);
+      },
+    });
+  }, refuse);
+  await page.goto('/play');
+  test.skip(!await hasWebMidi(page), noWebMidi);
+  await page.locator('input[data-unipack-import]').setInputFiles(pack);
+  await expectPads(page);
+}
+
+async function openLaunchpadSettingsFromMenu(page: Page) {
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Launchpad Settings Open', exact: true }).click();
+  return page.getByRole('dialog', { name: 'Launchpad Settings', exact: true });
+}
+
+test('a launchpad still plays when only device control is refused, and its lights go out without control messages', async ({ page }, info) => {
+  await refuseMidiPermission(page, 'control');
+  const dialog = await openLaunchpadSettingsFromMenu(page);
+  // Opening the pack already connected the launchpad, without device control.
+  await expect(dialog.getByText('Connected', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Reconnect', exact: true }).click();
+  const notice = page.getByText('MIDI connected without device control, so some Launchpads may not light up. To allow it, click the icon at the left of the address bar, then connect again.', { exact: true });
+  await expectNoticeOnTop(notice);
+  await info.attach('refused-control-settings', { body: await page.screenshot(), contentType: 'image/png' });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+
+  await page.evaluate(() => window.browserProbe.midi.emit([0x90, 81, 100]));
+  await expect(pressed(page, '0,0')).toBeVisible();
+  await expect.poll(() => starts(page)).toBe(1);
+  await expect.poll(() => padNoteMessages(page, 81)).toContainEqual([0x90, 81, 3]);
+  await info.attach('refused-control-pad-pressed', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.evaluate(() => window.browserProbe.midi.emit([0x80, 81, 0]));
+  await expect(pressed(page, '0,0')).toHaveCount(0);
+  const messages = await midiMessages(page);
+  await info.attach('refused-control-output', { body: JSON.stringify({ requests: await page.evaluate(() => window.browserProbe.midi.requests), lights: messages, physicalHardware: false }), contentType: 'application/json' });
+  expect(messages.filter(message => message[0] === 0xf0)).toEqual([]);
+  expect(await page.evaluate(() => window.browserProbe.midi.requests)).toContainEqual({ sysex: false });
+});
+
+test('refused MIDI devices explain how to allow them again above the settings dialog', async ({ page }, info) => {
+  await refuseMidiPermission(page, 'all');
+  const dialog = await openLaunchpadSettingsFromMenu(page);
+  await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+  const notice = page.getByText('MIDI devices are blocked for this site. To allow them, click the icon at the left of the address bar, then connect again. The on-screen pads still work.', { exact: true });
+  await expectNoticeOnTop(notice);
+  await info.attach('refused-midi-settings', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(dialog.getByText('Disconnected', { exact: true })).toBeVisible();
 });
 
 for (const delayedInspection of [false, true]) {

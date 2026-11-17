@@ -51,6 +51,7 @@ import {
 } from '@/lib/store';
 import type { StoredUniPack, StoredTheme, StoredAutoPlay } from '@/lib/unipack';
 import { isLaunchpadProfile, type LaunchpadProfile } from '@/lib/unipack/MidiProfiles';
+import type { MidiConnectResult } from '@/lib/unipack/MidiConnection';
 import { hasZipEndRecord } from '@/lib/unipack/zipPreflight';
 import { logAnalyticsEvent } from '@/lib/analytics/logAnalyticsEvent';
 
@@ -61,6 +62,18 @@ let lastPackWrite: Promise<void> = Promise.resolve();
 const PACK_QUERY_KEY = 'pack';
 const CODE_QUERY_KEY = 'code';
 const MIDI_PROFILE_SETTING_KEY = 'midiProfile';
+
+/** The bottom notice for each way a connection attempt ends; a superseded attempt says nothing. */
+const MIDI_CONNECT_NOTICES = {
+  connected: 'midiConnected',
+  connectedWithoutSysEx: 'midiConnectedWithoutControl',
+  noDevice: 'midiNoDevice',
+  denied: 'midiDenied',
+  unsupported: 'midiUnsupported',
+  failed: 'midiFailed',
+  superseded: null,
+} as const satisfies Record<MidiConnectResult, string | null>;
+
 const CHAIN_INDEX_OFFSET = 8;
 const CIRCLE_ARRAY_SIZE = 32;
 // Reserve a left strip so the floating ControlPanel never overlaps the pad grid.
@@ -735,12 +748,8 @@ export function PlayPage() {
     }
     setMidiConnecting(true);
     try {
-      const ok = await connectMidi();
-      if (!ok) {
-        showToast(tToast('midiNoDevice'));
-      } else {
-        showToast(tToast('midiConnected'));
-      }
+      const notice = MIDI_CONNECT_NOTICES[await connectMidi()];
+      if (notice) showToast(tToast(notice));
     } catch {
       showToast(tToast('midiFailed'));
     } finally {

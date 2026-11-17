@@ -144,7 +144,7 @@ test('choosing a model in a browser without Web MIDI reports nothing and leaves 
   const statuses: string[] = [];
   const midi = new MidiConnection();
   const listener: MidiControllerListener = { onPadTouch: () => {}, onChainTouch: () => {}, onFunctionKey: () => {} };
-  assert.equal(await midi.connect(listener, { onStatusChange: (status) => { statuses.push(status.resolvedProfile); } }), false);
+  assert.equal(await midi.connect(listener, { onStatusChange: (status) => { statuses.push(status.resolvedProfile); } }), 'unsupported');
 
   midi.setProfile('launchpad_mini_mk3');
   timers.flush();

@@ -25,7 +25,7 @@ import { PlaybackTicker } from '@/lib/unipack/PlaybackTicker';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
-import { LOGO_FUNCTION_KEY } from '@/lib/unipack/MidiConnection';
+import { LOGO_FUNCTION_KEY, type MidiConnectResult } from '@/lib/unipack/MidiConnection';
 import { createAudioInspector } from '@/lib/unipack/audioInspectionWorker';
 import { releaseArrayBuffer } from '@/lib/unipack/bufferLifetime';
 import { allSoundsFailed, soundsFailedToLoad, type SoundLoadReport } from '@/lib/unipack/soundLoading';
@@ -1651,16 +1651,16 @@ export function useUniPadEngine() {
     }));
   }, []);
 
-  const connectMidi = useCallback(async (): Promise<boolean> => {
-    if (!midiListenerRef.current) return false;
+  const connectMidi = useCallback(async (): Promise<MidiConnectResult> => {
+    if (!midiListenerRef.current) return 'noDevice';
     const midi = midiRef.current ?? new MidiConnection();
     midiRef.current = midi;
-    const connected = await midi.connect(midiListenerRef.current, {
+    const result = await midi.connect(midiListenerRef.current, {
       profile: midiProfileRef.current,
       onStatusChange: status => { if (midiRef.current === midi) applyControllerStatus(status); },
     });
-    if (midiRef.current !== midi) return false;
-    return connected;
+    if (midiRef.current !== midi) return 'superseded';
+    return result;
   }, [applyControllerStatus]);
 
   const disconnectMidi = useCallback(() => {
