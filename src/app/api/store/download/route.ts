@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 
+import { STORE_BODY_LENGTH_HEADER } from '../../../../lib/storeDownloadHeaders';
 import { contentDisposition, isAllowed, parseHttpUrl } from './policy';
 
 export const runtime = 'nodejs';
@@ -72,6 +73,8 @@ export async function GET(request: NextRequest) {
     if (value) out.set(name, value);
   }
   if (!out.has('content-type')) out.set('content-type', 'application/zip');
+  const bodyLength = out.get('content-length');
+  if (bodyLength) out.set(STORE_BODY_LENGTH_HEADER, bodyLength);
   out.set('content-disposition', contentDisposition(current));
   out.set('x-content-type-options', 'nosniff');
   out.set('vary', 'range');

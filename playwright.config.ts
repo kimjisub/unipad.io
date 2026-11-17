@@ -38,6 +38,8 @@ export default defineConfig({
     // E2E_PORT pins the port when needed; by default each run gets a free one.
     command: serverCommand(process.env.E2E_PORT || undefined),
     wait: { stdout: serverReady },
+    // Lets the store download route fetch from a file host a test starts on this machine.
+    env: { STORE_DOWNLOAD_ALLOWED_HOSTS: '127.0.0.1' },
     reuseExistingServer: false,
   },
 });
