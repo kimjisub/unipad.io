@@ -60,6 +60,34 @@ test('a successful download returns the body', async () => {
   assert.deepEqual(Array.from(new Uint8Array(data)), [1, 2, 3]);
 });
 
+/** A 200 response whose body arrives as two 2-byte chunks. */
+function twoChunks(headers: Record<string, string>): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2]));
+      controller.enqueue(new Uint8Array([3, 4]));
+      controller.close();
+    },
+  });
+  return new Response(body, { status: 200, headers });
+}
+
+async function progressOf(response: Response): Promise<number[]> {
+  stubFetch([response]);
+  const progress: number[] = [];
+  await downloadStoreItem(ITEM, (percent) => progress.push(percent));
+  return progress;
+}
+
+test('progress follows the length the download route sends in place of content-length', async () => {
+  // Next.js drops content-length from route responses, so the route's own header is all that arrives.
+  assert.deepEqual(await progressOf(twoChunks({ 'x-content-length': '4' })), [3, 50, 100, 100]);
+  // A direct download from the file host still has content-length.
+  assert.deepEqual(await progressOf(twoChunks({ 'content-length': '4' })), [3, 50, 100, 100]);
+  // With no length at all, progress is a bounded guess that ends at 100 only when the body does.
+  assert.deepEqual(await progressOf(twoChunks({})), [3, 4, 5, 100]);
+});
+
 test('HTTP failures are typed by status', async () => {
   assert.equal(await downloadErrorType([status(404)]), 'http_404');
   assert.equal(await downloadErrorType([status(500)]), 'http_5xx');

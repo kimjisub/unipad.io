@@ -1,5 +1,6 @@
 import { get, onValue, ref } from 'firebase/database';
 import { initFirebaseServices } from './firebase';
+import { STORE_BODY_LENGTH_HEADER } from './storeDownloadHeaders';
 
 const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
@@ -417,7 +418,9 @@ async function readStoreResponse(
   waitForNetwork: <T>(pending: Promise<T>) => Promise<T>,
   onProgress?: (percent: number) => void,
 ): Promise<ArrayBuffer> {
-  const total = Number(response.headers.get('content-length') ?? 0);
+  // Through the proxy only its own header carries the length; a direct download has content-length.
+  const length = response.headers.get(STORE_BODY_LENGTH_HEADER) ?? response.headers.get('content-length');
+  const total = Number(length ?? 0);
   const reader = response.body?.getReader();
   if (!reader) {
     return waitForNetwork(response.arrayBuffer());
