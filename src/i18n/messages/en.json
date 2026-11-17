@@ -429,6 +429,8 @@
       "traceLogCleared": "Trace Log Cleared",
       "copied": "Copied",
       "midiUnsupported": "This browser can't connect to MIDI devices. You can keep playing with the on-screen pads.",
+      "midiDenied": "MIDI devices are blocked for this site. To allow them, click the icon at the left of the address bar, then connect again. The on-screen pads still work.",
+      "midiConnectedWithoutControl": "MIDI connected without device control, so some Launchpads may not light up. To allow it, click the icon at the left of the address bar, then connect again.",
       "midiNoDevice": "No MIDI device found.",
       "midiConnected": "MIDI connected.",
       "midiFailed": "MIDI connection failed.",

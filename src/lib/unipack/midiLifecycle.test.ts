@@ -17,7 +17,7 @@ test('releasing a pending connection prevents its late permission result from re
   const connecting = midi.connect({ onPadTouch() {}, onChainTouch() {}, onFunctionKey() {} });
   midi.release();
   allow(access as unknown as MIDIAccess);
-  assert.equal(await connecting, false);
+  assert.equal(await connecting, 'superseded');
   assert.equal(input.onmidimessage, null);
   assert.equal(access.onstatechange, null);
 });
