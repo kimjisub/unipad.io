@@ -49,6 +49,8 @@ test('streams an allowed file back as a download, fetching redirects by hand', a
 	assert.equal(await response.text(), 'zip-bytes');
 	assert.equal(response.headers.get('content-disposition'), 'attachment; filename="pack.zip"; filename*=UTF-8\'\'pack.zip');
 	assert.equal(response.headers.get('content-length'), '9');
+	// The server drops content-length from route responses; this one reaches the browser.
+	assert.equal(response.headers.get('x-content-length'), '9');
 	assert.equal(response.headers.get('etag'), '"e"');
 	assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
 	assert.equal(response.headers.get('cache-control'), 'public, max-age=3600');
