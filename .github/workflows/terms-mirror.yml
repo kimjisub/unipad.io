@@ -1,0 +1,53 @@
+name: Terms copy
+
+# Publishes the privacy policy and the app usage notice to GitHub Pages from the commit the
+# site is built from, so the store-linked documents stay readable when the main site is down.
+# See meta/terms-mirror.md.
+on:
+  push:
+    branches: [prod]
+  # Republishes prod, e.g. right after Pages is turned on.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terms-copy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build terms copy
+    # Only the branch the site is built from, so the copy never runs ahead of the site.
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Name the initial branch for checkout
+        run: git config --global init.defaultBranch main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-web
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Build the pages
+        run: node --import tsx scripts/terms-mirror.mts _site
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Publish terms copy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
