@@ -44,3 +44,16 @@ test('a pack on the store file host downloads through the same-origin CDN path',
   expect((await savedRecords(page))[0]).toMatchObject({ storeCode: STORE_CODE, zipBytes: pack.length });
   expect(asked).toEqual(['/store-files/browser-test.zip']);
 });
+
+// Pages opened before the CDN path existed still ask the download route; it must send them on rather than
+// stream the pack itself. A redirect the browser follows is not offered to page.route, so the browser's
+// next request (to the file host through the CDN path) is left out: the route's own answer is checked here.
+test('the download route sends a store file host pack to the CDN path instead of streaming it', async ({ request }) => {
+  const upstream = encodeURIComponent('https://unipack.unipad.io/store/browser-test.zip');
+  for (const headers of [{}, { range: 'bytes=0-3' }] as Record<string, string>[]) {
+    const response = await request.get(`/api/store/download?url=${upstream}`, { headers, maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(response.headers()['location']).toBe('/store-files/browser-test.zip');
+    expect((await response.body()).length).toBe(0);
+  }
+});

@@ -1,7 +1,7 @@
 import { get, onValue, ref } from 'firebase/database';
 import { initFirebaseServices } from './firebase';
 import { STORE_BODY_LENGTH_HEADER } from './storeDownloadHeaders';
-import storeFiles from './storeFiles.json';
+import { storeFileSitePath } from './storeFilePath';
 
 const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
@@ -237,26 +237,6 @@ function getStoreDownloadUrl(item: StoreItem): string {
     return item.url;
   }
   return `${LEGACY_DOWNLOAD_BASE_URL}?code=${encodeURIComponent(item.code)}`;
-}
-
-const STORE_FILE_NAME = new RegExp(`^${storeFiles.fileName}$`);
-
-/**
- * The same-origin path the CDN forwards to the store file host (see `rewrites` in next.config.mjs),
- * or null when the URL is not a plain pack file on that host. That path keeps the pack body out of
- * the site's functions; anything else still goes through the download route.
- */
-export function storeFileSitePath(upstream: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(upstream);
-  } catch {
-    return null;
-  }
-  if (url.origin !== storeFiles.origin || url.search || url.hash) return null;
-  if (!url.pathname.startsWith(storeFiles.originPath)) return null;
-  const name = url.pathname.slice(storeFiles.originPath.length);
-  return STORE_FILE_NAME.test(name) ? `${storeFiles.sitePath}${name}` : null;
 }
 
 function getStoreFetchUrl(item: StoreItem): string {

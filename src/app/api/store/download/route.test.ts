@@ -156,3 +156,36 @@ test('forwards a range request and never caches a partial answer', async () => {
 	assert.equal(response.headers.get('content-range'), 'bytes 0-3/9');
 	assert.equal(response.headers.get('cache-control'), 'no-store');
 });
+
+test('sends a plain pack file on the store file host to the CDN path without fetching it', async () => {
+	const calls = stubFetch([]);
+	for (const headers of [undefined, { range: 'bytes=0-3' }]) {
+		const response = await download('https://unipack.unipad.io/store/_Love_U.zip', headers);
+
+		assert.equal(response.status, 307);
+		assert.equal(response.headers.get('location'), '/store-files/_Love_U.zip');
+		assert.equal(response.headers.get('cache-control'), 'public, max-age=3600');
+		assert.equal(await response.text(), '');
+	}
+	assert.equal(calls.length, 0);
+});
+
+test('sends a legacy code download to the CDN path once it redirects to a plain pack file', async () => {
+	const legacy = 'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy?code=_Faded';
+	const calls = stubFetch([redirect('https://unipack.unipad.io/store/_Faded.zip')]);
+	const response = await download(legacy);
+
+	assert.equal(response.status, 307);
+	assert.equal(response.headers.get('location'), '/store-files/_Faded.zip');
+	assert.deepEqual(calls.map((c) => c.url), [legacy]);
+});
+
+test('still streams files on the store file host that the CDN path does not serve', async () => {
+	for (const url of ['https://unipack.unipad.io/store/a.zip?v=1', 'https://unipack.unipad.io/store/sub/a.zip']) {
+		const calls = stubFetch([file()]);
+		const response = await download(url);
+		assert.equal(response.status, 200, url);
+		assert.equal(await response.text(), 'zip-bytes');
+		assert.deepEqual(calls.map((c) => c.url), [url]);
+	}
+});

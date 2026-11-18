@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { STORE_BODY_LENGTH_HEADER } from '../../../../lib/storeDownloadHeaders';
+import { storeFileSitePath } from '../../../../lib/storeFilePath';
 import { contentDisposition, isAllowed, parseHttpUrl } from './policy';
 
 export const runtime = 'nodejs';
@@ -29,12 +30,18 @@ const MAX_CONTENT_LENGTH = 200 * 1024 * 1024; // no UniPack is anywhere near thi
  * Plain pack files on the store file host skip this route: the browser asks the
  * CDN path from next.config.mjs `rewrites` instead (see `storeFileSitePath`),
  * because every byte streamed here counts against the functions' data allowance.
+ * Callers that still ask this route for such a file (pages opened before that
+ * change, other clients), or for an address that redirects to one (legacy code
+ * downloads), are sent to that path instead: see `toStoreFilePath`.
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('url');
   const first = raw ? parseHttpUrl(raw) : null;
   if (!first) return new Response('Invalid url', { status: 400 });
   if (!isAllowed(first)) return new Response('Host not allowed', { status: 403 });
+
+  const direct = toStoreFilePath(first);
+  if (direct) return direct;
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]);
   const headers = new Headers({ 'accept-encoding': 'identity' }); // keep content-length truthful
@@ -51,6 +58,8 @@ export async function GET(request: NextRequest) {
       if (hop >= MAX_REDIRECTS) return new Response('Too many redirects', { status: 502 });
       const next = parseHttpUrl(new URL(location, current).toString());
       if (!next || !isAllowed(next)) return new Response('Redirect target not allowed', { status: 403 });
+      const redirected = toStoreFilePath(next);
+      if (redirected) return redirected;
       current = next;
     }
   } catch (error) {
@@ -86,4 +95,14 @@ export async function GET(request: NextRequest) {
   out.set('cache-control', upstream.status === 200 ? 'public, max-age=3600' : 'no-store');
 
   return new Response(upstream.body, { status: upstream.status, headers: out });
+}
+
+/**
+ * A 307 to the CDN path of a plain pack file on the store file host, or null for any other address.
+ * 307 keeps the method and, being same-origin, the Range header.
+ */
+function toStoreFilePath(url: URL): Response | null {
+  const sitePath = storeFileSitePath(url.toString());
+  if (!sitePath) return null;
+  return new Response(null, { status: 307, headers: { location: sitePath, 'cache-control': 'public, max-age=3600' } });
 }
