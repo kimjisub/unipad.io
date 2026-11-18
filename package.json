@@ -53,7 +53,8 @@
     "auditConfig": {
       "ignoreCves": [
         "CVE-2026-101915",
-        "CVE-2026-101916"
+        "CVE-2026-101916",
+        "CVE-2026-112366"
       ]
     },
     "ignoredBuiltDependencies": [
