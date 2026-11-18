@@ -1401,6 +1401,7 @@ export function PlayPage() {
                   traceLogSequence={state.traceLogSequence[state.chain]}
                   traceLogStyle={state.traceLogStyle}
                   slideMode={state.slideMode}
+                  inputBlocked={optionPanelOpen}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />
@@ -1639,6 +1640,7 @@ export function PlayPage() {
                   traceLogSequence={state.traceLogSequence[state.chain]}
                   traceLogStyle={state.traceLogStyle}
                   slideMode={state.slideMode}
+                  inputBlocked={optionPanelOpen}
                   onPadDown={padTouchOn}
                   onPadUp={padTouchOff}
                 />

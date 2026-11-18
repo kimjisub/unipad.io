@@ -123,6 +123,31 @@ for (const screen of touchScreens) for (const mode of ['browser touch', 'DOM poi
       expect(await stops(page)).toEqual([1, 2, 3]);
     });
 
+    test('J with slide on, opening the menu lets go of a held finger, which presses nothing until lifted', async ({ page }) => {
+      await load(page);
+      await slideAcrossPads(page);
+      const input = await session(page);
+      const [finger] = await contacts(page, ['4,2']);
+      await touch(input, 'touchStart', [finger]);
+      await expectHeld(page, ['4,2'], 1);
+      await page.keyboard.press('Escape');
+      const menu = page.getByRole('dialog', { name: 'Menu', exact: true });
+      await expect(menu).toBeVisible();
+      await expectHeld(page, [], 1);
+      expect(await stops(page)).toEqual([1]);
+      await touch(input, 'touchMove', [await moved(page, finger, '4,3')]);
+      await touch(input, 'touchMove', [await moved(page, finger, '5,3')]);
+      await touch(input, 'touchEnd', []);
+      await expectHeld(page, [], 1);
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      const [next] = await contacts(page, ['4,3']);
+      await touch(input, 'touchStart', [next]);
+      await expectHeld(page, ['4,3'], 2);
+      await touch(input, 'touchEnd', []);
+      await expectHeld(page, [], 2);
+    });
+
     test('E with slide on, two fingers dragged at once are each followed', async ({ page }) => {
       await load(page);
       await slideAcrossPads(page);

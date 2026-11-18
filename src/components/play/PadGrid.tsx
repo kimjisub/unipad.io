@@ -20,6 +20,9 @@ interface PadGridProps {
   traceLogStyle?: TraceLogStyle;
   /** Off (the default): a finger stays on the pad it went down on until it lifts. */
   slideMode?: boolean;
+  /** True while a panel covers the pads: fingers already down are let go and play nothing until
+   *  lifted, and new ones are ignored. */
+  inputBlocked?: boolean;
   /** `input` names the pointer, so two fingers on one pad are two presses. */
   onPadDown: (x: number, y: number, input: string) => void;
   onPadUp: (x: number, y: number, input: string) => void;
@@ -188,6 +191,7 @@ export function PadGrid({
   traceLogSequence,
   traceLogStyle = 'numbers',
   slideMode = false,
+  inputBlocked = false,
   onPadDown,
   onPadUp,
 }: PadGridProps) {
@@ -229,6 +233,7 @@ export function PadGrid({
 
     const handlePointerDown = (e: PointerEvent) => {
       e.preventDefault();
+      if (inputBlocked) return;
       try { grid.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
       const pad = getPadFromPoint(e.clientX, e.clientY);
       pointers.set(e.pointerId, pad ? `${pad[0]},${pad[1]}` : null);
@@ -283,8 +288,8 @@ export function PadGrid({
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
-      // The grid unmounts on hideUI toggles, and a changed slide setting starts over; pads still
-      // held here would never get their release.
+      // The grid unmounts on hideUI toggles, and a changed slide setting or a panel opened over the
+      // pads starts over; pads still held here would never get their release.
       releaseAllPointers();
       grid.removeEventListener('pointerdown', handlePointerDown);
       grid.removeEventListener('pointermove', handlePointerMove);
@@ -297,7 +302,7 @@ export function PadGrid({
       orientation?.removeEventListener('change', releaseAllPointers);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [onPadDown, onPadUp, getPadFromPoint, slideMode]);
+  }, [onPadDown, onPadUp, getPadFromPoint, slideMode, inputBlocked]);
 
   useEffect(() => {
     if (!hasActiveGuideAnimation) return;
