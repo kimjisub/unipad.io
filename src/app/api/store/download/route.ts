@@ -25,6 +25,10 @@ const MAX_CONTENT_LENGTH = 200 * 1024 * 1024; // no UniPack is anywhere near thi
  * Redirects are followed by hand so every hop is checked against the allow
  * list; a redirect to an internal address would otherwise be fetched and its
  * body returned to the caller.
+ *
+ * Plain pack files on the store file host skip this route: the browser asks the
+ * CDN path from next.config.mjs `rewrites` instead (see `storeFileSitePath`),
+ * because every byte streamed here counts against the functions' data allowance.
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('url');

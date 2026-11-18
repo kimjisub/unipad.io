@@ -1,0 +1,6 @@
+{
+  "origin": "https://unipack.unipad.io",
+  "originPath": "/store/",
+  "sitePath": "/store-files/",
+  "fileName": "[A-Za-z0-9._-]+\\.zip"
+}
