@@ -61,3 +61,4 @@ package-lock.json
 
 # OMC (oh-my-claudecode) local state
 .omc/
+/_site
