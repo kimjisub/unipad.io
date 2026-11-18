@@ -126,6 +126,21 @@ for (const slideMode of [false, true]) {
     send('pointerup', 1, at(6, 7));
     assert.equal(log.length, 2);
   });
+  test(`${name}: a panel opened over the pads lets go of every finger until it is lifted`, () => {
+    const { log, send, view, props } = mount(slideMode);
+    send('pointerdown', 1, at(3, 3));
+    act(() => { view.rerender(createElement(PadGrid, { ...props, inputBlocked: true })); });
+    assert.deepEqual(log, ['down 3,3 pointer-1', 'up 3,3 pointer-1']);
+    send('pointermove', 1, at(3, 4));
+    send('pointerdown', 2, at(5, 5));
+    send('pointerup', 1, at(3, 4));
+    send('pointerup', 2, at(5, 5));
+    assert.equal(log.length, 2, 'no finger presses a pad under the panel');
+    act(() => { view.rerender(createElement(PadGrid, { ...props, inputBlocked: false })); });
+    send('pointerdown', 3, at(4, 4));
+    send('pointerup', 3, at(4, 4));
+    assert.deepEqual(log.slice(2), ['down 4,4 pointer-3', 'up 4,4 pointer-3'], 'a new touch plays once the panel is closed');
+  });
 }
 
 test('the setting is off unless it is given', () => {

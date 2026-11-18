@@ -1153,3 +1153,64 @@ for (const action of ['off', 'pause']) {
     expect(await sounding()).toEqual([]);
   });
 }
+
+const sounding = (page: Page) => page.evaluate(() => {
+  const { starts, stops } = window.browserProbe.audio;
+  return starts.filter(s => s.loop && !stops.includes(s.id)).map(s => s.id);
+});
+
+for (const input of ['keyboard', 'screen'] as const) test(`a ${input} press while autoplay waits after a hidden tab sounds and lights without starting the song`, async ({ page }, info) => {
+  await open(page, 'on 2 1\nd 2000\non 2 1\nd 2000', false, {
+    keySound: '1 1 1 tone.wav 0\n1 2 1 tone.wav', leds: { '1 1 1 0': 'o 1 2 FF0000\nd 1000' },
+  });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+  await visibility(page, true); await page.clock.fastForward(1000); await visibility(page, false);
+  await page.clock.runFor(16);
+  const before = await soundRequests(page);
+  const pad = page.locator('[data-pad="0,0"]');
+  const box = (await pad.boundingBox())!;
+  const pointer = { pointerId: 1, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+  if (input === 'keyboard') await page.keyboard.down('1');
+  else await pad.dispatchEvent('pointerdown', pointer);
+  await page.clock.runFor(8);
+  await capture(page, info);
+  expect(await soundRequests(page)).toBe(before + 1);
+  await expect(padLight(page, '0,1')).toHaveCSS('background-color', 'rgb(255, 0, 0)');
+  if (input === 'keyboard') await page.keyboard.up('1');
+  else await pad.dispatchEvent('pointerup', pointer);
+  await page.clock.fastForward(10000);
+  expect(await soundRequests(page), 'the song keeps waiting for Play').toBe(before + 1);
+  await expect(page.getByTitle('Play', { exact: true })).toBeVisible();
+  await expect(mode(page, 'Auto')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTitle('Play', { exact: true }).dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => window.transitionAudio.state)).toBe('running');
+  await page.clock.fastForward(1899);
+  expect(await soundRequests(page), 'Play continues the wait it stopped in').toBe(before + 1);
+  await page.clock.runFor(1);
+  expect(await soundRequests(page)).toBe(before + 2);
+});
+
+test('opening the menu lets go of a held key, keeps autoplay going and plays no key until it closes', async ({ page }, info) => {
+  await open(page, 'on 2 1\nd 2000\non 2 2\nd 10000', false, { keySound: '1 1 1 tone.wav 0\n1 2 1 tone.wav 0\n1 2 2 tone.wav', leds: {} });
+  const menu = page.getByRole('dialog', { name: 'Menu', exact: true });
+  await mode(page, 'Auto').dispatchEvent('click'); await page.clock.runFor(100);
+  await page.keyboard.down('1'); await page.clock.runFor(1);
+  const [autoPlayLoop, keyLoop] = await sounding(page);
+  expect(keyLoop).toBeDefined();
+  await page.keyboard.press('Escape'); await page.clock.runFor(1);
+  await expect(menu).toBeVisible();
+  await capture(page, info);
+  expect(await sounding(page), 'the held key stops, autoplay keeps its pad').toEqual([autoPlayLoop]);
+  await page.keyboard.up('1');
+  const before = await soundRequests(page);
+  await page.keyboard.press('2'); await page.keyboard.press('1');
+  expect(await soundRequests(page), 'keys play nothing behind the menu').toBe(before);
+  await page.clock.fastForward(2000);
+  expect(await soundRequests(page), 'autoplay goes on behind the menu').toBe(before + 1);
+  expect(await sounding(page)).toEqual([autoPlayLoop]);
+  await page.keyboard.press('Escape'); await page.clock.runFor(250);
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.down('1'); await page.clock.runFor(1);
+  expect(await soundRequests(page), 'a key pressed after the menu closes plays').toBe(before + 2);
+  await page.keyboard.up('1');
+});

@@ -293,7 +293,8 @@ export function useUniPadEngine() {
   const autoPlayListenerRef = useRef<AutoPlayListener | null>(null);
   const volumeLevelRef = useRef(MAX_VOLUME_LEVEL);
   const stateRef = useRef(state);
-  const midiOptionPanelOpenRef = useRef(false);
+  // The option panel covers the pads and takes the Launchpad's buttons; hand input plays no pad meanwhile.
+  const optionPanelOpenRef = useRef(false);
   const midiToggleOptionPanelRef = useRef<(() => void) | null>(null);
   const midiQuitRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -327,7 +328,7 @@ export function useUniPadEngine() {
     const current = stateRef.current;
     const cm = channelManagerRef.current;
     const topBar = new Array<number>(8).fill(0);
-    if (!midiOptionPanelOpenRef.current || current.hideUI) {
+    if (!optionPanelOpenRef.current || current.hideUI) {
       for (let i = 0; i < 8; i++) {
         topBar[i] = cm ? roundLedCode(cm, i) : 0;
       }
@@ -352,7 +353,7 @@ export function useUniPadEngine() {
     const volumeRangeStart = 7 - volumeLevel;
     for (let i = 0; i < 8; i++) {
       const c = i + CHAIN_INDEX_OFFSET;
-      if (midiOptionPanelOpenRef.current && !current.hideUI) {
+      if (optionPanelOpenRef.current && !current.hideUI) {
         midi.sendFunctionKeyLed(c, volumeLevel > 0 && i >= volumeRangeStart ? LED_BLUE : 0);
       } else {
         midi.sendFunctionKeyLed(c, cm ? roundLedCode(cm, c) : 0);
@@ -446,7 +447,7 @@ export function useUniPadEngine() {
     const cm = channelManagerRef.current;
     if (!cm) return;
     updateChainVisual(c);
-    if (midiOptionPanelOpenRef.current && !stateRef.current.hideUI && c < OPTION_PANEL_LED_COUNT) return;
+    if (optionPanelOpenRef.current && !stateRef.current.hideUI && c < OPTION_PANEL_LED_COUNT) return;
     midiRef.current?.sendFunctionKeyLed(c, roundLedCode(cm, c));
   }, [updateChainVisual]);
 
@@ -500,7 +501,7 @@ export function useUniPadEngine() {
   const applyChainSelectionVisibility = useCallback(() => {
     const cm = channelManagerRef.current;
     if (cm) {
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
+      setRoundLightsVisible(cm, !optionPanelOpenRef.current && watermarkRef.current);
       refreshAllChains();
     }
     syncMidiFunctionLeds();
@@ -583,12 +584,16 @@ export function useUniPadEngine() {
 
   /** `input` names what holds the pad (a pointer, a key, the Launchpad, auto-play); see SoundEngine.soundOn. */
   const padTouchOn = useCallback((x: number, y: number, input?: string, eventAt = performance.now()) => {
-    if (document.hidden || keyboardBlockedRef.current || (interruptedRef.current && autoPlayRunnerRef.current?.active)) return;
+    if (document.hidden || keyboardBlockedRef.current) return;
+    // After an interruption only the song waits for Play: the player's presses sound, but they
+    // neither complete a practice step nor let autoplay press.
+    const interrupted = interruptedRef.current;
+    if (interrupted && input === AUTO_PLAY_INPUT) return;
     const se = soundEngineRef.current;
     const lr = ledRunnerRef.current;
     const cm = channelManagerRef.current;
 
-    if (autoPlayRunnerRef.current?.stepMode) {
+    if (autoPlayRunnerRef.current?.stepMode && !interrupted) {
       autoPlayRunnerRef.current.stepPadPressed(x, y);
     }
 
@@ -624,10 +629,9 @@ export function useUniPadEngine() {
 
   /** A pad pressed by the player; autoplay presses pads through `padTouchOn` directly. */
   const userPadTouchOn = useCallback((x: number, y: number, source: PadInputSource, input: string) => {
-    if (document.hidden || keyboardBlockedRef.current || (interruptedRef.current && autoPlayRunnerRef.current?.active)) return;
-    if (!autoPlayRunnerRef.current?.active) {
-      if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
-    }
+    if (document.hidden || keyboardBlockedRef.current) return;
+    // An interruption stops the light runner even while autoplay waits, so a press starts it again.
+    if (stateRef.current.ledEnabled) ledRunnerRef.current?.launch();
     usageTracker.padPressed(source);
     playerHoldsRef.current.press(x, y);
     padTouchOn(x, y, input);
@@ -724,10 +728,11 @@ export function useUniPadEngine() {
       // Alt/Ctrl/Meta chords belong to PlayPage's shortcuts (alt+a = autoPlay); on Windows/Linux
       // Alt+A still reports key 'a' and used to press pad [2,0] as well.
       if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const optionPanelOpen = optionPanelOpenRef.current;
 
       // Chain switching
       const chainIdx = getChainKey(e.key);
-      if (chainIdx !== null && chainIdx < (unipackRef.current?.info.chain ?? 0)) {
+      if (!optionPanelOpen && chainIdx !== null && chainIdx < (unipackRef.current?.info.chain ?? 0)) {
         e.preventDefault();
         selectChain(chainIdx);
         return;
@@ -739,6 +744,7 @@ export function useUniPadEngine() {
         toggleAutoPlayRef.current();
         return;
       }
+      if (optionPanelOpen) return;
 
       const pad = getPadForKeyCode(e.code, e.shiftKey, buttonX, buttonY);
       if (pad && !pressedKeysRef.current.has(e.code)) {
@@ -1173,7 +1179,7 @@ export function useUniPadEngine() {
       chainRef.current = 0;
       cm.add(-1, CHAIN_INDEX_OFFSET, Channel.CHAIN, -1, 3);
       for (const [c, code] of WATERMARK_LEDS) cm.add(-1, c, Channel.UI_UNIPAD, -1, code);
-      setRoundLightsVisible(cm, !midiOptionPanelOpenRef.current && watermarkRef.current);
+      setRoundLightsVisible(cm, !optionPanelOpenRef.current && watermarkRef.current);
       // Android: proLightMode defaults to false → LED channel ignored on chain buttons
       cm.setCirIgnore(Channel.LED, true);
 
@@ -1415,7 +1421,7 @@ export function useUniPadEngine() {
       midiRef.current = midi;
       const midiListener: MidiControllerListener = {
         onPadTouch: (x: number, y: number, pressed: boolean) => {
-          if (midiOptionPanelOpenRef.current) return;
+          if (optionPanelOpenRef.current) return;
           const info = unipackRef.current?.info;
           if (!info || x < 0 || y < 0 || x >= info.buttonX || y >= info.buttonY) return;
           const pads = controllerPadsRef.current;
@@ -1430,12 +1436,12 @@ export function useUniPadEngine() {
           }
         },
         onChainTouch: (c: number) => {
-          if (midiOptionPanelOpenRef.current) return;
+          if (optionPanelOpenRef.current) return;
           selectChain(c);
         },
         onResync: syncMidiStateToDevice,
         onFunctionKey: (key: number) => {
-          if (!midiOptionPanelOpenRef.current) {
+          if (!optionPanelOpenRef.current) {
             switch (key) {
               case 0: toggleFeedbackLightRef.current(); break;
               case 1: toggleLedRef.current(); break;
@@ -1680,12 +1686,17 @@ export function useUniPadEngine() {
     onToggleOptionPanel?: (() => void) | null;
     onQuit?: (() => void) | null;
   }) => {
-    if (context.optionPanelOpen && !midiOptionPanelOpenRef.current) releaseControllerPads();
-    midiOptionPanelOpenRef.current = context.optionPanelOpen;
+    // Opening the panel lets go of what the hands hold; those keys and buttons play again only
+    // once released, since their releases are no longer tracked.
+    if (context.optionPanelOpen && !optionPanelOpenRef.current) {
+      releaseControllerPads();
+      releaseKeyboardPads();
+    }
+    optionPanelOpenRef.current = context.optionPanelOpen;
     midiToggleOptionPanelRef.current = context.onToggleOptionPanel ?? null;
     midiQuitRef.current = context.onQuit ?? null;
     applyChainSelectionVisibility();
-  }, [applyChainSelectionVisibility, releaseControllerPads]);
+  }, [applyChainSelectionVisibility, releaseControllerPads, releaseKeyboardPads]);
 
   const loadTheme = useCallback(async (zipData: ArrayBuffer, isCurrent: () => boolean = () => true) => {
     const revision = loadRevisionRef.current;

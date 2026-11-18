@@ -910,6 +910,101 @@ test('opening a menu inside the player does not interrupt autoplay', async () =>
 });
 
 
+// A hand press made on each input the way the browser delivers it: a key reaches the document first.
+const handPress = {
+  screen: (result, down) => down ? result.current.padTouchOn(0, 0, 'finger') : result.current.padTouchOff(0, 0, 'finger'),
+  keyboard: (_result, down) => document.body.dispatchEvent(new window.KeyboardEvent(down ? 'keydown' : 'keyup', { key: '1', code: 'Digit1', bubbles: true })),
+  launchpad: (_result, down) => midiListener.onPadTouch(0, 0, down),
+};
+const interruptions = {
+  hidden: { leave: () => visibility(true), back: () => visibility(false) },
+  blur: { leave: () => flush(() => window.dispatchEvent(new window.Event('blur'))), back: () => flush(() => window.dispatchEvent(new window.Event('focus'))) },
+};
+
+for (const selected of ['autoPlay', 'guidePlay', 'stepPractice']) for (const [interruption, { leave, back }] of Object.entries(interruptions)) {
+  for (const [input, press] of Object.entries(handPress)) test(`a ${input} press while ${selected} waits after ${interruption} sounds and lights without moving the song`, async () => {
+    const { result } = await mount({ autoPlay: 'd 2000\no 1 2\nf 1 2\nd 2000\no 2 1\nf 2 1\nd 2000' });
+    await flush(() => result.current.switchPlayMode(selected)); await tick(1); await tick(500); await draw();
+    const progress = result.current.state.autoPlayProgress;
+    await leave(); await tick(1000); await back(); await draw();
+    const count = starts.length;
+    await flush(() => press(result, true)); await tick(4); await draw();
+    assert.equal(starts.length, count + 1, 'the hand press sounds');
+    assert.equal(result.current.state.padStates[0][0].pressed, true, 'the press shows on the pad');
+    assert.notEqual(result.current.state.padStates[0][0].color, 'transparent', 'the pack lights the pad');
+    await flush(() => press(result, false)); await tick(5000); await draw();
+    assert.equal(starts.length, count + 1, 'the song keeps waiting');
+    assert.equal(result.current.state.autoPlayPlaying, false, 'a hand press does not start the song');
+    assert.equal(result.current.playMode, selected);
+    assert.equal(result.current.state.autoPlayProgress, progress, 'a hand press does not move the song');
+    assert.ok(result.current.state.padStates.flat().every(p => !p.guide), 'a hand press does not bring a guide back');
+    if (selected !== 'autoPlay') return;
+    await flush(() => result.current.autoPlayPlayPause());
+    assert.equal(result.current.state.autoPlayProgress, progress);
+    await tick(1498); assert.equal(starts.length, count + 1, 'Play continues the wait it stopped in');
+    await tick(1); assert.equal(starts.length, count + 2);
+  });
+}
+
+for (const [input, press] of Object.entries(handPress)) test(`a ${input} press on the owed step while step practice waits does not complete it`, async () => {
+  const { result } = await mount({ autoPlay: 'o 1 1\nd 1000\no 1 2\nd 1000' });
+  await flush(() => result.current.switchPlayMode('stepPractice')); await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][0].guide, true);
+  await visibility(true); await tick(1000); await visibility(false); await draw();
+  const count = starts.length;
+  await flush(() => press(result, true)); await tick(1); await flush(() => press(result, false));
+  await tick(1000); await draw();
+  assert.equal(starts.length, count + 1, 'the hand press sounds');
+  assert.ok(result.current.state.padStates.flat().every(p => !p.guide), 'the guide stays off until Play');
+  await flush(() => result.current.autoPlayPlayPause()); await tick(1); await draw();
+  assert.deepEqual(result.current.state.padStates[0].map(p => p.guide), [true, false], 'Play still owes the same step');
+});
+
+const optionPanel = (result, open) => flush(() => result.current.setMidiUiContext({ optionPanelOpen: open }));
+
+for (const input of ['keyboard', 'launchpad']) test(`opening the options lets go of a pad held on the ${input}, which stays let go until released`, async () => {
+  const { result } = await mount({ autoPlay: 'on 1 2\nd 2000\non 2 1\nd 2000', keySound: '1 1 1 a.wav 0\n1 1 2 a.wav 0\n1 2 1 a.wav 0' });
+  const press = handPress[input];
+  await flush(() => result.current.switchPlayMode('autoPlay')); await tick(1); await draw();
+  assert.equal(result.current.state.padStates[0][1].pressed, true);
+  const autoPlaySound = sources.at(-1);
+  await flush(() => press(result, true)); await draw();
+  const held = sources.at(-1);
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+  await optionPanel(result, true); await draw();
+  assert.equal(held.stopped, true, 'the held sound stops when the options open');
+  assert.equal(result.current.state.padStates[0][0].pressed, false, 'its press light goes off');
+  assert.equal(autoPlaySound.stopped, false, 'what autoplay holds keeps sounding');
+  assert.equal(result.current.state.padStates[0][1].pressed, true, 'what autoplay holds stays pressed');
+  const count = starts.length;
+  await flush(() => press(result, false)); await flush(() => press(result, true)); await draw();
+  assert.equal(starts.length, count, 'a pad pressed while the options are open does not play');
+  assert.equal(result.current.state.padStates[0][0].pressed, false);
+  await flush(() => press(result, false));
+  assert.equal(result.current.state.autoPlayPlaying, true, 'the options do not stop autoplay');
+  await tick(2000); assert.equal(starts.length, count + 1, 'autoplay goes on behind the options');
+  await optionPanel(result, false);
+  await flush(() => press(result, true)); await draw();
+  assert.equal(starts.length, count + 2, 'a press after the options close plays');
+  assert.equal(result.current.state.padStates[0][0].pressed, true);
+});
+
+test('while the options are open the keyboard plays no pad or chain, and Space still switches autoplay', async () => {
+  const { result } = await mount();
+  const key = (type, init) => flush(() => document.body.dispatchEvent(new window.KeyboardEvent(type, { bubbles: true, ...init })));
+  await optionPanel(result, true);
+  await key('keydown', { key: '1', code: 'Digit1' }); await key('keyup', { key: '1', code: 'Digit1' });
+  await key('keydown', { key: 'F2', code: 'F2' }); await tick(10); await draw();
+  assert.equal(starts.length, 0, 'a pad key does not play behind the options');
+  assert.equal(result.current.state.chain, 0, 'a chain key does not switch the chain behind the options');
+  await key('keydown', { key: ' ', code: 'Space' });
+  assert.equal(result.current.state.autoPlayEnabled, true, 'Space works as before');
+  await key('keydown', { key: ' ', code: 'Space' });
+  await optionPanel(result, false);
+  await key('keydown', { key: 'F2', code: 'F2' }); await tick(10);
+  assert.equal(result.current.state.chain, 1, 'chain keys work again once the options close');
+});
+
 test('a new manual press restores audio after interruption without starting a song', async () => {
   const { result } = await mount();
   await flush(() => result.current.padTouchOn(0, 0, 'finger')); await tick(4);

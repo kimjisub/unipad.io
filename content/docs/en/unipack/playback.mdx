@@ -7,8 +7,11 @@ Putting the app in the background, locking it, covering the play screen, hiding 
 device or losing audio output pauses song time and the remaining wait. All held inputs, sound and
 running lights are released. Return to playback by explicitly pressing play. A permission or connection
 notification alone never starts the song. Playback continues at the next unprocessed command and does
-not recreate earlier presses. Play, guide and step selections remain. Closing the pack or restarting
-the app removes the pending resume. Opening an in-screen menu alone does not interrupt playback.
+not recreate earlier presses. Play, guide and step selections remain. Only the song waits for play:
+pads pressed by hand still sound and light during an interruption. Such a press neither starts nor moves
+the song, and it does not count as a guide or step. Closing the pack or restarting the app removes the
+pending resume. Opening an in-screen menu alone does not interrupt playback: the song and autoplay go on,
+and inputs held by hand are released. While the menu is open, hand input plays no pad.
 
 ## Fingers and chains
 
