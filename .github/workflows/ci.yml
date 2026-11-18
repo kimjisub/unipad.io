@@ -55,6 +55,9 @@ jobs:
       # package.json (pnpm.auditConfig.ignoreCves) have no fix reachable today:
       # - CVE-2026-101915, CVE-2026-101916 (@grpc/grpc-js): firebase, up to 13.0.0, pins
       #   ~1.9.0 through @firebase/firestore, and the site never imports Firestore.
+      # - CVE-2026-112366 (picomatch <= 4.0.7, no patched release yet): reached only through
+      #   next-intl -> @parcel/watcher, which next-intl loads for its experimental message
+      #   extraction (off here) and feeds fixed ignore globs, never visitor input.
       # Drop an entry once its upgrade path exists.
       - name: Audit production dependencies
         run: pnpm audit --prod
