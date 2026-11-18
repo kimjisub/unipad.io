@@ -16,6 +16,7 @@ export const MAIN_SITE = 'https://unipad.io';
 
 export const TERMS_DOCS = ['privacy', 'usage'] as const;
 export type TermsDoc = (typeof TERMS_DOCS)[number];
+type Locale = (typeof routing.locales)[number];
 
 interface TermsMessages {
   title: string;
@@ -24,7 +25,7 @@ interface TermsMessages {
 }
 
 // Text that exists only on the copy; the documents themselves come from content/docs.
-const COPY_NOTICE: Record<string, { before: string; after: string; language: string }> = {
+const COPY_NOTICE: Record<Locale, { before: string; after: string; language: string }> = {
   en: {
     before: 'This page is a copy of ',
     after: ', published here as well so it stays readable when the main site is unavailable.',
@@ -42,10 +43,16 @@ export function docPath(doc: TermsDoc): string {
   return `/docs/terms/${doc}`;
 }
 
-/** Folder of a page on the copy; the default locale keeps the site's unprefixed path. */
-export function pageDir(locale: string, doc?: TermsDoc): string {
-  const prefix = locale === routing.defaultLocale ? '' : `${locale}/`;
-  return doc ? `${prefix}${docPath(doc).slice(1)}/` : prefix;
+const LIST_PATH = '/docs/terms';
+
+/** Folder of a locale on the copy; the default locale stays at the root, as on the site. */
+function localeDir(locale: Locale): string {
+  return locale === routing.defaultLocale ? '' : `${locale}/`;
+}
+
+/** Folder of a page on the copy: the site's path inside the locale folder. */
+export function pageDir(locale: Locale, doc?: TermsDoc): string {
+  return `${localeDir(locale)}${(doc ? docPath(doc) : LIST_PATH).slice(1)}/`;
 }
 
 function termsMessages(locale: string): TermsMessages {
@@ -104,7 +111,7 @@ ${options.body}
 `;
 }
 
-async function docPage(locale: string, doc: TermsDoc): Promise<string> {
+async function docPage(locale: Locale, doc: TermsDoc): Promise<string> {
   const messages = termsMessages(locale);
   const dir = pageDir(locale, doc);
   const notice = COPY_NOTICE[locale];
@@ -129,7 +136,7 @@ async function docPage(locale: string, doc: TermsDoc): Promise<string> {
   });
 }
 
-function listPage(locale: string): string {
+function listPage(locale: Locale): string {
   const messages = termsMessages(locale);
   const dir = pageDir(locale);
   const notice = COPY_NOTICE[locale];
@@ -138,7 +145,7 @@ function listPage(locale: string): string {
     .map(other => `<a href="${link(dir, pageDir(other))}" hreflang="${other}" lang="${other}">${COPY_NOTICE[other].language}</a>`)
     .join(' ');
   const items = TERMS_DOCS.map(doc => `<li><a href="${link(dir, pageDir(locale, doc))}">${escapeHtml(messages[doc].title)}</a></li>`).join('\n');
-  const canonical = `${MAIN_SITE}/docs/terms`;
+  const canonical = `${MAIN_SITE}${LIST_PATH}`;
   return page({
     locale,
     title: messages.title,
@@ -146,6 +153,22 @@ function listPage(locale: string): string {
     body: `<h1>${escapeHtml(messages.title)}</h1>\n<ul>\n${items}\n</ul>\n<p class="notice">${escapeHtml(notice.before)}<a href="${canonical}">${canonical}</a>${escapeHtml(notice.after)}</p>`,
     nav: `<nav><span></span><span>${others}</span></nav>`,
   });
+}
+
+/** The locale folder itself only points to the list, which keeps the site's path. */
+function rootPage(locale: Locale): string {
+  const target = link(localeDir(locale), pageDir(locale));
+  const title = termsMessages(locale).title;
+  return `<!doctype html>
+<html lang="${locale}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url=${target}">
+<title>${escapeHtml(title)} | UniPad</title>
+</head>
+<body><a href="${target}">${escapeHtml(title)}</a></body>
+</html>
+`;
 }
 
 /** Writes every page into outDir, which must be missing or empty; returns the written paths relative to it. */
@@ -161,6 +184,7 @@ export async function buildTermsMirror(outDir: string): Promise<string[]> {
     written.push(relative(outDir, file));
   };
   for (const locale of routing.locales) {
+    write(localeDir(locale), rootPage(locale));
     write(pageDir(locale), listPage(locale));
     for (const doc of TERMS_DOCS) {
       write(pageDir(locale, doc), await docPage(locale, doc));

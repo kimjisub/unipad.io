@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { buildTermsMirror, MAIN_SITE } from './terms-mirror.mts';
 
 const messages = locale => JSON.parse(readFileSync(`src/i18n/messages/${locale}.json`, 'utf8')).docs.terms;
+const escapeHtml = text => text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 
 function outDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'terms-mirror-'));
@@ -30,15 +31,28 @@ test('the copy has both documents in both languages with the site titles and bod
     const html = readFileSync(join(dir, page.file), 'utf8');
     const terms = messages(page.locale);
     assert.match(html, new RegExp(`<html lang="${page.locale}">`));
-    assert.ok(html.includes(`<h1>${terms[page.doc].title}</h1>`), `${page.file} title`);
+    assert.ok(html.includes(`<h1>${escapeHtml(terms[page.doc].title)}</h1>`), `${page.file} title`);
     assert.ok(html.includes(page.heading), `${page.file} body`);
     assert.ok(html.includes(`<link rel="canonical" href="${MAIN_SITE}/docs/terms/${page.doc}">`), `${page.file} canonical`);
-    if (page.doc === 'privacy') assert.ok(html.includes(terms.privacy.effectiveDate), `${page.file} effective date`);
+    if (page.doc === 'privacy') assert.ok(html.includes(escapeHtml(terms.privacy.effectiveDate)), `${page.file} effective date`);
     // Readable without scripts, and nothing reports visits from the copy.
     assert.doesNotMatch(html, /<script/i);
   }
   const body = file => readFileSync(join(dir, file), 'utf8').match(/<article>[\s\S]*<\/article>/)[0];
   assert.equal(body('ko/docs/terms/privacy/index.html'), body('docs/terms/privacy/index.html'));
+});
+
+test('the list keeps the site path, so only the domain changes in every address', async t => {
+  const dir = outDir(t);
+  const written = await buildTermsMirror(dir);
+  for (const [prefix, locale] of [['', 'en'], ['ko/', 'ko']]) {
+    const list = readFileSync(join(dir, `${prefix}docs/terms/index.html`), 'utf8');
+    assert.ok(list.includes(`<h1>${escapeHtml(messages(locale).title)}</h1>`), `${prefix} list title`);
+    assert.ok(list.includes(`<link rel="canonical" href="${MAIN_SITE}/docs/terms">`), `${prefix} list canonical`);
+    // The bare folder of the copy leads to the list instead of a 404.
+    assert.ok(written.includes(`${prefix}index.html`), `${prefix}index.html was not written`);
+    assert.match(readFileSync(join(dir, `${prefix}index.html`), 'utf8'), /<meta http-equiv="refresh" content="0; url=docs\/terms\/">/);
+  }
 });
 
 test('every link between the copied pages reaches a written page', async t => {
