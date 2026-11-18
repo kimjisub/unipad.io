@@ -5,6 +5,7 @@ import {
   runStoreDownloadStep,
   storeDownloadErrorType,
   storeDownloadFailParams,
+  storeFileSitePath,
   StoreDownloadError,
   type StoreItem,
 } from './store';
@@ -94,6 +95,32 @@ test('HTTP failures are typed by status', async () => {
   assert.equal(await downloadErrorType([status(503), status(503)]), 'http_5xx');
   assert.equal(await downloadErrorType([status(429), status(429)]), 'http_other');
   assert.equal(await downloadErrorType([status(413)]), 'http_other');
+});
+
+test('a pack file on the store file host is fetched from the same-origin CDN path', async () => {
+  const calls = stubFetch([new Response(new Uint8Array([1, 2, 3]))]);
+  await downloadStoreItem({ ...ITEM, url: 'https://unipack.unipad.io/store/_Love_U.zip' });
+  assert.deepEqual(calls, ['/store-files/_Love_U.zip']);
+});
+
+test('only plain pack files on the store file host take the CDN path', () => {
+  assert.equal(storeFileSitePath('https://unipack.unipad.io/store/Pack-1_v2.zip'), '/store-files/Pack-1_v2.zip');
+  for (const url of [
+    'http://unipack.unipad.io/store/a.zip',
+    'https://unipack.unipad.io:8443/store/a.zip',
+    'https://unipack.unipad.io/store/a.zip?v=1',
+    'https://unipack.unipad.io/store/a.zip#x',
+    'https://unipack.unipad.io/store/sub/a.zip',
+    'https://unipack.unipad.io/store/%ED%8C%A9.zip',
+    'https://unipack.unipad.io/store/a.uni',
+    'https://unipack.unipad.io/store/A.ZIP',
+    'https://unipack.unipad.io/other/a.zip',
+    'https://evil.unipack.unipad.io/store/a.zip',
+    'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy?code=a',
+    'not a url',
+  ]) {
+    assert.equal(storeFileSitePath(url), null, url);
+  }
 });
 
 test('a proxy refusal falls back to the direct URL and reports its status', async () => {

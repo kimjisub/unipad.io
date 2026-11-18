@@ -1,6 +1,7 @@
 import { get, onValue, ref } from 'firebase/database';
 import { initFirebaseServices } from './firebase';
 import { STORE_BODY_LENGTH_HEADER } from './storeDownloadHeaders';
+import storeFiles from './storeFiles.json';
 
 const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
@@ -238,9 +239,29 @@ function getStoreDownloadUrl(item: StoreItem): string {
   return `${LEGACY_DOWNLOAD_BASE_URL}?code=${encodeURIComponent(item.code)}`;
 }
 
-function getStoreProxyUrl(item: StoreItem): string {
+const STORE_FILE_NAME = new RegExp(`^${storeFiles.fileName}$`);
+
+/**
+ * The same-origin path the CDN forwards to the store file host (see `rewrites` in next.config.mjs),
+ * or null when the URL is not a plain pack file on that host. That path keeps the pack body out of
+ * the site's functions; anything else still goes through the download route.
+ */
+export function storeFileSitePath(upstream: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(upstream);
+  } catch {
+    return null;
+  }
+  if (url.origin !== storeFiles.origin || url.search || url.hash) return null;
+  if (!url.pathname.startsWith(storeFiles.originPath)) return null;
+  const name = url.pathname.slice(storeFiles.originPath.length);
+  return STORE_FILE_NAME.test(name) ? `${storeFiles.sitePath}${name}` : null;
+}
+
+function getStoreFetchUrl(item: StoreItem): string {
   const upstream = getStoreDownloadUrl(item);
-  return `/api/store/download?url=${encodeURIComponent(upstream)}`;
+  return storeFileSitePath(upstream) ?? `/api/store/download?url=${encodeURIComponent(upstream)}`;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -339,7 +360,7 @@ async function downloadStoreItemData(
 ): Promise<ArrayBuffer> {
   const signal = controller.signal;
   const waitForNetwork = <T>(pending: Promise<T>) => withNetworkDeadline(pending, () => controller.abort());
-  const proxyUrl = getStoreProxyUrl(item);
+  const fetchUrl = getStoreFetchUrl(item);
   const directUrl = getStoreDownloadUrl(item);
   let response: Response | null = null;
   let lastError: unknown = null;
@@ -349,7 +370,7 @@ async function downloadStoreItemData(
   for (let attempt = 0; attempt < 2; attempt++) {
     proxyRejectedStatus = null;
     try {
-      response = await waitForNetwork(fetch(proxyUrl, {
+      response = await waitForNetwork(fetch(fetchUrl, {
         method: 'GET',
         signal,
         cache: 'no-store',
@@ -418,7 +439,7 @@ async function readStoreResponse(
   waitForNetwork: <T>(pending: Promise<T>) => Promise<T>,
   onProgress?: (percent: number) => void,
 ): Promise<ArrayBuffer> {
-  // Through the proxy only its own header carries the length; a direct download has content-length.
+  // Through the download route only its own header carries the length; the file host sends content-length.
   const length = response.headers.get(STORE_BODY_LENGTH_HEADER) ?? response.headers.get('content-length');
   const total = Number(length ?? 0);
   const reader = response.body?.getReader();
