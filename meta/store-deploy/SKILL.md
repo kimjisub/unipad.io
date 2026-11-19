@@ -77,6 +77,10 @@ Do not `export OP_ACCOUNT` for the whole shell: `with-store-creds.sh` unsets it 
 but every other `op` command you run by hand in that shell silently keeps using that account,
 which makes it hard to tell which account a command read from.
 
+`1Password refused the read: the request limit is reached` is different: 1Password is rate limiting
+the account (its own message follows on the `op:` lines). Nothing needs unlocking or creating;
+read again later.
+
 ## Deploy — Android (manual)
 
 Run from the workspace root (`~/GitHub/unipad`); every path below is anchored on `SD`.

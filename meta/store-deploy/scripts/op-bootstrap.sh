@@ -51,13 +51,27 @@ if [ "$MODE" = "build" ]; then
 fi
 
 command -v op >/dev/null || { echo "ERROR: 1Password CLI (op) not installed." >&2; exit 1; }
-# Probe with a real read, not `op whoami`: with desktop-app integration whoami reports
-# "not signed in" even while vault reads work fine (biometric unlock per command).
-op vault list >/dev/null 2>&1 || {
-  echo "ERROR: 1Password CLI cannot read vaults." >&2
-  echo "  Unlock the 1Password desktop app, or run:  eval \$(op signin)" >&2
+
+# Reports a failed op read and exits. A request limit ("Too many requests") passes on its own,
+# so it gets its own message instead of the given hint lines (unlock the app, create the item),
+# which sent readers to the wrong fix. op's own message is always shown.
+op_read_failed() {
+  local op_error="$1"; shift
+  case "$op_error" in
+    *"Too many requests"*|*rate-limited*|*"rate limited"*)
+      echo "ERROR: 1Password refused the read: the request limit is reached." >&2
+      echo "  The credentials and the app are fine; try again later." >&2 ;;
+    *) printf '%s\n' "$@" >&2 ;;
+  esac
+  [ -z "$op_error" ] || printf '%s\n' "$op_error" | sed 's/^/  op: /' >&2
   exit 1
 }
+
+# Probe with a real read, not `op whoami`: with desktop-app integration whoami reports
+# "not signed in" even while vault reads work fine (biometric unlock per command).
+OP_ERROR="$(op vault list 2>&1 >/dev/null)" || op_read_failed "$OP_ERROR" \
+  "ERROR: 1Password CLI cannot read vaults." \
+  "  Unlock the 1Password desktop app, or run:  eval \$(op signin)"
 
 VAULT_ARGS=""
 [ -n "${OP_VAULT:-}" ] && VAULT_ARGS="--vault=$OP_VAULT"
@@ -67,12 +81,10 @@ chmod 700 "$SECRETS_DIR"
 
 if [ "$PLATFORM" = "android" ]; then
   ITEM="${OP_PLAY_JSON_ITEM:-UniPad Play Service Account}"
-  if ! op item get $VAULT_ARGS "$ITEM" >/dev/null 2>&1; then
-    echo "ERROR: 1Password item '$ITEM' not found." >&2
-    echo "  Create the Play service account JSON (Play Console -> Setup -> API access)," >&2
-    echo "  then store it in 1Password as a Document named '$ITEM'." >&2
-    exit 1
-  fi
+  OP_ERROR="$(op item get $VAULT_ARGS "$ITEM" 2>&1 >/dev/null)" || op_read_failed "$OP_ERROR" \
+    "ERROR: 1Password item '$ITEM' not found." \
+    "  Create the Play service account JSON (Play Console -> Setup -> API access)," \
+    "  then store it in 1Password as a Document named '$ITEM'."
   DEST="$SECRETS_DIR/play-sa.json"
   # Create the file with 600 before op writes into it, so the key is never world-readable.
   (umask 077 && : > "$DEST")
@@ -83,16 +95,14 @@ if [ "$PLATFORM" = "android" ]; then
 
 elif [ "$PLATFORM" = "ios" ]; then
   ITEM="${OP_ASC_KEY_ITEM:-UniPad ASC API Key}"
-  if ! op item get $VAULT_ARGS "$ITEM" >/dev/null 2>&1; then
-    echo "ERROR: 1Password item '$ITEM' not found." >&2
-    echo "  Create an App Store Connect API *Team* key:" >&2
-    echo "    App Store Connect -> Users and Access -> Integrations -> App Store Connect API -> Team Keys" >&2
-    echo "  Then store it in 1Password as '$ITEM' with three fields:" >&2
-    echo "    key_id        (e.g. D383SF739 — also in the AuthKey_<KEYID>.p8 filename)" >&2
-    echo "    issuer_id     (UUID shown above the key list)" >&2
-    echo "    key_p8_base64 (base64 of the .p8:  base64 -i AuthKey_XXXX.p8 | pbcopy)" >&2
-    exit 1
-  fi
+  OP_ERROR="$(op item get $VAULT_ARGS "$ITEM" 2>&1 >/dev/null)" || op_read_failed "$OP_ERROR" \
+    "ERROR: 1Password item '$ITEM' not found." \
+    "  Create an App Store Connect API *Team* key:" \
+    "    App Store Connect -> Users and Access -> Integrations -> App Store Connect API -> Team Keys" \
+    "  Then store it in 1Password as '$ITEM' with three fields:" \
+    "    key_id        (e.g. D383SF739 — also in the AuthKey_<KEYID>.p8 filename)" \
+    "    issuer_id     (UUID shown above the key list)" \
+    "    key_p8_base64 (base64 of the .p8:  base64 -i AuthKey_XXXX.p8 | pbcopy)"
   KEY_ID="$(op item get $VAULT_ARGS "$ITEM" --fields label=key_id --reveal)"
   ISSUER_ID="$(op item get $VAULT_ARGS "$ITEM" --fields label=issuer_id --reveal)"
   KEY_B64="$(op item get $VAULT_ARGS "$ITEM" --fields label=key_p8_base64 --reveal)"
