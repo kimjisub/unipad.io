@@ -6,7 +6,12 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 const script = resolve('meta/store-deploy/scripts/op-bootstrap.sh');
-const RATE_LIMITED = '[ERROR] 2026/11/19 20:25:00 Too many requests. Your client has been rate-limited. Try again in 3600 seconds';
+// The first wording is what op printed on this machine; the second is the service-account error
+// in 1Password's rate-limit documentation (hourly and daily limits alike).
+const RATE_LIMITED = [
+  '[ERROR] 2026/11/19 20:25:00 Too many requests. Your client has been rate-limited. Try again in 3600 seconds',
+  "[ERROR] (429) Too Many Requests: You've reached the maximum number of this type of requests this account can make.",
+];
 
 // The script finds the app repositories four levels up, so it runs from a copy beside fake
 // app folders, with a fake `op` that fails `vault list` or `item get` with the given message.
@@ -36,13 +41,15 @@ function run(t, platform, { vaultError = '', itemError = '' } = {}) {
   });
 }
 
-test('a rate-limited vault probe is reported as a request limit, not a locked app', t => {
-  const result = run(t, 'android', { vaultError: RATE_LIMITED });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /request limit/);
-  assert.match(result.stderr, /Too many requests/);
-  assert.doesNotMatch(result.stderr, /Unlock/);
-});
+for (const [i, message] of RATE_LIMITED.entries()) {
+  test(`a rate-limited vault probe is reported as a request limit, not a locked app (wording ${i + 1})`, t => {
+    const result = run(t, 'android', { vaultError: message });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /request limit/);
+    assert.match(result.stderr, /Too many requests/i);
+    assert.doesNotMatch(result.stderr, /Unlock/);
+  });
+}
 
 test('a vault probe that fails for another reason keeps the sign-in hint and shows the CLI message', t => {
   const result = run(t, 'ios', { vaultError: '[ERROR] You are not currently signed in.' });
@@ -53,13 +60,15 @@ test('a vault probe that fails for another reason keeps the sign-in hint and sho
 });
 
 for (const platform of ['android', 'ios']) {
-  test(`a rate-limited ${platform} item read is not reported as a missing item`, t => {
-    const result = run(t, platform, { itemError: RATE_LIMITED });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /request limit/);
-    assert.match(result.stderr, /Too many requests/);
-    assert.doesNotMatch(result.stderr, /not found/);
-  });
+  for (const [i, message] of RATE_LIMITED.entries()) {
+    test(`a rate-limited ${platform} item read is not reported as a missing item (wording ${i + 1})`, t => {
+      const result = run(t, platform, { itemError: message });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /request limit/);
+      assert.match(result.stderr, /Too many requests/i);
+      assert.doesNotMatch(result.stderr, /not found/);
+    });
+  }
 
   test(`a missing ${platform} item still explains how to create it`, t => {
     const result = run(t, platform, { itemError: `[ERROR] "UniPad" isn't an item in the "Deploy" vault.` });

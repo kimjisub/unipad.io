@@ -52,15 +52,17 @@ fi
 
 command -v op >/dev/null || { echo "ERROR: 1Password CLI (op) not installed." >&2; exit 1; }
 
-# Reports a failed op read and exits. A request limit ("Too many requests") passes on its own,
-# so it gets its own message instead of the given hint lines (unlock the app, create the item),
-# which sent readers to the wrong fix. op's own message is always shown.
+# Reports a failed op read and exits. A request limit is temporary and needs neither an unlocked
+# app nor a new item, so it gets its own message instead of the given hint lines. op words the
+# limit differently by version and limit kind ("Too many requests", "(429) Too Many Requests"),
+# hence the case-insensitive match. op's own message is always shown.
 op_read_failed() {
   local op_error="$1"; shift
-  case "$op_error" in
-    *"Too many requests"*|*rate-limited*|*"rate limited"*)
+  case "$(printf '%s' "$op_error" | tr '[:upper:]' '[:lower:]')" in
+    *"too many requests"*|*"rate-limited"*|*"rate limited"*|*"(429)"*)
       echo "ERROR: 1Password refused the read: the request limit is reached." >&2
-      echo "  The credentials and the app are fine; try again later." >&2 ;;
+      echo "  Read again after the wait in op's message below; a service account can check its" >&2
+      echo "  remaining requests with:  op service-account ratelimit" >&2 ;;
     *) printf '%s\n' "$@" >&2 ;;
   esac
   [ -z "$op_error" ] || printf '%s\n' "$op_error" | sed 's/^/  op: /' >&2

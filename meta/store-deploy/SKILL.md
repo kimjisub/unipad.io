@@ -79,7 +79,7 @@ which makes it hard to tell which account a command read from.
 
 `1Password refused the read: the request limit is reached` is different: 1Password is rate limiting
 the account (its own message follows on the `op:` lines). Nothing needs unlocking or creating;
-read again later.
+read again after the wait op names. A service account shows what is left with `op service-account ratelimit`.
 
 ## Deploy — Android (manual)
 
