@@ -46,8 +46,26 @@ const TopBar: React.FC = () => {
 	};
 
 	useEffect(() => {
-		const section = window.location.hash.slice(1);
-		if (section) document.getElementById(section)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+		if (!window.location.hash) return;
+		let cancelled = false;
+		let frame: number | undefined;
+		const alignSection = async () => {
+			await document.fonts.ready;
+			if (cancelled) return;
+			frame = window.requestAnimationFrame(() => {
+				frame = undefined;
+				const section = window.location.hash.slice(1);
+				document.getElementById(section)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+			});
+		};
+		const onLoad = () => { void alignSection(); };
+		if (document.readyState === 'complete') onLoad();
+		else window.addEventListener('load', onLoad, { once: true });
+		return () => {
+			cancelled = true;
+			window.removeEventListener('load', onLoad);
+			if (frame !== undefined) window.cancelAnimationFrame(frame);
+		};
 	}, [locale]);
 
 	useEffect(() => {
