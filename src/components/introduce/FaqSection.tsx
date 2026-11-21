@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { SectionContainer, SectionTitle } from '@/components/introduce/SectionHeader';
 import { EXTERNAL_LINKS } from '@/lib/constants';
 
-const faqKeys = ['0', '1', '2', '3', '4', '5', '6'];
+const faqKeys = ['0', '1', '2', '3', '4', '5', '6', '7'];
 
 export const FaqSection = () => {
 	const t = useTranslations('faq');
