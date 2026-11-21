@@ -8,7 +8,7 @@ for (const locale of ['ko', 'en']) {
 
     for (const width of [1440, 390]) {
       for (const topic of topics) {
-        test(`direct #${topic} and language switching at ${width}px`, async ({ page }) => {
+        test(`direct #${topic} and language switching at ${width}px`, async ({ page, checkedPage }) => {
           test.setTimeout(90_000);
           await page.setViewportSize({ width, height: 900 });
           await page.goto(`/docs/guide#${topic}`);
@@ -21,14 +21,14 @@ for (const locale of ['ko', 'en']) {
           await expect.poll(uncovered).toBe(true);
           const switchToOther = page.getByRole('button', { name: locale === 'ko' ? 'Switch to English' : '한국어로 전환' });
           await switchToOther.focus();
-          await switchToOther.press('Enter');
+          await checkedPage.navigate(() => switchToOther.press('Enter'));
           await page.waitForLoadState();
           await expect(page.locator('html')).toHaveAttribute('lang', locale === 'ko' ? 'en' : 'ko');
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await expect.poll(uncovered).toBe(true);
           const switchBack = page.getByRole('button', { name: locale === 'ko' ? '한국어로 전환' : 'Switch to English' });
           await switchBack.focus();
-          await switchBack.press('Enter');
+          await checkedPage.navigate(() => switchBack.press('Enter'));
           await page.waitForLoadState();
           await expect(page.locator('html')).toHaveAttribute('lang', locale);
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
