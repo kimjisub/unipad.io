@@ -16,10 +16,9 @@ function outDir(t) {
 }
 
 const pages = [
-  { file: 'docs/terms/privacy/index.html', locale: 'en', doc: 'privacy', heading: '<h2>Definitions</h2>' },
+  { file: 'docs/terms/privacy/index.html', locale: 'en', doc: 'privacy', heading: '<h2>In short</h2>' },
   { file: 'docs/terms/usage/index.html', locale: 'en', doc: 'usage', heading: '<h2>Permitted Usage Examples</h2>' },
-  // The site has no Korean privacy text yet and shows the English one under the Korean title.
-  { file: 'ko/docs/terms/privacy/index.html', locale: 'ko', doc: 'privacy', heading: '<h2>Definitions</h2>' },
+  { file: 'ko/docs/terms/privacy/index.html', locale: 'ko', doc: 'privacy', heading: '<h2>요약</h2>' },
   { file: 'ko/docs/terms/usage/index.html', locale: 'ko', doc: 'usage', heading: '<h2>허용되는 사용 예시</h2>' },
 ];
 
@@ -39,7 +38,31 @@ test('the copy has both documents in both languages with the site titles and bod
     assert.doesNotMatch(html, /<script/i);
   }
   const body = file => readFileSync(join(dir, file), 'utf8').match(/<article>[\s\S]*<\/article>/)[0];
-  assert.equal(body('ko/docs/terms/privacy/index.html'), body('docs/terms/privacy/index.html'));
+  assert.notEqual(body('ko/docs/terms/privacy/index.html'), body('docs/terms/privacy/index.html'));
+  for (const file of ['docs/terms/privacy/index.html', 'ko/docs/terms/privacy/index.html']) {
+    const html = body(file);
+    assert.match(html, /<table>/);
+    assert.equal((html.match(/<tr>/g) || []).length, 6);
+    assert.match(html, /href="mailto:0226unipad@gmail.com"/);
+    assert.match(html, /href="https:\/\/policies.google.com\/privacy/);
+    assert.match(html, /href="https:\/\/vercel.com\/legal\/privacy-policy"/);
+    assert.doesNotMatch(html, /2018|Definitions|Personally identifiable|## /);
+  }
+});
+
+test('privacy copies describe performance, store requests and capacity-based log retention', async t => {
+  const dir = outDir(t);
+  await buildTermsMirror(dir);
+  const cases = [
+    ['docs/terms/privacy/index.html', ['usually about two months', 'oldest first', 'Performance data: 60 days', 'Store list requests', 'recorded with the pack', 'your browser downloads it directly from the same server']],
+    ['ko/docs/terms/privacy/index.html', ['보통 2개월 안팎', '오래된 것부터', '성능 측정 기록: 60일', '스토어 목록 요청 기록', '그 팩의 스토어 코드', '브라우저가 같은 서버에서 바로 받습니다']],
+  ];
+  for (const [file, phrases] of cases) {
+    const html = readFileSync(join(dir, file), 'utf8');
+    for (const phrase of [...phrases, 'Firebase Performance Monitoring', 'Remote Config', 'Realtime Database']) {
+      assert.ok(html.includes(phrase), `${file} is missing ${phrase}`);
+    }
+  }
 });
 
 test('the list keeps the site path, so only the domain changes in every address', async t => {
