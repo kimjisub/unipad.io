@@ -13,6 +13,7 @@ const locales = [
     diagnostics: 'Diagnostics',
     retention: 'usually about two months',
     storeRequests: 'Store list requests',
+    download: 'On the website, your browser downloads it directly from the same server.',
     privacyDescription: 'Review the privacy policy of the UniPad app.',
     effectiveDate: 'Effective date: November 22, 2026',
     usage: 'App Usage Scope Notice',
@@ -31,6 +32,7 @@ const locales = [
     diagnostics: '진단 정보',
     retention: '보통 2개월 안팎',
     storeRequests: '스토어 목록 요청 기록',
+    download: '웹사이트에서 내려받을 때도 브라우저가 같은 서버에서 바로 받습니다.',
     privacyDescription: 'UniPad 앱의 개인정보 처리방침을 확인하세요.',
     effectiveDate: '시행일: 2026년 11월 22일',
     usage: '앱 사용 범위 고지',
@@ -96,6 +98,7 @@ for (const l of locales) {
       }
       await page.evaluate(() => window.scrollTo(0, 0));
       await testInfo.attach(`${l.lang}-privacy`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      await expect(body).toContainText(l.download);
       await expect(main.getByRole('link', { name: l.terms })).toBeVisible();
     });
   });
