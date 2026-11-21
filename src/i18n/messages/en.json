@@ -144,6 +144,10 @@
       "6": {
         "q": "Can I create my own UniPack?",
         "a": "Yes! Write sound files along with keySound, keyLed, and autoPlay text files, then bundle them into a ZIP. Check the UniPack documentation for the full format specification."
+      },
+      "7": {
+        "q": "Where can I get UniPad?",
+        "a": "UniPad is free and continues to receive updates. Get the Android app on Google Play (Android 7.0 or later), or the iPhone and iPad app on the App Store (iOS or iPadOS 17 or later). You can also play in your browser at https://unipad.io/play without installing the app."
       }
     }
   },

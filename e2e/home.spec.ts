@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './browser';
+import en from '../src/i18n/messages/en.json';
+import ko from '../src/i18n/messages/ko.json';
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.kimjisub.launchpad';
 const APP_STORE_URL = 'https://apps.apple.com/app/id6760479102';
@@ -62,6 +64,39 @@ for (const l of locales) {
     for (const size of sizes) {
       test.describe(`${size.width}px`, () => {
         test.use({ viewport: { width: size.width, height: size.height } });
+
+        if (size.width === 390 || size.width === 1440) {
+          test('the download FAQ opens in plain text and matches the page source', async ({ page }, testInfo) => {
+            const response = await page.goto(l.path);
+            const faq = page.locator('#faq');
+            const details = faq.locator('details');
+            await expect(details.first()).toHaveAttribute('open', '');
+            // Capture the same section on the old page as well as the new page.
+            await details.last().locator('summary').click();
+            await testInfo.attach(`faq-${l.locale}-${size.width}`, {
+              body: await faq.screenshot(), contentType: 'image/png',
+            });
+            await expect(details).toHaveCount(8);
+            const messages = l.locale === 'ko' ? ko : en;
+            const expected = Object.values(messages.faq.items);
+            expect(expected[7].q).toBe(l.locale === 'ko' ? 'UniPad는 어디서 받을 수 있나요?' : 'Where can I get UniPad?');
+            for (const [index, item] of expected.entries()) {
+              await expect(details.nth(index).locator('summary')).toHaveText(item.q);
+            }
+            await expect(details.last().locator('p')).toBeVisible();
+            await expect(details.last().locator('p')).toHaveText(expected[7].a);
+            await expect(details.last().locator('p a')).toHaveCount(0);
+            expect(await overflow(page)).toEqual({ page: 0, clipped: [], squeezed: [] });
+            // Read server HTML, so client-side rendering cannot hide a missing search entry.
+            const source = await response!.text();
+            const scripts = [...source.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+            const schema = scripts.flatMap(match => JSON.parse(match[1])).find(item => item['@type'] === 'FAQPage');
+            expect(schema.mainEntity).toEqual(expected.map(item => ({
+              '@type': 'Question', name: item.q,
+              acceptedAnswer: { '@type': 'Answer', text: item.a },
+            })));
+          });
+        }
 
         for (const bigText of [false, true]) {
           test(`title, description, three start buttons and the lower sections fit${bigText ? ' at 200% text' : ''}`, async ({ page }) => {

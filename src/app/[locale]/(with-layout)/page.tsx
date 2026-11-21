@@ -46,7 +46,7 @@ export default async function Home({
   const tFaq = await getTranslations('faq');
   const tHero = await getTranslations('hero');
 
-  const faqItems = ['0', '1', '2', '3', '4', '5', '6'].map((key) => ({
+  const faqItems = ['0', '1', '2', '3', '4', '5', '6', '7'].map((key) => ({
     '@type': 'Question' as const,
     name: tFaq(`items.${key}.q`),
     acceptedAnswer: {
