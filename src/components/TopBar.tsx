@@ -9,6 +9,7 @@ import { Menu, X, Globe, ChevronDown } from 'lucide-react';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
+import { routing } from '@/i18n/routing';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const PLAY_MENU_ID = 'topbar-play-menu';
@@ -35,14 +36,19 @@ const TopBar: React.FC = () => {
 
 	const toggleLocale = () => {
 		const nextLocale = locale === 'en' ? 'ko' : 'en';
-		const suffix = `${window.location.search}${window.location.hash}`;
-		// A client-side locale redirect drops fragments; a document navigation retains them.
 		if (window.location.hash) {
-			window.location.assign(new URL(`/${nextLocale}${pathname}${suffix}`, window.location.origin).href);
+			// Refresh at the current address so locale redirects cannot discard its fragment.
+			document.cookie = `${routing.localeCookie.name}=${nextLocale}; path=/; max-age=${routing.localeCookie.maxAge}; samesite=lax`;
+			router.refresh();
 			return;
 		}
-		router.replace(`${pathname}${suffix}`, { locale: nextLocale });
+		router.replace(`${pathname}${window.location.search}`, { locale: nextLocale });
 	};
+
+	useEffect(() => {
+		const section = window.location.hash.slice(1);
+		if (section) document.getElementById(section)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+	}, [locale]);
 
 	useEffect(() => {
 		if (!isMenuOpen && !isDownloadOpen) return;
