@@ -14,6 +14,7 @@ for (const locale of ['ko', 'en']) {
         await page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click();
         await expect(page).toHaveURL('/docs/guide');
         for (const topic of topics) {
+          await page.goto('about:blank');
           await page.goto(`/docs/guide#${topic}`);
           const heading = page.locator(`h2#${topic}`);
           await expect(heading).toBeVisible();
@@ -25,13 +26,17 @@ for (const locale of ['ko', 'en']) {
           const switchToOther = page.getByRole('button', { name: locale === 'ko' ? 'Switch to English' : '한국어로 전환' });
           await switchToOther.focus();
           await switchToOther.press('Enter');
+          await page.waitForLoadState();
           await expect(page.locator('html')).toHaveAttribute('lang', locale === 'ko' ? 'en' : 'ko');
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await expect.poll(uncovered).toBe(true);
           const switchBack = page.getByRole('button', { name: locale === 'ko' ? '한국어로 전환' : 'Switch to English' });
           await switchBack.focus();
           await switchBack.press('Enter');
+          await page.waitForLoadState();
           await expect(page.locator('html')).toHaveAttribute('lang', locale);
+          await expect(page).toHaveURL(`/docs/guide#${topic}`);
+          await expect.poll(uncovered).toBe(true);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
         await expect(page.locator('table code').first()).toHaveText('1');

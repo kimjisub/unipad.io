@@ -37,9 +37,9 @@ const TopBar: React.FC = () => {
 	const toggleLocale = () => {
 		const nextLocale = locale === 'en' ? 'ko' : 'en';
 		if (window.location.hash) {
-			// Refresh at the current address so locale redirects cannot discard its fragment.
+			// Reload this address so the router cannot replace a native fragment with its cached URL.
 			document.cookie = `${localeCookie.name}=${nextLocale}; path=/; max-age=${localeCookie.maxAge}; samesite=lax`;
-			router.refresh();
+			window.location.reload();
 			return;
 		}
 		router.replace(`${pathname}${window.location.search}`, { locale: nextLocale });
