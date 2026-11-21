@@ -18,8 +18,8 @@ published on GitHub Pages as well.
 Every copy address is the site address with `https://unipad.io` replaced by
 `https://kimjisub.github.io/unipad.io` (plus `/ko` for the Korean pages).
 
-The Korean privacy page shows the English policy under the Korean title, exactly as the site
-does, because there is no Korean policy text yet.
+The Korean privacy page renders the Korean policy from `content/docs/ko/terms/privacy.mdx`,
+with the same Korean title and effective date as the site.
 
 ## How the copy stays the same as the site
 

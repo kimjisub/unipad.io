@@ -16,10 +16,9 @@ function outDir(t) {
 }
 
 const pages = [
-  { file: 'docs/terms/privacy/index.html', locale: 'en', doc: 'privacy', heading: '<h2>Definitions</h2>' },
+  { file: 'docs/terms/privacy/index.html', locale: 'en', doc: 'privacy', heading: '<h2>In short</h2>' },
   { file: 'docs/terms/usage/index.html', locale: 'en', doc: 'usage', heading: '<h2>Permitted Usage Examples</h2>' },
-  // The site has no Korean privacy text yet and shows the English one under the Korean title.
-  { file: 'ko/docs/terms/privacy/index.html', locale: 'ko', doc: 'privacy', heading: '<h2>Definitions</h2>' },
+  { file: 'ko/docs/terms/privacy/index.html', locale: 'ko', doc: 'privacy', heading: '<h2>요약</h2>' },
   { file: 'ko/docs/terms/usage/index.html', locale: 'ko', doc: 'usage', heading: '<h2>허용되는 사용 예시</h2>' },
 ];
 
@@ -39,7 +38,16 @@ test('the copy has both documents in both languages with the site titles and bod
     assert.doesNotMatch(html, /<script/i);
   }
   const body = file => readFileSync(join(dir, file), 'utf8').match(/<article>[\s\S]*<\/article>/)[0];
-  assert.equal(body('ko/docs/terms/privacy/index.html'), body('docs/terms/privacy/index.html'));
+  assert.notEqual(body('ko/docs/terms/privacy/index.html'), body('docs/terms/privacy/index.html'));
+  for (const file of ['docs/terms/privacy/index.html', 'ko/docs/terms/privacy/index.html']) {
+    const html = body(file);
+    assert.match(html, /<table>/);
+    assert.equal((html.match(/<tr>/g) || []).length, 6);
+    assert.match(html, /href="mailto:0226unipad@gmail.com"/);
+    assert.match(html, /href="https:\/\/policies.google.com\/privacy/);
+    assert.match(html, /href="https:\/\/vercel.com\/legal\/privacy-policy"/);
+    assert.doesNotMatch(html, /2018|Definitions|Personally identifiable|## /);
+  }
 });
 
 test('the list keeps the site path, so only the domain changes in every address', async t => {
