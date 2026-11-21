@@ -42,7 +42,7 @@ for (const locale of ['ko', 'en']) {
         await page.goto('/docs');
         await page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click();
         await expect(page).toHaveURL('/docs/guide');
-        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         await expect(page.locator('table code').first()).toHaveText('1');
         expect(await page.locator('table code').first().evaluate(node => getComputedStyle(node, '::before').content)).toMatch(/^(none|normal|"")$/);
         await page.goto('/docs');
