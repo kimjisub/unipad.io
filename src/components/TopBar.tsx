@@ -9,7 +9,7 @@ import { Menu, X, Globe, ChevronDown } from 'lucide-react';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import { routing } from '@/i18n/routing';
+import { localeCookie } from '@/i18n/routing';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const PLAY_MENU_ID = 'topbar-play-menu';
@@ -38,7 +38,7 @@ const TopBar: React.FC = () => {
 		const nextLocale = locale === 'en' ? 'ko' : 'en';
 		if (window.location.hash) {
 			// Refresh at the current address so locale redirects cannot discard its fragment.
-			document.cookie = `${routing.localeCookie.name}=${nextLocale}; path=/; max-age=${routing.localeCookie.maxAge}; samesite=lax`;
+			document.cookie = `${localeCookie.name}=${nextLocale}; path=/; max-age=${localeCookie.maxAge}; samesite=lax`;
 			router.refresh();
 			return;
 		}
