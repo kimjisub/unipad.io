@@ -28,7 +28,7 @@ export function envAllowRules(value: string | undefined): AllowRule[] {
 
 const ALLOWED: AllowRule[] = [...DEFAULT_ALLOWED, ...envAllowRules(process.env.STORE_DOWNLOAD_ALLOWED_HOSTS)];
 
-// This route's own origins. Fetching them would let the proxy call itself.
+// This site's own origins. Redirecting to them would let the route send people back into itself.
 const SELF_HOSTS = new Set(['unipad.io', 'www.unipad.io']);
 
 function hostMatches(host: string, rule: string): boolean {
@@ -56,20 +56,4 @@ export function isAllowed(url: URL, rules: AllowRule[] = ALLOWED): boolean {
   return rules.some(
     (rule) => hostMatches(host, rule.host) && (!rule.path || url.pathname.startsWith(rule.path)),
   );
-}
-
-/** Content-Disposition with an ASCII fallback and an RFC 5987 UTF-8 name; header-safe. */
-export function contentDisposition(url: URL): string {
-  let name = 'unipack.zip';
-  const last = url.pathname.split('/').pop();
-  if (last && /\.zip$/i.test(last)) {
-    try {
-      name = decodeURIComponent(last);
-    } catch {
-      name = last;
-    }
-  }
-  const clean = name.replace(/[\r\n"\\]/g, '_').slice(0, 200);
-  const ascii = clean.replace(/[^\x20-\x7e]/g, '_');
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(clean)}`;
 }

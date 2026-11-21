@@ -29,8 +29,8 @@ async function openStore(page: Page, context: BrowserContext) {
 /** Records every pack download the store starts; each one fails at once, so none blocks the next. */
 async function recordDownloads(page: Page) {
   const urls: string[] = [];
-  await page.route('**/api/store/download?*', (route) => {
-    urls.push(new URL(route.request().url()).searchParams.get('url') ?? '');
+  await page.route((url) => url.hostname === 'unipad-browser-test.invalid', (route) => {
+    urls.push(route.request().url());
     return route.fulfill({ status: 404, body: 'Not Found' });
   });
   return urls;

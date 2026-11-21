@@ -1,7 +1,5 @@
 import { get, onValue, ref } from 'firebase/database';
 import { initFirebaseServices } from './firebase';
-import { STORE_BODY_LENGTH_HEADER } from './storeDownloadHeaders';
-import { storeFileSitePath } from './storeFilePath';
 
 const LEGACY_DOWNLOAD_BASE_URL =
   'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
@@ -239,11 +237,6 @@ function getStoreDownloadUrl(item: StoreItem): string {
   return `${LEGACY_DOWNLOAD_BASE_URL}?code=${encodeURIComponent(item.code)}`;
 }
 
-function getStoreFetchUrl(item: StoreItem): string {
-  const upstream = getStoreDownloadUrl(item);
-  return storeFileSitePath(upstream) ?? `/api/store/download?url=${encodeURIComponent(upstream)}`;
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -340,17 +333,15 @@ async function downloadStoreItemData(
 ): Promise<ArrayBuffer> {
   const signal = controller.signal;
   const waitForNetwork = <T>(pending: Promise<T>) => withNetworkDeadline(pending, () => controller.abort());
-  const fetchUrl = getStoreFetchUrl(item);
-  const directUrl = getStoreDownloadUrl(item);
+  // The file host serves CORS headers, so the browser downloads the pack from it directly. Nothing
+  // goes through this site (its functions and CDN have small monthly data allowances).
+  const url = getStoreDownloadUrl(item);
   let response: Response | null = null;
   let lastError: unknown = null;
-  // Set when this attempt's proxy refused the URL, so a failing direct fetch is reported as that refusal.
-  let proxyRejectedStatus: number | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    proxyRejectedStatus = null;
     try {
-      response = await waitForNetwork(fetch(fetchUrl, {
+      response = await waitForNetwork(fetch(url, {
         method: 'GET',
         signal,
         cache: 'no-store',
@@ -358,15 +349,6 @@ async function downloadStoreItemData(
       if ([429, 502, 503, 504].includes(response.status) && attempt === 0) {
         await sleep(350);
         continue;
-      }
-      if ([400, 401, 403].includes(response.status)) {
-        // Fallback to direct download if proxy rejects host/url.
-        proxyRejectedStatus = response.status;
-        response = await waitForNetwork(fetch(directUrl, {
-          method: 'GET',
-          signal,
-          cache: 'no-store',
-        }));
       }
       break;
     } catch (error) {
@@ -381,11 +363,9 @@ async function downloadStoreItemData(
       }
       const message =
         error instanceof Error ? error.message : String(error);
-      throw new StoreDownloadError(
-        proxyRejectedStatus === null ? 'network' : httpStatusErrorType(proxyRejectedStatus),
-        `Network error while downloading store item: ${message}`,
-        { cause: error },
-      );
+      throw new StoreDownloadError('network', `Network error while downloading store item: ${message}`, {
+        cause: error,
+      });
     }
   }
 
@@ -419,9 +399,7 @@ async function readStoreResponse(
   waitForNetwork: <T>(pending: Promise<T>) => Promise<T>,
   onProgress?: (percent: number) => void,
 ): Promise<ArrayBuffer> {
-  // Through the download route only its own header carries the length; the file host sends content-length.
-  const length = response.headers.get(STORE_BODY_LENGTH_HEADER) ?? response.headers.get('content-length');
-  const total = Number(length ?? 0);
+  const total = Number(response.headers.get('content-length') ?? 0);
   const reader = response.body?.getReader();
   if (!reader) {
     return waitForNetwork(response.arrayBuffer());

@@ -79,10 +79,7 @@ async function progressOf(response: Response): Promise<number[]> {
   return progress;
 }
 
-test('progress follows the length the download route sends in place of content-length', async () => {
-  // Next.js drops content-length from route responses, so the route's own header is all that arrives.
-  assert.deepEqual(await progressOf(twoChunks({ 'x-content-length': '4' })), [3, 50, 100, 100]);
-  // A direct download from the file host still has content-length.
+test('progress follows the content-length the file host sends', async () => {
   assert.deepEqual(await progressOf(twoChunks({ 'content-length': '4' })), [3, 50, 100, 100]);
   // With no length at all, progress is a bounded guess that ends at 100 only when the body does.
   assert.deepEqual(await progressOf(twoChunks({})), [3, 4, 5, 100]);
@@ -96,29 +93,37 @@ test('HTTP failures are typed by status', async () => {
   assert.equal(await downloadErrorType([status(413)]), 'http_other');
 });
 
-test('a pack file on the store file host is fetched from the same-origin CDN path', async () => {
+test('a pack is fetched straight from its address, never through the site', async () => {
+  const url = 'https://unipack.unipad.io/store/_Love_U.zip';
   const calls = stubFetch([new Response(new Uint8Array([1, 2, 3]))]);
-  await downloadStoreItem({ ...ITEM, url: 'https://unipack.unipad.io/store/_Love_U.zip' });
-  assert.deepEqual(calls, ['/store-files/_Love_U.zip']);
+  await downloadStoreItem({ ...ITEM, url });
+  assert.deepEqual(calls, [url]);
 });
 
-test('a proxy refusal falls back to the direct URL and reports its status', async () => {
-  const calls = stubFetch([status(403), status(404)]);
-  await assert.rejects(downloadStoreItem(ITEM), (error) => storeDownloadErrorType(error) === 'http_404');
-  assert.match(calls[0], /^\/api\/store\/download\?url=/);
-  assert.match(calls[1], /^https:\/\//);
+test('an item without an address is fetched from the legacy download by its code', async () => {
+  const calls = stubFetch([new Response(new Uint8Array([1]))]);
+  await downloadStoreItem(ITEM);
+  assert.deepEqual(calls, ['https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy?code=pack-1']);
+});
 
-  // The direct URL is usually blocked by the browser (CORS), which surfaces as a thrown fetch.
-  assert.equal(
-    await downloadErrorType([status(403), new TypeError('Failed to fetch'), status(403), new TypeError('Failed to fetch')]),
-    'http_403',
-  );
+test('a refused download is reported by its status, with no second request elsewhere', async () => {
+  for (const [code, type] of [[400, 'http_other'], [401, 'http_other'], [403, 'http_403']] as const) {
+    const calls = stubFetch([status(code)]);
+    await assert.rejects(downloadStoreItem(ITEM), (error) => storeDownloadErrorType(error) === type);
+    assert.equal(calls.length, 1, String(code));
+  }
+});
 
-  // A refusal on the first attempt does not label a retry whose proxy request never connected.
-  assert.equal(
-    await downloadErrorType([status(403), new TypeError('Failed to fetch'), new TypeError('Failed to fetch')]),
-    'network',
-  );
+test('a busy or failing file host is asked once more, at the same address', async () => {
+  for (const code of [429, 502, 503, 504]) {
+    const calls = stubFetch([status(code), new Response(new Uint8Array([1]))]);
+    await downloadStoreItem(ITEM);
+    assert.equal(calls.length, 2, String(code));
+    assert.equal(calls[0], calls[1]);
+  }
+  const calls = stubFetch([new TypeError('Failed to fetch'), new Response(new Uint8Array([1]))]);
+  await downloadStoreItem(ITEM);
+  assert.equal(calls.length, 2);
 });
 
 test('a fetch that keeps throwing is a network failure, with the message people saw before', async () => {

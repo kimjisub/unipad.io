@@ -19,7 +19,9 @@ pnpm dev
 
 ## Environment Variables
 
-Store download proxy allowlist can be extended by setting:
+The store downloads packs straight from the file host in the browser. `/api/store/download?url=…`
+remains only to redirect old clients there, and redirects only to allowed hosts; that allowlist can be
+extended by setting:
 
 ```bash
 STORE_DOWNLOAD_ALLOWED_HOSTS=example.com,cdn.example.com,*.googleusercontent.com
