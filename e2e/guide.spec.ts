@@ -7,14 +7,10 @@ for (const locale of ['ko', 'en']) {
     test.use({ locale: locale === 'ko' ? 'ko-KR' : 'en-US', reducedMotion: 'reduce' });
 
     for (const width of [1440, 390]) {
-      test(`entry points, anchors and language switching at ${width}px`, async ({ page }) => {
-        test.setTimeout(90_000);
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/docs');
-        await page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click();
-        await expect(page).toHaveURL('/docs/guide');
-        for (const topic of topics) {
-          await page.goto('about:blank');
+      for (const topic of topics) {
+        test(`direct #${topic} and language switching at ${width}px`, async ({ page }) => {
+          test.setTimeout(90_000);
+          await page.setViewportSize({ width, height: 900 });
           await page.goto(`/docs/guide#${topic}`);
           const heading = page.locator(`h2#${topic}`);
           await expect(heading).toBeVisible();
@@ -37,7 +33,15 @@ for (const locale of ['ko', 'en']) {
           await expect(page.locator('html')).toHaveAttribute('lang', locale);
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await expect.poll(uncovered).toBe(true);
-        }
+        });
+      }
+
+      test(`entry points and readable layout at ${width}px`, async ({ page }) => {
+        test.setTimeout(90_000);
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/docs');
+        await page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click();
+        await expect(page).toHaveURL('/docs/guide');
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
         await expect(page.locator('table code').first()).toHaveText('1');
         expect(await page.locator('table code').first().evaluate(node => getComputedStyle(node, '::before').content)).toMatch(/^(none|normal|"")$/);
