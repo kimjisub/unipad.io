@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { contentDisposition, envAllowRules, isAllowed, parseHttpUrl } from './policy';
+import { envAllowRules, isAllowed, parseHttpUrl } from './policy';
 
 /** The full check the route makes on a requested address. */
 function allowed(value: string): boolean {
@@ -101,41 +101,9 @@ test('never fetches an /api/ path, on any allowed host', () => {
 	assert.equal(allowed('https://unipack.unipad.io/api/a.zip'), false);
 });
 
-test('never fetches its own site, so the route cannot call itself', () => {
+test('never allows its own site, so the route cannot send people back into itself', () => {
 	for (const value of ['https://unipad.io/a.zip', 'https://www.unipad.io/a.zip', 'https://UNIPAD.IO/a.zip']) {
 		assert.equal(allowed(value), false, value);
 		assert.equal(isAllowed(new URL(value), [{ host: '*.unipad.io' }, { host: 'unipad.io' }]), false, value);
 	}
-});
-
-test('names the download after the .zip in the path, decoded, with an ASCII fallback', () => {
-	assert.equal(
-		contentDisposition(new URL('https://unipack.unipad.io/packs/My%20Pack.zip')),
-		'attachment; filename="My Pack.zip"; filename*=UTF-8\'\'My%20Pack.zip',
-	);
-	assert.equal(
-		contentDisposition(new URL('https://unipack.unipad.io/packs/%ED%8C%A9.ZIP')),
-		'attachment; filename="_.ZIP"; filename*=UTF-8\'\'%ED%8C%A9.ZIP',
-	);
-});
-
-test('falls back to unipack.zip when the path does not end in a .zip', () => {
-	for (const value of ['https://unipack.unipad.io/download?code=a.zip', 'https://unipack.unipad.io/', 'https://unipack.unipad.io/a.zip.exe']) {
-		assert.equal(contentDisposition(new URL(value)), 'attachment; filename="unipack.zip"; filename*=UTF-8\'\'unipack.zip', value);
-	}
-});
-
-test('a name with line breaks, quotes or backslashes cannot break out of the header', () => {
-	const value = contentDisposition(new URL('https://unipack.unipad.io/a%0D%0ASet-Cookie:%20x=1%22%5Cb.zip'));
-	assert.equal(value, 'attachment; filename="a__Set-Cookie: x=1__b.zip"; filename*=UTF-8\'\'a__Set-Cookie%3A%20x%3D1__b.zip');
-	assert.doesNotThrow(() => new Headers({ 'content-disposition': value }));
-});
-
-test('keeps a name that is not valid percent-encoding as it is, and caps its length', () => {
-	assert.equal(
-		contentDisposition(new URL('https://unipack.unipad.io/bad%E0%A4%A.zip')),
-		'attachment; filename="bad%E0%A4%A.zip"; filename*=UTF-8\'\'bad%25E0%25A4%25A.zip',
-	);
-	const long = contentDisposition(new URL(`https://unipack.unipad.io/${'x'.repeat(300)}.zip`));
-	assert.equal(long, `attachment; filename="${'x'.repeat(200)}"; filename*=UTF-8''${'x'.repeat(200)}`);
 });

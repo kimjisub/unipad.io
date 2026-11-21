@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
-const storeFiles = JSON.parse(readFileSync(new URL('./src/lib/storeFiles.json', import.meta.url), 'utf8'));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -15,13 +13,15 @@ const nextConfig = {
   },
   compress: true,
   poweredByHeader: false,
-  // Store packs are served from the file host through the CDN, so their bodies never pass
-  // through a site function (function traffic has a small monthly allowance; packs are up to ~45 MB).
-  async rewrites() {
+  // Pages opened while the store fetched packs from /store-files/ (a CDN rewrite) are sent to the
+  // file host instead. It serves CORS headers, so the browser follows this redirect and the pack
+  // never passes through the site, whose data allowance a proxied ~45 MB pack used up.
+  async redirects() {
     return [
       {
-        source: `${storeFiles.sitePath}:file(${storeFiles.fileName})`,
-        destination: `${storeFiles.origin}${storeFiles.originPath}:file`,
+        source: '/store-files/:file([A-Za-z0-9._-]+\\.zip)',
+        destination: 'https://unipack.unipad.io/store/:file',
+        permanent: false,
       },
     ];
   },

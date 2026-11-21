@@ -49,10 +49,10 @@ ws.onmessage = async e => {
     if (message.error) request.reject(new Error(JSON.stringify(message.error)));
     else request.resolve(message.result);
   } else if (message.method === 'Fetch.requestPaused') {
-    // Only the local download proxy is intercepted. No live pack or store is used.
+    // Only the store's pack download (by code, cross-origin) is intercepted. No live pack or store is used.
     await command('Fetch.fulfillRequest', {
       requestId: message.params.requestId, responseCode: 200,
-      responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }], body: pack,
+      responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: pack,
     });
   }
 };
@@ -112,7 +112,7 @@ try {
   await command('Network.setCookie', {name:'NEXT_LOCALE', value:'en', url:new URL(url).origin});
   // The fixture is silent and has no MIDI device; avoid native permission UI.
   await command('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(navigator, 'requestMIDIAccess', {value:undefined, configurable:true});" });
-  await command('Fetch.enable', { patterns: [{ urlPattern: `${new URL(url).origin}/api/store/download*` }] });
+  await command('Fetch.enable', { patterns: [{ urlPattern: '*/downloadUniPackLegacy?*' }] });
   const scenarios = process.env.MATRIX ? [[800,300], [390,844], [1280,800], [800,300]] : [null];
   let scenarioIndex = 0;
   for (const size of scenarios) {
