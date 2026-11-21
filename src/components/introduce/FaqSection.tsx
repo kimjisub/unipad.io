@@ -2,6 +2,7 @@ import { ArrowRight, Minus, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { SectionContainer, SectionTitle } from '@/components/introduce/SectionHeader';
+import { Link } from '@/i18n/navigation';
 import { EXTERNAL_LINKS } from '@/lib/constants';
 
 const faqKeys = ['0', '1', '2', '3', '4', '5', '6', '7'];
@@ -15,6 +16,10 @@ export const FaqSection = () => {
 				<div className="min-w-0">
 					<SectionTitle sectionId="faq" index="05" eyebrow={t('eyebrow')} title={t('title')} subtitle={t('subtitle')} />
 					<p className="mt-6 text-sm text-muted-foreground">{t('moreQuestions')}</p>
+					<Link href="/docs/guide#faq" className="flex min-h-11 w-fit items-center gap-2 font-semibold text-accent hover:text-foreground transition-colors">
+						{t('fullGuide')}
+						<ArrowRight className="h-4 w-4" aria-hidden />
+					</Link>
 					<a
 						href={EXTERNAL_LINKS.discord}
 						target="_blank"

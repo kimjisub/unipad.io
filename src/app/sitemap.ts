@@ -18,6 +18,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 		entry('/play', 'monthly', 0.9),
 		entry('/docs', 'monthly', 0.9),
 		entry(GET_STARTED_PATH, 'monthly', 0.9),
+		entry('/docs/guide', 'monthly', 0.9),
 		entry('/docs/unipack', 'monthly', 0.8),
 		entry('/docs/unipack/info', 'monthly', 0.7),
 		entry('/docs/unipack/sounds', 'monthly', 0.7),
