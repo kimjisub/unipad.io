@@ -22,11 +22,15 @@ for (const locale of ['ko', 'en']) {
             return box.top >= 80 && box.top < innerHeight;
           });
           await expect.poll(uncovered).toBe(true);
-          await page.getByRole('button', { name: locale === 'ko' ? 'Switch to English' : '한국어로 전환' }).click();
+          const switchToOther = page.getByRole('button', { name: locale === 'ko' ? 'Switch to English' : '한국어로 전환' });
+          await switchToOther.focus();
+          await switchToOther.press('Enter');
           await expect(page.locator('html')).toHaveAttribute('lang', locale === 'ko' ? 'en' : 'ko');
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await expect.poll(uncovered).toBe(true);
-          await page.getByRole('button', { name: locale === 'ko' ? '한국어로 전환' : 'Switch to English' }).click();
+          const switchBack = page.getByRole('button', { name: locale === 'ko' ? '한국어로 전환' : 'Switch to English' });
+          await switchBack.focus();
+          await switchBack.press('Enter');
           await expect(page.locator('html')).toHaveAttribute('lang', locale);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);

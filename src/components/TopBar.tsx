@@ -35,7 +35,13 @@ const TopBar: React.FC = () => {
 
 	const toggleLocale = () => {
 		const nextLocale = locale === 'en' ? 'ko' : 'en';
-		router.replace(`${pathname}${window.location.search}${window.location.hash}`, { locale: nextLocale });
+		const suffix = `${window.location.search}${window.location.hash}`;
+		// A client-side locale redirect drops fragments; a document navigation retains them.
+		if (window.location.hash) {
+			window.location.assign(new URL(`/${nextLocale}${pathname}${suffix}`, window.location.origin).href);
+			return;
+		}
+		router.replace(`${pathname}${suffix}`, { locale: nextLocale });
 	};
 
 	useEffect(() => {
