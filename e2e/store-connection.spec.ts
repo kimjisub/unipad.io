@@ -7,6 +7,9 @@ import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils
 import { seedSavedPacks, storedPackRecords } from './saved-packs';
 import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
 
+// The item has no address, so the store downloads it, straight from the browser, by its code.
+const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPackLegacy') && url.searchParams.get('code') === 'browser-pack';
+
 test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
   await observeConfirmationKeys(page);
   await connectStore(context);
@@ -21,7 +24,7 @@ test('shared install confirmation contains keyboard focus and restores its opene
 
 for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
   const database = await connectStore(context);
-  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
@@ -62,7 +65,7 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
 for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
   const database = await connectStore(context);
   await page.exposeFunction('releaseMixedDialogLookup', () => database.releaseReplies());
-  await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
@@ -299,7 +302,7 @@ test('offers a retry for a shared link when Firebase is blocked', async ({ page,
 for (const firstHandshakeDelayMs of [0, 6000]) {
   test(`a connected shared link still asks before installing and plays the downloaded pack (first handshake delay: ${firstHandshakeDelayMs}ms)`, async ({ page, context }) => {
     await connectStore(context, firstHandshakeDelayMs);
-    await context.route('**/api/store/download?*', route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+    await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
     await openConnectedSharedLink(page);
     // Observe the late database reply before checking which view the link chose.
     await expect(page.getByRole('button', { name: /^Store/ })).toContainText('42', { timeout: 15000 });
@@ -315,7 +318,7 @@ test('a store download with damaged compressed audio stays unsaved and offers a 
   await connectStore(context);
   const damaged = Buffer.from(await corruptSoundArchive());
   let broken = true;
-  await context.route('**/api/store/download?*', route => route.fulfill({
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({
     body: broken ? damaged : readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream',
   }));
   await verifyDatabase(page);
@@ -343,7 +346,7 @@ test('a store download with damaged compressed audio stays unsaved and offers a 
 test('a shared pack that cannot open leaves the link out of the address', async ({ page, context }, testInfo) => {
   await connectStore(context);
   const pack = await undecodablePack();
-  await context.route('**/api/store/download?*', route => route.fulfill({ body: pack.buffer, contentType: 'application/octet-stream' }));
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: pack.buffer, contentType: 'application/octet-stream' }));
   let failures = 0;
   page.on('console', message => { if (message.text().includes('Failed to load UniPack')) failures += 1; });
   const error = page.getByRole('alertdialog', { name: 'Cannot open this pack’s sounds', exact: true });
@@ -377,7 +380,7 @@ test('a shared pack that cannot open leaves the link out of the address', async 
 test('Enter on the shared link confirmation\'s Cancel button installs nothing', async ({ page, context }) => {
   await connectStore(context);
   let downloads = 0;
-  await context.route('**/api/store/download?*', route => {
+  await context.route(STORE_PACK_DOWNLOAD, route => {
     downloads += 1;
     return route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' });
   });
@@ -396,7 +399,7 @@ test('Enter on the shared link confirmation\'s Cancel button installs nothing', 
 test('ends a stalled shared pack download and retries it', async ({ page, context }, testInfo) => {
   await connectStore(context);
   let stalled = true;
-  await context.route('**/api/store/download?*', route => {
+  await context.route(STORE_PACK_DOWNLOAD, route => {
     if (stalled) return;
     return route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' });
   });

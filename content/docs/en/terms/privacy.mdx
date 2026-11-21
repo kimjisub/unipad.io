@@ -17,9 +17,9 @@ This policy covers the UniPad apps for Android and iOS and the website unipad.io
 | Data | What it is | Why |
 |---|---|---|
 | Rough location | Country, region or city, worked out by Google from your IP address. Google Analytics does not store the IP address itself. The apps never use GPS or ask for location permission. | Analytics: which countries and languages to support |
-| App interactions | App opens, screens you visit, and UniPack events: importing or loading a pack, starting and ending play, the first input (pad or auto-play). With them we record the result (success, failure, cancelled), where a pack came from (file or store), the error type, a range for how long you played, screen orientation, a screen size range and window mode. Never pack titles, file names or anything you type. | Analytics: to see what works and what fails |
+| App interactions | App opens, screens you visit, and UniPack events: importing or loading a pack, starting and ending play, the first input (pad or auto-play). With them we record the result (success, failure, cancelled), where a pack came from (file or store), the error type, a range for how long you played, screen orientation, a screen size range and window mode. These events never include pack titles, file names or anything you type. | Analytics: to see what works and what fails |
 | Crash logs | When the app crashes: where in the code it stopped, the app version, device model, OS version, free memory and storage, the screen or play state at the time, how the app was installed, and the reason the system gave when it closed the app. | To find and fix crashes |
-| Diagnostics | Reports of errors that didn't crash the app (for example a failed save), with the same technical details as crash logs. | To find and fix problems |
+| Diagnostics | Reports of errors that didn't crash the app (for example a failed save), with the same technical details as crash logs. On Android, also performance measurements by Firebase Performance Monitoring: how long the app takes to start, how smoothly each screen draws, and for each network request the app makes, its address without parameters (for a store download the address includes the pack's file name), how long it took, its size and whether it succeeded. | To find and fix problems and to see where the app is slow |
 | Device or other IDs | A random ID created for each install (Firebase installation ID), and a notification token. See "Advertising ID" below. | Analytics; the notification token is for sending notifications (app functionality) |
 
 Android and iOS collect the same kinds of data.
@@ -46,18 +46,20 @@ To send notifications (such as news about UniPad), the app gets a notification t
 
 ## Downloads and updates
 
-- When you download a UniPack from the store in the app, your device connects to our pack file server (unipack.unipad.io), which we run with a hosting provider in South Korea. On the website, the download goes through Vercel to the same server. Like any web server, it records each request, including the IP address that made it, to keep the server running; we keep these records for no more than 30 days.
+- The apps and the website read the list of store packs from Firebase Realtime Database. Google keeps the IP address and the app or browser type of these requests for a few days.
+- When you download a UniPack from the store in the app, your device connects to our pack file server (unipack.unipad.io), which we run with a hosting provider in South Korea. On the website, the download goes through Vercel to the same server. Like any web server, it records each request, including the IP address that made it, to keep the server running; these records are deleted automatically, oldest first, as the server's log storage fills up, which is usually about two months.
 - On Android, the app checks Google Play for app updates. Google Play handles that check under Google's own policy; we don't receive that data.
 
 ## The website (unipad.io)
 
-- unipad.io uses Google Analytics (pages visited, rough location, browser and device type, and errors on the page). Google Analytics stores cookies in your browser for this. You can block or delete cookies in your browser settings; the site still works.
+- unipad.io uses Google Analytics: pages visited, rough location, browser and device type, errors on the page, and what you do in the web player's store (starting, finishing, failing or cancelling a download, opening a pack's video, playing a pack you downloaded), recorded with the pack's store code. Google Analytics stores cookies in your browser for this. You can block or delete cookies in your browser settings; the site still works.
+- It also uses Firebase Performance Monitoring, which measures how fast pages load and, for each network request, its address without parameters, how long it took and whether it succeeded, and Firebase Remote Config, which uses a random install ID to send the site its settings.
 - It also uses Vercel Web Analytics, which counts page visits without cookies.
 - Packs you open in the web player and the store list cache are saved only in your browser's storage. You can clear them in your browser settings.
 
 ## Who handles the data
 
-We don't sell or share your data. Google runs the services that receive it on our behalf (Firebase Analytics, Crashlytics, Cloud Messaging and Google Cloud) and may process it on servers in the United States and other countries. Google's privacy policy: [https://policies.google.com/privacy](https://policies.google.com/privacy). Vercel hosts the website: [https://vercel.com/legal/privacy-policy](https://vercel.com/legal/privacy-policy). UniPack downloads are handled by our own pack file server in South Korea (see "Downloads and updates").
+We don't sell or share your data. Google runs the services that receive it on our behalf (Firebase Analytics, Crashlytics, Performance Monitoring, Cloud Messaging, Remote Config, Realtime Database and Google Cloud) and may process it on servers in the United States and other countries. Google's privacy policy: [https://policies.google.com/privacy](https://policies.google.com/privacy). Vercel hosts the website: [https://vercel.com/legal/privacy-policy](https://vercel.com/legal/privacy-policy). UniPack downloads are handled by our own pack file server in South Korea (see "Downloads and updates").
 
 We may disclose data if the law requires it.
 
@@ -65,12 +67,14 @@ We may disclose data if the law requires it.
 
 - Analytics events linked to an install ID: no more than 14 months. Reports made only of totals (for example "users per country") may be kept longer.
 - Crash reports: 90 days.
-- Download server logs: no more than 30 days.
+- Performance data: 60 days; records linked to an IP address (used only to tell the country): 30 days.
+- Store list requests (IP address and app or browser type): a few days.
+- Download server logs: deleted automatically as storage fills (usually about two months).
 - Install IDs and notification tokens: until the app is removed or they stop being used.
 
 ## Your choices
 
-- The app has no switch to turn off analytics or crash reports. You can stop all collection by uninstalling the app.
+- The app has no switch to turn off analytics, crash reports or performance measurement. You can stop all collection by uninstalling the app.
 - Clearing the app's data or reinstalling it creates a new random install ID, so new data can't be linked to the old data.
 - Turn off notifications in your device settings.
 - On Android, delete or reset your advertising ID in your device settings.
@@ -79,7 +83,7 @@ We may disclose data if the law requires it.
 
 Because there are no accounts and we don't collect names or contact details, we have no way to find which data belongs to you, so we can't delete it on request. The data deletes itself after the periods above, and reinstalling the app starts a new ID.
 
-Depending on where you live (for example in the European Union, the United Kingdom, South Korea or California), you may have rights to access, correct, delete or object to the use of your personal data. Our legal basis for analytics and crash reports is our legitimate interest in keeping the app working and improving it; for notifications it is your permission. For any question or request, email [0226unipad@gmail.com](mailto:0226unipad@gmail.com). You may also complain to your local data protection authority.
+Depending on where you live (for example in the European Union, the United Kingdom, South Korea or California), you may have rights to access, correct, delete or object to the use of your personal data. Our legal basis for analytics, crash reports and performance measurement is our legitimate interest in keeping the app working and improving it; for notifications it is your permission. For any question or request, email [0226unipad@gmail.com](mailto:0226unipad@gmail.com). You may also complain to your local data protection authority.
 
 ## Children
 

@@ -6,15 +6,12 @@ import { downloadStoreItem } from './store.ts';
 const item = { code: 'test', title: 'Test Pack', producerName: 'Tests', isAutoPlay: false, isLED: false, downloadCount: 0 };
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-for (const stage of ['headers', 'body', 'direct']) {
+for (const stage of ['headers', 'body']) {
   test(`rejects a store download stalled at ${stage}`, async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    let calls = 0;
     let signal;
     t.mock.method(globalThis, 'fetch', async (_url, options) => {
-      calls++;
       signal = options.signal;
-      if (stage === 'direct' && calls === 1) return new Response(null, { status: 403 });
       if (stage === 'body') return new Response(new ReadableStream({
         start(controller) { signal.addEventListener('abort', () => controller.error(signal.reason), { once: true }); },
       }));

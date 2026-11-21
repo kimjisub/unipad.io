@@ -10,8 +10,11 @@ const locales = [
     privacy: 'Privacy Policy',
     privacyBody: 'In short',
     tableHeaders: ['Data', 'What it is', 'Why'],
+    diagnostics: 'Diagnostics',
+    retention: 'usually about two months',
+    storeRequests: 'Store list requests',
     privacyDescription: 'Review the privacy policy of the UniPad app.',
-    effectiveDate: 'Effective date: November 21, 2026',
+    effectiveDate: 'Effective date: November 22, 2026',
     usage: 'App Usage Scope Notice',
     usageDescription: 'Review the commercial and non-commercial usage scope of the UniPad app.',
     usageBody: 'Permitted Usage Examples',
@@ -25,8 +28,11 @@ const locales = [
     privacy: '개인정보 처리방침',
     privacyBody: '요약',
     tableHeaders: ['정보', '내용', '쓰는 곳'],
+    diagnostics: '진단 정보',
+    retention: '보통 2개월 안팎',
+    storeRequests: '스토어 목록 요청 기록',
     privacyDescription: 'UniPad 앱의 개인정보 처리방침을 확인하세요.',
-    effectiveDate: '시행일: 2026년 11월 21일',
+    effectiveDate: '시행일: 2026년 11월 22일',
     usage: '앱 사용 범위 고지',
     usageDescription: 'UniPad 앱의 상업적/비상업적 사용 범위를 확인하세요.',
     usageBody: '허용되는 사용 예시',
@@ -66,6 +72,12 @@ for (const l of locales) {
       await expect(body.getByRole('columnheader')).toHaveText(l.tableHeaders);
       await expect(body.getByRole('row')).toHaveCount(6);
       await expect(body).not.toContainText('##');
+      await expect(body.getByRole('row').filter({ has: page.getByRole('cell', { name: l.diagnostics, exact: true }) }))
+        .toContainText('Firebase Performance Monitoring');
+      await expect(body).toContainText(l.retention);
+      await expect(body).toContainText(l.storeRequests);
+      await expect(body).toContainText('Remote Config');
+      await expect(body).toContainText('Realtime Database');
       const links = body.getByRole('link');
       const hrefs = await links.evaluateAll(nodes => nodes.map(node => node.getAttribute('href')));
       expect(hrefs.filter(href => href === 'mailto:0226unipad@gmail.com')).toHaveLength(2);

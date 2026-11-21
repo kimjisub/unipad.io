@@ -50,6 +50,21 @@ test('the copy has both documents in both languages with the site titles and bod
   }
 });
 
+test('privacy copies describe performance, store requests and capacity-based log retention', async t => {
+  const dir = outDir(t);
+  await buildTermsMirror(dir);
+  const cases = [
+    ['docs/terms/privacy/index.html', ['usually about two months', 'oldest first', 'Performance data: 60 days', 'Store list requests', 'recorded with the pack']],
+    ['ko/docs/terms/privacy/index.html', ['보통 2개월 안팎', '오래된 것부터', '성능 측정 기록: 60일', '스토어 목록 요청 기록', '그 팩의 스토어 코드']],
+  ];
+  for (const [file, phrases] of cases) {
+    const html = readFileSync(join(dir, file), 'utf8');
+    for (const phrase of [...phrases, 'Firebase Performance Monitoring', 'Remote Config', 'Realtime Database']) {
+      assert.ok(html.includes(phrase), `${file} is missing ${phrase}`);
+    }
+  }
+});
+
 test('the list keeps the site path, so only the domain changes in every address', async t => {
   const dir = outDir(t);
   const written = await buildTermsMirror(dir);
