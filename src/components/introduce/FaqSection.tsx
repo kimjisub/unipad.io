@@ -18,7 +18,7 @@ export const FaqSection = () => {
 					<p className="mt-6 text-sm text-muted-foreground">{t('moreQuestions')}</p>
 					<Link href="/docs/guide#faq" className="flex min-h-11 w-fit items-center gap-2 font-semibold text-accent hover:text-foreground transition-colors">
 						{t('fullGuide')}
-						<ArrowRight className="h-4 w-4" aria-hidden />
+						<ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
 					</Link>
 					<a
 						href={EXTERNAL_LINKS.discord}
