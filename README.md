@@ -290,6 +290,15 @@ pnpm test:e2e e2e/rectangular-pad-layout.spec.ts --project=firefox --grep 'phone
 
 Grid-test failures attach input coordinates, the pad and its bounds at event time,
 audio calls and a screenshot from teardown, including when a press times out.
+Firefox displays a native warning bar when its content sandbox is disabled. After
+opening the input pack, the fixture reapplies the same viewport once so the browser
+window includes that bar outside the content area. Without this adjustment,
+Playwright can scroll its own browser stack during edge presses and deliver a
+mouse event 48 CSS pixels away from the requested position. The tests also verify
+the received coordinates. Native Firefox UI motion is disabled to keep the warning
+stationary during preparation; page motion stays at `no-preference` and is checked
+along with the content viewport. Lights and audio calls are read together on each press
+and release to reduce browser round trips without dropping any playback checks.
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,

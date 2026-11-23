@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, stateTimeout } from './browser';
 import { duration, loadInputPack } from './input-fixture';
-import { lit, rotatePrompt } from './touch';
+import { rotatePrompt } from './touch';
 
 const screens = [
   { name: 'compact phone', viewport: { width: 667, height: 320 } },
@@ -22,6 +22,13 @@ const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements =
 const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
 // 0 and 1 are a pad's outer edges, so the grid's border pads are pressed near the border.
 const edgeOffset = (index: number, last: number) => index === 0 ? 0 : index === last ? 1 : 0.5;
+const playback = (page: Page) => page.evaluate(() => ({
+  lit: Array.from(document.querySelectorAll('[data-pad]:has(img[src="/theme/btn_.png"])'),
+    pad => pad.getAttribute('data-pad')!).sort(),
+  starts: window.browserProbe.audio.starts,
+  stops: window.browserProbe.audio.stops,
+  press: window.inputBoundaryEvents.findLast(event => event.type === 'pointerdown'),
+}));
 async function record(page: Page, info: TestInfo, name: string) {
   await info.attach(`${name}-geometry-and-input`, {
     body: JSON.stringify({ platform: process.platform, audioProcess: process.env.E2E_FIREFOX_AUDIO_PROCESS ?? 'page',
@@ -50,6 +57,10 @@ for (const screen of screens) {
         test(`${label} pads fit and play ${screen.everyPad ? 'every pad' : 'every bottom and right edge'}`, async ({ page }, info) => {
           test.slow(!!screen.everyPad);
           await loadInputPack(page, shape.rows, shape.cols, square);
+          expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight,
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches }))).toEqual({
+            ...screen.viewport, reducedMotion: false,
+          });
           await expect.poll(async () => (await bounds(page))[0].width, poll).toBeGreaterThan(1);
           await expect(rotatePrompt(page)).toBeHidden();
           await record(page, info, `${label}-before-input`);
@@ -79,14 +90,24 @@ for (const screen of screens) {
             expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-pad]')?.getAttribute('data-pad'), point)).toBe(location.position);
             await page.mouse.move(point.x, point.y);
             await page.mouse.down();
-            await expect.poll(() => lit(page), poll).toEqual([location.position]);
-            const audio = await page.evaluate(() => window.browserProbe.audio);
-            expect(audio.starts).toHaveLength(index + 1);
-            expect(audio.starts[index].duration).toBeCloseTo(duration(shape.rows, shape.cols, location.position), 4);
-            expect(audio.starts[index].loop).toBe(true);
+            let audio: Awaited<ReturnType<typeof playback>>;
+            await expect.poll(async () => {
+              audio = await playback(page);
+              return { lit: audio.lit, starts: audio.starts.length };
+            }, poll).toEqual({ lit: [location.position], starts: index + 1 });
+            // Firefox rounds native mouse coordinates down to whole CSS pixels. Check what the app
+            // actually received as well as its lights and audio, so a browser offset is explicit.
+            expect(Math.abs(audio!.press!.clientX - point.x)).toBeLessThan(1);
+            expect(Math.abs(audio!.press!.clientY - point.y)).toBeLessThan(1);
+            expect(audio!.press!.hitPad).toBe(location.position);
+            expect(audio!.starts).toHaveLength(index + 1);
+            expect(audio!.starts[index].duration).toBeCloseTo(duration(shape.rows, shape.cols, location.position), 4);
+            expect(audio!.starts[index].loop).toBe(true);
             await page.mouse.up();
-            await expect.poll(() => lit(page), poll).toEqual([]);
-            await expect.poll(() => page.evaluate(() => window.browserProbe.audio.stops), poll).toEqual(Array.from({ length: index + 1 }, (_, i) => i + 1));
+            await expect.poll(async () => {
+              const state = await playback(page);
+              return { lit: state.lit, stops: state.stops };
+            }, poll).toEqual({ lit: [], stops: Array.from({ length: index + 1 }, (_, i) => i + 1) });
           }
           const events = await page.evaluate(() => window.inputBoundaryEvents.filter(event => event.type === 'pointerdown'));
           expect(events).toHaveLength(locations.length);

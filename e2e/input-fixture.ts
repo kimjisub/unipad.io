@@ -74,4 +74,11 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
   await expectPads(page, rows * cols);
   await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded.length), { timeout: stateTimeout }).toBe(soundPad ? 1 : rows * cols * 2);
   await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: stateTimeout });
+  // Disabling Firefox's content sandbox adds a native warning bar after the window's initial sizing.
+  // Reapply the content viewport once the page is ready so that bar has room outside it. Otherwise
+  // Juggler scrolls the browser's own stack between edge presses and can deliver coordinates 48px off.
+  if (page.context().browser()?.browserType().name() === 'firefox') {
+    const viewport = page.viewportSize();
+    if (viewport) await page.setViewportSize(viewport);
+  }
 }

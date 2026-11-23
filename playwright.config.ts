@@ -8,9 +8,16 @@ const portableTests = ['analytics-collection.spec.ts', 'notice-placement.spec.ts
 // Compare the two native audio paths with the same input tests; neither path mocks Web Audio.
 const audioProcess = process.env.E2E_FIREFOX_AUDIO_PROCESS ?? 'page';
 if (!['page', 'broker'].includes(audioProcess)) throw new Error(`Unknown Firefox audio process: ${audioProcess}`);
-const firefoxAudioOptions: LaunchOptions = audioProcess === 'page'
-  ? { env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' }, firefoxUserPrefs: { 'media.volume_scale': '0.0', 'media.cubeb.sandbox': false } }
-  : { firefoxUserPrefs: { 'media.volume_scale': '0.0' } };
+const firefoxAudioOptions: LaunchOptions = {
+  ...(audioProcess === 'page' ? { env: { ...process.env, MOZ_DISABLE_CONTENT_SANDBOX: '1' } } : {}),
+  firefoxUserPrefs: {
+    'media.volume_scale': '0.0',
+    ...(audioProcess === 'page' ? { 'media.cubeb.sandbox': false } : {}),
+    // Keep the native sandbox warning stationary while the viewport is prepared. Content motion
+    // stays at no-preference below, so application animation and transition tests remain real.
+    'ui.prefersReducedMotion': 1,
+  },
+};
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,8 +44,8 @@ export default defineConfig({
     // On a busy Mac, about one Firefox audio output in 60 stayed suspended for good: the main process started
     // the device, but its callbacks never reached the page's process, so the context stayed on its fallback
     // clock and a later resume or suspend did not recover it. The page process opens the device itself here.
-    // Firefox honours that only with the content sandbox off; these tests load only the local server.
-    { name: 'firefox', timeout: 90_000, testMatch: ['store-connection.spec.ts', 'store-direct-download.spec.ts', 'analytics-collection.spec.ts', 'storage-migration.spec.ts', 'storage-seed.spec.ts', 'import-compatibility.spec.ts', 'import-failure.spec.ts', 'audio-visibility.spec.ts', 'play.spec.ts', 'home.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'pack-list-focus.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'sound-loading.spec.ts', 'sound-formats-opus.spec.ts', 'socket-failure-record.spec.ts', 'playback-transitions.spec.ts'], use: { browserName: 'firefox', launchOptions: firefoxAudioOptions } },
+    // Firefox honours that only with the content sandbox off. This is a test-only launch setting.
+    { name: 'firefox', timeout: 90_000, testMatch: ['store-connection.spec.ts', 'store-direct-download.spec.ts', 'analytics-collection.spec.ts', 'storage-migration.spec.ts', 'storage-seed.spec.ts', 'import-compatibility.spec.ts', 'import-failure.spec.ts', 'audio-visibility.spec.ts', 'play.spec.ts', 'home.spec.ts', 'pack-list.spec.ts', 'pack-list-narrow.spec.ts', 'pack-list-focus.spec.ts', 'playback-settings.spec.ts', 'autoplay-mapping.spec.ts', 'multi-touch.spec.ts', 'pad-layout.spec.ts', 'rectangular-pad-layout.spec.ts', 'large-text.spec.ts', 'sound-loading.spec.ts', 'sound-formats-opus.spec.ts', 'socket-failure-record.spec.ts', 'playback-transitions.spec.ts'], use: { browserName: 'firefox', reducedMotion: 'no-preference', launchOptions: firefoxAudioOptions } },
     // The Windows runner supplies these installed channels; local Macs still run all three engines.
     ...(process.platform === 'win32' ? [
       { name: 'chrome', testMatch: windowsPlaybackTests, use: { browserName: 'chromium' as const, channel: 'chrome' } },
