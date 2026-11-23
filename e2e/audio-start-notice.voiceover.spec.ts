@@ -117,6 +117,14 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
       const items: string[] = [];
       for (let step = 0; step < walkSteps; step++) items.push(await reader.next());
       entry.walk = items;
+      // The walk leaves the reader's cursor on the status line; a player's is on the focused button,
+      // and a cursor resting on the status line hides its next change.
+      await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement | null;
+        active?.blur();
+        active?.focus();
+      });
+      await wait(dry ? 0 : 2000);
       entry.outsideNotice = items.filter(item => item && !own(state).some(part => item.includes(part)));
       if (!dry) {
         expect.soft(entry.outsideNotice, `${state}: the reader stays in the notice`).toEqual([]);
