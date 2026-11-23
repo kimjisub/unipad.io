@@ -110,12 +110,15 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
       const copy = text[state];
       entry.titleSpokenTimes = said.filter(phrase => phrase.includes(copy.title)).length;
       entry.bodySpokenTimes = said.filter(phrase => phrase.includes(copy.body)).length;
+      if (!dry) {
+        expect.soft(entry.bodySpokenTimes, `${state}: the text is spoken once`).toBe(1);
+        expect.soft(entry.titleSpokenTimes, `${state}: the title is spoken once`).toBe(1);
+      }
       const items: string[] = [];
       for (let step = 0; step < walkSteps; step++) items.push(await reader.next());
       entry.walk = items;
       entry.outsideNotice = items.filter(item => item && !own(state).some(part => item.includes(part)));
       if (!dry) {
-        expect.soft(said.join(' '), `${state}: the title is spoken`).toContain(copy.title);
         expect.soft(entry.outsideNotice, `${state}: the reader stays in the notice`).toEqual([]);
       }
       expect.soft(focus.insideNotice, `${state}: focus is in the notice`).toBe(true);
@@ -127,10 +130,13 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   await page.getByRole('button', { name: startName, exact: true }).dispatchEvent('click');
   await page.clock.runFor(300);
   await expect(notice(page).getByRole('heading')).toHaveText(text.preparing.title);
+  // The page clock stands still: the notice's own 0.5 s before it adds its text runs in real time here.
+  await wait(500);
+  await page.clock.runFor(500);
   await observe('preparing', 'pressed the Auto start; 0.3 s passed', listening);
 
   listening = reader.listen(settleMs);
-  await page.clock.runFor(4700);
+  await page.clock.runFor(4200);
   await expect(notice(page).getByRole('heading')).toHaveText(text.delayed.title);
   await observe('delayed', '5 s passed without an answer', listening);
 

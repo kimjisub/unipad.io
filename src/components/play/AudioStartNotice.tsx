@@ -21,6 +21,9 @@ interface AudioStartNoticeProps {
 // [@container(max-width:…em)] classes below measure the dialog in that size, so doubled text gets the
 // narrow layout (stacked buttons, tighter padding, no symbol) at any screen width.
 
+/** After the opening announcement of the dialog's name and focused button has begun. */
+const OPENING_DESCRIPTION_DELAY_MS = 500;
+
 /** Shown while the audio a start needs is prepared for longer than a moment, or when it failed. */
 export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget }: AudioStartNoticeProps) {
   const t = useTranslations('play.audioStart');
@@ -34,13 +37,19 @@ export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget 
   const title = t(`${copy}.title`);
   const body = t(`${copy}.body`);
 
-  // The dialog's name and description announce the first state; later ones go to the status line once.
+  // Opening, VoiceOver reads the dialog's name and the focused button but not its description, so the
+  // status line adds the first state's text once that is said; later states go to it whole, once each.
   const [announcement, setAnnouncement] = useState('');
   const [announcedCopy, setAnnouncedCopy] = useState(copy);
   if (copy !== announcedCopy) {
     setAnnouncedCopy(copy);
     setAnnouncement(`${title}. ${body}`);
   }
+  const openingBody = useRef(body);
+  useEffect(() => {
+    const timer = setTimeout(() => setAnnouncement(current => current || openingBody.current), OPENING_DESCRIPTION_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
   useEffect(() => {
     if (copyRef.current) copyRef.current.scrollTop = 0;
   }, [copy]);
