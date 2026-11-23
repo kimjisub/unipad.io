@@ -42,15 +42,16 @@ export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget 
   // Opening, VoiceOver reads the dialog's name and the focused button but not its description, so the
   // status line adds the first state's text once that is said. Later states go to it whole, once each,
   // and only once they hold: a Try again refused at once passes through "preparing again" in an instant.
-  const [announcement, setAnnouncement] = useState('');
-  const openingCopy = useRef(copy);
-  const changed = useRef(false);
+  // Each state arrives as a new notice, and each one empties the line first: a refusal that comes back at
+  // once with the same text is announced again.
+  const [announcement, setAnnouncement] = useState({ notice, changes: 0, text: '' });
+  if (announcement.notice !== notice) setAnnouncement({ notice, changes: announcement.changes + 1, text: '' });
+  const changed = announcement.changes > 0;
   useEffect(() => {
-    if (copy !== openingCopy.current) changed.current = true;
-    const text = changed.current ? `${title}. ${body}` : body;
-    const timer = setTimeout(() => setAnnouncement(text), changed.current ? STATE_SETTLE_MS : OPENING_DESCRIPTION_DELAY_MS);
+    const text = changed ? `${title}. ${body}` : body;
+    const timer = setTimeout(() => setAnnouncement(shown => ({ ...shown, text })), changed ? STATE_SETTLE_MS : OPENING_DESCRIPTION_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [copy, title, body]);
+  }, [notice, changed, title, body]);
   useEffect(() => {
     if (copyRef.current) copyRef.current.scrollTop = 0;
   }, [copy]);
@@ -93,7 +94,7 @@ export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget 
             </button>
           )}
         </div>
-        <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</span>
+        <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement.text}</span>
       </div>
     </div>,
     document.body,
