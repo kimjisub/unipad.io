@@ -41,6 +41,14 @@ const webkitFetchUrl = (error: Error) => {
     ? `${protocol}:/${error.message.slice(0, -suffix.length)}` : undefined;
 };
 
+// Next uses different cache keys for a route's tree and segments. WebKit can report an
+// aborted segment before its request event, so match a prefetch target we already observed.
+// Preserve the origin, path and every application query parameter.
+const prefetchTarget = (url: URL) => {
+  url.searchParams.delete('_rsc');
+  return url.href;
+};
+
 /**
  * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
  * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
@@ -52,11 +60,11 @@ function collectPageErrors(page: Page): PageErrors {
   page.on('request', request => {
     const url = new URL(request.url());
     const headers = request.headers();
-    if (request.frame() === page.mainFrame() && request.method() === 'GET' && request.resourceType() === 'fetch'
+    if (request.method() === 'GET' && request.resourceType() === 'fetch' && request.frame() === page.mainFrame()
       && url.origin === new URL(page.url()).origin && url.searchParams.has('_rsc')
       && headers.rsc === '1' && headers['next-router-prefetch'] === '1') {
       prefetches.add(request);
-      if (leaving) leavingPrefetches.add(request.url());
+      if (leaving) leavingPrefetches.add(prefetchTarget(url));
     }
   });
   page.on('requestfinished', request => prefetches.delete(request));
@@ -65,12 +73,15 @@ function collectPageErrors(page: Page): PageErrors {
   const whileLeaving = <T>(navigation: () => Promise<T>) => {
     leaving = true;
     // Keep the URLs until navigation ends even if requestfailed precedes WebKit's console line.
-    leavingPrefetches = new Set([...prefetches].map(request => request.url()));
+    leavingPrefetches = new Set([...prefetches].map(request => prefetchTarget(new URL(request.url()))));
     return navigation().finally(finishLeaving);
   };
   const collected: PageErrors = { errors: [], ignored: [], navigate: whileLeaving };
   page.on('pageerror', error => {
-    const cutOffFetch = leaving && (webkitFirebaseFetchLine(error) || leavingPrefetches.has(webkitFetchUrl(error) ?? ''));
+    const failedUrl = webkitFetchUrl(error);
+    const failedPrefetch = failedUrl && URL.canParse(failedUrl) ? new URL(failedUrl) : undefined;
+    const cutOffPrefetch = failedPrefetch?.searchParams.has('_rsc') && leavingPrefetches.has(prefetchTarget(failedPrefetch));
+    const cutOffFetch = leaving && (webkitFirebaseFetchLine(error) || cutOffPrefetch);
     (cutOffFetch ? collected.ignored : collected.errors).push(error.message);
   });
   page.on('framenavigated', frame => {

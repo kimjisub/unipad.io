@@ -171,3 +171,29 @@ test('an uncaught prefetch rejection during a checked link still counts', async 
   expect(checkedPage.errors[0]).toContain('Load failed');
   checkedPage.errors.length = 0;
 });
+
+// WebKit can report an aborted segment before its request event. Replay the recorded error
+// after an observed tree prefetch completes, with the segment's different cache key.
+for (const kind of ['same route', 'different route', 'different query', 'missing marker'] as const) {
+  test(`an early segment error for the ${kind} is classified narrowly`, async ({ page, checkedPage, browserName, baseURL }) => {
+    reportsFetchFailures(browserName);
+    await openLinkPage(page);
+    const treeUrl = `${baseURL}/docs/terms?mode=compact&_rsc=tree`;
+    await page.route(treeUrl, route => route.fulfill({ body: 'tree' }));
+    const segmentUrl = kind === 'different route' ? `${baseURL}/docs/privacy?mode=compact&_rsc=segment`
+      : `${baseURL}/docs/terms?mode=${kind === 'different query' ? 'full' : 'compact'}${kind === 'missing marker' ? '' : '&_rsc=segment'}`;
+    await checkedPage.navigate(async () => {
+      await page.evaluate(async url => {
+        await fetch(url, { headers: { RSC: '1', 'Next-Router-Prefetch': '1' } });
+      }, treeUrl);
+      await page.evaluate(({ message, name }) => {
+        setTimeout(() => { const error = new Error(message); error.name = name; throw error; }, 0);
+      }, { message: accessDenied(segmentUrl), name: `Fetch API cannot load ${new URL(segmentUrl).protocol.slice(0, -1)}` });
+      await expect.poll(() => checkedPage.errors.length + checkedPage.ignored.length).toBe(1);
+      await page.getByRole('link', { name: 'Leave', exact: true }).click();
+    });
+    expect(checkedPage.ignored).toEqual(kind === 'same route' ? [accessDenied(segmentUrl)] : []);
+    expect(checkedPage.errors).toEqual(kind === 'same route' ? [] : [accessDenied(segmentUrl)]);
+    checkedPage.errors.length = 0;
+  });
+}
