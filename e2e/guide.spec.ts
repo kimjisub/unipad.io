@@ -32,10 +32,12 @@ async function openPackLink(page: Page, locale: string, checkedPage: PageErrors)
   const now = Date.now();
   await page.clock.install({ time: now });
   await page.clock.pauseAt(now + 1000);
-  const started = await page.evaluate(() => performance.now());
   await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click({ force: true }));
   await expect(page.locator('#packs')).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
+  // A document navigation resets the performance origin; measure in the
+  // destination while its clock is still paused, before advancing any timers.
+  const started = await page.evaluate(() => performance.now());
   await page.clock.runFor(100);
   await expect(page).toHaveURL('/docs/guide#packs');
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
@@ -93,6 +95,7 @@ for (const locale of ['ko', 'en']) {
         }, started);
         expect(shrink.initial).toBeGreaterThanOrEqual(80);
         expect(shrink.before - shrink.after).toBeGreaterThan(40);
+        expect(shrink.elapsed).toBeGreaterThanOrEqual(100);
         expect(shrink.elapsed, 'table shrink inside the alignment window').toBeLessThan(3000);
         await page.clock.resume();
         const layout = await settledPackLayout(page);
@@ -116,6 +119,7 @@ for (const locale of ['ko', 'en']) {
           table.style.marginBottom = '400px';
           return { before, height: document.body.scrollHeight, elapsed: performance.now() - started };
         }, started);
+        expect(changed.elapsed).toBeGreaterThanOrEqual(100);
         expect(changed.elapsed, 'height increase inside the alignment window').toBeLessThan(3000);
         expect(changed.height).toBeGreaterThan(changed.before.height + 300);
         await page.clock.resume();
