@@ -220,7 +220,7 @@ export function inspectOgg(d: AudioData): AudioFacts {
           packetSize === 0 &&
           calculated > BigInt(0) &&
           granule >= preSkip &&
-          calculated - granule <= lastPacketFrames,
+          calculated - granule <= (opus ? lastPacketFrames : BigInt(longBlock)),
       );
       ended = true;
     }
