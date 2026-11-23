@@ -42,14 +42,17 @@ export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget 
   // Opening, VoiceOver reads the dialog's name and the focused button but not its description, so the
   // status line adds the first state's text once that is said. Later states go to it whole, once each,
   // and only once they hold: a Try again refused at once passes through "preparing again" in an instant.
-  // Each state arrives as a new notice, and each one empties the line first: a refusal that comes back at
-  // once with the same text is announced again.
-  const [announcement, setAnnouncement] = useState({ notice, changes: 0, text: '' });
-  if (announcement.notice !== notice) setAnnouncement({ notice, changes: announcement.changes + 1, text: '' });
-  const changed = announcement.changes > 0;
+  // Each state arrives as a new notice and empties the line first. VoiceOver in Chrome still skips a
+  // status given the words it last read, so every other announcement ends in a no-break space: a
+  // refusal that comes back at once with the same words is read again.
+  const [announcement, setAnnouncement] = useState({ notice, changed: false, announced: 0, text: '' });
+  if (announcement.notice !== notice) setAnnouncement({ ...announcement, notice, changed: true, text: '' });
+  const { changed } = announcement;
   useEffect(() => {
-    const text = changed ? `${title}. ${body}` : body;
-    const timer = setTimeout(() => setAnnouncement(shown => ({ ...shown, text })), changed ? STATE_SETTLE_MS : OPENING_DESCRIPTION_DELAY_MS);
+    const words = changed ? `${title}. ${body}` : body;
+    const timer = setTimeout(() => setAnnouncement(shown => ({
+      ...shown, announced: shown.announced + 1, text: shown.announced % 2 ? `${words}\u00a0` : words,
+    })), changed ? STATE_SETTLE_MS : OPENING_DESCRIPTION_DELAY_MS);
     return () => clearTimeout(timer);
   }, [notice, changed, title, body]);
   useEffect(() => {

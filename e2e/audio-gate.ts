@@ -18,7 +18,7 @@ export interface AudioGate {
 }
 
 declare global {
-  interface Window { audioGate: AudioGate; noticeAnnouncements: string[] }
+  interface Window { audioGate: AudioGate; noticeAnnouncements: string[]; noticeAnnouncedTexts: string[] }
 }
 
 export async function installAudioGate(page: Page) {
@@ -87,19 +87,25 @@ export async function openWithStoppedOutput(page: Page, gateMode: AudioGate['mod
 
 /**
  * Records each text the notice puts in its status line, in order: what the page asks a screen reader
- * to announce, apart from the dialog's own name and description.
+ * to announce, apart from the dialog's own name and description. The words are kept without the
+ * trailing no-break space that sets a repeat apart; `noticeAnnouncedTexts` keeps them as put.
  */
 export async function recordNoticeAnnouncements(page: Page) {
   await page.addInitScript(() => {
     window.noticeAnnouncements = [];
+    window.noticeAnnouncedTexts = [];
     let last = '';
     new MutationObserver(() => {
       const status = document.querySelector('[data-audio-start-notice] [role=status]');
       const text = status?.textContent ?? '';
-      if (text && text !== last) window.noticeAnnouncements.push(text);
+      if (text && text !== last) {
+        window.noticeAnnouncements.push(text.trim());
+        window.noticeAnnouncedTexts.push(text);
+      }
       last = text;
     }).observe(document, { subtree: true, childList: true, characterData: true });
   });
 }
 
 export const noticeAnnouncements = (page: Page) => page.evaluate(() => window.noticeAnnouncements);
+export const noticeAnnouncedTexts = (page: Page) => page.evaluate(() => window.noticeAnnouncedTexts);

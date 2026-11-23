@@ -34,6 +34,11 @@ interface Reader {
    * change of its last phrase once.
    */
   listen(ms: number): Promise<string[]>;
+  /**
+   * Has the reader say `text` itself, so a sentence it said just before shows as a change if it is said
+   * again; resolves whether that became its last phrase.
+   */
+  mark(text: string): Promise<boolean>;
 }
 
 const messages = { 'en-US': en, 'ko-KR': ko } as const;
@@ -51,6 +56,14 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function voiceOverLastPhrase() {
   const { stdout } = await promisify(execFile)('osascript', ['-e', 'tell application "VoiceOver" to return content of last phrase']);
   return stdout.trim();
+}
+
+async function markVoiceOver(text: string) {
+  await promisify(execFile)('osascript', ['-e', `tell application "VoiceOver" to output ${JSON.stringify(text)}`]);
+  for (const end = Date.now() + 3000; Date.now() < end; await wait(150)) {
+    if (await voiceOverLastPhrase() === text) return true;
+  }
+  return false;
 }
 
 async function listenToVoiceOver(ms: number) {
@@ -229,6 +242,8 @@ const refusals = 6;
 /**
  * Try again refused at once, again and again, with the reader where a player's is (on the focused
  * button): each refusal is a new try whose failure must be heard, once, though its words are the same.
+ * Before each try the reader says a marker of its own, so the same sentence said again is a change of
+ * its last phrase; a try whose marker was not taken cannot be counted and is reported apart.
  */
 async function refuseAgain(page: Page, info: TestInfo, locale: Locale, reader: Reader) {
   const text = messages[locale].play.audioStart;
@@ -246,21 +261,25 @@ async function refuseAgain(page: Page, info: TestInfo, locale: Locale, reader: R
   const record: Record<string, unknown>[] = [];
   let announced = (await noticeAnnouncements(page)).length;
   for (let refusal = 1; refusal <= refusals; refusal++) {
+    const markerTaken = await reader.mark(`Try ${refusal}.`);
     const listening = reader.listen(settleMs);
     await pressRetry(page, locale);
     await expect(notice(page).getByRole('heading')).toHaveText(text.failed.title);
     await page.clock.runFor(300);
     const said = await listening;
     const announcements = await noticeAnnouncements(page);
-    record.push({ refusal, request: await page.evaluate(() => window.audioGate.calls), spoken: said, pageAnnounced: announcements.slice(announced), focus: await focusedItem(page), ...sortPhrases(said, text.failed) });
+    record.push({ refusal, markerTaken, request: await page.evaluate(() => window.audioGate.calls), spoken: said, pageAnnounced: announcements.slice(announced), focus: await focusedItem(page), ...sortPhrases(said, text.failed) });
     announced = announcements.length;
   }
 
+  const counted = record.filter(entry => entry.markerTaken);
   const summary = {
     refusals,
-    heardOnce: record.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
-    notHeard: record.filter(entry => entry.titleSpokenTimes === 0 && entry.bodySpokenTimes === 0).length,
-    heardTwiceOrMore: record.filter(entry => (entry.titleSpokenTimes as number) > 1 || (entry.bodySpokenTimes as number) > 1).length,
+    markerNotTaken: refusals - counted.length,
+    heardOnce: counted.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
+    notHeard: counted.filter(entry => entry.titleSpokenTimes === 0 && entry.bodySpokenTimes === 0).length,
+    heardTwiceOrMore: counted.filter(entry => (entry.titleSpokenTimes as number) > 1 || (entry.bodySpokenTimes as number) > 1).length,
+    titleOrTextAlone: counted.filter(entry => (entry.titleAlone as string[]).length > 0 || (entry.bodyAlone as string[]).length > 0).length,
     pageAnnouncedOnce: record.filter(entry => (entry.pageAnnounced as string[]).length === 1).length,
   };
   const name = `voiceover-refusals-${info.project.name}-${locale}.json`;
@@ -355,9 +374,10 @@ const voiceOverReader = (voiceOver: VoiceOverPlaywright): Reader => ({
   },
   spoken: async () => [...await voiceOver.spokenPhraseLog()],
   listen: listenToVoiceOver,
+  mark: markVoiceOver,
 });
 
-const dryReader: Reader = { enter: async () => {}, next: async () => '', previous: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
+const dryReader: Reader = { enter: async () => {}, next: async () => '', previous: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; }, mark: async () => true };
 
 for (const locale of ['en-US', 'ko-KR'] as const) {
   if (dry) {

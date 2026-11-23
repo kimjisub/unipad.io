@@ -4,7 +4,7 @@ import { chromium, type Locator, type Page, type TestInfo } from '@playwright/te
 import { test, expect, expectAudioOutputRunning, installBrowserProbe, stateTimeout } from './browser';
 import { themeFile, themeSetting } from './saved-packs';
 import { longTone, openBasicWith } from './basic-pack';
-import { freezeClock, installAudioGate, notice, noticeAnnouncements, openWithStoppedOutput, recordNoticeAnnouncements } from './audio-gate';
+import { freezeClock, installAudioGate, notice, noticeAnnouncedTexts, noticeAnnouncements, openWithStoppedOutput, recordNoticeAnnouncements } from './audio-gate';
 
 const mode = (page: Page, name: 'Auto' | 'Guide' | 'Step') => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
@@ -268,6 +268,9 @@ test.describe('audio start notice', () => {
       'Couldn’t start audio. Playback hasn’t started. Please try again.',
       'Preparing audio again. Your requested playback will continue when ready.',
     ]);
+    // The repeated failure is not the same text as the one before it, or VoiceOver in Chrome skips it.
+    const [, , first, again] = await noticeAnnouncedTexts(page);
+    expect(again).not.toBe(first);
   });
 
   test('keyboard stays in the notice; closing returns to the button that asked', async ({ page }) => {
