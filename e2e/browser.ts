@@ -1,4 +1,4 @@
-import { test as base, expect, type Page } from '@playwright/test';
+import { test as base, expect, type Page, type Request } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { attachLogsSince, firefoxLogsEnabled, logOffsets, withFirefoxLogs } from './firefox-logs';
@@ -23,9 +23,9 @@ export function installationResponse(url: URL) {
 export interface PageErrors {
   /** Fail the test unless it empties this list itself. */
   errors: string[];
-  /** Firebase fetches cut off while their page was being replaced. */
+  /** Firebase or same-origin prefetches cut off while their page was being replaced. */
   ignored: string[];
-  /** Document navigation triggered by a UI control rather than page.goto/reload. */
+  /** Page navigation triggered by a UI control rather than page.goto/reload. */
   navigate: <T>(action: () => Promise<T>) => Promise<T>;
 }
 
@@ -34,20 +34,47 @@ export interface PageErrors {
 const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
   && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
 
+const webkitFetchUrl = (error: Error) => {
+  const protocol = /^Fetch API cannot load (https?)$/.exec(error.name)?.[1];
+  const suffix = ' due to access control checks.';
+  return protocol && error.message.endsWith(suffix)
+    ? `${protocol}:/${error.message.slice(0, -suffix.length)}` : undefined;
+};
+
 /**
  * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
  * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
  */
 function collectPageErrors(page: Page): PageErrors {
   let leaving = false;
+  const prefetches = new Set<Request>();
+  let leavingPrefetches = new Set<string>();
+  page.on('request', request => {
+    const url = new URL(request.url());
+    const headers = request.headers();
+    if (request.frame() === page.mainFrame() && request.method() === 'GET' && request.resourceType() === 'fetch'
+      && url.origin === new URL(page.url()).origin && url.searchParams.has('_rsc')
+      && headers.rsc === '1' && headers['next-router-prefetch'] === '1') {
+      prefetches.add(request);
+      if (leaving) leavingPrefetches.add(request.url());
+    }
+  });
+  page.on('requestfinished', request => prefetches.delete(request));
+  page.on('requestfailed', request => prefetches.delete(request));
+  const finishLeaving = () => { leaving = false; leavingPrefetches.clear(); };
   const whileLeaving = <T>(navigation: () => Promise<T>) => {
     leaving = true;
-    return navigation().finally(() => { leaving = false; });
+    // Keep the URLs until navigation ends even if requestfailed precedes WebKit's console line.
+    leavingPrefetches = new Set([...prefetches].map(request => request.url()));
+    return navigation().finally(finishLeaving);
   };
   const collected: PageErrors = { errors: [], ignored: [], navigate: whileLeaving };
-  page.on('pageerror', error => (leaving && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
+  page.on('pageerror', error => {
+    const cutOffFetch = leaving && (webkitFirebaseFetchLine(error) || leavingPrefetches.has(webkitFetchUrl(error) ?? ''));
+    (cutOffFetch ? collected.ignored : collected.errors).push(error.message);
+  });
   page.on('framenavigated', frame => {
-    if (frame === page.mainFrame()) leaving = false;
+    if (frame === page.mainFrame()) finishLeaving();
   });
   const goto = page.goto.bind(page);
   const reload = page.reload.bind(page);

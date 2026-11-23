@@ -38,7 +38,7 @@ for (const locale of ['ko', 'en']) {
         });
       }
 
-      test(`entry points and readable layout at ${width}px`, async ({ page }) => {
+      test(`entry points and readable layout at ${width}px`, async ({ page, checkedPage }) => {
         test.setTimeout(90_000);
         const visit = async (path: string) => {
           await page.waitForLoadState('networkidle');
@@ -47,7 +47,7 @@ for (const locale of ['ko', 'en']) {
         await page.setViewportSize({ width, height: 900 });
         await visit('/docs');
         await page.waitForLoadState('networkidle');
-        await page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click();
+        await checkedPage.navigate(() => page.getByRole('link', { name: locale === 'ko' ? '사용 안내' : 'User Guide', exact: true }).click());
         await expect(page).toHaveURL('/docs/guide');
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         await expect(page.locator('table code').first()).toHaveText('1');
@@ -55,31 +55,31 @@ for (const locale of ['ko', 'en']) {
         await visit('/docs');
         for (const topic of topics) {
           await page.waitForLoadState('networkidle');
-          await page.locator(`a[href="/docs/guide#${topic}"]`).click();
+          await checkedPage.navigate(() => page.locator(`a[href="/docs/guide#${topic}"]`).click());
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await visit('/docs');
         }
         await visit('/');
         for (const topic of ['skins', 'launchpad', 'faq']) {
           await page.waitForLoadState('networkidle');
-          await page.locator(`a[href="/docs/guide#${topic}"]`).click();
+          await checkedPage.navigate(() => page.locator(`a[href="/docs/guide#${topic}"]`).click());
           await expect(page).toHaveURL(`/docs/guide#${topic}`);
           await visit('/');
         }
         await visit('/docs/get-started');
         await page.waitForLoadState('networkidle');
-        await page.locator('a[href="/docs/guide#launchpad"]').click();
+        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#launchpad"]').click());
         await expect(page).toHaveURL('/docs/guide#launchpad');
         await visit('/docs/get-started');
         await page.waitForLoadState('networkidle');
-        await page.locator('a[href="/docs/guide#faq"]').click();
+        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#faq"]').click());
         await expect(page).toHaveURL('/docs/guide#faq');
         await visit('/docs/theme');
         await page.waitForLoadState('networkidle');
-        await page.locator('a[href="/docs/guide#skins"]').click();
+        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#skins"]').click());
         await expect(page).toHaveURL('/docs/guide#skins');
         await page.waitForLoadState('networkidle');
-        await page.locator('a[href="/docs/theme"]').click();
+        await checkedPage.navigate(() => page.locator('a[href="/docs/theme"]').click());
         await expect(page).toHaveURL('/docs/theme');
       });
     }
