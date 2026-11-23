@@ -1,0 +1,173 @@
+The five things people ask about most, in one place.
+
+- [Get and apply skins (themes)](#skins)
+- [Play on a computer or tablet](#web)
+- [Connect a Launchpad](#launchpad)
+- [Custom firmware](#custom-firmware)
+- [Frequently asked questions](#faq)
+
+<h2 id="skins">Get and apply skins (themes)</h2>
+
+Skins and themes are the same thing. They change how the pads, background and chain buttons look on the play screen. The app and the web player call them **themes**, and each skin is a single .zip file.
+
+### Getting skins
+
+- **Skins that come with the app**: the Android app and the iPhone and iPad app include the default theme, **UniPad S Skin** and **UniPad Midi Fighter**. They are marked Built-in in the theme list, so there is nothing to download. The web player has only the default look.
+- **Skins made by other players**: players share them with each other as .zip files. UniPad does not run an official skin download site yet, and UniPad does not check files that players share. You can ask other players on [Discord](https://discord.gg/ESDgyNs).
+- Skin apps that used to be installed separately from Google Play (APK) no longer work. Please use .zip skins.
+
+### Apply on Android
+
+1. On the main screen with no pack selected, tap **Setting** (the gear) at the bottom of the left panel.
+2. Tap **Theme**.
+3. Tap **+** at the top right or **Add Theme** at the end of the list, then tap **Import ZIP file** on the right.
+4. Pick the .zip file in the file picker. The theme is added to the end of the list, marked ZIP. Importing alone does not switch to it.
+5. Tap the theme in the list, then tap **Apply** on that row. A check mark shows the theme in use.
+
+### Apply on iPhone and iPad
+
+1. Tap **Settings** (the gear) at the top right of the main screen.
+2. Tap **Theme**.
+3. Tap **+** at the top or **Add Theme** at the end of the list, then tap **Import ZIP file** on the right.
+4. Pick the .zip file. You will see "Theme imported successfully." Tap **Accept** and the theme is added to the end of the list. Importing alone does not switch to it.
+5. Tap the theme in the list, then tap **Apply** below it. A check mark shows the theme in use.
+
+### Apply on the web
+
+1. In the [web player](/play), tap **Theme** above the pack list and pick the .zip file. The imported theme becomes the current theme right away and shows on the play screen when you open a pack.
+2. Your imported themes are listed in the left panel (at the top on a phone) when no pack is selected. If a pack is selected, tap it again to clear the selection.
+3. To switch, tap **Apply** next to another theme in the list.
+
+### Go back to the default theme or remove one
+
+- **Android**: tap **Default Theme** at the top of the theme list, then tap **Apply**.
+- **iPhone and iPad**: tap **Default** at the top of the theme list, then tap **Apply**.
+- **Web**: tap **Reset** above the theme list. Right after you reopen the page, **Reset** may not show; open a pack once and come back, and it appears.
+- To remove a theme you imported, press and hold it in the app and tap **Delete**, or on the web tap the **×** next to it and tap **Delete**. Themes that come with the app cannot be removed.
+
+### If the import fails
+
+- If you see "Invalid theme file." or the theme is not added, open the .zip and check that `theme.json` is at the top level. The Android app cannot find a `theme.json` that sits inside a folder.
+- Want to make your own skin? See the [theme documentation](/docs/theme).
+
+<h2 id="web">Play on a computer or tablet</h2>
+
+On a computer or tablet you can play at [unipad.io/play](/play) without installing anything. No account is needed.
+
+1. **Add a pack**: download one from **Browse Store**, pick a .zip you already have with **Import UniPack**, or drag a .zip file onto the page.
+2. **Play**: open the pack from the list, then tap the on-screen pads or use your keyboard.
+
+| Keys | What they do |
+|------|--------------|
+| `1` – `8` | Pad row 1 |
+| `Q` – `I` | Pad row 2 |
+| `A` – `K` | Pad row 3 |
+| `Z` – `,` | Pad row 4 |
+| `Shift` + the keys above | Pad rows 5 – 8 |
+| `F1` – `F12`, `9`, `0`, `-`, `=` | Switch to chain 1 – 16 |
+
+- On a laptop you may need to hold `Fn` to use `F1` – `F12`.
+- Packs and themes you import are saved in that browser. Add them again in another browser or on another device. Clearing the browser's site data removes them.
+
+### Use a Launchpad in the browser
+
+- Open **Launchpad Settings** from the menu on the play screen and press **Connect**. If the browser asks to use MIDI devices, allow it.
+- Chrome, Edge, Opera and Samsung Internet support connecting MIDI devices. Firefox on a computer asks you to install a site permission add-on when you connect.
+- Safari and the browsers on iPhone and iPad can't connect to MIDI devices. To use a Launchpad on iPhone or iPad, use the app.
+- In a browser without support you will see "This browser can't connect to MIDI devices." You can keep playing with the on-screen pads and your keyboard.
+
+<h2 id="launchpad">Connect a Launchpad</h2>
+
+Connect a Novation Launchpad over USB to play with its pads and see the pack's lights on it. The Android app, the iPhone and iPad app and the web player all have Launchpad connection.
+
+The model details in this section come from the code UniPad uses to recognise each model and from public material by Novation and the firmware makers. The UniPad team has not connected these models or the custom firmware below to check them in person. Results can vary with your phone, cable and adapter.
+
+### Steps
+
+1. **Cable and adapter**: connect the Launchpad's USB cable through an adapter that fits your phone or tablet. Android devices must support USB OTG (connecting external USB devices). For a Lightning iPhone or iPad, use Apple's Lightning to USB Camera Adapter.
+2. **Power**: the Launchpad is powered over USB. Novation says Launchpad MK2, Launchpad Mini MK3 and Launchpad X need a powered USB hub to connect to an iPad, and Launchpad S must be started in low power mode. If the Launchpad doesn't light up or only blinks, check the power first.
+3. **Check the app**:
+   - **Android**: open **Setting › Device › Reconnect Launchpad**. If "MIDI Devices Not Detected" shows at the top, the phone cannot see the Launchpad, so check steps 1 and 2 again.
+   - **iPhone and iPad**: when **Settings › Device** shows "Connected: (device name)" in the MIDI row, it is connected. Before that it shows "Not connected". Also see **Connection and light help** on the **Reconnect Launchpad** screen.
+   - **Web**: in **Launchpad Settings** from the menu, check that the status is **Connected** and that **Resolved Type** is your Launchpad.
+4. **Choose the model**: the app usually recognises the model on its own. If it picks the wrong one, choose the name from the table below on the **Reconnect Launchpad** screen (on the web, **Launchpad Type** in **Launchpad Settings**). The model you choose goes back to automatic when you plug the cable in again. If your model is not in the table, don't pick another model in its place.
+
+### Model names and notes
+
+| Launchpad | Name to choose | Notes |
+|---|---|---|
+| Launchpad (first model), Launchpad S | Launchpad S | A red and green model, so pack colours are shown in red and green. Start it in low power mode for an iPad. |
+| Launchpad Mini (first and second generation) | Launchpad S | Same as above. It is a different model from Launchpad Mini MK3. |
+| Launchpad MK2 | Launchpad MK2 | Connect it to an iPad through a powered USB hub. |
+| Launchpad Pro (first model) | Android: Launchpad PRO<br />iPhone and iPad: Launchpad Pro<br />Web: Launchpad Pro (Original) | A different model from Launchpad Pro MK3. If it runs on its power adapter and you unplug USB, it goes to sleep; press **Setup** to wake it. |
+| Launchpad X | Launchpad X | The app switches it to Programmer mode when it connects, so you don't need to change modes. Needs a powered USB hub for an iPad. |
+| Launchpad Mini MK3 | Launchpad Mini MK3 | The app switches it to Programmer mode when it connects. The lights may be off at first, so check with a pack that has lights. Needs a powered USB hub for an iPad. |
+| Launchpad Pro MK3 | Launchpad Pro MK3 | The app switches it to Programmer mode when it connects. The iPhone and iPad app 4.3.0 does not receive this model's pad and chain presses; a fixed version is being prepared. |
+
+The name is the same on Android, iPhone and iPad, and the web unless the table shows otherwise.
+
+For a Midi Fighter 64 choose **Midi Fighter**. For a Mystrix choose **Matrix** on Android and the web, or **Mystrix** on iPhone and iPad. For a Launchpad with custom firmware, see [Custom firmware](#custom-firmware).
+
+### If it doesn't work
+
+| What happens | What to check |
+|---|---|
+| The app can't find the Launchpad | Check that the cable is fully inserted, the adapter fits, the device supports USB OTG and there is enough power (step 2 above). Try another cable. |
+| It's found, but pressing pads makes no sound | Check that the model you chose matches the table, then tap **Reconnect Launchpad** (on the web, **Reconnect**). A pack must be open to make sound. If you changed the mode in the Launchpad's own settings while playing, unplug the cable and plug it in again. |
+| Sound plays, but no lights | Check that the pack has light data. Packs marked "No LED / AutoPlay" in the store have no lights. Launchpad X and Mini MK3 may start with the lights off. |
+| The right-side buttons don't change chains | The eight buttons down the right side are chains 1 – 8 from the top. Buttons below the pack's number of chains do nothing. While the option window (the menu on the web) is open on the play screen, the right-side buttons change the volume, so close it. |
+| The top-row buttons do something unexpected | The top row is not chains; these are app buttons. From the left they switch the light where you press, the pack's lights and the auto play mode, and the fourth button (▶ on Launchpad X and Mini MK3) opens and closes the option window (the menu on the web). |
+
+The right-side and top-row buttons are built to work the same way in the Android app, the iPhone and iPad app and the web player.
+
+Still stuck? Ask on [Discord](https://discord.gg/ESDgyNs) with your app version, phone or tablet model, Launchpad model and the problem from the table above.
+
+<h2 id="custom-firmware">Custom firmware</h2>
+
+Custom firmware is software inside the Launchpad made by developers other than Novation. UniPad is built to recognise the two below and map the pads and lights to match. This section is based on the app's code and each maker's public material; the UniPad team has not installed or connected them to check in person. UniPad does not install or change firmware, and does not promise that every feature works with custom firmware.
+
+### Launchpad Pro custom firmware
+
+- **What it is**: the [Launchpad Pro custom firmware](https://github.com/mat1jaczyyy/lpp-performance-cfw). Once installed, the device shows up as "Launchpad Open".
+- **Models**: Launchpad Pro (first model). It is not for Launchpad Pro MK3.
+- **How the app recognises it**: automatically, when the device name contains "Launchpad Open". When it connects, the app switches it to the firmware's performance mode and clears the lights.
+- **Name to choose in the app**: Android **Launchpad Pro MK2 (CFW)**, iPhone and iPad **Launchpad Pro (mat1jaczyyy CFW)**, web **Launchpad Pro (Launchpad Open)**
+
+### CoreFW
+
+- **What it is**: [CoreFW](https://fw.anthonyhfm.dev/), firmware made by a developer not affiliated with Novation.
+- **Models**: Launchpad S, Launchpad Mini (first generation), Launchpad MK2, Launchpad Pro, Launchpad X, Launchpad Mini MK3, Launchpad Pro MK3
+- **How the app recognises it**: automatically, from the connected device's details. On Android, "(CoreFW)" is added after the device name. The app does not change modes when it connects.
+- **Name to choose in the app**: Android, iPhone and iPad **Launchpad (CoreFW)**, web **Launchpad CoreFW (RGB)** (**Launchpad CoreFW (S / Mini)** for Launchpad S and Mini)
+
+### Both
+
+- Both send pad signals in a different layout from the official firmware. UniPad converts the pads and lights to match.
+- If pads are in the wrong place or the wrong lights turn on, choose the name from the table yourself. If that doesn't help, tell us the firmware name and version on [Discord](https://discord.gg/ESDgyNs).
+- To install a custom firmware or go back to the official one, follow that firmware maker's guide. Novation says official firmware for Launchpad X, Mini MK3 and Pro MK3 can be installed with [Components](https://components.novationmusic.com). UniPad has not checked whether a device running custom firmware goes back this way.
+
+<h2 id="faq">Frequently asked questions</h2>
+
+### I can't find UniPad in the store
+
+UniPad is free and continues to receive updates. Get the Android app on [Google Play](https://play.google.com/store/apps/details?id=com.kimjisub.launchpad) (Android 7.0 or later), or the iPhone and iPad app on the [App Store](https://apps.apple.com/app/id6760479102) (iOS or iPadOS 17 or later). If the store page doesn't open in your country, you can still play at [unipad.io/play](/play) without installing anything. We don't recommend installation files from outside the official stores.
+
+### Where do I get packs to play?
+
+Download them for free from the **Store** in the app or the web player. Add a .zip pack you already have with **Import downloaded packs** in the app or **Import UniPack** on the web. To make your own, see the [UniPack documentation](/docs/unipack).
+
+### How do I check my app version?
+
+Look at the small number under the logo on the main screen, or open **Settings › Information**. Google Play rolls out each new version to some users first, so different devices may show different versions for a while.
+
+### My old skin app is gone
+
+Skin apps (APK) are no longer supported. Get the .zip file of the same skin and import it as [described above](#skins).
+
+### My Launchpad won't connect in Safari on iPhone
+
+Browsers on iPhone and iPad can't connect to MIDI devices. Connect your Launchpad in the iPhone and iPad app. On the web you can play with the on-screen pads.
+
+### Still need help?
+
+Ask on [Discord](https://discord.gg/ESDgyNs). Include your app version, device model and the step where you got stuck so others can help faster.

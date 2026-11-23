@@ -1,6 +1,6 @@
 import { Link } from '@/i18n/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Music, Palette, Rocket, Shield } from 'lucide-react';
+import { BookOpen, Music, Palette, Rocket, Shield } from 'lucide-react';
 
 import { GET_STARTED_PATH } from '@/lib/constants';
 import { pageMetadata } from '@/lib/seo';
@@ -51,6 +51,24 @@ export default async function DocsPage({
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <section className="md:col-span-2 p-6 rounded-2xl border border-accent/30 bg-card/30">
+          <Link href="/docs/guide" aria-label={t('guide.title')} className="group block">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
+                <BookOpen className="w-5 h-5 text-accent" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">{t('guide.title')}</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('guide.description')}</p>
+          </Link>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {(['skins', 'web', 'launchpad', 'custom-firmware', 'faq'] as const).map((topic) => (
+              <Link key={topic} href={`/docs/guide#${topic}`} className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:border-accent/50 hover:text-accent transition-colors">
+                {t(`guide.topics.${topic}`)}
+              </Link>
+            ))}
+          </div>
+        </section>
         {docSections.map((section) => (
           <Link
             key={section.href}

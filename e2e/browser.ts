@@ -25,6 +25,8 @@ export interface PageErrors {
   errors: string[];
   /** Firebase fetches cut off while their page was being replaced. */
   ignored: string[];
+  /** Document navigation triggered by a UI control rather than page.goto/reload. */
+  navigate: <T>(action: () => Promise<T>) => Promise<T>;
 }
 
 // WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
@@ -37,16 +39,16 @@ const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cann
  * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
  */
 function collectPageErrors(page: Page): PageErrors {
-  const collected: PageErrors = { errors: [], ignored: [] };
   let leaving = false;
-  page.on('pageerror', error => (leaving && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
-  page.on('framenavigated', frame => {
-    if (frame === page.mainFrame()) leaving = false;
-  });
   const whileLeaving = <T>(navigation: () => Promise<T>) => {
     leaving = true;
     return navigation().finally(() => { leaving = false; });
   };
+  const collected: PageErrors = { errors: [], ignored: [], navigate: whileLeaving };
+  page.on('pageerror', error => (leaving && webkitFirebaseFetchLine(error) ? collected.ignored : collected.errors).push(error.message));
+  page.on('framenavigated', frame => {
+    if (frame === page.mainFrame()) leaving = false;
+  });
   const goto = page.goto.bind(page);
   const reload = page.reload.bind(page);
   page.goto = (url, options) => whileLeaving(() => goto(url, options));

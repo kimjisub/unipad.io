@@ -9,7 +9,7 @@ type FeatureKey = 'practice' | 'unipack' | 'integration' | 'theme';
 interface Feature {
 	key: FeatureKey;
 	icon: LucideIcon;
-	href?: '/play' | '/docs/unipack' | '/docs/theme';
+	href?: '/play' | '/docs/unipack' | '/docs/guide#skins' | '/docs/guide#launchpad';
 	span: string;
 	Demo: React.FC;
 }
@@ -99,8 +99,8 @@ function ThemeDemo() {
 const features: Feature[] = [
 	{ key: 'practice', icon: Headphones, href: '/play', span: 'md:col-span-4', Demo: PracticeDemo },
 	{ key: 'unipack', icon: Share2, href: '/docs/unipack', span: 'md:col-span-2', Demo: UniPackDemo },
-	{ key: 'integration', icon: Usb, span: 'md:col-span-2', Demo: IntegrationDemo },
-	{ key: 'theme', icon: Palette, href: '/docs/theme', span: 'md:col-span-4', Demo: ThemeDemo },
+	{ key: 'integration', icon: Usb, href: '/docs/guide#launchpad', span: 'md:col-span-2', Demo: IntegrationDemo },
+	{ key: 'theme', icon: Palette, href: '/docs/guide#skins', span: 'md:col-span-4', Demo: ThemeDemo },
 ];
 
 export const FeaturesSection = () => {
@@ -129,7 +129,7 @@ export const FeaturesSection = () => {
 									href={href}
 									className="group inline-flex min-h-11 items-center gap-1 text-[0.9375rem] font-semibold text-foreground transition-colors hover:text-accent"
 								>
-									{href === '/play' ? t('tryIt') : t('learnMore')}
+									{key === 'integration' ? t('connectGuide') : key === 'theme' ? t('applyGuide') : href === '/play' ? t('tryIt') : t('learnMore')}
 									<ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" aria-hidden />
 								</Link>
 							)}
