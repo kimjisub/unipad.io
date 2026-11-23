@@ -26,6 +26,8 @@ interface Reader {
   next(): Promise<string>;
   /** Moves the reader's cursor to the previous item and returns what it describes. */
   previous(): Promise<string>;
+  /** What the item under the reader's cursor describes, without moving it. */
+  current(): Promise<string>;
   /** Everything spoken in answer to the reader's own commands so far. */
   spoken(): Promise<string[]>;
   /**
@@ -223,18 +225,20 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
 }
 
 
-/** Which of the dialog's own links to its text are kept while its states change. */
-type Links = 'name and description' | 'name only' | 'none';
-const repeatRounds = 5;
+/** Which of the dialog's own links to its title and text are kept while its states change. */
+type Links = 'name and description' | 'none';
+/** Where the reader's cursor rests when the state changes. */
+type Spot = 'title' | 'text' | 'focused button' | 'status line';
+const spots: Spot[] = ['title', 'text', 'focused button', 'status line'];
 
 /**
- * Takes the notice round the states the player meets again and again, in the same order each round:
- * refused at once, preparing again, taking longer. What VoiceOver says after each change is sorted into
- * the state's whole sentence and its title or text read alone. `links` drops the dialog's links to its
- * title and text in the page after it opened (the app does not set them again), to tell which of them
- * makes VoiceOver read a changed title or text by itself, besides the status line.
+ * Changes the notice's state with the reader's cursor resting on each of its items in turn: its title,
+ * its text, the focused button and the status line. What VoiceOver says after each change is sorted
+ * into the state's whole sentence and its title or text read alone, to tell whether a title or text
+ * read alone comes from where the cursor rests or from the dialog's links to them. `links: 'none'`
+ * drops those links in the page after it opened (the app does not set them again).
  */
-async function repeatChanges(page: Page, info: TestInfo, locale: Locale, reader: Reader, links: Links) {
+async function changeUnderCursor(page: Page, info: TestInfo, locale: Locale, reader: Reader, links: Links) {
   const text = messages[locale].play.audioStart;
   await openHeld(page, reader);
   await page.getByRole('button', { name: startName(locale), exact: true }).dispatchEvent('click');
@@ -244,16 +248,41 @@ async function repeatChanges(page: Page, info: TestInfo, locale: Locale, reader:
   await page.clock.runFor(4200);
   await expect(notice(page).getByRole('heading')).toHaveText(text.delayed.title);
   await page.clock.runFor(300);
-  await page.evaluate(drop => {
-    const dialog = document.querySelector('[data-audio-start-notice] [role=dialog]')!;
-    if (drop !== 'name and description') dialog.removeAttribute('aria-describedby');
-    if (drop === 'none') dialog.removeAttribute('aria-labelledby');
-  }, links);
-  await wait(settleMs);
+  if (links === 'none') {
+    await page.evaluate(() => {
+      const dialog = document.querySelector('[data-audio-start-notice] [role=dialog]')!;
+      dialog.removeAttribute('aria-describedby');
+      dialog.removeAttribute('aria-labelledby');
+    });
+  }
+
+  const shown = async () => {
+    const title = await notice(page).getByRole('heading').textContent();
+    return (['preparing', 'delayed', 'failed', 'retrying'] as const).find(state => text[state].title === title)!;
+  };
+  const isAt = (spot: Spot, item: string, state: State) => {
+    const { title, body } = text[state];
+    if (spot === 'title') return item.includes(title) && !item.includes(body);
+    if (spot === 'text') return item.includes(body) && !item.includes(title);
+    if (spot === 'status line') return item.includes(title) && item.includes(body);
+    return item.includes(state === 'retrying' ? text.cancel : text.dismiss);
+  };
+  /** Moves the cursor onto the spot within the notice; false when it was not reached. */
+  const place = async (spot: Spot) => {
+    const state = await shown();
+    if (isAt(spot, await reader.current(), state)) return true;
+    for (let step = 0; step < 6; step++) if (isAt(spot, await reader.previous(), state)) return true;
+    for (let step = 0; step < 12; step++) if (isAt(spot, await reader.next(), state)) return true;
+    return dry;
+  };
 
   const record: Record<string, unknown>[] = [];
   let announced = (await noticeAnnouncements(page)).length;
-  const change = async (state: State, mode: 'reject' | 'hold' | null, act: () => Promise<void>) => {
+  const change = async (spot: Spot, state: State, mode: 'reject' | 'hold' | null, act: () => Promise<void>) => {
+    const placed = await place(spot);
+    const cursorBefore = await reader.current();
+    const focusBefore = await focusedItem(page);
+    await wait(dry ? 0 : 1500);
     if (mode) await page.evaluate(m => { window.audioGate.mode = m; }, mode);
     const listening = reader.listen(settleMs);
     await act();
@@ -261,29 +290,32 @@ async function repeatChanges(page: Page, info: TestInfo, locale: Locale, reader:
     await page.clock.runFor(300);
     const said = await listening;
     const announcements = await noticeAnnouncements(page);
-    record.push({ state, spoken: said, pageAnnounced: announcements.slice(announced), ...sortPhrases(said, text[state]) });
+    record.push({ spot, placed, cursorBefore, focusBefore, state, spoken: said, pageAnnounced: announcements.slice(announced), ...sortPhrases(said, text[state]) });
     announced = announcements.length;
   };
-  for (let round = 0; round < repeatRounds; round++) {
-    await change('failed', 'reject', () => pressRetry(page, locale));
-    await change('retrying', 'hold', () => pressRetry(page, locale));
-    await change('delayed', null, () => page.clock.runFor(4700));
+  for (const spot of spots) {
+    await change(spot, 'failed', 'reject', () => pressRetry(page, locale));
+    await change(spot, 'retrying', 'hold', () => pressRetry(page, locale));
+    await change(spot, 'delayed', null, () => page.clock.runFor(4700));
   }
 
-  const count = (key: 'titleAlone' | 'bodyAlone') => record.reduce((sum, entry) => sum + (entry[key] as string[]).length, 0);
-  const summary = {
-    changes: record.length,
-    wholeHeardOnce: record.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
-    titleReadAlone: count('titleAlone'),
-    bodyReadAlone: count('bodyAlone'),
-    pageAnnouncedOnce: record.filter(entry => (entry.pageAnnounced as string[]).length === 1).length,
-  };
-  const name = `voiceover-repeat-${info.project.name}-${locale}-${links.replaceAll(' ', '-')}.json`;
+  const summary = Object.fromEntries(spots.map(spot => {
+    const at = record.filter(entry => entry.spot === spot);
+    const count = (key: 'titleAlone' | 'bodyAlone') => at.reduce((sum, entry) => sum + (entry[key] as string[]).length, 0);
+    return [spot, {
+      changes: at.length,
+      placed: at.filter(entry => entry.placed).length,
+      wholeHeardOnce: at.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
+      titleReadAlone: count('titleAlone'),
+      bodyReadAlone: count('bodyAlone'),
+      pageAnnouncedOnce: at.filter(entry => (entry.pageAnnounced as string[]).length === 1).length,
+    }];
+  }));
+  const name = `voiceover-cursor-${info.project.name}-${locale}-${links.replaceAll(' ', '-')}.json`;
   const body = JSON.stringify({ locale, browser: info.project.name, dryRun: dry, links, summary, record }, null, 2);
   await writeFile(info.outputPath(name), body);
   await info.attach(name, { body, contentType: 'application/json' });
 }
-
 
 /**
  * The same reader and listener on a bare page: a polite status line (as the notice uses) and an alert,
@@ -307,11 +339,63 @@ async function calibrate(page: Page, info: TestInfo, reader: Reader) {
       result[kind].push({ sent, heard: await listening });
     }
   }
+  for (const { way, ...round } of await repeatSameText(page, reader)) (result[`same text, ${way}`] ??= []).push(round);
   const summary = Object.fromEntries(Object.entries(result).map(([kind, rounds]) => [kind,
     `${rounds.filter(({ sent, heard }) => heard.filter(phrase => phrase.includes(sent)).length === 1).length}/${rounds.length} heard once`]));
   const body = JSON.stringify({ browser: info.project.name, dryRun: dry, summary, result }, null, 2);
   await writeFile(info.outputPath(`voiceover-calibration-${info.project.name}.json`), body);
   await info.attach(`voiceover-calibration-${info.project.name}.json`, { body, contentType: 'application/json' });
+}
+
+/**
+ * The same sentence put in a polite status line again, three ways: one line emptied and given the same
+ * text 0.25 s later, two lines taking turns, and a new line inside the status each time. Before each
+ * round another line says something else, so a repeat shows as a change of VoiceOver's last phrase.
+ */
+async function repeatSameText(page: Page, reader: Reader) {
+  await page.evaluate(() => {
+    document.querySelector('main')!.insertAdjacentHTML('beforeend', `<div id="marker" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="one" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="turn-a" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="turn-b" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="fresh" role="status" aria-live="polite" aria-atomic="true"></div>`);
+  });
+  const ways = {
+    'one line emptied, the same text 0.25 s later': async (sent: string) => {
+      await page.evaluate(() => { document.getElementById('one')!.textContent = ''; });
+      await wait(250);
+      await page.evaluate(sent => { document.getElementById('one')!.textContent = sent; }, sent);
+    },
+    'two lines in turn': async (sent: string, round: number) => {
+      await page.evaluate(({ sent, round }) => {
+        const [now, before] = round % 2 ? ['turn-a', 'turn-b'] : ['turn-b', 'turn-a'];
+        document.getElementById(before)!.textContent = '';
+        document.getElementById(now)!.textContent = sent;
+      }, { sent, round });
+    },
+    'a new line in the status each time': async (sent: string) => {
+      await page.evaluate(sent => {
+        const line = document.createElement('div');
+        line.textContent = sent;
+        document.getElementById('fresh')!.replaceChildren(line);
+      }, sent);
+    },
+  };
+  const rounds: { way: string; sent: string; heard: string[] }[] = [];
+  for (const [way, put] of Object.entries(ways)) {
+    const sent = `Same sentence again for ${way.split(' ')[0]}.`;
+    // The sentence is already there once before the counted rounds.
+    await put(sent, 0);
+    await wait(settleMs);
+    for (let round = 1; round <= 6; round++) {
+      await page.evaluate(text => { document.getElementById('marker')!.textContent = text; }, `Marker ${way.length} ${round}.`);
+      await wait(dry ? 0 : 3000);
+      const listening = reader.listen(settleMs);
+      await put(sent, round);
+      rounds.push({ way, sent, heard: await listening });
+    }
+  }
+  return rounds;
 }
 
 const voiceOverReader = (voiceOver: VoiceOverPlaywright): Reader => ({
@@ -324,11 +408,12 @@ const voiceOverReader = (voiceOver: VoiceOverPlaywright): Reader => ({
     await voiceOver.previous();
     return voiceOver.itemText();
   },
+  current: () => voiceOver.itemText(),
   spoken: async () => [...await voiceOver.spokenPhraseLog()],
   listen: listenToVoiceOver,
 });
 
-const dryReader: Reader = { enter: async () => {}, next: async () => '', previous: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
+const dryReader: Reader = { enter: async () => {}, next: async () => '', previous: async () => '', current: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
 
 for (const locale of ['en-US', 'ko-KR'] as const) {
   if (dry) {
@@ -349,16 +434,16 @@ for (const locale of ['en-US', 'ko-KR'] as const) {
 }
 
 
-for (const links of ['name and description', 'name only', 'none'] as const) {
+for (const links of ['name and description', 'none'] as const) {
   if (dry) {
-    plainTest(`the notice can be taken round its states again and again, dialog linked to ${links} (dry run)`, async ({ page }, info) => {
-      await repeatChanges(page, info, 'en-US', dryReader, links);
+    plainTest(`the notice changes with the cursor on each of its items, dialog linked to ${links} (dry run)`, async ({ page }, info) => {
+      await changeUnderCursor(page, info, 'en-US', dryReader, links);
     });
   } else {
-    voiceOverTest.describe(`what VoiceOver says over repeated state changes (dialog linked to ${links})`, () => {
+    voiceOverTest.describe(`what VoiceOver says when the notice changes under its cursor (dialog linked to ${links})`, () => {
       voiceOverTest.use({ locale: 'en-US' });
       voiceOverTest('each change is recorded', async ({ page, voiceOver }, info) => {
-        await repeatChanges(page, info, 'en-US', voiceOverReader(voiceOver), links);
+        await changeUnderCursor(page, info, 'en-US', voiceOverReader(voiceOver), links);
       });
     });
   }
