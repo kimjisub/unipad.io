@@ -299,10 +299,11 @@ the received coordinates. The `firefox-grid` project alone disables native Firef
 stationary during preparation. This also makes smooth page scrolling jump immediately,
 even though media-query emulation reports `no-preference`, so only the stationary
 `rectangular-pad-layout.spec.ts` runs there. Ordinary `firefox` tests keep normal browser
-motion; `firefox-motion.spec.ts` rejects a project override, records the host native
-motion preference, and checks that scrolling animates when the host allows motion or
-jumps when the host reduces it. CSS media emulation alone does not change that native
-preference. Windows runs that regression and the grid in separate jobs.
+motion; `firefox-motion.spec.ts` rejects a project-wide native motion override and
+checks a smooth scroll in an isolated browser whose native motion is explicitly enabled.
+That single audio-free test uses native preference `0`; ordinary Firefox tests keep
+the host default. CSS media emulation alone does not enable native scrolling animation.
+Windows runs that regression and the grid in separate jobs.
 Lights and audio calls are read together on each press and release to reduce browser
 round trips without dropping any playback checks.
 
