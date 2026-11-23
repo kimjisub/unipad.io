@@ -1,29 +1,26 @@
 import { test, expect } from './browser';
 import type { Page } from '@playwright/test';
 
-// These two fragment attributes can land separately from the navigation fix.
-// Keep the real document and its tables, supplying only the missing link/target.
+// The fragment markup can land separately from the navigation fix. Rewrite
+// both server HTML and its hydration data, preserving the real document/tables.
 async function preparePackLink(page: Page, locale: string) {
-  await page.addInitScript(title => {
-    const markHeading = () => {
-      const heading = [...document.querySelectorAll('h3')].find(node => node.textContent === title);
-      if (!heading) return;
-      heading.id = 'packs';
-      observer.disconnect();
-    };
-    const observer = new MutationObserver(markHeading);
-    observer.observe(document, { childList: true, subtree: true });
-    markHeading();
-  }, locale === 'ko' ? '연주할 팩은 어디서 구하나요?' : 'Where do I get packs to play?');
+  const title = locale === 'ko' ? '연주할 팩은 어디서 구하나요?' : 'Where do I get packs to play?';
+  await page.route(/\/docs\/(?:get-started|guide)(?:\?|$)/, async route => {
+    const response = await route.fetch();
+    let body = await response.text();
+    if (new URL(route.request().url()).pathname.endsWith('/get-started')) {
+      if (!body.includes('href="/docs/guide#packs"')) {
+        body = body.replaceAll('/docs/guide#faq', '/docs/guide#packs');
+      }
+    } else {
+      body = body.replace(`<h3>${title}</h3>`, `<h3 id="packs">${title}</h3>`)
+        .replace(`\\"h3\\",null,{\\"children\\":\\"${title}\\"}`,
+          `\\"h3\\",null,{\\"id\\":\\"packs\\",\\"children\\":\\"${title}\\"}`);
+    }
+    await route.fulfill({ response, body });
+  });
   await page.goto('/docs/get-started');
   await page.waitForLoadState('networkidle');
-  await page.evaluate(() => {
-    if (document.querySelector('a[href="/docs/guide#packs"]')) return;
-    const link = document.createElement('a');
-    link.href = '/docs/guide#packs';
-    link.textContent = 'Pack import guide';
-    document.querySelector('.prose li')!.append(link);
-  });
 }
 
 async function settledPackLayout(page: Page) {
