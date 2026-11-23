@@ -201,3 +201,20 @@ test('a persisted report is not sent when its retry attempt cannot be recorded',
   await client.flush();
   assert.equal(sent, 0);
 });
+
+
+for (const lateReceipt of [false, true]) {
+  test(`cancellation suppresses a saved report even with a late receipt: ${lateReceipt}`, async () => {
+    const f = fixture(); let release;
+    const client = new DownloadAccounting({ ...f.options, request: async (url, options) => {
+      if (lateReceipt && url.endsWith('issueDownloadReceipt')) await new Promise(resolve => { release = resolve; });
+      return f.options.request(url, options);
+    } });
+    const controller = new AbortController();
+    const saved = client.begin('pack', controller.signal);
+    if (lateReceipt) { saved(); controller.abort(); release(); }
+    else { controller.abort(); saved(); }
+    await settle();
+    assert.equal(f.reports().length, 0); assert.deepEqual(f.queue(), []);
+  });
+}

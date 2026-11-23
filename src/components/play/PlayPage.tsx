@@ -906,7 +906,7 @@ export function PlayPage() {
 
     try {
       trackStoreEvent('store_download_start', { code: item.code });
-      const reportSaved = beginStoreDownloadReport(item.code);
+      const reportSaved = beginStoreDownloadReport(item.code, controller.signal);
       const zipData = await downloadStoreItem(item, (percent) => {
         setStoreProgress(percent);
       }, controller.signal);

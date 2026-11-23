@@ -85,19 +85,20 @@ export class DownloadAccounting {
   }
 
   /** Start issuance alongside the file request; only the returned save callback can enqueue it. */
-  begin(code: string): () => void {
-    if (!validCode(code) || !this.options.active()) return () => {};
+  begin(code: string, signal?: AbortSignal): () => void {
+    if (!validCode(code) || signal?.aborted || !this.options.active()) return () => {};
     const issuing = this.post('issueDownloadReceipt', { code }).then(answer =>
       answer?.status === 'issued' && validReceipt(answer.receipt) && validTime(answer.expiresAt)
         ? { receipt: answer.receipt, expiresAt: answer.expiresAt } : null);
     let saved = false;
     return () => {
-      if (saved) return;
+      if (saved || signal?.aborted) return;
       saved = true;
       const completedAt = this.now();
       void issuing.then(async (receipt: Receipt | null) => {
-        if (!receipt) return;
+        if (!receipt || signal?.aborted) return;
         await this.options.lock(async () => {
+          if (signal?.aborted) return;
           const rows = this.read();
           if (Math.min(receipt.expiresAt, completedAt + WEEK) <= this.now()) return;
           if (!rows.some(row => row.receipt === receipt.receipt)) {
@@ -177,8 +178,8 @@ function accounting(): DownloadAccounting | null {
   return browserAccounting;
 }
 
-export function beginStoreDownloadReport(code: string): () => void {
-  try { return accounting()?.begin(code) ?? (() => {}); } catch { return () => {}; }
+export function beginStoreDownloadReport(code: string, signal?: AbortSignal): () => void {
+  try { return accounting()?.begin(code, signal) ?? (() => {}); } catch { return () => {}; }
 }
 
 export function retryStoreDownloadReports(): void {
