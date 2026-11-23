@@ -151,6 +151,8 @@ test('WebKit and Firefox projects cover each shared playback file once', async (
   }
   const grid = config.projects.find(project => project.name === 'firefox-grid');
   assert.deepEqual(grid.testMatch, ['rectangular-pad-layout.spec.ts'], 'only stationary grid cases may use the native motion preference');
+  const normal = config.projects.find(project => project.name === 'firefox');
+  assert.equal(normal.use.launchOptions.firefoxUserPrefs['ui.prefersReducedMotion'], undefined, 'ordinary Firefox must keep the host native motion preference');
 });
 
 test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {
