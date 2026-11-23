@@ -5,7 +5,7 @@ import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
 import { seedSavedPacks, storedPackRecords } from './saved-packs';
-import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+import { expectConfirmationKeyboard, holdConfirmationExits, observeConfirmationKeys } from './confirm-dialog';
 
 // The item has no address, so the store downloads it, straight from the browser, by its code.
 const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPackLegacy') && url.searchParams.get('code') === 'browser-pack';
@@ -24,6 +24,8 @@ test('shared install confirmation contains keyboard focus and restores its opene
 
 for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
   const database = await connectStore(context);
+  // A closed confirmation must hand over keys even while its fade-out cannot finish.
+  if (answer === 'Escape') await holdConfirmationExits(page);
   await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
@@ -51,12 +53,17 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
     await expectPads(page);
     await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
   } else {
+    // Hold the install dialog's fade-out, which starts a frame after the answer.
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, 'heldConfirmationExits'))).toBeGreaterThan(0);
+    await expect(page.locator('[role="alertdialog"][aria-label="Confirm install"]')).toHaveCount(1);
+    // While it is still painted, Enter must reach the deletion's Cancel, not the closed dialog.
     await expect(installation).toHaveCount(0);
     await expect(lowerCancel).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(deletion).toHaveCount(0);
     await expect(opener).toBeFocused();
     await expect(page.getByRole('option')).toHaveCount(1);
+    expect(await storedPackRecords(page)).toHaveLength(1);
   }
   expect((await storedPackRecords(page)).some(pack => pack.id === 'saved-before-link')).toBe(true);
   await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });

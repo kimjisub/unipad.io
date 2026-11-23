@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { useIsPresent } from 'framer-motion';
 import { useWindowKeyDown } from './useWindowKeyDown';
 import { isSearchShortcut } from '../components/play/keyboardShortcuts';
 
@@ -22,19 +23,46 @@ interface ModalKeyboardOptions {
   onEnter?: (event: KeyboardEvent, inside: boolean) => void;
 }
 
-/** Only the newest dialog may guard focus or receive keys, even across dialog types. */
+/**
+ * Only the newest dialog may guard focus or receive keys, even across dialog types.
+ *
+ * Inside `AnimatePresence`, a dialog that starts to close hands focus and keys to what it covered
+ * at once and leaves the accessibility tree, while its exit animation keeps it painted. Keys never
+ * wait for that animation, which a busy device can hold for seconds.
+ */
 export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnFocusRef, onEscape, onEnter }: ModalKeyboardOptions) {
   const entryRef = useRef<ModalEntry | null>(null);
+  const present = useIsPresent();
+
+  // The painting order lasts until the layer unmounts, so a closing dialog fades above what it covered.
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const previous = openModals.at(-1);
+    const originalZIndex = layer.style.zIndex;
+    layer.style.zIndex = String(previous ? Number(previous.layer.style.zIndex) + 1 : 100);
+    return () => { layer.style.zIndex = originalZIndex; };
+  }, [layerRef]);
+
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    if (present || !layer) return;
+    layer.inert = true;
+    layer.setAttribute('aria-hidden', 'true');
+    return () => {
+      layer.inert = false;
+      layer.removeAttribute('aria-hidden');
+    };
+  }, [layerRef, present]);
+
   useLayoutEffect(() => {
     const element = dialogRef.current;
     const layer = layerRef.current;
-    if (!element || !layer) return;
+    if (!present || !element || !layer) return;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previous = openModals.at(-1);
     // A covered dialog's selected control takes priority over an explicit background opener.
     const returnFocus = active && previous?.element.contains(active) ? active : (returnFocusRef?.current ?? active);
-    const originalZIndex = layer.style.zIndex;
-    layer.style.zIndex = String(previous ? Number(previous.layer.style.zIndex) + 1 : 100);
     const entry: ModalEntry = { element, layer, focus: () => initialFocusRef.current?.focus({ preventScroll: true }) };
     entryRef.current = entry;
     openModals.push(entry);
@@ -49,7 +77,6 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
       const index = openModals.indexOf(entry);
       if (index !== -1) openModals.splice(index, 1);
       entryRef.current = null;
-      layer.style.zIndex = originalZIndex;
       const uncovered = openModals.at(-1);
       entry.restoreFocus = () => {
         // A dialog mounted in the same commit already owns focus.
@@ -58,13 +85,13 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
         else uncovered?.focus();
       };
     };
-  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef]);
+  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, present]);
 
   useEffect(() => {
     const entry = entryRef.current;
     // React must finish removing inert from a covered parent before it can take focus.
     return () => entry?.restoreFocus?.();
-  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef]);
+  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, present]);
 
   useWindowKeyDown(event => {
     const entry = entryRef.current;

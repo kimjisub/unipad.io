@@ -329,3 +329,42 @@ test('while the store is open the list ignores its keys, and takes them again on
   await act(async () => {});
   assert.deepEqual(selectedIds(), ['Alpha']);
 });
+
+test('a closing confirmation hands focus and keys to the one it covered before its exit animation ends', async () => {
+  const { AnimatePresence, MotionGlobalConfig } = require('framer-motion');
+  // Node gives framer-motion no animation frames, so with animations on an exit never finishes.
+  MotionGlobalConfig.skipAnimations = false;
+  const calls = [];
+  const screen = upper => React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(ConfirmDialog, {
+      message: 'Delete?', label: 'Lower',
+      onConfirm: () => calls.push('delete'), onCancel: () => calls.push('cancel delete'),
+    }),
+    React.createElement(AnimatePresence, null, upper && React.createElement(ConfirmDialog, {
+      key: 'upper', message: 'Install?', label: 'Upper',
+      onConfirm: () => calls.push('install'), onCancel: () => calls.push('cancel install'),
+    })));
+  try {
+    const view = render(screen(false));
+    const lower = view.getByRole('alertdialog', { name: 'Lower' });
+    const lowerCancel = within(lower).getByRole('button', { name: 'Cancel' });
+    lowerCancel.focus();
+    view.rerender(screen(true));
+    const upper = view.getByRole('alertdialog', { name: 'Upper' });
+    assert.ok(upper.contains(document.activeElement));
+    view.rerender(screen(false));
+    assert.ok(upper.isConnected, 'the closing dialog is still painted');
+    assert.ok(upper.parentElement.inert);
+    assert.equal(view.queryByRole('alertdialog', { name: 'Upper' }), null, 'it has left the accessibility tree');
+    assert.ok(Number(upper.parentElement.style.zIndex) > Number(lower.parentElement.style.zIndex), 'it fades out above the dialog it covered');
+    assert.equal(document.activeElement, lowerCancel);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    assert.deepEqual(calls, ['cancel delete', 'delete']);
+    // jsdom does not enforce inert; the uncovered dialog's guard must still pull focus back.
+    upper.querySelector('button').focus();
+    assert.ok(lower.contains(document.activeElement), 'focus cannot return to the closing dialog');
+  } finally {
+    MotionGlobalConfig.skipAnimations = true;
+  }
+});
