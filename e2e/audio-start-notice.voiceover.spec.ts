@@ -24,6 +24,8 @@ interface Reader {
   enter(): Promise<void>;
   /** Moves the reader's cursor to the next item and returns what it describes. */
   next(): Promise<string>;
+  /** Moves the reader's cursor to the previous item and returns what it describes. */
+  previous(): Promise<string>;
   /** Everything spoken in answer to the reader's own commands so far. */
   spoken(): Promise<string[]>;
   /**
@@ -39,7 +41,7 @@ type State = 'preparing' | 'delayed' | 'failed' | 'retrying';
 
 /** Real time for VoiceOver to finish speaking after a change. */
 const settleMs = dry ? 100 : 4000;
-/** Reader steps taken through the notice in each state; more than its items, so leaving it would show. */
+/** Reader steps taken each way through the notice in each state; more than its items, so leaving it would show. */
 const walkSteps = 8;
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -118,6 +120,7 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
       entry.titleSpokenTimes = said.filter(phrase => phrase.includes(copy.title)).length;
       entry.bodySpokenTimes = said.filter(phrase => phrase.includes(copy.body)).length;
       const items: string[] = [];
+      for (let step = 0; step < walkSteps; step++) items.push(await reader.previous());
       for (let step = 0; step < walkSteps; step++) items.push(await reader.next());
       entry.walk = items;
       // The walk leaves the reader's cursor on the status line; a player's is on the focused button,
@@ -215,11 +218,15 @@ const voiceOverReader = (voiceOver: VoiceOverPlaywright): Reader => ({
     await voiceOver.next();
     return voiceOver.itemText();
   },
+  previous: async () => {
+    await voiceOver.previous();
+    return voiceOver.itemText();
+  },
   spoken: async () => [...await voiceOver.spokenPhraseLog()],
   listen: listenToVoiceOver,
 });
 
-const dryReader: Reader = { enter: async () => {}, next: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
+const dryReader: Reader = { enter: async () => {}, next: async () => '', previous: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
 
 for (const locale of ['en-US', 'ko-KR'] as const) {
   if (dry) {
