@@ -3,7 +3,11 @@ import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { expect, expectPads, stateTimeout } from './browser';
 
-export interface InputEventRecord { type: string; pointerType: string; pointerId: number; buttons: number; trusted: boolean; target: string | null }
+export interface InputEventRecord {
+  type: string; pointerType: string; pointerId: number; buttons: number; trusted: boolean;
+  clientX: number; clientY: number; time: number; target: string | null; hitPad: string | null;
+  hitBounds: { x: number; y: number; width: number; height: number } | null;
+}
 declare global { interface Window { inputBoundaryEvents: InputEventRecord[] } }
 
 // Reuse the original fixture tone, with a distinct duration for every pad and chain.
@@ -50,8 +54,13 @@ export async function loadInputPack(page: Page, rows = 8, cols = 8, square = tru
         document.addEventListener(type, event => {
           const e = event as PointerEvent;
           const target = e.target instanceof Element ? e.target.closest('[data-pad], button') : null;
+          const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-pad]');
+          const rect = hit?.getBoundingClientRect();
           window.inputBoundaryEvents.push({ type, pointerType: e.pointerType, pointerId: e.pointerId,
             buttons: e.buttons, trusted: e.isTrusted,
+            clientX: e.clientX, clientY: e.clientY, time: performance.now(),
+            hitPad: hit?.getAttribute('data-pad') ?? null,
+            hitBounds: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
             target: target?.getAttribute('data-pad') ?? target?.getAttribute('aria-label') ?? null });
         }, true);
       }

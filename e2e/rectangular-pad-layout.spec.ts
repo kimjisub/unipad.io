@@ -23,13 +23,19 @@ const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
 // 0 and 1 are a pad's outer edges, so the grid's border pads are pressed near the border.
 const edgeOffset = (index: number, last: number) => index === 0 ? 0 : index === last ? 1 : 0.5;
 async function record(page: Page, info: TestInfo, name: string) {
-  await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
   await info.attach(`${name}-geometry-and-input`, {
-    body: JSON.stringify({ pads: await bounds(page), audio: await page.evaluate(() => window.browserProbe.audio),
+    body: JSON.stringify({ platform: process.platform, audioProcess: process.env.E2E_FIREFOX_AUDIO_PROCESS ?? 'page',
+      pads: await bounds(page), audio: await page.evaluate(() => window.browserProbe.audio),
       events: await page.evaluate(() => window.inputBoundaryEvents) }, null, 2),
     contentType: 'application/json',
   });
+  await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
 }
+
+// Teardown has its own budget, so a timed-out press still leaves the received input and geometry.
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) await record(page, info, 'failed-input');
+});
 
 // Each test decodes a two-chain pack and presses up to 17 edge pads, or every pad on portrait tablets, with trusted mouse input. On a busy
 // shared machine one browser round trip can take 300 ms, which put the 8x8 tests at 20-28 s of the 30 s default.

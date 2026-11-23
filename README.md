@@ -277,6 +277,20 @@ so the workflow installs the Scream virtual sound card and starts Windows Audio 
 Without an output, Firefox never starts Web Audio: the output-signal and auto-play
 tests then fail on "the browser did not start the audio output of the opened pack".
 
+For a native Firefox input comparison, manually run **Windows playback** on the branch
+with `firefox_comparison=true`. It runs only the compact-phone and phone 8×8 square
+and rectangular grid cases, five times per audio path, in separate Windows jobs.
+`E2E_FIREFOX_AUDIO_PROCESS=page` uses the current page-process audio settings;
+`broker` uses Firefox's normal audio broker and content sandbox. Both keep real audio,
+zero retries and the existing test deadlines. Locally, set the same variable and run:
+
+```bash
+pnpm test:e2e e2e/rectangular-pad-layout.spec.ts --project=firefox --grep 'phone: 8x8' --repeat-each=5
+```
+
+Grid-test failures attach input coordinates, the pad and its bounds at event time,
+audio calls and a screenshot from teardown, including when a press times out.
+
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,
 and fails on incomplete execution. Windows uploads them, signal attachments and failure traces for 14 days,
