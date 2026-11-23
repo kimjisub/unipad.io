@@ -9,6 +9,7 @@ import { Menu, X, Globe, ChevronDown } from 'lucide-react';
 import { AndroidLogo } from '@/components/icons/AndroidLogo';
 import { AppleLogo } from '@/components/icons/AppleLogo';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
+import { localeCookie } from '@/i18n/routing';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
 
 const PLAY_MENU_ID = 'topbar-play-menu';
@@ -35,8 +36,37 @@ const TopBar: React.FC = () => {
 
 	const toggleLocale = () => {
 		const nextLocale = locale === 'en' ? 'ko' : 'en';
-		router.replace(pathname, { locale: nextLocale });
+		if (window.location.hash) {
+			// Reload this address so the router cannot replace a native fragment with its cached URL.
+			document.cookie = `${localeCookie.name}=${nextLocale}; path=/; max-age=${localeCookie.maxAge}; samesite=lax`;
+			window.location.reload();
+			return;
+		}
+		router.replace(`${pathname}${window.location.search}`, { locale: nextLocale });
 	};
+
+	useEffect(() => {
+		if (!window.location.hash) return;
+		let cancelled = false;
+		let frame: number | undefined;
+		const alignSection = async () => {
+			await document.fonts.ready;
+			if (cancelled) return;
+			frame = window.requestAnimationFrame(() => {
+				frame = undefined;
+				const section = window.location.hash.slice(1);
+				document.getElementById(section)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+			});
+		};
+		const onLoad = () => { void alignSection(); };
+		if (document.readyState === 'complete') onLoad();
+		else window.addEventListener('load', onLoad, { once: true });
+		return () => {
+			cancelled = true;
+			window.removeEventListener('load', onLoad);
+			if (frame !== undefined) window.cancelAnimationFrame(frame);
+		};
+	}, [locale]);
 
 	useEffect(() => {
 		if (!isMenuOpen && !isDownloadOpen) return;

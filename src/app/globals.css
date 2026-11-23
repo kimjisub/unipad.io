@@ -197,6 +197,15 @@
   --tw-prose-links: var(--accent);
 }
 
+.prose :is(h2, h3)[id] {
+  scroll-margin-top: 6rem;
+}
+
+.prose :not(pre) > code::before,
+.prose :not(pre) > code::after {
+  content: none;
+}
+
 /*
  * Inter is used only by the web player, which enables it with `.font-inter` and preloads the latin
  * file itself. Declaring it here keeps every page on this one shared stylesheet; the browser fetches

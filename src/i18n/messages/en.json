@@ -76,7 +76,9 @@
       "title": "Custom Skins",
       "description": "Personalize your play screen with custom themes. Change pad buttons, backgrounds, chain visuals, and UI colors — all packaged in a simple ZIP.",
       "tags": "Pads · Background · Chain"
-    }
+    },
+    "connectGuide": "Connection guide",
+    "applyGuide": "How to apply"
   },
   "howItWorks": {
     "eyebrow": "Get started",
@@ -149,7 +151,8 @@
         "q": "Where can I get UniPad?",
         "a": "UniPad is free and continues to receive updates. Get the Android app on Google Play (Android 7.0 or later), or the iPhone and iPad app on the App Store (iOS or iPadOS 17 or later). You can also play in your browser at https://unipad.io/play without installing the app."
       }
-    }
+    },
+    "fullGuide": "Read the full user guide"
   },
   "cta": {
     "title": "Get Started Now",
@@ -174,7 +177,7 @@
     },
     "theme": {
       "title": "Theme",
-      "description": "Learn about the theme system for customizing the play screen appearance."
+      "description": "File format guide for people who make their own skins (themes)."
     },
     "terms": {
       "title": "Terms of Use",
@@ -188,6 +191,17 @@
       "usage": {
         "title": "App Usage Scope Notice",
         "description": "Review the commercial and non-commercial usage scope of the UniPad app."
+      }
+    },
+    "guide": {
+      "title": "User Guide",
+      "description": "Apply skins, play on a computer, connect a Launchpad, custom firmware and common questions, all in one place.",
+      "topics": {
+        "skins": "Skins (themes)",
+        "web": "Play on the web",
+        "launchpad": "Connect a Launchpad",
+        "custom-firmware": "Custom firmware",
+        "faq": "FAQ"
       }
     }
   },
