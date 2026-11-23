@@ -1,11 +1,11 @@
-import { voiceOverTest } from '@guidepup/playwright';
+import { voiceOverTest, type VoiceOverPlaywright } from '@guidepup/playwright';
 import { test as plainTest, type Page, type TestInfo } from '@playwright/test';
 import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { expect, expectPads, installBrowserProbe, stateTimeout } from './browser';
 import { openBasicWith } from './basic-pack';
-import { freezeClock, installAudioGate, notice } from './audio-gate';
+import { freezeClock, installAudioGate, notice, noticeAnnouncements, recordNoticeAnnouncements } from './audio-gate';
 import en from '../src/i18n/messages/en.json';
 import ko from '../src/i18n/messages/ko.json';
 
@@ -81,6 +81,7 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   const startName = messages[locale].play.playMode.ariaLabel.replace('{mode}', messages[locale].play.playMode.auto);
   await installBrowserProbe(page);
   await installAudioGate(page);
+  await recordNoticeAnnouncements(page);
   await page.addInitScript(() => { window.audioGate.mode = 'hold'; });
   await page.clock.install();
   await openBasicWith(page, {});
@@ -104,10 +105,14 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   };
 
   const record: unknown[] = [];
+  let announced = 0;
   const observe = async (state: State | 'closed', action: string, listening: Promise<string[]>) => {
     const said = await listening;
     const focus = await focusedItem(page);
-    const entry: Record<string, unknown> = { state, action, spoken: said, focus };
+    // What the page put in its status line meanwhile: told apart from what the reader then said.
+    const announcements = await noticeAnnouncements(page);
+    const entry: Record<string, unknown> = { state, action, spoken: said, pageAnnounced: announcements.slice(announced), focus };
+    announced = announcements.length;
     if (state !== 'closed') {
       const copy = text[state];
       entry.titleSpokenTimes = said.filter(phrase => phrase.includes(copy.title)).length;
@@ -170,28 +175,73 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   await info.attach(`voiceover-${info.project.name}-${locale}.json`, { body, contentType: 'application/json' });
 }
 
+
+/**
+ * The same reader and listener on a bare page: a polite status line (as the notice uses) and an alert,
+ * each changed six times with the focus left on one button. How many of the changes are heard tells
+ * what the listener and VoiceOver drop on their own, apart from the app.
+ */
+async function calibrate(page: Page, info: TestInfo, reader: Reader) {
+  await page.goto('about:blank');
+  await page.setContent(`<main><h1>Reader check</h1><button>Stay here</button>
+    <div id="polite" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="assertive" role="alert" aria-atomic="true"></div></main>`);
+  await reader.enter();
+  await page.getByRole('button').focus();
+  await wait(dry ? 0 : 2000);
+  const result: Record<string, { sent: string; heard: string[] }[]> = { polite: [], assertive: [] };
+  for (const kind of ['polite', 'assertive'] as const) {
+    for (let round = 1; round <= 6; round++) {
+      const sent = `${kind} check ${round}: the reader says this once.`;
+      const listening = reader.listen(settleMs);
+      await page.evaluate(({ kind, sent }) => { document.getElementById(kind)!.textContent = sent; }, { kind, sent });
+      result[kind].push({ sent, heard: await listening });
+    }
+  }
+  const summary = Object.fromEntries(Object.entries(result).map(([kind, rounds]) => [kind,
+    `${rounds.filter(({ sent, heard }) => heard.filter(phrase => phrase.includes(sent)).length === 1).length}/${rounds.length} heard once`]));
+  const body = JSON.stringify({ browser: info.project.name, dryRun: dry, summary, result }, null, 2);
+  await writeFile(info.outputPath(`voiceover-calibration-${info.project.name}.json`), body);
+  await info.attach(`voiceover-calibration-${info.project.name}.json`, { body, contentType: 'application/json' });
+}
+
+const voiceOverReader = (voiceOver: VoiceOverPlaywright): Reader => ({
+  enter: () => voiceOver.navigateToWebContent(),
+  next: async () => {
+    await voiceOver.next();
+    return voiceOver.itemText();
+  },
+  spoken: async () => [...await voiceOver.spokenPhraseLog()],
+  listen: listenToVoiceOver,
+});
+
+const dryReader: Reader = { enter: async () => {}, next: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } };
+
 for (const locale of ['en-US', 'ko-KR'] as const) {
   if (dry) {
     plainTest.describe(`audio start notice with a reader (dry run, ${locale})`, () => {
       plainTest.use({ locale });
       plainTest('every state can be walked', async ({ page }, info) => {
-        await readNotice(page, info, locale, { enter: async () => {}, next: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } });
+        await readNotice(page, info, locale, dryReader);
       });
     });
   } else {
     voiceOverTest.describe(`audio start notice read by VoiceOver (${locale})`, () => {
       voiceOverTest.use({ locale });
       voiceOverTest('VoiceOver reads each state, its buttons and stays in the notice', async ({ page, voiceOver }, info) => {
-        await readNotice(page, info, locale, {
-          enter: () => voiceOver.navigateToWebContent(),
-          next: async () => {
-            await voiceOver.next();
-            return voiceOver.itemText();
-          },
-          spoken: async () => [...await voiceOver.spokenPhraseLog()],
-          listen: listenToVoiceOver,
-        });
+        await readNotice(page, info, locale, voiceOverReader(voiceOver));
       });
     });
   }
+}
+
+
+if (dry) {
+  plainTest('a bare status line and alert can be changed (dry run)', async ({ page }, info) => {
+    await calibrate(page, info, dryReader);
+  });
+} else {
+  voiceOverTest('how often VoiceOver reads a bare status line and alert', async ({ page, voiceOver }, info) => {
+    await calibrate(page, info, voiceOverReader(voiceOver));
+  });
 }

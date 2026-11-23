@@ -4,7 +4,7 @@ import { chromium, type Locator, type Page, type TestInfo } from '@playwright/te
 import { test, expect, expectAudioOutputRunning, installBrowserProbe, stateTimeout } from './browser';
 import { themeFile, themeSetting } from './saved-packs';
 import { longTone, openBasicWith } from './basic-pack';
-import { freezeClock, installAudioGate, notice, openWithStoppedOutput } from './audio-gate';
+import { freezeClock, installAudioGate, notice, noticeAnnouncements, openWithStoppedOutput, recordNoticeAnnouncements } from './audio-gate';
 
 const mode = (page: Page, name: 'Auto' | 'Guide' | 'Step') => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
@@ -229,6 +229,36 @@ test.describe('audio start notice', () => {
     await expect(notice(page)).toHaveCount(0);
     await settle(page, 'resolve');
     await expectNothingStarted(page, before);
+  });
+
+  test('the status line announces each state once: the first text after opening, then each change whole', async ({ page }) => {
+    await recordNoticeAnnouncements(page);
+    await openWithStoppedOutput(page, 'hold');
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(300);
+    await expectNotice(page, 'preparing');
+    const dialog = notice(page);
+    // The dialog itself is named by its title and described by its text.
+    await expect(dialog).toHaveAccessibleName('Preparing audio');
+    await expect(dialog).toHaveAccessibleDescription('Playback will start when audio is ready.');
+    expect(await noticeAnnouncements(page), 'nothing more while the name is read').toEqual([]);
+    await page.clock.runFor(500);
+    await expect.poll(() => noticeAnnouncements(page)).toEqual(['Playback will start when audio is ready.']);
+    await page.clock.runFor(4200);
+    await expectNotice(page, 'delayed');
+    await page.evaluate(() => { window.audioGate.mode = 'reject'; });
+    await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
+    await expectNotice(page, 'failed');
+    await page.evaluate(() => { window.audioGate.mode = 'hold'; });
+    await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
+    await expectNotice(page, 'retrying');
+    await page.clock.runFor(2000);
+    expect(await noticeAnnouncements(page)).toEqual([
+      'Playback will start when audio is ready.',
+      'Audio is taking longer. We stopped waiting. Try again to prepare audio.',
+      'Couldn’t start audio. Playback hasn’t started. Please try again.',
+      'Preparing audio again. Your requested playback will continue when ready.',
+    ]);
   });
 
   test('keyboard stays in the notice; closing returns to the button that asked', async ({ page }) => {
