@@ -6,7 +6,9 @@ import type { Page } from '@playwright/test';
 async function preparePackLink(page: Page, locale: string) {
   const title = locale === 'ko' ? '연주할 팩은 어디서 구하나요?' : 'Where do I get packs to play?';
   await page.route(/\/docs\/(?:get-started|guide)(?:\?|$)/, async route => {
-    const response = await route.fetch();
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), 'accept-language': locale === 'ko' ? 'ko-KR' : 'en-US' },
+    });
     let body = await response.text();
     if (new URL(route.request().url()).pathname.endsWith('/get-started')) {
       if (!body.includes('href="/docs/guide#packs"')) {
@@ -21,6 +23,7 @@ async function preparePackLink(page: Page, locale: string) {
   });
   await page.goto('/docs/get-started');
   await page.waitForLoadState('networkidle');
+  await expect(page.locator('html')).toHaveAttribute('lang', locale);
 }
 
 async function settledPackLayout(page: Page) {
@@ -63,6 +66,7 @@ for (const locale of ['ko', 'en']) {
         await preparePackLink(page, locale);
         await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
         await expect(page).toHaveURL('/docs/guide#packs');
+        await expect(page.locator('html')).toHaveAttribute('lang', locale);
         const layout = await settledPackLayout(page);
         await info.attach('settled-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
         await info.attach('pack-link', { body: await page.screenshot(), contentType: 'image/png' });
