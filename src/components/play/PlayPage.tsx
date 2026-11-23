@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AnimatePresence } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { useWindowKeyDown } from '@/hooks/useWindowKeyDown';
-import { useUniPadEngine } from './useUniPadEngine';
+import { useUniPadEngine, type PlayMode } from './useUniPadEngine';
 import { PadGrid } from './PadGrid';
 import { ChainBar } from './ChainBar';
 import { ControlPanel } from './ControlPanel';
@@ -15,6 +15,8 @@ import { SkinImage } from './SkinImage';
 import { LaunchpadSettingsModal } from './LaunchpadSettingsModal';
 import { PackErrorDialog } from './PackErrorDialog';
 import { SoundLoadNotice } from './SoundLoadNotice';
+import { AudioStartNotice } from './AudioStartNotice';
+import { playMenuTitle } from './packTitle';
 import { PlayToast } from './PlayToast';
 import { toastDurationMs } from './toastDuration';
 import { allSoundsFailed, type SoundLoadReport } from '@/lib/unipack/soundLoading';
@@ -97,6 +99,9 @@ export function PlayPage() {
     playMode,
     switchPlayMode,
     autoPlayPlayPause,
+    audioStart,
+    retryAudioStart,
+    cancelAudioStart,
     autoPlayPrev,
     autoPlayNext,
     toggleFeedbackLight,
@@ -685,6 +690,38 @@ export function PlayPage() {
     || pendingAutoPlayEdit !== null || (soundNoticeShown && (soundLoadFailed || soundDetailsOpen));
   useEffect(() => setKeyboardBlocked(dialogOpen), [dialogOpen, setKeyboardBlocked]);
 
+  // The audio start notice holds input without the interruption other dialogs cause, which would
+  // cancel its own preparation; see useUniPadEngine's requestAudioStart.
+  const audioStartShown = audioStart?.visible ?? false;
+  // The start or Play button that asked for the audio, for focus to return to.
+  const audioStartOpenerRef = useRef<HTMLElement | null>(null);
+  // WebKit does not focus a clicked button, so the click itself names it while its handlers run.
+  const clickedButtonRef = useRef<HTMLElement | null>(null);
+  const rotateHintRef = useRef<HTMLParagraphElement>(null);
+  const playerTitleRef = useRef<HTMLHeadingElement>(null);
+  const rememberAudioStartOpener = useCallback(() => {
+    if (audioStart) return;
+    const active = document.activeElement;
+    audioStartOpenerRef.current = clickedButtonRef.current
+      ?? (active instanceof HTMLElement && active !== document.body ? active : null);
+  }, [audioStart]);
+  const handleSwitchPlayMode = useCallback((mode: PlayMode) => {
+    rememberAudioStartOpener();
+    switchPlayMode(mode);
+  }, [rememberAudioStartOpener, switchPlayMode]);
+  const handleAutoPlayPlayPause = useCallback(() => {
+    rememberAudioStartOpener();
+    autoPlayPlayPause();
+  }, [rememberAudioStartOpener, autoPlayPlayPause]);
+  /** The button that asked, or what stands in for it when it is gone or covered by the rotate hint. */
+  const audioStartReturnTarget = useCallback(() => {
+    const hint = rotateHintRef.current;
+    if (hint && hint.getClientRects().length > 0) return hint;
+    const opener = audioStartOpenerRef.current;
+    if (opener?.isConnected && opener.getClientRects().length > 0) return opener;
+    return playerTitleRef.current;
+  }, []);
+
   // Keyboard shortcuts: Escape for overlays, Backtick for function key shortcuts
   useWindowKeyDown((e) => {
     if (e.key === 'Escape') {
@@ -706,14 +743,14 @@ export function PlayPage() {
       }
       return;
     }
-    if (dialogOpen) return;
+    if (dialogOpen || audioStartShown) return;
 
     // Android function key equivalents (Backtick + number)
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       switch (e.key) {
         case 'f': e.preventDefault(); toggleFeedbackLight(); break;
         case 'l': e.preventDefault(); toggleLed(); break;
-        case 'a': e.preventDefault(); switchPlayMode('autoPlay'); break;
+        case 'a': e.preventDefault(); handleSwitchPlayMode('autoPlay'); break;
         case 'o': e.preventDefault(); setOptionPanelOpen((prev) => !prev); break;
         case 'h': e.preventDefault(); toggleHideUI(); break;
         case 'w': e.preventDefault(); toggleWatermark(); break;
@@ -1453,7 +1490,11 @@ export function PlayPage() {
 
   // Player screen: [Controls LEFT] [PAD GRID center] [CHAINS RIGHT]
   return (
+    <>
     <div
+      inert={audioStartShown}
+      onClickCapture={(e) => { clickedButtonRef.current = (e.target as Element).closest('button'); }}
+      onClick={() => { clickedButtonRef.current = null; }}
       className="relative h-dvh text-white overflow-hidden animate-[fadeIn_300ms_ease-out]"
       style={{
         backgroundColor: '#000000',
@@ -1466,6 +1507,8 @@ export function PlayPage() {
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
+      <h1 ref={playerTitleRef} tabIndex={-1} className="sr-only">{playMenuTitle(unipack.info.title)}</h1>
+
       {/* Top-left status indicators (minimal, Android-like) */}
       <div className="absolute top-0 left-0 z-30 px-3 pt-2 pointer-events-none">
         <div className="flex items-center gap-2 pointer-events-auto">
@@ -1538,8 +1581,9 @@ export function PlayPage() {
             onOpenMenu={handleBack}
             onToggleFeedbackLight={toggleFeedbackLight}
             onToggleLed={toggleLed}
-            onSwitchPlayMode={switchPlayMode}
-            onAutoPlayPlayPause={autoPlayPlayPause}
+            onSwitchPlayMode={handleSwitchPlayMode}
+            onAutoPlayPlayPause={handleAutoPlayPlayPause}
+            pendingStart={audioStart?.intent ?? null}
             onAutoPlayPrev={autoPlayPrev}
             onAutoPlayNext={autoPlayNext}
             onToggleRecording={toggleRecording}
@@ -1736,7 +1780,7 @@ export function PlayPage() {
         midiConnecting={midiConnecting}
         onToggleFeedbackLight={toggleFeedbackLight}
         onToggleLed={toggleLed}
-        onSwitchPlayMode={switchPlayMode}
+        onSwitchPlayMode={handleSwitchPlayMode}
         onStartAutoMapping={() => setPendingAutoPlayEdit('map')}
         autoMappingActive={state.autoMappingActive}
         autoMappingProgress={state.autoMappingProgress}
@@ -1794,12 +1838,16 @@ export function PlayPage() {
         <svg className="w-12 h-12 text-white/60 animate-[spin_2s_ease-in-out_infinite]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
-        <p className="text-sm text-white/70">{t('rotateToLandscape')}</p>
+        <p ref={rotateHintRef} tabIndex={-1} className="text-sm text-white/70">{t('rotateToLandscape')}</p>
       </div>
 
       {/* Binary document types enable unregistered .uni files on iPadOS without a media-source menu; archive bytes are validated on import. */}
       <input ref={fileInputRef} type="file" accept=".zip,.uni,application/zip,application/octet-stream" data-unipack-import="" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
     </div>
+    {audioStartShown && audioStart && (
+      <AudioStartNotice notice={audioStart} onRetry={retryAudioStart} onCancel={cancelAudioStart} returnFocusTarget={audioStartReturnTarget} />
+    )}
+    </>
   );
 }

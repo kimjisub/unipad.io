@@ -4,6 +4,7 @@ import { memo, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type { ThemeColors } from '@/lib/unipack';
 import type { PlayMode } from './useUniPadEngine';
+import type { AudioStartIntent } from './audioStart';
 import { AutoPlayControls } from './AutoPlayControls';
 
 interface ControlPanelProps {
@@ -28,6 +29,8 @@ interface ControlPanelProps {
   onToggleLed: () => void;
   onSwitchPlayMode: (mode: PlayMode) => void;
   onAutoPlayPlayPause: () => void;
+  /** The start whose audio is being prepared; its button shows it is busy. */
+  pendingStart?: AudioStartIntent | null;
   onAutoPlayPrev: () => void;
   onAutoPlayNext: () => void;
   onToggleRecording: () => void;
@@ -55,6 +58,7 @@ export const ControlPanel = memo(function ControlPanel({
   onToggleLed,
   onSwitchPlayMode,
   onAutoPlayPlayPause,
+  pendingStart = null,
   onAutoPlayPrev,
   onAutoPlayNext,
   onToggleRecording,
@@ -102,6 +106,7 @@ export const ControlPanel = memo(function ControlPanel({
           <>
             <PlayModeSegmented
               playMode={playMode}
+              pendingMode={pendingStart?.kind === 'mode' ? pendingStart.mode : null}
               color={cbColor}
               onSwitchPlayMode={onSwitchPlayMode}
             />
@@ -112,6 +117,7 @@ export const ControlPanel = memo(function ControlPanel({
                   progress={autoPlayProgress}
                   total={autoPlayTotal}
                   themeColor={cbColor}
+                  busy={pendingStart?.kind === 'resume'}
                   onPlayPause={onAutoPlayPlayPause}
                   onPrev={onAutoPlayPrev}
                   onNext={onAutoPlayNext}
@@ -153,10 +159,12 @@ const PLAY_MODES: { mode: PlayMode; labelKey: 'auto' | 'guide' | 'step' }[] = [
  *  did not communicate clearly. */
 function PlayModeSegmented({
   playMode,
+  pendingMode,
   color,
   onSwitchPlayMode,
 }: {
   playMode: PlayMode;
+  pendingMode: PlayMode | null;
   color: string;
   onSwitchPlayMode: (mode: PlayMode) => void;
 }) {
@@ -169,17 +177,20 @@ function PlayModeSegmented({
     >
       {PLAY_MODES.map(({ mode, labelKey }) => {
         const active = playMode === mode;
+        const busy = pendingMode === mode;
         const label = t(labelKey);
         return (
           <button
             key={mode}
-            className="flex-1 px-1 py-1.5 rounded text-[10px] font-semibold whitespace-nowrap transition-colors select-none"
+            className="flex-1 px-1 py-1.5 rounded text-[10px] font-semibold whitespace-nowrap transition-colors select-none aria-busy:animate-pulse"
             style={{
               backgroundColor: active ? color : 'transparent',
               color: active ? '#000000' : 'rgba(255,255,255,0.6)',
+              boxShadow: busy ? `inset 0 0 0 1px ${color}` : undefined,
             }}
             onClick={() => onSwitchPlayMode(mode)}
             aria-pressed={active}
+            aria-busy={busy || undefined}
             aria-label={t('ariaLabel', { mode: label })}
           >
             {label}
