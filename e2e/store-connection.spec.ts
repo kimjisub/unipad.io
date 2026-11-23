@@ -13,7 +13,12 @@ const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPac
 test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
   await observeConfirmationKeys(page);
   await connectStore(context);
-  await openConnectedSharedLink(page);
+  await verifyDatabase(page);
+  // Warm the real store cache before navigation. This keyboard test needs a confirmation
+  // even if the new document's Firebase connection takes longer than the lookup deadline.
+  await page.getByRole('button', { name: /^Store/ }).click();
+  await expect(page.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
+  await page.goto('/play?code=browser-pack');
   const dialog = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   // This confirmation opens from navigation, so its previous focus is the document body.
   await expectConfirmationKeyboard(page, dialog, info);
@@ -28,16 +33,44 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
+  await page.exposeFunction('releaseOverlappingDialogLookup', () => database.releaseReplies());
+  // Prepare the lower dialog at each render, without driver round trips consuming the
+  // real five-second lookup deadline. Only setup uses DOM events; the checks use native keys.
+  await page.addInitScript(() => {
+    Object.assign(window, { overlappingDialogsReady: new Promise<boolean>(resolve => {
+      let step = 0;
+      const observer = new MutationObserver(advance);
+      observer.observe(document, { childList: true, subtree: true, attributes: true });
+      function advance() {
+        const row = document.querySelector<HTMLElement>('[data-pack-id="saved-before-link"]');
+        if (!row) return;
+        if (step === 0) {
+          step++;
+          row.focus();
+          row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        } else if (step === 1) {
+          if (row.getAttribute('aria-selected') !== 'true') return;
+          step++;
+          row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+        } else {
+          const deletion = document.querySelector('[role="alertdialog"][aria-label="Confirm deletion"]');
+          const cancel = Array.from(deletion?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === 'Cancel');
+          if (!cancel) return;
+          cancel.focus();
+          const focused = document.activeElement === cancel;
+          observer.disconnect();
+          void (Reflect.get(window, 'releaseOverlappingDialogLookup') as () => Promise<void>)().then(() => resolve(focused));
+        }
+      }
+      advance();
+    }) });
+  });
   await page.goto('/play?code=browser-pack');
+  expect(await page.evaluate(() => Reflect.get(window, 'overlappingDialogsReady') as Promise<boolean>), 'lower Cancel was focused before the lookup reply').toBe(true);
   const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
-  // Select through the keyboard without waiting for the row's entrance animation.
-  await opener.press('Space');
-  await page.keyboard.press('Delete');
   const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
   const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
   await expect(deletion).toBeVisible();
-  await lowerCancel.focus();
-  await database.releaseReplies();
   const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   await expect(installation).toBeVisible();
   await info.attach('overlapping-confirmations', { body: await page.screenshot(), contentType: 'image/png' });
