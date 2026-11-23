@@ -1,4 +1,58 @@
 import { test, expect } from './browser';
+import type { Page } from '@playwright/test';
+
+// These two fragment attributes can land separately from the navigation fix.
+// Keep the real document and its tables, supplying only the missing link/target.
+async function preparePackLink(page: Page, locale: string) {
+  await page.addInitScript(title => {
+    const markHeading = () => {
+      const heading = [...document.querySelectorAll('h3')].find(node => node.textContent === title);
+      if (!heading) return;
+      heading.id = 'packs';
+      observer.disconnect();
+    };
+    const observer = new MutationObserver(markHeading);
+    observer.observe(document, { childList: true, subtree: true });
+    markHeading();
+  }, locale === 'ko' ? '연주할 팩은 어디서 구하나요?' : 'Where do I get packs to play?');
+  await page.goto('/docs/get-started');
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(() => {
+    if (document.querySelector('a[href="/docs/guide#packs"]')) return;
+    const link = document.createElement('a');
+    link.href = '/docs/guide#packs';
+    link.textContent = 'Pack import guide';
+    document.querySelector('.prose li')!.append(link);
+  });
+}
+
+async function settledPackLayout(page: Page) {
+  await page.waitForLoadState('load');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    // Observe the real post-load table reflow, rather than accepting an early
+    // visible heading that can disappear on the next rendering update.
+    let previous = '';
+    let stableSince = performance.now();
+    const started = performance.now();
+    await new Promise<void>((resolve, reject) => {
+      const sample = () => {
+        const geometry = JSON.stringify([document.body.scrollHeight,
+          ...[...document.querySelectorAll('.prose table')].map(node => node.getBoundingClientRect().height)]);
+        const now = performance.now();
+        if (geometry !== previous) { previous = geometry; stableSince = now; }
+        if (now - stableSince >= 750) return resolve();
+        if (now - started > 5000) return reject(new Error('Document layout did not settle'));
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+  });
+  return page.locator('#packs').evaluate(node => ({
+    top: node.getBoundingClientRect().top, scrollY, height: document.body.scrollHeight,
+    tables: [...document.querySelectorAll('.prose table')].map(table => table.getBoundingClientRect().height),
+  }));
+}
 
 const topics = ['skins', 'web', 'launchpad', 'custom-firmware', 'faq'];
 
@@ -7,6 +61,41 @@ for (const locale of ['ko', 'en']) {
     test.use({ locale: locale === 'ko' ? 'ko-KR' : 'en-US', reducedMotion: 'reduce' });
 
     for (const width of [1440, 390]) {
+      test(`pack link stays uncovered after layout settles at ${width}px`, async ({ page, checkedPage }, info) => {
+        await page.setViewportSize({ width, height: 900 });
+        await preparePackLink(page, locale);
+        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
+        await expect(page).toHaveURL('/docs/guide#packs');
+        const layout = await settledPackLayout(page);
+        await info.attach('settled-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
+        await info.attach('pack-link', { body: await page.screenshot(), contentType: 'image/png' });
+        expect(layout.top, 'pack heading below the fixed navigation after table reflow').toBeGreaterThanOrEqual(80);
+        expect(layout.top).toBeLessThan(900);
+      });
+
+      test(`pack link leaves user scroll alone after layout changes at ${width}px`, async ({ page, checkedPage }, info) => {
+        await page.setViewportSize({ width, height: 900 });
+        await preparePackLink(page, locale);
+        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
+        await settledPackLayout(page);
+        const before = await page.evaluate(() => scrollY);
+        await page.mouse.wheel(0, -300);
+        await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(before - 100);
+        // A subsequent height change must reach the observer while its safety
+        // window is still open, without browser scroll anchoring hiding a pull.
+        const changed = await page.evaluate(() => {
+          document.documentElement.style.setProperty('overflow-anchor', 'none');
+          const table = document.querySelector<HTMLElement>('.prose table')!;
+          const before = { scrollY, height: document.body.scrollHeight };
+          table.style.marginBottom = '400px';
+          return { before, height: document.body.scrollHeight };
+        });
+        expect(changed.height).toBeGreaterThan(changed.before.height + 300);
+        const after = await settledPackLayout(page);
+        await info.attach('user-scroll-layout', { body: JSON.stringify({ changed, after }), contentType: 'application/json' });
+        expect(Math.abs(after.scrollY - changed.before.scrollY)).toBeLessThan(2);
+      });
+
       for (const topic of topics) {
         test(`direct #${topic} and language switching at ${width}px`, async ({ page, checkedPage }) => {
           test.setTimeout(90_000);
