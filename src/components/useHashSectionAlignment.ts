@@ -1,16 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 const INPUT_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
 const ALIGNMENT_WINDOW_MS = 3000;
 
 export function useHashSectionAlignment(pathname: string, locale: string) {
+  const historyHref = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     let stopAlignment: (() => void) | undefined;
 
     const startAlignment = () => {
       stopAlignment?.();
+      // Browser history restores the reader's scroll position itself. Keep the
+      // marker through hashchange, which can follow popstate for the same entry.
+      if (historyHref.current === window.location.href) return;
+      historyHref.current = undefined;
       const hash = window.location.hash;
       if (!hash) return;
 
@@ -60,10 +66,18 @@ export function useHashSectionAlignment(pathname: string, locale: string) {
       else window.addEventListener('load', onLoad, { once: true });
     };
 
+    const onHistoryNavigation = () => {
+      historyHref.current = window.location.href;
+      stopAlignment?.();
+    };
+
     startAlignment();
+    // Run before the router can synchronously render and replace this effect.
+    window.addEventListener('popstate', onHistoryNavigation, true);
     window.addEventListener('hashchange', startAlignment);
     return () => {
       stopAlignment?.();
+      window.removeEventListener('popstate', onHistoryNavigation, true);
       window.removeEventListener('hashchange', startAlignment);
     };
   }, [pathname, locale]);

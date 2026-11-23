@@ -1,8 +1,7 @@
-import { test, expect } from './browser';
+import { test, expect, type PageErrors } from './browser';
 import type { Page } from '@playwright/test';
 
-// The fragment markup can land separately from the navigation fix. Rewrite
-// both server HTML and its hydration data, preserving the real document/tables.
+// Preserve matching server HTML and hydration data when adding the pack fragment.
 async function preparePackLink(page: Page, locale: string) {
   const title = locale === 'ko' ? '연주할 팩은 어디서 구하나요?' : 'Where do I get packs to play?';
   await page.route(/\/docs\/(?:get-started|guide)(?:\?|$)/, async route => {
@@ -24,6 +23,23 @@ async function preparePackLink(page: Page, locale: string) {
   await page.goto('/docs/get-started');
   await page.waitForLoadState('networkidle');
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
+}
+
+async function openPackLink(page: Page, locale: string, checkedPage: PageErrors) {
+  await preparePackLink(page, locale);
+  // Pause after the source page hydrates. Network and rendering can take any
+  // wall time without consuming the destination's bounded alignment window.
+  const now = Date.now();
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 1000);
+  const started = await page.evaluate(() => performance.now());
+  await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click({ force: true }));
+  await expect(page.locator('#packs')).toBeAttached();
+  await page.evaluate(() => document.fonts.ready);
+  await page.clock.runFor(100);
+  await expect(page).toHaveURL('/docs/guide#packs');
+  await expect(page.locator('html')).toHaveAttribute('lang', locale);
+  return started;
 }
 
 async function settledPackLayout(page: Page) {
@@ -63,24 +79,24 @@ for (const locale of ['ko', 'en']) {
     for (const width of [1440, 390]) {
       test(`pack link stays uncovered after layout settles at ${width}px`, async ({ page, checkedPage }, info) => {
         await page.setViewportSize({ width, height: 900 });
-        await preparePackLink(page, locale);
-        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
-        await expect(page).toHaveURL('/docs/guide#packs');
-        await expect(page.locator('html')).toHaveAttribute('lang', locale);
-        const initial = await settledPackLayout(page);
-        // Response buffering can make native WebKit reflow happen earlier.
-        // Also force a later table shrink so an early visible heading cannot
-        // let the one-shot implementation pass by chance.
-        const shrink = await page.evaluate(() => {
+        const started = await openPackLink(page, locale, checkedPage);
+        // Shrink a real table after initial alignment, with no scroll anchoring
+        // or CSS transition able to hide when the height change takes effect.
+        const shrink = await page.evaluate(started => {
           document.documentElement.style.setProperty('overflow-anchor', 'none');
           const table = document.querySelector<HTMLElement>('.prose table')!;
+          const initial = document.getElementById('packs')!.getBoundingClientRect().top;
           const before = table.getBoundingClientRect().height;
+          table.style.transition = 'none';
           table.style.lineHeight = '12px';
-          return { before, after: table.getBoundingClientRect().height };
-        });
+          return { initial, before, after: table.getBoundingClientRect().height, elapsed: performance.now() - started };
+        }, started);
+        expect(shrink.initial).toBeGreaterThanOrEqual(80);
         expect(shrink.before - shrink.after).toBeGreaterThan(40);
+        expect(shrink.elapsed, 'table shrink inside the alignment window').toBeLessThan(3000);
+        await page.clock.resume();
         const layout = await settledPackLayout(page);
-        await info.attach('settled-layout', { body: JSON.stringify({ initial, shrink, ...layout }), contentType: 'application/json' });
+        await info.attach('settled-layout', { body: JSON.stringify({ shrink, ...layout }), contentType: 'application/json' });
         await info.attach('pack-link', { body: await page.screenshot(), contentType: 'image/png' });
         expect(layout.top, 'pack heading below the fixed navigation after table reflow').toBeGreaterThanOrEqual(80);
         expect(layout.top).toBeLessThan(900);
@@ -88,24 +104,21 @@ for (const locale of ['ko', 'en']) {
 
       test(`pack link leaves user scroll alone after layout changes at ${width}px`, async ({ page, checkedPage }, info) => {
         await page.setViewportSize({ width, height: 900 });
-        await preparePackLink(page, locale);
-        await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
-        await settledPackLayout(page);
+        const started = await openPackLink(page, locale, checkedPage);
         const before = await page.evaluate(() => scrollY);
         await page.mouse.wheel(0, -300);
         await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(before - 100);
-        // A subsequent height change must reach the observer while its safety
-        // window is still open, without browser scroll anchoring hiding a pull.
-        const changed = await page.evaluate(async () => {
+        const changed = await page.evaluate(started => {
           document.documentElement.style.setProperty('overflow-anchor', 'none');
           const table = document.querySelector<HTMLElement>('.prose table')!;
           const before = { scrollY, height: document.body.scrollHeight };
+          table.style.transition = 'none';
           table.style.marginBottom = '400px';
-          // Reduced-motion transitions still apply on a rendering update.
-          await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-          return { before, height: document.body.scrollHeight };
-        });
+          return { before, height: document.body.scrollHeight, elapsed: performance.now() - started };
+        }, started);
+        expect(changed.elapsed, 'height increase inside the alignment window').toBeLessThan(3000);
         expect(changed.height).toBeGreaterThan(changed.before.height + 300);
+        await page.clock.resume();
         const after = await settledPackLayout(page);
         await info.attach('user-scroll-layout', { body: JSON.stringify({ changed, after }), contentType: 'application/json' });
         expect(Math.abs(after.scrollY - changed.before.scrollY)).toBeLessThan(2);
