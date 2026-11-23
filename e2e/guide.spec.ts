@@ -83,6 +83,59 @@ for (const locale of ['ko', 'en']) {
     }
 
 
+    for (const path of [
+      '/docs/guide', '/docs/get-started', '/docs/theme',
+      '/docs/unipack/info', '/docs/unipack/key-sound', '/docs/unipack/key-led',
+      '/docs/unipack/sounds', '/docs/unipack/auto-play',
+    ]) {
+      test(`table words stay intact at 390px in ${path}`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.goto(path);
+        await page.evaluate(() => document.fonts.ready);
+        const tables = page.locator('.prose table');
+        expect(await tables.count()).toBeGreaterThan(0);
+        const measured = await tables.evaluateAll(tables => {
+          const broken: { word: string; cell: string }[] = [];
+          let words = 0;
+          for (const table of tables) {
+            for (const cell of table.querySelectorAll('th, td')) {
+              const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                // Spaces, punctuation and hyphens are valid wrap points. Latin words and
+                // identifiers must not break inside a token, including in Korean prose.
+                const matches = node.textContent?.matchAll(/[A-Za-z0-9_]+/g) ?? [];
+                for (const match of matches) {
+                  if (match[0].length < 2) continue;
+                  words++;
+                  const range = document.createRange();
+                  range.setStart(node, match.index!);
+                  range.setEnd(node, match.index! + match[0].length);
+                  const lines = new Set([...range.getClientRects()]
+                    .filter(rect => rect.width > 0 && rect.height > 0)
+                    .map(rect => Math.round(rect.top)));
+                  if (lines.size > 1) broken.push({ word: match[0], cell: cell.textContent!.trim() });
+                }
+              }
+            }
+          }
+          return {
+            words, broken,
+            pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            tableOverflow: tables.map(table => Math.max(0, table.getBoundingClientRect().right - innerWidth)),
+          };
+        });
+        await testInfo.attach('table-layout', { body: JSON.stringify(measured, null, 2), contentType: 'application/json' });
+        await testInfo.attach('first-table', { body: await tables.first().screenshot(), contentType: 'image/png' });
+        if (path === '/docs/guide') {
+          await testInfo.attach('model-table', { body: await tables.nth(1).screenshot(), contentType: 'image/png' });
+        }
+        expect(measured.words, 'table word geometry was measured').toBeGreaterThan(0);
+        expect(measured.broken, 'words and identifiers split across lines').toEqual([]);
+        expect(measured.pageOverflow, 'page horizontal overflow').toBe(0);
+        expect(measured.tableOverflow, 'tables beyond the viewport').toEqual(measured.tableOverflow.map(() => 0));
+      });
+    }
+
     test('keyboard keys and callout links are readable in existing docs', async ({ page }) => {
       await page.goto('/docs/get-started');
       const code = page.locator('table code').first();
