@@ -18,13 +18,19 @@ interface ModalKeyboardOptions {
   layerRef: RefObject<HTMLDivElement | null>;
   initialFocusRef: RefObject<HTMLButtonElement | null>;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
+  /** Chooses where focus returns when the dialog closes, over the element focused when it opened. */
+  returnFocusTarget?: () => HTMLElement | null;
+  /** Held Enter or Space activates the focused button once, not again with each repeat. */
+  ignoreRepeatedActivation?: boolean;
   onEscape: () => void;
   onEnter?: (event: KeyboardEvent, inside: boolean) => void;
 }
 
 /** Only the newest dialog may guard focus or receive keys, even across dialog types. */
-export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnFocusRef, onEscape, onEnter }: ModalKeyboardOptions) {
+export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnFocusRef, returnFocusTarget, ignoreRepeatedActivation, onEscape, onEnter }: ModalKeyboardOptions) {
   const entryRef = useRef<ModalEntry | null>(null);
+  const returnFocusTargetRef = useRef(returnFocusTarget);
+  useLayoutEffect(() => { returnFocusTargetRef.current = returnFocusTarget; });
   useLayoutEffect(() => {
     const element = dialogRef.current;
     const layer = layerRef.current;
@@ -54,7 +60,8 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
       entry.restoreFocus = () => {
         // A dialog mounted in the same commit already owns focus.
         if (!wasTop || openModals.at(-1) !== uncovered) return;
-        if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+        const target = returnFocusTargetRef.current?.() ?? returnFocus;
+        if (target?.isConnected) target.focus({ preventScroll: true });
         else uncovered?.focus();
       };
     };
@@ -72,7 +79,9 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
     // Native defaults (button activation, copy, zoom, refresh) remain available.
     event.stopImmediatePropagation();
     const inside = event.target instanceof window.Node && entry.element.contains(event.target);
-    if (event.key === 'Escape') {
+    if (ignoreRepeatedActivation && event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+    } else if (event.key === 'Escape') {
       event.preventDefault();
       onEscape();
     } else if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {

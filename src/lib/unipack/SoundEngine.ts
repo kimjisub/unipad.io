@@ -53,6 +53,8 @@ export class SoundEngine {
   private pendingSuspensions = 0;
   private pendingResumptions = 0;
   private gestureResume: (() => void) | null = null;
+  /** A start the player asked for prepares the audio itself meanwhile; presses do not ask again. */
+  holdGestureResume = false;
 
   constructor(
     unipack: UniPackData,
@@ -83,7 +85,7 @@ export class SoundEngine {
     void (ready ? this.afterParking(ready, start) : start()).catch(() => {});
     if (typeof document !== 'undefined') {
       const resumeOnGesture = () => {
-        if (this.visibilitySuspended) return;
+        if (this.visibilitySuspended || this.holdGestureResume) return;
         if (this.audioContext.state === 'running' || this.audioContext.state === 'closed') {
           this.removeGestureResume();
           return;

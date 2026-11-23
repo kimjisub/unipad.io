@@ -483,6 +483,27 @@
         "decode": "Sound cannot be played",
         "memory": "Insufficient device memory"
       }
+    },
+    "audioStart": {
+      "preparing": {
+        "title": "Preparing audio",
+        "body": "Playback will start when audio is ready."
+      },
+      "retrying": {
+        "title": "Preparing audio again",
+        "body": "Your requested playback will continue when ready."
+      },
+      "failed": {
+        "title": "Couldn’t start audio",
+        "body": "Playback hasn’t started. Please try again."
+      },
+      "delayed": {
+        "title": "Audio is taking longer",
+        "body": "We stopped waiting. Try again to prepare audio."
+      },
+      "retry": "Try again",
+      "cancel": "Cancel",
+      "dismiss": "Dismiss"
     }
   }
 }

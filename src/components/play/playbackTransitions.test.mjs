@@ -858,10 +858,15 @@ for (const refusal of ['reject', 'not running']) test(`manual Play after ${refus
   await flush(() => result.current.autoPlayPlayPause()); await tick(10000);
   assert.equal(result.current.state.autoPlayPlaying, false);
   assert.equal(result.current.state.autoPlayProgress, progress);
+  assert.deepEqual(result.current.audioStart, { phase: 'failed', retry: false, visible: true, intent: { kind: 'resume' } });
   audio.resume = resume;
   await flush(() => { audio.state = 'running'; audio.onstatechange?.(); });
   await tick(10000); assert.equal(starts.length, 1, 'permission alone must not satisfy the failed request');
-  await flush(() => result.current.autoPlayPlayPause());
+  // The failure notice holds the player: only its Try again asks again.
+  await flush(() => result.current.autoPlayPlayPause()); await tick(10000);
+  assert.equal(starts.length, 1, 'Play behind the notice must not start');
+  await flush(() => result.current.retryAudioStart());
+  assert.equal(result.current.audioStart, null);
   await tick(1498); assert.equal(starts.length, 1);
   await tick(1); assert.equal(starts.length, 2);
 });
@@ -1680,6 +1685,8 @@ test('a mode switch refused by the audio output keeps one Play resuming the paus
     const refused = [result.current.state.autoPlayPlaying, result.current.state.stepPractice];
     audio.resume = resume; audio.state = 'running';
     if (interrupted) { await visibility(true); await tick(1); await visibility(false); await tick(1); }
+    // Dismissing the failure notice leaves the paused guide where it stopped.
+    await flush(() => result.current.cancelAudioStart());
     const before = starts.length;
     await flush(() => result.current.autoPlayPlayPause()); await tick(1); await draw();
     const { autoPlayPlaying, stepPractice } = result.current.state;
