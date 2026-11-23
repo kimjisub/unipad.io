@@ -23,25 +23,8 @@ test('shared install confirmation contains keyboard focus and restores its opene
 });
 
 for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
-  const database = await connectStore(context);
   // A closed confirmation must hand over keys even while its fade-out cannot finish.
-  if (answer === 'Escape') await holdConfirmationExits(page);
-  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
-  await verifyDatabase(page);
-  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
-  database.holdReplies();
-  await page.goto('/play?code=browser-pack');
-  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
-  // Select through the keyboard without waiting for the row's entrance animation.
-  await opener.press('Space');
-  await page.keyboard.press('Delete');
-  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
-  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
-  await expect(deletion).toBeVisible();
-  await lowerCancel.focus();
-  await database.releaseReplies();
-  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
-  await expect(installation).toBeVisible();
+  const { opener, deletion, lowerCancel, installation } = await openOverlappingConfirmations(page, context, { holdExits: answer === 'Escape', focusLowerCancel: true });
   await info.attach('overlapping-confirmations', { body: await page.screenshot(), contentType: 'image/png' });
   await expect(installation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
   for (const key of ['Tab', 'Shift+Tab', 'Tab', 'Shift+Tab']) {
@@ -54,7 +37,9 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
     await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
   } else {
     // Hold the install dialog's fade-out, which starts a frame after the answer.
-    await expect.poll(() => page.evaluate(() => Reflect.get(window, 'heldConfirmationExits'))).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, 'heldConfirmationExits')), {
+      message: 'no fade-out was held: holdConfirmationExits only sees exits run through Element.animate',
+    }).toBeGreaterThan(0);
     await expect(page.locator('[role="alertdialog"][aria-label="Confirm install"]')).toHaveCount(1);
     // While it is still painted, Enter must reach the deletion's Cancel, not the closed dialog.
     await expect(installation).toHaveCount(0);
@@ -67,6 +52,31 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
   }
   expect((await storedPackRecords(page)).some(pack => pack.id === 'saved-before-link')).toBe(true);
   await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+// The deletion opens on Delete, under where the install dialog's buttons are painted.
+for (const answer of ['Enter Enter', 'double click Install', 'double click Cancel']) test(`a second press meant for the shared install dialog never answers the deletion under it: ${answer}`, async ({ page, context }, info) => {
+  const { deletion, lowerCancel, installation } = await openOverlappingConfirmations(page, context);
+  const install = installation.getByRole('button', { name: 'Install', exact: true });
+  await expect(install).toBeFocused();
+  if (answer === 'Enter Enter') {
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+  } else {
+    await (answer.endsWith('Install') ? install : installation.getByRole('button', { name: 'Cancel', exact: true })).dblclick();
+  }
+  await expect(installation).toHaveCount(0);
+  if (answer === 'double click Cancel') {
+    // The second click falls on the closing dialog, so the deletion still waits for its own answer.
+    await expect(deletion).toBeVisible();
+    await expect(lowerCancel).toBeFocused();
+    await expect(page.getByRole('option')).toHaveCount(1);
+  } else {
+    await expectPads(page);
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+  }
+  await info.attach('after-second-press', { body: await page.screenshot(), contentType: 'image/png' });
+  expect((await storedPackRecords(page)).map(pack => pack.id)).toContain('saved-before-link');
 });
 
 for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
@@ -213,6 +223,30 @@ async function connectStore(context: BrowserContext, firstHandshakeDelayMs = 0) 
       await expect.poll(() => blockedStoreRequests, { timeout: 15000 }).toBeGreaterThan(0);
     },
   };
+}
+
+/** Opens a saved pack's deletion, then lets the shared link's install confirmation open over it. */
+async function openOverlappingConfirmations(page: Page, context: BrowserContext, { holdExits = false, focusLowerCancel = false } = {}) {
+  const database = await connectStore(context);
+  if (holdExits) await holdConfirmationExits(page);
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  await page.goto('/play?code=browser-pack');
+  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
+  // Select through the keyboard without waiting for the row's entrance animation.
+  await opener.press('Space');
+  await page.keyboard.press('Delete');
+  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(deletion).toBeVisible();
+  if (focusLowerCancel) await lowerCancel.focus();
+  else await expect(deletion.getByRole('button', { name: 'Delete', exact: true })).toBeFocused();
+  await database.releaseReplies();
+  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(installation).toBeVisible();
+  return { opener, deletion, lowerCancel, installation };
 }
 
 async function verifyDatabase(page: Page) {

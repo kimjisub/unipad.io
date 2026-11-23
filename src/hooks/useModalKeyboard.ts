@@ -5,20 +5,32 @@ import { isSearchShortcut } from '../components/play/keyboardShortcuts';
 
 interface ModalEntry {
   element: HTMLElement;
-  layer: HTMLElement;
   focus: () => void;
+  /** Present when the dialog names a safe control for when a dialog over it closes. */
+  focusUncovered?: () => void;
+  /** Set when a dialog above closes, until a fresh key press: a key held for that dialog must not repeat here. */
+  ignoreRepeats: boolean;
   restoreFocus?: () => void;
 }
 
-// All guarded dialogs share one order for focus, keyboard input and painting.
+// All guarded dialogs share one order for focus and keyboard input.
 const openModals: ModalEntry[] = [];
+// Painting order also counts closing dialogs, which have left `openModals` but still fade out.
+const paintedLayers = new Set<HTMLElement>();
 const focusable = 'button:not(:disabled), [href], [tabindex="0"]';
+const pointerEvents = ['pointerdown', 'mousedown', 'click', 'dblclick', 'auxclick', 'contextmenu'] as const;
 
 interface ModalKeyboardOptions {
   dialogRef: RefObject<HTMLDivElement | null>;
   layerRef: RefObject<HTMLDivElement | null>;
   initialFocusRef: RefObject<HTMLButtonElement | null>;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
+  /**
+   * Takes focus when a dialog over this one closes, instead of the control selected before it
+   * opened. A dialog whose selected control can be destructive names a safe one, so a second press
+   * meant for the dialog that just closed cannot confirm this one.
+   */
+  uncoveredFocusRef?: RefObject<HTMLButtonElement | null>;
   onEscape: () => void;
   onEnter?: (event: KeyboardEvent, inside: boolean) => void;
 }
@@ -28,9 +40,12 @@ interface ModalKeyboardOptions {
  *
  * Inside `AnimatePresence`, a dialog that starts to close hands focus and keys to what it covered
  * at once and leaves the accessibility tree, while its exit animation keeps it painted. Keys never
- * wait for that animation, which a busy device can hold for seconds.
+ * wait for that animation, which a busy device can hold for seconds. Until it is gone the closing
+ * dialog still catches the pointer, so a click on what is still visible never lands underneath.
  */
-export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnFocusRef, onEscape, onEnter }: ModalKeyboardOptions) {
+export function useModalKeyboard({
+  dialogRef, layerRef, initialFocusRef, returnFocusRef, uncoveredFocusRef, onEscape, onEnter,
+}: ModalKeyboardOptions) {
   const entryRef = useRef<ModalEntry | null>(null);
   const present = useIsPresent();
 
@@ -38,19 +53,32 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
   useLayoutEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
-    const previous = openModals.at(-1);
     const originalZIndex = layer.style.zIndex;
-    layer.style.zIndex = String(previous ? Number(previous.layer.style.zIndex) + 1 : 100);
-    return () => { layer.style.zIndex = originalZIndex; };
+    layer.style.zIndex = String(Math.max(99, ...Array.from(paintedLayers, painted => Number(painted.style.zIndex))) + 1);
+    paintedLayers.add(layer);
+    return () => {
+      paintedLayers.delete(layer);
+      layer.style.zIndex = originalZIndex;
+    };
   }, [layerRef]);
 
   useLayoutEffect(() => {
     const layer = layerRef.current;
     if (present || !layer) return;
-    layer.inert = true;
+    const contents = Array.from(layer.children).filter(child => child instanceof HTMLElement);
+    // Leave focus before hiding, so assistive technology never sees focus inside a hidden layer.
+    if (document.activeElement instanceof HTMLElement && layer.contains(document.activeElement)) document.activeElement.blur();
+    for (const child of contents) child.inert = true;
     layer.setAttribute('aria-hidden', 'true');
+    // Inert contents let the pointer fall through to the layer itself, which keeps it from what lies beneath.
+    const swallow = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    for (const type of pointerEvents) layer.addEventListener(type, swallow, true);
     return () => {
-      layer.inert = false;
+      for (const type of pointerEvents) layer.removeEventListener(type, swallow, true);
+      for (const child of contents) child.inert = false;
       layer.removeAttribute('aria-hidden');
     };
   }, [layerRef, present]);
@@ -63,7 +91,12 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
     const previous = openModals.at(-1);
     // A covered dialog's selected control takes priority over an explicit background opener.
     const returnFocus = active && previous?.element.contains(active) ? active : (returnFocusRef?.current ?? active);
-    const entry: ModalEntry = { element, layer, focus: () => initialFocusRef.current?.focus({ preventScroll: true }) };
+    const entry: ModalEntry = {
+      element,
+      focus: () => initialFocusRef.current?.focus({ preventScroll: true }),
+      focusUncovered: uncoveredFocusRef && (() => uncoveredFocusRef.current?.focus({ preventScroll: true })),
+      ignoreRepeats: false,
+    };
     entryRef.current = entry;
     openModals.push(entry);
     entry.focus();
@@ -78,26 +111,33 @@ export function useModalKeyboard({ dialogRef, layerRef, initialFocusRef, returnF
       if (index !== -1) openModals.splice(index, 1);
       entryRef.current = null;
       const uncovered = openModals.at(-1);
+      if (wasTop && uncovered) uncovered.ignoreRepeats = true;
       entry.restoreFocus = () => {
         // A dialog mounted in the same commit already owns focus.
         if (!wasTop || openModals.at(-1) !== uncovered) return;
-        if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+        if (uncovered?.focusUncovered) uncovered.focusUncovered();
+        else if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
         else uncovered?.focus();
       };
     };
-  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, present]);
+  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, uncoveredFocusRef, present]);
 
   useEffect(() => {
     const entry = entryRef.current;
     // React must finish removing inert from a covered parent before it can take focus.
     return () => entry?.restoreFocus?.();
-  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, present]);
+  }, [dialogRef, layerRef, initialFocusRef, returnFocusRef, uncoveredFocusRef, present]);
 
   useWindowKeyDown(event => {
     const entry = entryRef.current;
     if (!entry || openModals.at(-1) !== entry) return;
     // Native defaults (button activation, copy, zoom, refresh) remain available.
     event.stopImmediatePropagation();
+    if (entry.ignoreRepeats && event.repeat) {
+      event.preventDefault();
+      return;
+    }
+    entry.ignoreRepeats = false;
     const inside = event.target instanceof window.Node && entry.element.contains(event.target);
     if (event.key === 'Escape') {
       event.preventDefault();

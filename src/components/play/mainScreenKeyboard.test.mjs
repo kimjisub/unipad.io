@@ -330,41 +330,91 @@ test('while the store is open the list ignores its keys, and takes them again on
   assert.deepEqual(selectedIds(), ['Alpha']);
 });
 
-test('a closing confirmation hands focus and keys to the one it covered before its exit animation ends', async () => {
-  const { AnimatePresence, MotionGlobalConfig } = require('framer-motion');
-  // Node gives framer-motion no animation frames, so with animations on an exit never finishes.
-  MotionGlobalConfig.skipAnimations = false;
-  const calls = [];
-  const screen = upper => React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+function overlappingConfirmations(calls, upper) {
+  const { AnimatePresence } = require('framer-motion');
+  return React.createElement(NextIntlClientProvider, { locale: 'en', messages },
     React.createElement(ConfirmDialog, {
       message: 'Delete?', label: 'Lower',
       onConfirm: () => calls.push('delete'), onCancel: () => calls.push('cancel delete'),
     }),
     React.createElement(AnimatePresence, null, upper && React.createElement(ConfirmDialog, {
-      key: 'upper', message: 'Install?', label: 'Upper',
+      key: 'upper', message: 'Install?', label: 'Upper', confirmText: 'Install',
       onConfirm: () => calls.push('install'), onCancel: () => calls.push('cancel install'),
     })));
+}
+
+/** Node gives framer-motion no animation frames, so with animations on an exit never finishes. */
+async function withStalledExits(run) {
+  const { MotionGlobalConfig } = require('framer-motion');
+  const skipAnimations = MotionGlobalConfig.skipAnimations;
+  MotionGlobalConfig.skipAnimations = false;
   try {
-    const view = render(screen(false));
-    const lower = view.getByRole('alertdialog', { name: 'Lower' });
-    const lowerCancel = within(lower).getByRole('button', { name: 'Cancel' });
-    lowerCancel.focus();
-    view.rerender(screen(true));
-    const upper = view.getByRole('alertdialog', { name: 'Upper' });
-    assert.ok(upper.contains(document.activeElement));
-    view.rerender(screen(false));
-    assert.ok(upper.isConnected, 'the closing dialog is still painted');
-    assert.ok(upper.parentElement.inert);
-    assert.equal(view.queryByRole('alertdialog', { name: 'Upper' }), null, 'it has left the accessibility tree');
-    assert.ok(Number(upper.parentElement.style.zIndex) > Number(lower.parentElement.style.zIndex), 'it fades out above the dialog it covered');
-    assert.equal(document.activeElement, lowerCancel);
-    fireEvent.keyDown(document.body, { key: 'Escape' });
-    fireEvent.keyDown(document.body, { key: 'Enter' });
-    assert.deepEqual(calls, ['cancel delete', 'delete']);
-    // jsdom does not enforce inert; the uncovered dialog's guard must still pull focus back.
-    upper.querySelector('button').focus();
-    assert.ok(lower.contains(document.activeElement), 'focus cannot return to the closing dialog');
+    await run();
   } finally {
-    MotionGlobalConfig.skipAnimations = true;
+    MotionGlobalConfig.skipAnimations = skipAnimations;
   }
-});
+}
+
+test('a closing confirmation hands focus and keys to the one it covered before its exit animation ends', () => withStalledExits(async () => {
+  const calls = [];
+  const screen = upper => overlappingConfirmations(calls, upper);
+  const view = render(screen(false));
+  const lower = view.getByRole('alertdialog', { name: 'Lower' });
+  const lowerCancel = within(lower).getByRole('button', { name: 'Cancel' });
+  lowerCancel.focus();
+  view.rerender(screen(true));
+  const upper = view.getByRole('alertdialog', { name: 'Upper' });
+  assert.ok(upper.contains(document.activeElement));
+  view.rerender(screen(false));
+  assert.ok(upper.isConnected, 'the closing dialog is still painted');
+  assert.ok(upper.inert);
+  assert.equal(view.queryByRole('alertdialog', { name: 'Upper' }), null, 'it has left the accessibility tree');
+  assert.ok(Number(upper.parentElement.style.zIndex) > Number(lower.parentElement.style.zIndex), 'it fades out above the dialog it covered');
+  assert.equal(document.activeElement, lowerCancel);
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  fireEvent.keyDown(document.body, { key: 'Enter' });
+  assert.deepEqual(calls, ['cancel delete', 'delete']);
+  // jsdom does not enforce inert; the uncovered dialog's guard must still pull focus back.
+  upper.querySelector('button').focus();
+  assert.ok(lower.contains(document.activeElement), 'focus cannot return to the closing dialog');
+}));
+
+test('a second press or click meant for a closing confirmation cannot confirm the one it covered', () => withStalledExits(async () => {
+  const calls = [];
+  const screen = upper => overlappingConfirmations(calls, upper);
+  const view = render(screen(false));
+  const lower = view.getByRole('alertdialog', { name: 'Lower' });
+  // The deletion opens on its destructive button.
+  assert.equal(document.activeElement, within(lower).getByRole('button', { name: 'Delete' }));
+  view.rerender(screen(true));
+  const upper = view.getByRole('alertdialog', { name: 'Upper' });
+  const install = within(upper).getByRole('button', { name: 'Install' });
+  view.rerender(screen(false));
+  assert.equal(document.activeElement, within(lower).getByRole('button', { name: 'Cancel' }), 'the uncovered deletion takes focus on Cancel');
+  // A held Enter keeps repeating after the install closed; the deletion ignores it until a fresh press.
+  const repeated = fireEvent.keyDown(document.body, { key: 'Enter', repeat: true });
+  assert.equal(repeated, false, 'the repeat cannot activate the focused button either');
+  // jsdom ignores inert, so this click reaches the closing layer as a hit on its painted button would.
+  fireEvent.click(install);
+  fireEvent.click(upper.parentElement);
+  assert.deepEqual(calls, []);
+  fireEvent.keyDown(document.body, { key: 'Enter' });
+  assert.deepEqual(calls, ['delete']);
+}));
+
+test('a dialog opened while another fades out paints above it', () => withStalledExits(async () => {
+  const calls = [];
+  const { AnimatePresence } = require('framer-motion');
+  const screen = which => React.createElement(NextIntlClientProvider, { locale: 'en', messages },
+    React.createElement(AnimatePresence, null, React.createElement(ConfirmDialog, {
+      key: which, message: which, label: which, onConfirm: () => calls.push(which), onCancel: () => {},
+    })));
+  const view = render(screen('First'));
+  const first = view.getByRole('alertdialog', { name: 'First' });
+  view.rerender(screen('Second'));
+  const second = view.getByRole('alertdialog', { name: 'Second' });
+  assert.ok(first.isConnected, 'the first dialog is still fading out');
+  assert.ok(Number(second.parentElement.style.zIndex) > Number(first.parentElement.style.zIndex));
+  fireEvent.keyDown(document.body, { key: 'Enter' });
+  assert.deepEqual(calls, ['Second']);
+}));

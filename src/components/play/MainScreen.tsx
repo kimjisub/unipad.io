@@ -1023,10 +1023,11 @@ export function ConfirmDialog({
   const tCommon = useTranslations('play.common');
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   const layerRef = useRef<HTMLDivElement>(null);
   useModalKeyboard({
-    dialogRef, layerRef, initialFocusRef: confirmRef, onEscape: onCancel,
+    dialogRef, layerRef, initialFocusRef: confirmRef, uncoveredFocusRef: cancelRef, onEscape: onCancel,
     onEnter: (event, inside) => {
       // Native button activation stays intact, so Enter on Cancel still cancels.
       if (inside && targetHandlesOwnKeys(event)) return;
@@ -1059,6 +1060,7 @@ export function ConfirmDialog({
         <p className="text-sm text-white/90 mb-5 leading-relaxed">{message}</p>
         <div className="flex justify-end gap-2">
           <button
+            ref={cancelRef}
             className="px-4 py-2.5 rounded-xl text-xs text-white/60 bg-white/[0.06] hover:bg-white/10 transition-colors"
             onClick={onCancel}
           >
