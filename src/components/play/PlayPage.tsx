@@ -1,5 +1,7 @@
 'use client';
 
+import { beginStoreDownloadReport, retryStoreDownloadReports } from '@/lib/downloadAccounting';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useTranslations } from 'next-intl';
@@ -879,6 +881,18 @@ export function PlayPage() {
     };
   }, [storeOpen, tStore]);
 
+  useEffect(() => {
+    retryStoreDownloadReports();
+    window.addEventListener('focus', retryStoreDownloadReports);
+    window.addEventListener('online', retryStoreDownloadReports);
+    document.addEventListener('visibilitychange', retryStoreDownloadReports);
+    return () => {
+      window.removeEventListener('focus', retryStoreDownloadReports);
+      window.removeEventListener('online', retryStoreDownloadReports);
+      document.removeEventListener('visibilitychange', retryStoreDownloadReports);
+    };
+  }, []);
+
   const handleDownloadStoreItem = useCallback(async (item: StoreItem) => {
     if (downloadingStoreCode) return;
 
@@ -892,6 +906,7 @@ export function PlayPage() {
 
     try {
       trackStoreEvent('store_download_start', { code: item.code });
+      const reportSaved = beginStoreDownloadReport(item.code);
       const zipData = await downloadStoreItem(item, (percent) => {
         setStoreProgress(percent);
       }, controller.signal);
@@ -905,6 +920,7 @@ export function PlayPage() {
         ledCount: parsed.ledCount,
         storeCode: item.code,
       }));
+      reportSaved();
 
       await refreshLists();
       await loadStoreItems();
