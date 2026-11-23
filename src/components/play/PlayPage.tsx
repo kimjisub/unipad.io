@@ -1351,6 +1351,11 @@ export function PlayPage() {
   });
   if (!unipack) return null;
 
+  // Shown over either layout: Alt+A starts autoplay with the controls hidden too.
+  const audioStartNotice = audioStartShown && audioStart && (
+    <AudioStartNotice notice={audioStart} onRetry={retryAudioStart} onCancel={cancelAudioStart} returnFocusTarget={audioStartReturnTarget} />
+  );
+
   // Hide UI mode: hides control panels, keeps pad grid and chain bars
   if (state.hideUI) {
     // Both sides reserve a chain column when either side shows one, so the pad grid stays on the
@@ -1362,7 +1367,9 @@ export function PlayPage() {
     const hiddenSideFlex = `0 0 ${hiddenUnit * hiddenSideCols}px`;
     const hiddenPadFlex = `0 0 ${hiddenUnit * unipack.info.buttonY}px`;
     return (
+      <>
       <div
+        inert={audioStartShown}
         className="h-dvh flex items-center justify-center overflow-hidden"
         style={{
           backgroundColor: '#000000',
@@ -1485,6 +1492,8 @@ export function PlayPage() {
           </div>
         </div>
       </div>
+      {audioStartNotice}
+      </>
     );
   }
 
@@ -1845,9 +1854,7 @@ export function PlayPage() {
       <input ref={fileInputRef} type="file" accept=".zip,.uni,application/zip,application/octet-stream" data-unipack-import="" className="hidden" onChange={handleFileInput} />
       <input ref={themeInputRef} type="file" accept=".zip" className="hidden" onChange={handleThemeInput} />
     </div>
-    {audioStartShown && audioStart && (
-      <AudioStartNotice notice={audioStart} onRetry={retryAudioStart} onCancel={cancelAudioStart} returnFocusTarget={audioStartReturnTarget} />
-    )}
+    {audioStartNotice}
     </>
   );
 }

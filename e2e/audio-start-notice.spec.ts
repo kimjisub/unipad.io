@@ -1,65 +1,10 @@
-import type { Locator, Page, TestInfo } from '@playwright/test';
-import { test, expect, expectAudioOutputRunning, stateTimeout } from './browser';
-import { openBasicWith } from './basic-pack';
-
-/**
- * Replies to the app's own AudioContext.resume() calls, the request its sound engine makes before a
- * start. 'real' passes them to the browser; the others answer for it: refuse, reply without running,
- * or hold until the test settles them (a held reply that resolves runs the real resume first).
- */
-interface AudioGate {
-  mode: 'real' | 'hold' | 'reject' | 'idle';
-  /** Resume calls answered by the gate (not 'real'). */
-  calls: number;
-  held: number;
-  settle(outcome: 'resolve' | 'reject' | 'idle'): number;
-  /** Stops the pack's audio output behind the app's back, as a device that went away. */
-  dropOutput(): Promise<void>;
-}
-
-declare global {
-  interface Window { audioGate: AudioGate }
-}
-
-async function installAudioGate(page: Page) {
-  await page.addInitScript(() => {
-    const nativeResume = AudioContext.prototype.resume;
-    const nativeSuspend = AudioContext.prototype.suspend;
-    const held: ((outcome: 'resolve' | 'reject' | 'idle') => void)[] = [];
-    const outputs: AudioContext[] = [];
-    const refused = () => new DOMException('The audio output could not start', 'NotAllowedError');
-    const gate: AudioGate = {
-      mode: 'real', calls: 0, held: 0,
-      settle(outcome) {
-        const replies = held.splice(0);
-        gate.held = 0;
-        for (const reply of replies) reply(outcome);
-        return replies.length;
-      },
-      dropOutput: () => nativeSuspend.call(outputs.at(-1)!),
-    };
-    window.audioGate = gate;
-    AudioContext.prototype.resume = function (this: AudioContext) {
-      if (gate.mode === 'real') return nativeResume.call(this);
-      gate.calls++;
-      if (gate.mode === 'reject') return Promise.reject(refused());
-      if (gate.mode === 'idle') return Promise.resolve();
-      return new Promise<void>((resolve, reject) => {
-        gate.held++;
-        held.push(outcome => {
-          if (outcome === 'resolve') nativeResume.call(this).then(resolve, reject);
-          else if (outcome === 'reject') reject(refused());
-          else resolve();
-        });
-      });
-    };
-    const createGain = AudioContext.prototype.createGain;
-    AudioContext.prototype.createGain = function (this: AudioContext) {
-      outputs.push(this);
-      return createGain.call(this);
-    };
-  });
-}
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { chromium, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, expectAudioOutputRunning, installBrowserProbe, stateTimeout } from './browser';
+import { themeFile, themeSetting } from './saved-packs';
+import { longTone, openBasicWith } from './basic-pack';
+import { installAudioGate, type AudioGate } from './audio-gate';
 
 const mode = (page: Page, name: 'Auto' | 'Guide' | 'Step') => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
 const notice = (page: Page) => page.locator('[data-audio-start-notice]').getByRole('dialog');
@@ -87,10 +32,10 @@ async function freezeClock(page: Page) {
  * Opens basic.uni, lets its audio output run, then stops the output from outside the app, which
  * interrupts playback; from then on every resume is answered by the gate as `gateMode`.
  */
-async function openWithStoppedOutput(page: Page, gateMode: AudioGate['mode'], before?: (page: Page) => Promise<void>) {
+async function openWithStoppedOutput(page: Page, gateMode: AudioGate['mode'], before?: (page: Page) => Promise<void>, files: Record<string, string | Uint8Array> = {}) {
   await installAudioGate(page);
   await page.clock.install();
-  await openBasicWith(page, {});
+  await openBasicWith(page, files);
   await expectAudioOutputRunning(page);
   await before?.(page);
   await page.evaluate(m => { window.audioGate.mode = m; }, gateMode);
@@ -380,6 +325,124 @@ test.describe('audio start notice', () => {
     await page.clock.resume();
     await expect.poll(async () => Number(await page.getByRole('progressbar').getAttribute('aria-valuenow')), { timeout: stateTimeout }).toBeGreaterThan(progress);
   });
+
+  for (const name of ['Auto', 'Guide'] as const) {
+    test(`after leaving the page, Play continues ${name} from where it stopped once the audio is prepared`, async ({ page }) => {
+      await installAudioGate(page);
+      await page.clock.install();
+      await openBasicWith(page, {});
+      await expectAudioOutputRunning(page);
+      await mode(page, name).click();
+      const position = async () => Number(await page.getByRole('progressbar').getAttribute('aria-valuenow'));
+      if (name === 'Auto') await expect.poll(() => starts(page), { timeout: stateTimeout }).toBeGreaterThan(0);
+      // Guide waits for the shown pad: pressing it moves the song on.
+      else await expect.poll(async () => { await page.locator('[data-pad="0,0"]').click(); return position(); }, { timeout: stateTimeout }).toBeGreaterThan(0);
+      // The page is left: playback stops at its place, and the browser keeps the output stopped on return.
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      const play = page.getByRole('button', { name: 'Play', exact: true });
+      await expect(play).toBeVisible();
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputState()), { timeout: stateTimeout }).toBe('suspended');
+      const progress = await position();
+      await page.evaluate(() => { window.audioGate.mode = 'reject'; });
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputState())).toBe('suspended');
+      await page.evaluate(() => { window.audioGate.mode = 'hold'; });
+      await freezeClock(page);
+      const before = await starts(page);
+      const calls = await gateCalls(page);
+      await play.dispatchEvent('click');
+      await page.clock.runFor(300);
+      await expectNotice(page, 'preparing');
+      expect(await gateCalls(page), 'one request for the press').toBe(calls + 1);
+      expect(await position()).toBe(progress);
+      await settle(page, 'resolve');
+      await expect(notice(page)).toHaveCount(0);
+      await expect(mode(page, name)).toHaveAttribute('aria-pressed', 'true');
+      for (const other of (['Auto', 'Guide', 'Step'] as const).filter(other => other !== name)) {
+        await expect(mode(page, other)).toHaveAttribute('aria-pressed', 'false');
+      }
+      await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+      await page.clock.resume();
+      // The song goes on from its place, not from the start.
+      if (name === 'Auto') await expect.poll(position, { timeout: stateTimeout }).toBeGreaterThan(progress);
+      // Guide waits on its next pad, still at the place it was left.
+      else await expect.poll(position).toBe(progress);
+      expect(await starts(page)).toBeGreaterThanOrEqual(before);
+    });
+  }
+
+  test('a held pad, key and long sound end when the output stops; the notice closing brings none back', async ({ page }) => {
+    const lit = (page: Page) => page.evaluate(() => [...document.querySelectorAll('[data-pad] div.z-10')]
+      .filter(light => !['rgba(0, 0, 0, 0)', 'transparent'].includes(getComputedStyle(light).backgroundColor)).length);
+    let held = 0;
+    await openWithStoppedOutput(page, 'hold', async page => {
+      const pad = (await page.locator('[data-pad="0,0"]').boundingBox())!;
+      await page.mouse.move(pad.x + pad.width / 2, pad.y + pad.height / 2);
+      await page.mouse.down();
+      await page.keyboard.down('q');
+      await expect.poll(() => starts(page), { timeout: stateTimeout }).toBeGreaterThan(0);
+      // The pad's own light chain (1.2 s) is on, and the 8 s sound plays.
+      await expect.poll(() => lit(page), { timeout: stateTimeout }).toBeGreaterThan(0);
+      await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputRms() ?? 0), { timeout: stateTimeout }).toBeGreaterThan(0.01);
+      held = await starts(page);
+    }, { 'sounds/tone.wav': longTone(8) });
+    // The stopped output ended the held sound and the light chain.
+    await page.clock.runFor(50);
+    await expect.poll(() => lit(page)).toBe(0);
+    expect(await page.evaluate(() => window.browserProbe.audio.stops.length), 'the held sound was stopped').toBeGreaterThan(0);
+    await mode(page, 'Auto').dispatchEvent('click');
+    await page.clock.runFor(300);
+    await expectNotice(page, 'preparing');
+    // Releasing behind the notice, then dismissing it after the request expired.
+    await page.mouse.up();
+    await page.keyboard.up('q');
+    await page.clock.runFor(4700);
+    await expectNotice(page, 'delayed');
+    await notice(page).getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice(page)).toHaveCount(0);
+    await settle(page, 'resolve');
+    await expectNothingStarted(page, held);
+    expect(await lit(page), 'no light came back').toBe(0);
+    expect(await page.evaluate(() => window.browserProbe.audio.outputRms() ?? 0), 'no sound came back').toBeLessThan(0.001);
+  });
+
+  test('with the controls hidden, Alt+A shows the notice over the pads and starts after Try again', async ({ page }, info) => {
+    await openWithStoppedOutput(page, 'reject');
+    await page.keyboard.press('Alt+h');
+    await expect(mode(page, 'Auto')).toHaveCount(0);
+    const before = await starts(page);
+    await page.keyboard.press('Alt+a');
+    await page.clock.runFor(1);
+    await expectNotice(page, 'failed');
+    await expect(notice(page)).toBeInViewport({ ratio: 1 });
+    await expect(notice(page).getByRole('button', { name: 'Dismiss' })).toBeFocused();
+    await attachState(page, info, 'hidden-controls-failed');
+    // Escape belongs to the notice: it closes it and leaves the controls hidden.
+    await page.keyboard.press('Escape');
+    await expect(notice(page)).toHaveCount(0);
+    await expect(mode(page, 'Auto')).toHaveCount(0);
+    await page.keyboard.press('Alt+a');
+    await page.clock.runFor(1);
+    await expectNotice(page, 'failed');
+    // Pads behind the notice stay silent.
+    const padBox = (await page.locator('[data-pad="0,0"]').boundingBox())!;
+    await page.mouse.click(padBox.x + padBox.width / 2, padBox.y + padBox.height / 2);
+    expect(await starts(page)).toBe(before);
+    await page.evaluate(() => { window.audioGate.mode = 'hold'; });
+    await notice(page).getByRole('button', { name: 'Try again' }).click();
+    await expectNotice(page, 'retrying');
+    await settle(page, 'resolve');
+    await expect(notice(page)).toHaveCount(0);
+    await expect(mode(page, 'Auto')).toHaveCount(0);
+    await page.clock.resume();
+    await expect.poll(() => starts(page), { timeout: stateTimeout }).toBeGreaterThan(before);
+  });
 });
 
 /** The notice's box, text and buttons fit the screen; its text scrolls to the end. */
@@ -412,68 +475,203 @@ const screens = [
   { width: 1440, height: 900 }, { width: 844, height: 390 }, { width: 667, height: 375 },
   { width: 390, height: 844 }, { width: 320, height: 568 },
 ];
+
+/** WCAG contrast of two computed colours; a translucent one is laid over `under` first. */
+function contrast(fore: string, back: string, under = 'rgb(0, 0, 0)') {
+  const parse = (color: string) => color.match(/[\d.]+/g)!.map(Number);
+  const [ur, ug, ub] = parse(under);
+  const solid = (color: string) => {
+    const [r, g, b, a = 1] = parse(color);
+    return [r * a + ur * (1 - a), g * a + ug * (1 - a), b * a + ub * (1 - a)];
+  };
+  const luminance = (color: string) => {
+    const [r, g, b] = solid(color).map(value => {
+      const c = value / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [light, dark] = [luminance(fore), luminance(back)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+/** The colours the notice is drawn with, as the browser computed them. */
+async function noticeColors(dialog: Locator) {
+  return dialog.evaluate(element => {
+    const style = (target: Element) => getComputedStyle(target);
+    const [first, second] = [...element.querySelectorAll('button')];
+    return {
+      background: style(element).backgroundColor,
+      title: style(element.querySelector('h2')!).color,
+      body: style(element.querySelector('p')!).color,
+      buttons: [first, second].filter(Boolean).map(button => ({
+        text: style(button).color, background: style(button).backgroundColor, border: style(button).borderTopColor,
+      })),
+      // The ring a keyboard user sees on the focused button.
+      focusRing: document.activeElement?.matches('[role=dialog] button:focus-visible') ? style(document.activeElement).outlineColor : null,
+    };
+  });
+}
+
+type NoticeState = 'preparing' | 'delayed' | 'failed' | 'retrying';
+
+/**
+ * Shows each of the four states in turn (the open pack's audio output stopped, the gate holding) and
+ * measures the notice on each screen. `stacked` says when the buttons must sit one above the other.
+ */
+async function checkNoticeLayout(page: Page, info: TestInfo, { label, startName, sizes = screens, stacked }: {
+  label: string; startName: string; sizes?: typeof screens; stacked: (screen: typeof screens[number]) => boolean;
+}) {
+  const results = [];
+  const enter: Record<NoticeState, () => Promise<void>> = {
+    preparing: async () => {
+      await page.getByRole('button', { name: startName, exact: true }).dispatchEvent('click');
+      await page.clock.runFor(300);
+    },
+    delayed: () => page.clock.runFor(4700),
+    failed: async () => {
+      await page.evaluate(() => { window.audioGate.mode = 'reject'; });
+      await notice(page).getByRole('button').last().dispatchEvent('click');
+    },
+    retrying: async () => {
+      await page.evaluate(() => { window.audioGate.mode = 'hold'; });
+      await notice(page).getByRole('button').last().dispatchEvent('click');
+    },
+  };
+  const home = { width: 844, height: 390 };
+  for (const state of ['preparing', 'delayed', 'failed', 'retrying'] as const) {
+    await page.setViewportSize(home);
+    await enter[state]();
+    await expect(notice(page)).toHaveAttribute('aria-labelledby', /.+/);
+    await expect(page.locator(`[data-audio-start-notice="${state === 'retrying' ? 'preparing' : state}"]`)).toHaveCount(1);
+    // Moving focus by keyboard shows the focus ring; one button or two, it ends where it began.
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    for (const screen of sizes) {
+      await page.setViewportSize(screen);
+      const measured = await measureNotice(notice(page));
+      const colors = await noticeColors(notice(page));
+      results.push({ state, screen, ...measured, colors });
+      await info.attach(`${state}-${screen.width}x${screen.height}-${label}.png`, { body: await page.screenshot(), contentType: 'image/png' });
+      const at = `${label} ${state} ${screen.width}x${screen.height}`;
+      const { box, viewport, buttons } = measured;
+      expect.soft(box.left, at).toBeGreaterThanOrEqual(15.5);
+      expect.soft(viewport.width - box.right, at).toBeGreaterThanOrEqual(15.5);
+      expect.soft(box.top, at).toBeGreaterThanOrEqual(15.5);
+      expect.soft(viewport.height - box.bottom, at).toBeGreaterThanOrEqual(15.5);
+      expect.soft(box.right - box.left, at).toBeLessThanOrEqual(420.5);
+      expect.soft(measured.pageOverflow || measured.copyOverflowsSideways, `${at} sideways overflow`).toBe(false);
+      expect.soft(measured.copyReadToEnd, `${at} text scrolls to its end`).toBe(true);
+      for (const button of buttons) {
+        expect.soft(button.height, `${at} button height`).toBeGreaterThanOrEqual(44);
+        expect.soft(button.overflows, `${at} button text overflow`).toBe(false);
+        expect.soft(button.top >= box.top && button.bottom <= box.bottom + 0.5, `${at} button inside`).toBe(true);
+      }
+      if (buttons.length === 2) {
+        const [first, second] = buttons;
+        const apart = first.right <= second.left + 0.5 || first.bottom <= second.top + 0.5;
+        expect.soft(apart, `${at} buttons do not overlap`).toBe(true);
+        if (stacked(screen)) expect.soft(first.bottom <= second.top + 0.5, `${at} stacked`).toBe(true);
+      }
+      expect.soft(contrast(colors.title, colors.background), `${at} title contrast`).toBeGreaterThanOrEqual(4.5);
+      expect.soft(contrast(colors.body, colors.background), `${at} text contrast`).toBeGreaterThanOrEqual(4.5);
+      for (const button of colors.buttons) {
+        const fill = contrast(button.background, 'rgb(0, 0, 0)', colors.background) > 1.01 ? button.background : colors.background;
+        expect.soft(contrast(button.text, fill, colors.background), `${at} button text contrast`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect.soft(colors.focusRing, `${at} focus ring shown`).not.toBeNull();
+      if (colors.focusRing) expect.soft(contrast(colors.focusRing, colors.background), `${at} focus ring contrast`).toBeGreaterThanOrEqual(3);
+    }
+  }
+  await info.attach(`notice-layout-${label}.json`, { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
+  return results;
+}
+
+const startName = { 'ko-KR': '연주 모드: 자동', 'en-US': 'Play mode: Auto' };
+
+/** Doubles the root text size the way each engine allows: Chromium's own font setting, else a style. */
+async function doubleText(page: Page, browserName: string) {
+  if (browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
+  } else {
+    await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = 'html { font-size: 200% !important; }';
+      document.head.append(style);
+    }));
+  }
+}
+
 for (const locale of ['ko-KR', 'en-US'] as const) {
   for (const large of [false, true]) {
     test.describe(`notice layout ${locale}${large ? ' doubled text' : ''}`, () => {
       test.use({ locale });
       test('fits each screen in every state', async ({ page, browserName }, info) => {
-        test.setTimeout(180_000);
-        if (large) {
-          if (browserName === 'chromium') {
-            const cdp = await page.context().newCDPSession(page);
-            await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-          } else {
-            await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
-              const style = document.createElement('style');
-              style.textContent = 'html { font-size: 200% !important; }';
-              document.head.append(style);
-            }));
-          }
-        }
+        test.setTimeout(240_000);
+        if (large) await doubleText(page, browserName);
         await page.setViewportSize({ width: 844, height: 390 });
-        await openWithStoppedOutput(page, 'reject');
-        const modeName = locale === 'ko-KR' ? '연주 모드: 자동' : 'Play mode: Auto';
-        await page.getByRole('button', { name: modeName, exact: true }).dispatchEvent('click');
-        await page.clock.runFor(1);
-        await expect(notice(page)).toBeVisible();
-        const results = [];
-        for (const state of ['failed', 'retrying', 'delayed'] as const) {
-          if (state === 'retrying') {
-            await page.evaluate(() => { window.audioGate.mode = 'hold'; });
-            await notice(page).getByRole('button').last().dispatchEvent('click');
-          }
-          if (state === 'delayed') await page.clock.runFor(5000);
-          for (const screen of screens) {
-            await page.setViewportSize(screen);
-            const measured = await measureNotice(notice(page));
-            results.push({ state, screen, ...measured });
-            if (state === 'failed' || screen.width === 320) {
-              await info.attach(`${state}-${screen.width}x${screen.height}-${locale}-${large ? 200 : 100}.png`, { body: await page.screenshot(), contentType: 'image/png' });
-            }
-            const { box, viewport, buttons } = measured;
-            expect.soft(box.left, `${state} ${screen.width}`).toBeGreaterThanOrEqual(15.5);
-            expect.soft(viewport.width - box.right, `${state} ${screen.width}`).toBeGreaterThanOrEqual(15.5);
-            expect.soft(box.top, `${state} ${screen.width}`).toBeGreaterThanOrEqual(15.5);
-            expect.soft(viewport.height - box.bottom, `${state} ${screen.width}`).toBeGreaterThanOrEqual(15.5);
-            expect.soft(box.right - box.left, `${state} ${screen.width}`).toBeLessThanOrEqual(420.5);
-            expect.soft(measured.pageOverflow || measured.copyOverflowsSideways, `${state} ${screen.width} sideways overflow`).toBe(false);
-            expect.soft(measured.copyReadToEnd, `${state} ${screen.width} text scrolls to its end`).toBe(true);
-            for (const button of buttons) {
-              expect.soft(button.height, `${state} ${screen.width} button height`).toBeGreaterThanOrEqual(44);
-              expect.soft(button.overflows, `${state} ${screen.width} button text overflow`).toBe(false);
-              expect.soft(button.top >= box.top && button.bottom <= box.bottom + 0.5, `${state} ${screen.width} button inside`).toBe(true);
-            }
-            if (buttons.length === 2) {
-              const [first, second] = buttons;
-              const apart = first.right <= second.left + 0.5 || first.bottom <= second.top + 0.5;
-              expect.soft(apart, `${state} ${screen.width} buttons do not overlap`).toBe(true);
-              if (large || screen.width <= 360) expect.soft(first.bottom <= second.top + 0.5, `${state} ${screen.width} stacked`).toBe(true);
-            }
-          }
-          await page.setViewportSize({ width: 844, height: 390 });
-        }
-        await info.attach('notice-layout.json', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
+        await openWithStoppedOutput(page, 'hold');
+        await checkNoticeLayout(page, info, {
+          label: `${locale}-${large ? 200 : 100}`, startName: startName[locale],
+          stacked: screen => large || screen.width <= 360,
+        });
       });
     });
   }
 }
+
+// A saved theme, the most chains a pack may have (24; the format refuses 32) and a title longer than any screen line, in Korean with doubled text.
+test.describe('notice layout over a themed 24-chain pack with a long title', () => {
+  test.use({ locale: 'ko-KR' });
+  test('fits each screen in every state', async ({ page, browserName }, info) => {
+    test.setTimeout(240_000);
+    await doubleText(page, browserName);
+    await page.setViewportSize({ width: 844, height: 390 });
+    const title = '아주 긴 제목의 연주 팩 '.repeat(8) + 'A very long pack title that wraps on every screen';
+    await openWithStoppedOutput(page, 'hold', async page => {
+      await page.locator('input[type=file][accept=".zip"]').setInputFiles(await themeFile('Notice theme'));
+      await expect.poll(() => themeSetting(page), { timeout: stateTimeout }).toMatch(/.+/);
+    }, { info: `title=${title}\nproducerName=UniPad Tests\nbuttonX=8\nbuttonY=8\nchain=24\nsquareButton=true\n` });
+    await expect(page).toHaveTitle(new RegExp(`^${title.slice(0, 20)}`));
+    await checkNoticeLayout(page, info, { label: 'theme-24chains-long-title-ko-200', startName: startName['ko-KR'], stacked: () => true });
+  });
+});
+
+// The browser's own zoom (Chrome's page zoom, set through an extension), not an emulated screen.
+test.describe('notice layout at 200% browser zoom', () => {
+  for (const locale of ['ko-KR', 'en-US'] as const) {
+    test(`fits each screen in every state, ${locale}`, async ({ browserName }, info) => {
+      test.skip(browserName !== 'chromium', 'only Chromium can set its page zoom from a test');
+      test.setTimeout(300_000);
+      const extension = info.outputPath('zoom-extension');
+      await mkdir(extension, { recursive: true });
+      await writeFile(path.join(extension, 'manifest.json'), JSON.stringify({
+        manifest_version: 3, name: 'Zoom', version: '1', permissions: ['tabs'], background: { service_worker: 'worker.js' },
+      }));
+      await writeFile(path.join(extension, 'worker.js'), '');
+      const context = await chromium.launchPersistentContext(info.outputPath('profile'), {
+        channel: 'chromium', headless: true, locale, baseURL: process.env.E2E_SERVER_URL,
+        viewport: { width: 844, height: 390 },
+        args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+      });
+      try {
+        const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+        const page = context.pages()[0] ?? await context.newPage();
+        await installBrowserProbe(page);
+        await openWithStoppedOutput(page, 'hold');
+        await worker.evaluate(async () => {
+          type Tabs = { query(filter: object): Promise<{ id?: number }[]>; setZoom(tab: number, factor: number): Promise<void> };
+          const { tabs } = (globalThis as unknown as { chrome: { tabs: Tabs } }).chrome;
+          const [tab] = await tabs.query({});
+          await tabs.setZoom(tab.id!, 2);
+        });
+        await expect.poll(() => page.evaluate(() => ({ width: innerWidth, ratio: devicePixelRatio }))).toEqual({ width: 422, ratio: 2 });
+        const results = await checkNoticeLayout(page, info, { label: `${locale}-zoom-200`, startName: startName[locale], stacked: () => false });
+        for (const { screen, viewport } of results) expect(viewport.width, 'the zoom halves the page width').toBe(Math.floor(screen.width / 2));
+      } finally {
+        await context.close();
+      }
+    });
+  }
+});
