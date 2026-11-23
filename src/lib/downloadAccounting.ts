@@ -43,8 +43,6 @@ const terminal = new Set(['counted', 'already_counted', 'expired', 'invalid']);
 export class DownloadAccounting {
   private readonly now;
   private readonly request;
-  private memory: PendingDownloadReport[] = [];
-  private storageUnavailable = false;
   private flushing: Promise<void> | null = null;
   private flushRequested = false;
 
@@ -54,10 +52,9 @@ export class DownloadAccounting {
   }
 
   private read(): PendingDownloadReport[] {
-    let rows: unknown = this.memory;
-    if (!this.storageUnavailable) {
-      try { rows = JSON.parse(this.options.storage.getItem(STORAGE_KEY) ?? '[]'); } catch { /* Storage may be denied. */ }
-    }
+    let rows: unknown;
+    try { rows = JSON.parse(this.options.storage.getItem(STORAGE_KEY) ?? '[]'); }
+    catch { return []; }
     if (!Array.isArray(rows)) return [];
     const now = this.now();
     return rows.filter((row): row is PendingDownloadReport => row && validCode(row.code) && validReceipt(row.receipt)
@@ -67,11 +64,9 @@ export class DownloadAccounting {
       .sort((a, b) => a.completedAt - b.completedAt).slice(-1000);
   }
 
-  private write(rows: PendingDownloadReport[]) {
-    this.memory = rows;
-    try { this.options.storage.setItem(STORAGE_KEY, JSON.stringify(rows)); } catch {
-      this.storageUnavailable = true; // A full or denied store must not hide this page's in-memory reports.
-    }
+  private write(rows: PendingDownloadReport[]): boolean {
+    try { this.options.storage.setItem(STORAGE_KEY, JSON.stringify(rows)); return true; }
+    catch { return false; }
   }
 
   private async post(action: string, body: object): Promise<Record<string, unknown> | null> {
@@ -131,7 +126,7 @@ export class DownloadAccounting {
     let receipts: string[] = [];
     await this.options.lock(async () => {
       const rows = this.read();
-      this.write(rows);
+      if (!this.write(rows)) return;
       receipts = rows.map(row => row.receipt);
     });
     for (const receipt of receipts) {
@@ -146,14 +141,15 @@ export class DownloadAccounting {
         row.attempts = row.attempts.filter(time => time > now - DAY);
         if (row.attempts.length >= 3 || row.attempts.some(time => now - time < 60_000)) return;
         row.attempts.push(now);
-        this.write(rows); // Persist before sending, including when another tab is also active.
+        // Do not send unless other tabs and reopened pages can see the updated retry budget.
+        if (!this.write(rows)) return;
         pending = row;
       });
       if (!pending) continue;
       // Do not hold the cross-tab lock during network I/O: another save can enqueue immediately.
       const answer = await this.post('completeDownload', { code: pending.code, receipt });
       if (typeof answer?.status === 'string' && terminal.has(answer.status)) {
-        await this.options.lock(async () => this.write(this.read().filter(row => row.receipt !== receipt)));
+        await this.options.lock(async () => { this.write(this.read().filter(row => row.receipt !== receipt)); });
       }
     }
   }

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page, Route } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { connectStore, startEachPageOnSocket } from './database';
 import { expectSavedPackCount } from './saved-packs';
@@ -12,6 +12,12 @@ const CODE = 'browser-test';
 const URL = 'https://unipack.unipad.io/store/browser-test.zip';
 const store = { [CODE]: { code: CODE, title: 'Browser Test Pack', producerName: 'UniPad Tests', downloadCount: 1, URL } };
 const realServer = process.env.ACCOUNTING_EMULATOR_TEST === '1';
+const pendingRequests = new WeakMap<BrowserContext, Set<Promise<void>>>();
+
+test.afterEach(async ({ context }) => {
+  const pending = pendingRequests.get(context);
+  while (pending?.size) await Promise.all([...pending]);
+});
 
 async function db(path: string, value?: unknown) {
   const response = await fetch(`${DB}/${path}.json?ns=demo-unipad`, value === undefined ? {} : {
@@ -52,7 +58,9 @@ async function setup(page: Page, options: { issue?: 'disabled' | 'fail'; loseRep
   page.context().on('request', request => {
     if (/cloudfunctions\.net\/(issueDownloadReceipt|completeDownload|increaseDownloadCount|downloadUniPackLegacy)/.test(request.url())) forbidden.push(request.url());
   });
-  await page.context().route(FN + '**', async route => {
+  const pending = new Set<Promise<void>>();
+  pendingRequests.set(page.context(), pending);
+  const handleAccounting = async (route: Route) => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: {
       'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type',
     } });
@@ -74,6 +82,12 @@ async function setup(page: Page, options: { issue?: 'disabled' | 'fail'; loseRep
     replies.push(answer.status);
     if (action === 'completeDownload' && options.loseReply && !lost) { lost = true; return route.abort('failed'); }
     return route.fulfill({ json: answer, headers: { 'access-control-allow-origin': '*' } });
+  };
+  await page.context().route(FN + '**', route => {
+    const work = handleAccounting(route);
+    pending.add(work);
+    void work.then(() => pending.delete(work), () => pending.delete(work));
+    return work;
   });
   await page.context().route('**/store.json', route => {
     metadataReads.push(route.request().url());
@@ -263,4 +277,22 @@ test('canceling the metadata refresh leaves no completion report', async ({ page
   await expect(f.row.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   expect(f.calls.map(c => c.url)).toEqual(['issueDownloadReceipt']);
   expect(await queue(page)).toEqual([]); expect(await f.count()).toBe(1); expect(f.forbidden).toEqual([]);
+});
+
+
+test('unavailable report storage does not block saving or playing and sends no untracked completion', async ({ page }) => {
+  await page.addInitScript(key => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key) throw new DOMException('Reports unavailable', 'QuotaExceededError');
+      return set.call(this, name, value);
+    };
+  }, KEY);
+  const f = await setup(page);
+  await f.row.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(page.getByText('Downloaded: Browser Test Pack')).toBeVisible();
+  await expectSavedPackCount(page, 1);
+  await f.row.getByRole('button', { name: 'Play', exact: true }).click(); await expectPads(page);
+  expect(f.calls.map(c => c.url)).toEqual(['issueDownloadReceipt']);
+  expect(await f.count()).toBe(1); expect(f.forbidden).toEqual([]);
 });

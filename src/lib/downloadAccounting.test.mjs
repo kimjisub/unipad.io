@@ -142,7 +142,7 @@ test('denied storage and malformed records never reject a download callback', as
   const f = fixture(); f.complete('deferred');
   const storage = { getItem() { throw Error('denied'); }, setItem() { throw Error('denied'); } };
   const client = new DownloadAccounting({ ...f.options, storage }); client.begin('pack')(); await settle();
-  assert.equal(f.reports().length, 1); f.advance(60000); await client.flush(); assert.equal(f.reports().length, 2);
+  assert.equal(f.reports().length, 0); f.advance(60000); await client.flush(); assert.equal(f.reports().length, 0);
   for (const invalid of ['null', '{bad', '[{}]', '[{"code":"pack","attempts":[-1]}]']) {
     f.values.set(KEY, invalid); await new DownloadAccounting(f.options).flush();
   }
@@ -181,10 +181,23 @@ test('a second save while a report is in flight is sent when that flush finishes
   assert.equal(f.reports().length, 2); assert.deepEqual(f.queue(), []);
 });
 
-test('a full store that still allows reads keeps new pending reports in memory', async () => {
+test('a full store that still allows reads omits a report it cannot durably queue', async () => {
   const f = fixture(); f.complete('deferred');
   const client = new DownloadAccounting({ ...f.options, storage: { getItem: () => null, setItem() { throw Error('quota'); } } });
   client.begin('pack')(); await settle();
-  assert.equal(f.reports().length, 1);
-  f.advance(60000); await client.flush(); assert.equal(f.reports().length, 2);
+  assert.equal(f.reports().length, 0);
+  f.advance(60000); await client.flush(); assert.equal(f.reports().length, 0);
+});
+
+test('a persisted report is not sent when its retry attempt cannot be recorded', async () => {
+  const now = 1800000000000;
+  const rows = [{ code: 'pack', receipt: '000000000001.' + '1'.repeat(64), expiresAt: now + 86400000, completedAt: now, attempts: [] }];
+  let sent = 0;
+  const client = new DownloadAccounting({ endpoint: 'http://127.0.0.1:5051/demo-unipad/us-central1/',
+    storage: { getItem: () => JSON.stringify(rows), setItem() { throw Error('quota'); } },
+    active: () => true, now: () => now, lock: async work => { await work(); },
+    request: async () => { sent++; return Response.json({ status: 'deferred' }); },
+  });
+  await client.flush();
+  assert.equal(sent, 0);
 });

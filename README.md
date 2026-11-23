@@ -478,8 +478,8 @@ serialize queue updates across tabs without holding a lock during network reques
 The local queue keeps at most 1,000 reports, expires at the earlier of the server's
 expiry and seven days after save, and retries on page use, focus or reconnect only.
 Each request has a five-second deadline; a receipt has a one-minute minimum interval
-and at most three attempts in a rolling 24 hours. Denied or full browser storage falls
-back to this page's memory, so closing that page can lose its pending reports.
+and at most three attempts in a rolling 24 hours. Reports that cannot be durably queued, including their retry budget, are omitted
+when browser storage is full or denied. Pack saving and playback still work.
 
 To exercise the client without a live counter, build with
 `NEXT_PUBLIC_DOWNLOAD_ACCOUNTING_EMULATOR=http://127.0.0.1:5051/demo-unipad/us-central1/`.
