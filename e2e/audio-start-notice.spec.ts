@@ -246,13 +246,16 @@ test.describe('audio start notice', () => {
     await expect.poll(() => noticeAnnouncements(page)).toEqual(['Playback will start when audio is ready.']);
     await page.clock.runFor(4200);
     await expectNotice(page, 'delayed');
+    await page.clock.runFor(300);
+    // Refused at once: the notice passes through "preparing again", which is not announced.
     await page.evaluate(() => { window.audioGate.mode = 'reject'; });
     await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
     await expectNotice(page, 'failed');
+    await page.clock.runFor(300);
     await page.evaluate(() => { window.audioGate.mode = 'hold'; });
     await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
     await expectNotice(page, 'retrying');
-    await page.clock.runFor(2000);
+    await page.clock.runFor(300);
     expect(await noticeAnnouncements(page)).toEqual([
       'Playback will start when audio is ready.',
       'Audio is taking longer. We stopped waiting. Try again to prepare audio.',

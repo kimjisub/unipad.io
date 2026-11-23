@@ -23,6 +23,8 @@ interface AudioStartNoticeProps {
 
 /** After the opening announcement of the dialog's name and focused button has begun. */
 const OPENING_DESCRIPTION_DELAY_MS = 500;
+/** How long a later state must hold before it is announced. */
+const STATE_SETTLE_MS = 250;
 
 /** Shown while the audio a start needs is prepared for longer than a moment, or when it failed. */
 export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget }: AudioStartNoticeProps) {
@@ -38,18 +40,17 @@ export function AudioStartNotice({ notice, onRetry, onCancel, returnFocusTarget 
   const body = t(`${copy}.body`);
 
   // Opening, VoiceOver reads the dialog's name and the focused button but not its description, so the
-  // status line adds the first state's text once that is said; later states go to it whole, once each.
+  // status line adds the first state's text once that is said. Later states go to it whole, once each,
+  // and only once they hold: a Try again refused at once passes through "preparing again" in an instant.
   const [announcement, setAnnouncement] = useState('');
-  const [announcedCopy, setAnnouncedCopy] = useState(copy);
-  if (copy !== announcedCopy) {
-    setAnnouncedCopy(copy);
-    setAnnouncement(`${title}. ${body}`);
-  }
-  const openingBody = useRef(body);
+  const openingCopy = useRef(copy);
+  const changed = useRef(false);
   useEffect(() => {
-    const timer = setTimeout(() => setAnnouncement(current => current || openingBody.current), OPENING_DESCRIPTION_DELAY_MS);
+    if (copy !== openingCopy.current) changed.current = true;
+    const text = changed.current ? `${title}. ${body}` : body;
+    const timer = setTimeout(() => setAnnouncement(text), changed.current ? STATE_SETTLE_MS : OPENING_DESCRIPTION_DELAY_MS);
     return () => clearTimeout(timer);
-  }, []);
+  }, [copy, title, body]);
   useEffect(() => {
     if (copyRef.current) copyRef.current.scrollTop = 0;
   }, [copy]);

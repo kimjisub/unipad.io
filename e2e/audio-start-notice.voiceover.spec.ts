@@ -149,18 +149,22 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   listening = reader.listen(settleMs);
   await page.clock.runFor(4200);
   await expect(notice(page).getByRole('heading')).toHaveText(text.delayed.title);
+  // The notice announces a state once it has held 0.25 s, on the standing page clock.
+  await page.clock.runFor(300);
   await observe('delayed', '5 s passed without an answer', listening);
 
   await page.evaluate(() => { window.audioGate.mode = 'reject'; });
   listening = reader.listen(settleMs);
   await notice(page).getByRole('button', { name: text.retry, exact: true }).dispatchEvent('click');
   await expect(notice(page).getByRole('heading')).toHaveText(text.failed.title);
+  await page.clock.runFor(300);
   await observe('failed', 'pressed Try again; the browser refused', listening);
 
   await page.evaluate(() => { window.audioGate.mode = 'hold'; });
   listening = reader.listen(settleMs);
   await notice(page).getByRole('button', { name: text.retry, exact: true }).dispatchEvent('click');
   await expect(notice(page).getByRole('heading')).toHaveText(text.retrying.title);
+  await page.clock.runFor(300);
   await observe('retrying', 'pressed Try again again', listening);
 
   listening = reader.listen(settleMs);
