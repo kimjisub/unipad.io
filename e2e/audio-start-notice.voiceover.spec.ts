@@ -225,20 +225,18 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
 }
 
 
-/** Which of the dialog's own links to its title and text are kept while its states change. */
-type Links = 'name and description' | 'none';
-/** Where the reader's cursor rests when the state changes. */
-type Spot = 'title' | 'text' | 'focused button' | 'status line';
-const spots: Spot[] = ['title', 'text', 'focused button', 'status line'];
+/** What the reader does in the notice before each state change, as the walk in readNotice does. */
+type Before = 'walk then refocus' | 'walk only' | 'refocus only';
+const beforeRounds = 5;
 
 /**
- * Changes the notice's state with the reader's cursor resting on each of its items in turn: its title,
- * its text, the focused button and the status line. What VoiceOver says after each change is sorted
- * into the state's whole sentence and its title or text read alone, to tell whether a title or text
- * read alone comes from where the cursor rests or from the dialog's links to them. `links: 'none'`
- * drops those links in the page after it opened (the app does not set them again).
+ * Changes the notice's state again and again, each time after the reader walked the notice and/or the
+ * focused button lost and took focus again (what readNotice does after each state, so its next change
+ * starts with the reader where a player's is). What VoiceOver says after each change is sorted into the
+ * state's whole sentence and its title or text read alone, to tell which of these steps comes before a
+ * title or text read alone.
  */
-async function changeUnderCursor(page: Page, info: TestInfo, locale: Locale, reader: Reader, links: Links) {
+async function changeAfter(page: Page, info: TestInfo, locale: Locale, reader: Reader, before: Before) {
   const text = messages[locale].play.audioStart;
   await openHeld(page, reader);
   await page.getByRole('button', { name: startName(locale), exact: true }).dispatchEvent('click');
@@ -248,41 +246,23 @@ async function changeUnderCursor(page: Page, info: TestInfo, locale: Locale, rea
   await page.clock.runFor(4200);
   await expect(notice(page).getByRole('heading')).toHaveText(text.delayed.title);
   await page.clock.runFor(300);
-  if (links === 'none') {
-    await page.evaluate(() => {
-      const dialog = document.querySelector('[data-audio-start-notice] [role=dialog]')!;
-      dialog.removeAttribute('aria-describedby');
-      dialog.removeAttribute('aria-labelledby');
-    });
-  }
-
-  const shown = async () => {
-    const title = await notice(page).getByRole('heading').textContent();
-    return (['preparing', 'delayed', 'failed', 'retrying'] as const).find(state => text[state].title === title)!;
-  };
-  const isAt = (spot: Spot, item: string, state: State) => {
-    const { title, body } = text[state];
-    if (spot === 'title') return item.includes(title) && !item.includes(body);
-    if (spot === 'text') return item.includes(body) && !item.includes(title);
-    if (spot === 'status line') return item.includes(title) && item.includes(body);
-    return item.includes(state === 'retrying' ? text.cancel : text.dismiss);
-  };
-  /** Moves the cursor onto the spot within the notice; false when it was not reached. */
-  const place = async (spot: Spot) => {
-    const state = await shown();
-    if (isAt(spot, await reader.current(), state)) return true;
-    for (let step = 0; step < 6; step++) if (isAt(spot, await reader.previous(), state)) return true;
-    for (let step = 0; step < 12; step++) if (isAt(spot, await reader.next(), state)) return true;
-    return dry;
-  };
 
   const record: Record<string, unknown>[] = [];
   let announced = (await noticeAnnouncements(page)).length;
-  const change = async (spot: Spot, state: State, mode: 'reject' | 'hold' | null, act: () => Promise<void>) => {
-    const placed = await place(spot);
+  const change = async (state: State, mode: 'reject' | 'hold' | null, act: () => Promise<void>) => {
+    if (before !== 'refocus only') {
+      for (let step = 0; step < walkSteps; step++) await reader.previous();
+      for (let step = 0; step < walkSteps; step++) await reader.next();
+    }
+    if (before !== 'walk only') {
+      await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement | null;
+        active?.blur();
+        active?.focus();
+      });
+    }
+    await wait(dry ? 0 : 2000);
     const cursorBefore = await reader.current();
-    const focusBefore = await focusedItem(page);
-    await wait(dry ? 0 : 1500);
     if (mode) await page.evaluate(m => { window.audioGate.mode = m; }, mode);
     const listening = reader.listen(settleMs);
     await act();
@@ -290,29 +270,25 @@ async function changeUnderCursor(page: Page, info: TestInfo, locale: Locale, rea
     await page.clock.runFor(300);
     const said = await listening;
     const announcements = await noticeAnnouncements(page);
-    record.push({ spot, placed, cursorBefore, focusBefore, state, spoken: said, pageAnnounced: announcements.slice(announced), ...sortPhrases(said, text[state]) });
+    record.push({ before, cursorBefore, state, spoken: said, pageAnnounced: announcements.slice(announced), ...sortPhrases(said, text[state]) });
     announced = announcements.length;
   };
-  for (const spot of spots) {
-    await change(spot, 'failed', 'reject', () => pressRetry(page, locale));
-    await change(spot, 'retrying', 'hold', () => pressRetry(page, locale));
-    await change(spot, 'delayed', null, () => page.clock.runFor(4700));
+  for (let round = 0; round < beforeRounds; round++) {
+    await change('failed', 'reject', () => pressRetry(page, locale));
+    await change('retrying', 'hold', () => pressRetry(page, locale));
+    await change('delayed', null, () => page.clock.runFor(4700));
   }
 
-  const summary = Object.fromEntries(spots.map(spot => {
-    const at = record.filter(entry => entry.spot === spot);
-    const count = (key: 'titleAlone' | 'bodyAlone') => at.reduce((sum, entry) => sum + (entry[key] as string[]).length, 0);
-    return [spot, {
-      changes: at.length,
-      placed: at.filter(entry => entry.placed).length,
-      wholeHeardOnce: at.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
-      titleReadAlone: count('titleAlone'),
-      bodyReadAlone: count('bodyAlone'),
-      pageAnnouncedOnce: at.filter(entry => (entry.pageAnnounced as string[]).length === 1).length,
-    }];
-  }));
-  const name = `voiceover-cursor-${info.project.name}-${locale}-${links.replaceAll(' ', '-')}.json`;
-  const body = JSON.stringify({ locale, browser: info.project.name, dryRun: dry, links, summary, record }, null, 2);
+  const count = (key: 'titleAlone' | 'bodyAlone') => record.reduce((sum, entry) => sum + (entry[key] as string[]).length, 0);
+  const summary = {
+    changes: record.length,
+    wholeHeardOnce: record.filter(entry => entry.titleSpokenTimes === 1 && entry.bodySpokenTimes === 1).length,
+    titleReadAlone: count('titleAlone'),
+    bodyReadAlone: count('bodyAlone'),
+    pageAnnouncedOnce: record.filter(entry => (entry.pageAnnounced as string[]).length === 1).length,
+  };
+  const name = `voiceover-after-${info.project.name}-${locale}-${before.replaceAll(' ', '-')}.json`;
+  const body = JSON.stringify({ locale, browser: info.project.name, dryRun: dry, before, summary, record }, null, 2);
   await writeFile(info.outputPath(name), body);
   await info.attach(name, { body, contentType: 'application/json' });
 }
@@ -348,17 +324,16 @@ async function calibrate(page: Page, info: TestInfo, reader: Reader) {
 }
 
 /**
- * The same sentence put in a polite status line again, three ways: one line emptied and given the same
- * text 0.25 s later, two lines taking turns, and a new line inside the status each time. Before each
- * round another line says something else, so a repeat shows as a change of VoiceOver's last phrase.
+ * The same sentence put in a polite status line again: emptied and given the same text 0.25 s later
+ * (as the notice does), the same with a no-break space added every other time, and that space alone
+ * without emptying. Before each round another line says something else, so a repeat shows as a change
+ * of VoiceOver's last phrase.
  */
 async function repeatSameText(page: Page, reader: Reader) {
   await page.evaluate(() => {
     document.querySelector('main')!.insertAdjacentHTML('beforeend', `<div id="marker" role="status" aria-live="polite" aria-atomic="true"></div>
       <div id="one" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div id="turn-a" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div id="turn-b" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div id="fresh" role="status" aria-live="polite" aria-atomic="true"></div>`);
+`);
   });
   const ways = {
     'one line emptied, the same text 0.25 s later': async (sent: string) => {
@@ -366,24 +341,18 @@ async function repeatSameText(page: Page, reader: Reader) {
       await wait(250);
       await page.evaluate(sent => { document.getElementById('one')!.textContent = sent; }, sent);
     },
-    'two lines in turn': async (sent: string, round: number) => {
-      await page.evaluate(({ sent, round }) => {
-        const [now, before] = round % 2 ? ['turn-a', 'turn-b'] : ['turn-b', 'turn-a'];
-        document.getElementById(before)!.textContent = '';
-        document.getElementById(now)!.textContent = sent;
-      }, { sent, round });
+    'one line emptied, the same words 0.25 s later with a no-break space every other time': async (sent: string, round: number) => {
+      await page.evaluate(() => { document.getElementById('one')!.textContent = ''; });
+      await wait(250);
+      await page.evaluate(({ sent, round }) => { document.getElementById('one')!.textContent = round % 2 ? `${sent}\u00a0` : sent; }, { sent, round });
     },
-    'a new line in the status each time': async (sent: string) => {
-      await page.evaluate(sent => {
-        const line = document.createElement('div');
-        line.textContent = sent;
-        document.getElementById('fresh')!.replaceChildren(line);
-      }, sent);
+    'one line, the same words with a no-break space every other time': async (sent: string, round: number) => {
+      await page.evaluate(({ sent, round }) => { document.getElementById('one')!.textContent = round % 2 ? `${sent}\u00a0` : sent; }, { sent, round });
     },
   };
   const rounds: { way: string; sent: string; heard: string[] }[] = [];
-  for (const [way, put] of Object.entries(ways)) {
-    const sent = `Same sentence again for ${way.split(' ')[0]}.`;
+  for (const [index, [way, put]] of Object.entries(ways).entries()) {
+    const sent = `Same sentence again, way ${index + 1}.`;
     // The sentence is already there once before the counted rounds.
     await put(sent, 0);
     await wait(settleMs);
@@ -434,16 +403,17 @@ for (const locale of ['en-US', 'ko-KR'] as const) {
 }
 
 
-for (const links of ['name and description', 'none'] as const) {
+for (const before of ['walk then refocus', 'walk only', 'refocus only'] as const) {
   if (dry) {
-    plainTest(`the notice changes with the cursor on each of its items, dialog linked to ${links} (dry run)`, async ({ page }, info) => {
-      await changeUnderCursor(page, info, 'en-US', dryReader, links);
+    plainTest(`the notice changes again and again, the reader having done ${before} (dry run)`, async ({ page }, info) => {
+      await changeAfter(page, info, 'en-US', dryReader, before);
     });
   } else {
-    voiceOverTest.describe(`what VoiceOver says when the notice changes under its cursor (dialog linked to ${links})`, () => {
+    voiceOverTest.describe(`what VoiceOver says over repeated changes after ${before}`, () => {
       voiceOverTest.use({ locale: 'en-US' });
       voiceOverTest('each change is recorded', async ({ page, voiceOver }, info) => {
-        await changeUnderCursor(page, info, 'en-US', voiceOverReader(voiceOver), links);
+        voiceOverTest.setTimeout(12 * 60_000);
+        await changeAfter(page, info, 'en-US', voiceOverReader(voiceOver), before);
       });
     });
   }
