@@ -1,6 +1,8 @@
 import { voiceOverTest } from '@guidepup/playwright';
 import { test as plainTest, type Page, type TestInfo } from '@playwright/test';
+import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { expect, expectPads, installBrowserProbe, stateTimeout } from './browser';
 import { openBasicWith } from './basic-pack';
 import { freezeClock, installAudioGate, notice } from './audio-gate';
@@ -20,8 +22,13 @@ interface Reader {
   enter(): Promise<void>;
   /** Moves the reader's cursor to the next item and returns what it describes. */
   next(): Promise<string>;
-  /** Everything spoken so far. */
+  /** Everything spoken in answer to the reader's own commands so far. */
   spoken(): Promise<string[]>;
+  /**
+   * What the reader says by itself over `ms` (a dialog opening, focus moving, a status line), each
+   * change of its last phrase once.
+   */
+  listen(ms: number): Promise<string[]>;
 }
 
 const messages = { 'en-US': en, 'ko-KR': ko } as const;
@@ -34,6 +41,23 @@ const settleMs = dry ? 100 : 4000;
 const walkSteps = 8;
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** VoiceOver's last phrase, read straight from it: Guidepup logs only what follows its own commands. */
+async function voiceOverLastPhrase() {
+  const { stdout } = await promisify(execFile)('osascript', ['-e', 'tell application "VoiceOver" to return content of last phrase']);
+  return stdout.trim();
+}
+
+async function listenToVoiceOver(ms: number) {
+  const heard: string[] = [];
+  let last = await voiceOverLastPhrase();
+  for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
+    const phrase = await voiceOverLastPhrase();
+    if (phrase !== last) heard.push(phrase);
+    last = phrase;
+  }
+  return heard;
+}
 
 async function focusedItem(page: Page) {
   return page.evaluate(() => {
@@ -77,13 +101,9 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
     return [copy.title, copy.body, ...buttons];
   };
 
-  let heard = 0;
   const record: unknown[] = [];
-  const observe = async (state: State | 'closed', action: string) => {
-    await wait(settleMs);
-    const spoken = await reader.spoken();
-    const said = spoken.slice(heard);
-    heard = spoken.length;
+  const observe = async (state: State | 'closed', action: string, listening: Promise<string[]>) => {
+    const said = await listening;
     const focus = await focusedItem(page);
     const entry: Record<string, unknown> = { state, action, spoken: said, focus };
     if (state !== 'closed') {
@@ -92,7 +112,6 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
       entry.bodySpokenTimes = said.filter(phrase => phrase.includes(copy.body)).length;
       const items: string[] = [];
       for (let step = 0; step < walkSteps; step++) items.push(await reader.next());
-      heard = (await reader.spoken()).length;
       entry.walk = items;
       entry.outsideNotice = items.filter(item => item && !own(state).some(part => item.includes(part)));
       if (!dry) {
@@ -104,28 +123,33 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
     record.push(entry);
   };
 
+  let listening = reader.listen(settleMs);
   await page.getByRole('button', { name: startName, exact: true }).dispatchEvent('click');
   await page.clock.runFor(300);
   await expect(notice(page).getByRole('heading')).toHaveText(text.preparing.title);
-  await observe('preparing', 'pressed the Auto start; 0.3 s passed');
+  await observe('preparing', 'pressed the Auto start; 0.3 s passed', listening);
 
+  listening = reader.listen(settleMs);
   await page.clock.runFor(4700);
   await expect(notice(page).getByRole('heading')).toHaveText(text.delayed.title);
-  await observe('delayed', '5 s passed without an answer');
+  await observe('delayed', '5 s passed without an answer', listening);
 
   await page.evaluate(() => { window.audioGate.mode = 'reject'; });
+  listening = reader.listen(settleMs);
   await notice(page).getByRole('button', { name: text.retry, exact: true }).dispatchEvent('click');
   await expect(notice(page).getByRole('heading')).toHaveText(text.failed.title);
-  await observe('failed', 'pressed Try again; the browser refused');
+  await observe('failed', 'pressed Try again; the browser refused', listening);
 
   await page.evaluate(() => { window.audioGate.mode = 'hold'; });
+  listening = reader.listen(settleMs);
   await notice(page).getByRole('button', { name: text.retry, exact: true }).dispatchEvent('click');
   await expect(notice(page).getByRole('heading')).toHaveText(text.retrying.title);
-  await observe('retrying', 'pressed Try again again');
+  await observe('retrying', 'pressed Try again again', listening);
 
+  listening = reader.listen(settleMs);
   await notice(page).getByRole('button', { name: text.cancel, exact: true }).dispatchEvent('click');
   await expect(notice(page)).toHaveCount(0);
-  await observe('closed', 'pressed Cancel');
+  await observe('closed', 'pressed Cancel', listening);
 
   const log = { locale, browser: info.project.name, dryRun: dry, steps: record, fullSpokenLog: await reader.spoken() };
   const body = JSON.stringify(log, null, 2);
@@ -138,7 +162,7 @@ for (const locale of ['en-US', 'ko-KR'] as const) {
     plainTest.describe(`audio start notice with a reader (dry run, ${locale})`, () => {
       plainTest.use({ locale });
       plainTest('every state can be walked', async ({ page }, info) => {
-        await readNotice(page, info, locale, { enter: async () => {}, next: async () => '', spoken: async () => [] });
+        await readNotice(page, info, locale, { enter: async () => {}, next: async () => '', spoken: async () => [], listen: async ms => { await wait(ms); return []; } });
       });
     });
   } else {
@@ -152,6 +176,7 @@ for (const locale of ['en-US', 'ko-KR'] as const) {
             return voiceOver.itemText();
           },
           spoken: async () => [...await voiceOver.spokenPhraseLog()],
+          listen: listenToVoiceOver,
         });
       });
     });
