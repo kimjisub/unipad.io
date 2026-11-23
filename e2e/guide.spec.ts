@@ -34,11 +34,20 @@ async function openPackLink(page: Page, locale: string, checkedPage: PageErrors)
   await page.clock.pauseAt(now + 1000);
   await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click({ force: true }));
   await expect(page.locator('#packs')).toBeAttached();
+  await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
   // A document navigation resets the performance origin; measure in the
   // destination while its clock is still paused, before advancing any timers.
   const started = await page.evaluate(() => performance.now());
-  await page.clock.runFor(100);
+  // Hydration and native resize delivery do not follow the virtual timer.
+  // Advance in small steps until initial alignment has actually happened.
+  await expect.poll(async () => {
+    await page.clock.runFor(100);
+    return page.locator('#packs').evaluate(node => {
+      const top = node.getBoundingClientRect().top;
+      return top >= 80 && top < innerHeight;
+    });
+  }).toBe(true);
   await expect(page).toHaveURL('/docs/guide#packs');
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   return started;
@@ -93,7 +102,6 @@ for (const locale of ['ko', 'en']) {
           table.style.lineHeight = '12px';
           return { initial, before, after: table.getBoundingClientRect().height, elapsed: performance.now() - started };
         }, started);
-        expect(shrink.initial).toBeGreaterThanOrEqual(80);
         expect(shrink.before - shrink.after).toBeGreaterThan(40);
         expect(shrink.elapsed).toBeGreaterThanOrEqual(100);
         expect(shrink.elapsed, 'table shrink inside the alignment window').toBeLessThan(3000);
