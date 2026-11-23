@@ -97,14 +97,16 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
   assert.match(windows, /runs-on: windows-2025/);
   assert.ok(windows.includes(`uses: ${setupAction}`), 'Windows must use the shared setup');
   const matrices = [...windows.matchAll(/'(\[\{"project":[^']+\])'/g)].map(([, json]) => JSON.parse(json));
-  const jobs = matrices.at(-1).map(({ project, shard, shards }) => `${project} ${shard}/${shards}`);
+  const normal = matrices.find(jobs => jobs.every(job => !job.audio));
+  assert.ok(normal, 'the normal Windows matrix must exist');
+  const jobs = normal.map(({ project, shard, shards }) => `${project} ${shard}/${shards}`);
   // Firefox alone needs about 11 of the 15 minutes for these tests, so it runs them in two halves.
-  assert.deepEqual(jobs, ['chromium 1/1', 'chrome 1/1', 'msedge 1/1', 'firefox 1/2', 'firefox 2/2']);
+  assert.deepEqual(jobs, ['chromium 1/1', 'chrome 1/1', 'msedge 1/1', 'firefox 1/2', 'firefox 2/2', 'firefox-grid 1/1']);
   assert.match(windows, /name: Windows playback \(\$\{\{ matrix\.project \}\}\$\{\{ matrix\.shards > 1 && format\(' \{0\}\/\{1\}', matrix\.shard, matrix\.shards\) \|\| '' \}\}/);
   assert.match(windows, /name: windows-playback-\$\{\{ matrix\.project \}\}\$\{\{ matrix\.shards > 1 && format\('-\{0\}-of-\{1\}', matrix\.shard, matrix\.shards\) \|\| '' \}\}/, 'each job must upload its results under its own name');
-  assert.match(windows, /name: Install Firefox\n\s+if: matrix\.project == 'firefox'\n\s+run: pnpm exec playwright install firefox/);
+  assert.match(windows, /name: Install Firefox\n\s+if: startsWith\(matrix\.project, 'firefox'\)\n\s+run: pnpm exec playwright install firefox/);
   assert.doesNotMatch(windows, /pnpm install/);
-  const command = windows.split('\n').find(line => line.trim().startsWith('pnpm exec playwright test e2e/play.spec.ts')).trim();
+  const command = windows.split('\n').find(line => line.trim().startsWith('pnpm exec playwright test e2e/play.spec.ts'))?.trim();
   assert.ok(command, 'Windows playback test command must exist');
   for (const file of playbackFiles) assert.ok(command.includes(`e2e/${file}`), `Windows must run ${file}`);
   assert.ok(command.endsWith('--project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}'), 'each job must run its share of the tests');
@@ -115,13 +117,15 @@ test('Windows runs the shared playback tests with the shared setup', async () =>
 
 test('the optional Firefox comparison repeats both native audio paths equally without hiding failures', () => {
   const windows = read('.github/workflows/playback-windows.yml');
-  const comparison = JSON.parse(windows.match(/'(\[\{"project":[^']+\])'/)[1]);
+  const comparison = [...windows.matchAll(/'(\[\{"project":[^']+\])'/g)].map(([, json]) => JSON.parse(json)).find(jobs => jobs.every(job => job.audio));
   assert.deepEqual(comparison, [
-    { project: 'firefox', shard: 1, shards: 1, audio: 'page' },
-    { project: 'firefox', shard: 1, shards: 1, audio: 'broker' },
+    { project: 'firefox-grid', shard: 1, shards: 1, audio: 'page' },
+    { project: 'firefox-grid', shard: 1, shards: 1, audio: 'broker' },
   ]);
   assert.match(windows, /E2E_FIREFOX_AUDIO_PROCESS: \$\{\{ matrix\.audio/);
-  assert.match(windows, /pnpm exec playwright test e2e\/rectangular-pad-layout.spec.ts --project=firefox --grep 'phone: 8x8' --repeat-each=5/);
+  assert.match(windows, /pnpm exec playwright test e2e\/rectangular-pad-layout.spec.ts --project=firefox-grid --grep 'phone: 8x8' --repeat-each=5/);
+  const artifact = windows.split('\n').find(line => line.trim().startsWith('name: windows-playback-'));
+  assert.match(artifact, /matrix\.audio && format\('-audio-\{0\}', matrix\.audio\)/);
   assert.match(windows, /exit \$LASTEXITCODE/);
   assert.doesNotMatch(windows, /--retries|continue-on-error/);
 });
@@ -137,13 +141,16 @@ test('Windows gives the browsers a verified audio output before the playback tes
   assert.match(step, /throw 'No audio output device is available'/);
 });
 
-test('WebKit and Firefox include the shared playback tests', async () => {
+test('WebKit and Firefox projects cover each shared playback file once', async () => {
   const { default: config } = await import('../playwright.config.ts');
   for (const engine of ['webkit', 'firefox']) {
-    const project = config.projects.find(project => project.name === engine);
-    assert.ok(project, `${engine} must be tested`);
-    for (const file of playbackFiles) assert.ok(project.testMatch.includes(file), `${engine} must report ${file}`);
+    const projects = config.projects.filter(project => project.name === engine || project.name === `${engine}-grid`);
+    for (const file of playbackFiles) {
+      assert.equal(projects.filter(project => project.testMatch.includes(file)).length, 1, `${engine} must run ${file} in exactly one project`);
+    }
   }
+  const grid = config.projects.find(project => project.name === 'firefox-grid');
+  assert.deepEqual(grid.testMatch, ['rectangular-pad-layout.spec.ts'], 'only stationary grid cases may use the native motion preference');
 });
 
 test('lint skips the browser failure evidence that a local browser test run leaves behind', async () => {

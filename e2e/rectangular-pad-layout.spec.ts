@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, stateTimeout } from './browser';
 import { duration, loadInputPack } from './input-fixture';
-import { rotatePrompt } from './touch';
+import { litSelector, rotatePrompt } from './touch';
 
 const screens = [
   { name: 'compact phone', viewport: { width: 667, height: 320 } },
@@ -22,26 +22,32 @@ const bounds = (page: Page) => page.locator('[data-pad]').evaluateAll(elements =
 const poll = { intervals: [16, 32, 64, 100], timeout: stateTimeout };
 // 0 and 1 are a pad's outer edges, so the grid's border pads are pressed near the border.
 const edgeOffset = (index: number, last: number) => index === 0 ? 0 : index === last ? 1 : 0.5;
-const playback = (page: Page) => page.evaluate(() => ({
-  lit: Array.from(document.querySelectorAll('[data-pad]:has(img[src="/theme/btn_.png"])'),
+const playback = (page: Page) => page.evaluate(selector => ({
+  lit: Array.from(document.querySelectorAll(selector),
     pad => pad.getAttribute('data-pad')!).sort(),
   starts: window.browserProbe.audio.starts,
   stops: window.browserProbe.audio.stops,
   press: window.inputBoundaryEvents.findLast(event => event.type === 'pointerdown'),
-}));
-async function record(page: Page, info: TestInfo, name: string) {
+}), litSelector);
+async function record(page: Page, info: TestInfo, name: string, screenshotTimeout?: number) {
   await info.attach(`${name}-geometry-and-input`, {
     body: JSON.stringify({ platform: process.platform, audioProcess: process.env.E2E_FIREFOX_AUDIO_PROCESS ?? 'page',
       pads: await bounds(page), audio: await page.evaluate(() => window.browserProbe.audio),
       events: await page.evaluate(() => window.inputBoundaryEvents) }, null, 2),
     contentType: 'application/json',
   });
-  await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+  await info.attach(`${name}-screen`, { body: await page.screenshot({ animations: 'disabled', timeout: screenshotTimeout }), contentType: 'image/png' });
 }
 
 // Teardown has its own budget, so a timed-out press still leaves the received input and geometry.
 test.afterEach(async ({ page }, info) => {
-  if (info.status !== info.expectedStatus) await record(page, info, 'failed-input');
+  if (info.status === info.expectedStatus) return;
+  test.setTimeout(5_000);
+  try {
+    await record(page, info, 'failed-input', 2_000);
+  } catch (error) {
+    await info.attach('failed-input-record-error', { body: String(error), contentType: 'text/plain' });
+  }
 });
 
 // Each test decodes a two-chain pack and presses up to 17 edge pads, or every pad on portrait tablets, with trusted mouse input. On a busy

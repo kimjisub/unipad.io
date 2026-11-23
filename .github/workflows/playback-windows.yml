@@ -27,8 +27,8 @@ jobs:
       fail-fast: false
       matrix:
         # The comparison uses the same runner, audio driver and repeat count on both native paths.
-        # Normal playback still splits Firefox's longer suite across two jobs.
-        include: ${{ fromJSON(inputs.firefox_comparison && '[{"project":"firefox","shard":1,"shards":1,"audio":"page"},{"project":"firefox","shard":1,"shards":1,"audio":"broker"}]' || '[{"project":"chromium","shard":1,"shards":1},{"project":"chrome","shard":1,"shards":1},{"project":"msedge","shard":1,"shards":1},{"project":"firefox","shard":1,"shards":2},{"project":"firefox","shard":2,"shards":2}]') }}
+        # Normal Firefox keeps page scrolling; the stationary grid runs separately.
+        include: ${{ fromJSON(inputs.firefox_comparison && '[{"project":"firefox-grid","shard":1,"shards":1,"audio":"page"},{"project":"firefox-grid","shard":1,"shards":1,"audio":"broker"}]' || '[{"project":"chromium","shard":1,"shards":1},{"project":"chrome","shard":1,"shards":1},{"project":"msedge","shard":1,"shards":1},{"project":"firefox","shard":1,"shards":2},{"project":"firefox","shard":2,"shards":2},{"project":"firefox-grid","shard":1,"shards":1}]') }}
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
@@ -51,7 +51,7 @@ jobs:
         if: matrix.project == 'chromium'
         run: pnpm exec playwright install chromium
       - name: Install Firefox
-        if: matrix.project == 'firefox'
+        if: startsWith(matrix.project, 'firefox')
         run: pnpm exec playwright install firefox
       # Hosted Windows runners have Windows Audio running, but no audio output device.
       # Chromium then plays into a fake output, but Firefox never starts Web Audio, so a pad stays
@@ -86,9 +86,9 @@ jobs:
         id: playback
         run: |
           if ('${{ inputs.firefox_comparison }}' -eq 'true') {
-            pnpm exec playwright test e2e/rectangular-pad-layout.spec.ts --project=firefox --grep 'phone: 8x8' --repeat-each=5
+            pnpm exec playwright test e2e/rectangular-pad-layout.spec.ts --project=firefox-grid --grep 'phone: 8x8' --repeat-each=5
           } else {
-            pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
+            pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts e2e/firefox-motion.spec.ts --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
           }
           exit $LASTEXITCODE
       # Only after the tests ran: an earlier setup or build failure stays the only error.

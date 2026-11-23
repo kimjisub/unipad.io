@@ -81,7 +81,7 @@ uploads the Playwright report and traces as an artifact. A separate **Windows pl
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
 on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
-Firefox, the slowest, splits them across two jobs. Failures fail their jobs, with no retries. None of these
+Ordinary Firefox tests split across two jobs, and its stationary grid uses a separate job. Failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
 GitHub records each step's duration; each job summary records elapsed time from setup
@@ -268,7 +268,7 @@ pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/s
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts e2e/firefox-motion.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox --project=firefox-grid
 node scripts/playback-summary.mjs
 ```
 
@@ -285,7 +285,7 @@ and rectangular grid cases, five times per audio path, in separate Windows jobs.
 zero retries and the existing test deadlines. Locally, set the same variable and run:
 
 ```bash
-pnpm test:e2e e2e/rectangular-pad-layout.spec.ts --project=firefox --grep 'phone: 8x8' --repeat-each=5
+pnpm test:e2e e2e/rectangular-pad-layout.spec.ts --project=firefox-grid --grep 'phone: 8x8' --repeat-each=5
 ```
 
 Grid-test failures attach input coordinates, the pad and its bounds at event time,
@@ -295,10 +295,14 @@ opening the input pack, the fixture reapplies the same viewport once so the brow
 window includes that bar outside the content area. Without this adjustment,
 Playwright can scroll its own browser stack during edge presses and deliver a
 mouse event 48 CSS pixels away from the requested position. The tests also verify
-the received coordinates. Native Firefox UI motion is disabled to keep the warning
-stationary during preparation; page motion stays at `no-preference` and is checked
-along with the content viewport. Lights and audio calls are read together on each press
-and release to reduce browser round trips without dropping any playback checks.
+the received coordinates. The `firefox-grid` project alone disables native Firefox UI motion to keep the warning
+stationary during preparation. This also makes smooth page scrolling jump immediately,
+even though media-query emulation reports `no-preference`, so only the stationary
+`rectangular-pad-layout.spec.ts` runs there. Ordinary `firefox` tests keep normal browser
+motion; `firefox-motion.spec.ts` verifies that a smooth scroll starts asynchronously and
+reaches its destination. Windows runs that regression and the grid in separate jobs.
+Lights and audio calls are read together on each press and release to reduce browser
+round trips without dropping any playback checks.
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,
