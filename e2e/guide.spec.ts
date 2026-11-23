@@ -96,11 +96,13 @@ for (const locale of ['ko', 'en']) {
         await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(before - 100);
         // A subsequent height change must reach the observer while its safety
         // window is still open, without browser scroll anchoring hiding a pull.
-        const changed = await page.evaluate(() => {
+        const changed = await page.evaluate(async () => {
           document.documentElement.style.setProperty('overflow-anchor', 'none');
           const table = document.querySelector<HTMLElement>('.prose table')!;
           const before = { scrollY, height: document.body.scrollHeight };
           table.style.marginBottom = '400px';
+          // Reduced-motion transitions still apply on a rendering update.
+          await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
           return { before, height: document.body.scrollHeight };
         });
         expect(changed.height).toBeGreaterThan(changed.before.height + 300);
