@@ -7,6 +7,8 @@ interface AutoPlayControlsProps {
   progress: number;
   total: number;
   themeColor?: string;
+  /** Play is waiting for the audio to start. */
+  busy?: boolean;
   onPlayPause: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -17,6 +19,7 @@ export function AutoPlayControls({
   progress,
   total,
   themeColor = '#4FC3F7',
+  busy = false,
   onPlayPause,
   onPrev,
   onNext,
@@ -53,8 +56,9 @@ export function AutoPlayControls({
           </svg>
         </button>
         <button
-          className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-full hover:bg-white/10 transition-colors aria-busy:animate-pulse"
           onClick={onPlayPause}
+          aria-busy={busy || undefined}
           title={playing ? t('pause') : t('play')}
           aria-label={playing ? t('pause') : t('play')}
         >

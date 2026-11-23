@@ -51,8 +51,9 @@ const step = async (kind, run) => {
 };
 const savedAutoPlay = { current: [{ type: 'delay', delay: 1000 }], backup: [] };
 // Saved packs without a title: one imported with its file name kept, one saved before file names were kept.
+// An imported pack is opened from its bytes, which name no title.
 const untitled = { Untitled: { title: '', fileName: 'INF-008' }, Older: { title: '' } };
-const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, ...untitled[id], zipData: id, info: { title: id, buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
+const pack = id => ({ ...(id === 'B' ? { autoPlay: savedAutoPlay } : {}), id, title: id, ...untitled[id], zipData: id, info: { title: typeof id === 'string' ? id : 'Imported', buttonX: 8, buttonY: 8, chain: 1 }, soundCount: 1 });
 stub('../../lib/unipack/index.ts', {
   listUniPacks: () => step('list', () => [...library.values()]), listThemes: async () => [],
   getUniPack: id => step('read', () => pack(id)),

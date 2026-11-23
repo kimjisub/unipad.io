@@ -10,6 +10,19 @@ export async function basicTone(): Promise<Uint8Array> {
   return (await JSZip.loadAsync(await readFile(BASIC_PACK))).file('sounds/tone.wav')!.async('uint8array');
 }
 
+/** A 220 Hz tone of `seconds`, as 16-bit mono PCM. */
+export function longTone(seconds = 8) {
+  const samples = 44100 * seconds;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(44100, 24); wav.writeUInt32LE(88200, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
+  wav.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(4000 * Math.sin(i * 2 * Math.PI * 220 / 44100)), 44 + i * 2);
+  return wav;
+}
+
 /** Opens basic.uni on /play with `remove` taken out and `files` written over it, once its pads are drawn. */
 export async function openBasicWith(page: Page, files: Record<string, string | Uint8Array>, remove: string[] = []) {
   const zip = await JSZip.loadAsync(await readFile(BASIC_PACK));
