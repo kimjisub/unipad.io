@@ -67,8 +67,20 @@ for (const locale of ['ko', 'en']) {
         await checkedPage.navigate(() => page.locator('a[href="/docs/guide#packs"]').click());
         await expect(page).toHaveURL('/docs/guide#packs');
         await expect(page.locator('html')).toHaveAttribute('lang', locale);
+        const initial = await settledPackLayout(page);
+        // Response buffering can make native WebKit reflow happen earlier.
+        // Also force a later table shrink so an early visible heading cannot
+        // let the one-shot implementation pass by chance.
+        const shrink = await page.evaluate(() => {
+          document.documentElement.style.setProperty('overflow-anchor', 'none');
+          const table = document.querySelector<HTMLElement>('.prose table')!;
+          const before = table.getBoundingClientRect().height;
+          table.style.lineHeight = '12px';
+          return { before, after: table.getBoundingClientRect().height };
+        });
+        expect(shrink.before - shrink.after).toBeGreaterThan(40);
         const layout = await settledPackLayout(page);
-        await info.attach('settled-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
+        await info.attach('settled-layout', { body: JSON.stringify({ initial, shrink, ...layout }), contentType: 'application/json' });
         await info.attach('pack-link', { body: await page.screenshot(), contentType: 'image/png' });
         expect(layout.top, 'pack heading below the fixed navigation after table reflow').toBeGreaterThanOrEqual(80);
         expect(layout.top).toBeLessThan(900);
