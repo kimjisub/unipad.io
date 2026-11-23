@@ -252,6 +252,11 @@ test.describe('audio start notice', () => {
     await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
     await expectNotice(page, 'failed');
     await page.clock.runFor(300);
+    // Refused at once again: the same failure is announced again, so the second try is heard to fail too.
+    await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
+    await expectNotice(page, 'failed');
+    expect(await gateCalls(page), 'the second Try again asked').toBe(3);
+    await page.clock.runFor(300);
     await page.evaluate(() => { window.audioGate.mode = 'hold'; });
     await dialog.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
     await expectNotice(page, 'retrying');
@@ -259,6 +264,7 @@ test.describe('audio start notice', () => {
     expect(await noticeAnnouncements(page)).toEqual([
       'Playback will start when audio is ready.',
       'Audio is taking longer. We stopped waiting. Try again to prepare audio.',
+      'Couldn’t start audio. Playback hasn’t started. Please try again.',
       'Couldn’t start audio. Playback hasn’t started. Please try again.',
       'Preparing audio again. Your requested playback will continue when ready.',
     ]);
@@ -346,8 +352,7 @@ test.describe('audio start notice', () => {
       await mode(page, name).click();
       const position = async () => Number(await page.getByRole('progressbar').getAttribute('aria-valuenow'));
       if (name === 'Auto') await expect.poll(() => starts(page), { timeout: stateTimeout }).toBeGreaterThan(0);
-      // Guide waits for the shown pad: pressing it moves the song on.
-      else await expect.poll(async () => { await page.locator('[data-pad="0,0"]').click(); return position(); }, { timeout: stateTimeout }).toBeGreaterThan(0);
+      else await expect.poll(position, { timeout: stateTimeout }).toBeGreaterThan(0);
       // The page is left: playback stops at its place, and the browser keeps the output stopped on return.
       await page.evaluate(() => {
         Object.defineProperty(document, 'hidden', { configurable: true, value: true });
@@ -379,11 +384,13 @@ test.describe('audio start notice', () => {
         await expect(mode(page, other)).toHaveAttribute('aria-pressed', 'false');
       }
       await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+      // With the page clock still stopped, the song is back at the place it was left.
+      expect(await position()).toBe(progress);
       await page.clock.resume();
-      // The song goes on from its place, not from the start.
-      if (name === 'Auto') await expect.poll(position, { timeout: stateTimeout }).toBeGreaterThan(progress);
-      // Guide waits on its next pad, still at the place it was left.
-      else await expect.poll(position).toBe(progress);
+      // Both modes follow the song's own timing in this pack, so it moves on from there, never from the start.
+      const seen: number[] = [];
+      await expect.poll(async () => { const at = await position(); seen.push(at); return at; }, { timeout: stateTimeout }).toBeGreaterThan(progress);
+      expect(Math.min(...seen), `went back before ${progress}: ${seen.join(', ')}`).toBeGreaterThanOrEqual(progress);
       expect(await starts(page)).toBeGreaterThanOrEqual(before);
     });
   }
