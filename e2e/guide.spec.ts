@@ -14,10 +14,12 @@ for (const locale of ['ko', 'en']) {
           await page.goto(`/docs/guide#${topic}`);
           const heading = page.locator(`h2#${topic}`);
           await expect(heading).toBeVisible();
-          const uncovered = () => heading.evaluate(node => {
+          const uncovered = () => page.evaluate(id => {
+            const node = document.getElementById(id);
+            if (!node) return false;
             const box = node.getBoundingClientRect();
             return box.top >= 80 && box.top < innerHeight;
-          });
+          }, topic);
           await expect.poll(uncovered).toBe(true);
           const switchToOther = page.getByRole('button', { name: locale === 'ko' ? 'Switch to English' : '한국어로 전환' });
           await switchToOther.focus();
