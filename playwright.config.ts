@@ -7,6 +7,8 @@ const portableTests = ['analytics-collection.spec.ts', 'notice-placement.spec.ts
 
 export default defineConfig({
   testDir: './e2e',
+  // Screen reader checks need VoiceOver and run with playwright.voiceover.config.ts.
+  testIgnore: '**/*.voiceover.spec.ts',
   fullyParallel: false,
   workers: 1,
   forbidOnly: true,

@@ -4,10 +4,9 @@ import { chromium, type Locator, type Page, type TestInfo } from '@playwright/te
 import { test, expect, expectAudioOutputRunning, installBrowserProbe, stateTimeout } from './browser';
 import { themeFile, themeSetting } from './saved-packs';
 import { longTone, openBasicWith } from './basic-pack';
-import { installAudioGate, type AudioGate } from './audio-gate';
+import { freezeClock, installAudioGate, notice, openWithStoppedOutput } from './audio-gate';
 
 const mode = (page: Page, name: 'Auto' | 'Guide' | 'Step') => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
-const notice = (page: Page) => page.locator('[data-audio-start-notice]').getByRole('dialog');
 const starts = (page: Page) => page.evaluate(() => window.browserProbe.audio.starts.length);
 const gateCalls = (page: Page) => page.evaluate(() => window.audioGate.calls);
 const settle = (page: Page, outcome: 'resolve' | 'reject' | 'idle') => page.evaluate(o => window.audioGate.settle(o), outcome);
@@ -21,27 +20,6 @@ async function expectNotice(page: Page, state: keyof typeof titles) {
   await expect(dialog.getByRole('heading')).toHaveText(titles[state]);
   const pending = state === 'preparing' || state === 'retrying';
   await expect(dialog.getByRole('button')).toHaveText(pending ? ['Cancel'] : ['Dismiss', 'Try again']);
-}
-
-/** Stops the page clock where it is (a second ahead, as a late command must still land). */
-async function freezeClock(page: Page) {
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
-}
-
-/**
- * Opens basic.uni, lets its audio output run, then stops the output from outside the app, which
- * interrupts playback; from then on every resume is answered by the gate as `gateMode`.
- */
-async function openWithStoppedOutput(page: Page, gateMode: AudioGate['mode'], before?: (page: Page) => Promise<void>, files: Record<string, string | Uint8Array> = {}) {
-  await installAudioGate(page);
-  await page.clock.install();
-  await openBasicWith(page, files);
-  await expectAudioOutputRunning(page);
-  await before?.(page);
-  await page.evaluate(m => { window.audioGate.mode = m; }, gateMode);
-  await page.evaluate(() => window.audioGate.dropOutput());
-  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputState()), { timeout: stateTimeout }).toBe('suspended');
-  await freezeClock(page);
 }
 
 /** Runs page time in steps; nothing is playing, so each step is quick. */

@@ -1,0 +1,69 @@
+name: VoiceOver
+
+# What VoiceOver itself speaks for the play page's audio start notice, on a hosted Mac where the
+# screen reader can be turned on without affecting anyone. The spoken phrases are saved as artifacts.
+on:
+  pull_request:
+    paths:
+      - 'src/components/play/**'
+      - 'src/hooks/useModalKeyboard.ts'
+      - 'src/i18n/messages/**'
+      - 'e2e/audio-gate.ts'
+      - 'e2e/*.voiceover.spec.ts'
+      - 'playwright.voiceover.config.ts'
+      - '.github/workflows/voiceover.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voiceover-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  voiceover:
+    name: VoiceOver (${{ matrix.browser }})
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit, firefox]
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: 'https://unipad-browser-test.firebaseio.com'
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'unipad-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'unipad-ci.invalid'
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+      NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-web
+      # Allows VoiceOver to be controlled by AppleScript and turns off its first-run prompts.
+      - name: Prepare VoiceOver for automation
+        run: npx -y @guidepup/setup@0.29.3 setup --ci
+      - name: Install VoiceOver assets for the locked Guidepup version
+        run: npx -y @guidepup/setup@0.29.3 install voiceover
+      - name: Install ${{ matrix.browser }}
+        run: pnpm exec playwright install ${{ matrix.browser }}
+      - name: Build
+        run: pnpm build
+      - name: Read the audio start notice with VoiceOver
+        id: voiceover
+        run: pnpm exec playwright test --config playwright.voiceover.config.ts --project=${{ matrix.browser }}
+      - name: Save spoken phrases, reports and failure traces
+        if: always() && steps.voiceover.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: voiceover-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30
+          if-no-files-found: error

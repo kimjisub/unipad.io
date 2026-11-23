@@ -1,4 +1,6 @@
 import type { Page } from '@playwright/test';
+import { expect, expectAudioOutputRunning, stateTimeout } from './browser';
+import { openBasicWith } from './basic-pack';
 
 /**
  * Replies to the app's own AudioContext.resume() calls, the request its sound engine makes before a
@@ -59,3 +61,26 @@ export async function installAudioGate(page: Page) {
   });
 }
 
+/** The audio start notice's dialog. */
+export const notice = (page: Page) => page.locator('[data-audio-start-notice]').getByRole('dialog');
+
+/** Stops the page clock where it is (a second ahead, as a late command must still land). */
+export async function freezeClock(page: Page) {
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
+}
+
+/**
+ * Opens basic.uni, lets its audio output run, then stops the output from outside the app, which
+ * interrupts playback; from then on every resume is answered by the gate as `gateMode`.
+ */
+export async function openWithStoppedOutput(page: Page, gateMode: AudioGate['mode'], before?: (page: Page) => Promise<void>, files: Record<string, string | Uint8Array> = {}) {
+  await installAudioGate(page);
+  await page.clock.install();
+  await openBasicWith(page, files);
+  await expectAudioOutputRunning(page);
+  await before?.(page);
+  await page.evaluate(m => { window.audioGate.mode = m; }, gateMode);
+  await page.evaluate(() => window.audioGate.dropOutput());
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.outputState()), { timeout: stateTimeout }).toBe('suspended');
+  await freezeClock(page);
+}
