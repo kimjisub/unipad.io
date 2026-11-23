@@ -158,7 +158,7 @@ export class SoundEngine {
         const bytes = soundFiles.get(identity);
         if (!bytes) return { exclusion: 'READ_FAILURE' };
         const result = await inspector.inspect(bytes);
-        if (result.exclusion === null && result.facts.format === 'ogg')
+        if (result.exclusion === null && result.facts.format === 'ogg' && result.facts.vorbisEndTrimSafe)
           vorbisLengths.set(identity, result.facts);
         return result;
       },
@@ -245,10 +245,15 @@ export class SoundEngine {
         const rate = BigInt(vorbis.sampleRate);
         const frames = Number((vorbis.frames * BigInt(buffer.sampleRate) + rate - BigInt(1)) / rate);
         if (frames > 0 && buffer.length > frames) {
-          const trimmed = this.audioContext.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
-          for (let channel = 0; channel < buffer.numberOfChannels; channel++)
-            trimmed.copyToChannel(buffer.getChannelData(channel).subarray(0, frames), channel);
-          buffer = trimmed;
+          try {
+            const trimmed = this.audioContext.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
+            for (let channel = 0; channel < buffer.numberOfChannels; channel++)
+              trimmed.copyToChannel(buffer.getChannelData(channel).subarray(0, frames), channel);
+            buffer = trimmed;
+          } catch (error) {
+            // Keep playable native output if the optional padding copy cannot fit.
+            if (!isMemoryFailure(error)) throw error;
+          }
         }
       }
       if (!this.destroyed) this.bufferCache.set(file, buffer);

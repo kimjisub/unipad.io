@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Supply a scratch directory; encoded source and PCM stay outside the repository.
 const scratch = process.argv[2];
@@ -30,6 +31,7 @@ if (packets[0][28] !== 0xb8 || (packets[3][0] & 3) !== 0)
   throw new Error('Expected 256/2048 blocks and a short first audio packet');
 function page(contents, sequence, flags, granule) {
   const lacing = contents.flatMap(p => [...Array(Math.floor(p.length / 255)).fill(255), p.length % 255]);
+  if (lacing.length > 255) throw new Error('Too many segments for one Ogg page');
   const header = Buffer.alloc(27);
   header.write('OggS');
   header[5] = flags;
@@ -46,7 +48,7 @@ function page(contents, sequence, flags, granule) {
   bytes.writeUInt32LE(crc >>> 0, 22);
   return bytes;
 }
-writeFileSync('e2e/fixtures/vorbis-short-tail.ogg', Buffer.concat([
+writeFileSync(fileURLToPath(new URL('./vorbis-short-tail.ogg', import.meta.url)), Buffer.concat([
   page(packets.slice(0, 1), 0, 2, 0), page(packets.slice(1, 3), 1, 0, 0),
   page(Array(101).fill(packets[3]), 2, 0, 12800),
   page(Array(40).fill(packets[3]), 3, 4, 17640),
