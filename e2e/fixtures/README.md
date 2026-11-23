@@ -22,3 +22,20 @@ must fail the format tests. Reproduce it with FFmpeg 8.1:
 ```sh
 ffmpeg -nostdin -f lavfi -i 'sine=frequency=660:sample_rate=44100:duration=0.1' -c:a libmp3lame -b:a 128k -map_metadata -1 -write_xing 0 -id3v2_version 0 tone-660.mp3
 ```
+
+`vorbis-short-tail.ogg` repeats a short packet from an original 440 Hz sine encoded
+with libvorbis (`oggenc` 1.4.3). Its identification header specifies 256/2048-frame
+blocks. All 141 audio packets use the short mode: their overlap contributes 17,920
+frames. The last page advertises 17,640, trimming 280 frames, above the final short
+block but within the long block. CRCs, sequence numbers and page lengths are valid.
+Regenerate with FFmpeg and oggenc installed:
+
+```sh
+node e2e/fixtures/generate-vorbis-short-tail.mjs /path/to/scratch
+```
+
+This synthetic packet repetition also exposes decoder differences: Chromium emits
+17,792 frames, WebKit and Firefox 17,640, FFmpeg 17,920, and oggdec 17,792. Playback
+must cap a longer Vorbis buffer at the inspected granule length. No third-party
+recordings are included. The unit tests change only the final granule and CRC to
+exercise the inclusive long-block bound and rejection beyond it.
