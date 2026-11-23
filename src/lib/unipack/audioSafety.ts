@@ -4,6 +4,8 @@ export interface AudioFacts {
   readonly channels: number;
   readonly frames: bigint;
   readonly format?: string;
+  /** A non-final audio page establishes that excess decoded Vorbis frames are at the end. */
+  readonly vorbisEndTrimSafe?: boolean;
 }
 export type AudioExclusion =
   | 'INVALID_FORMAT'
