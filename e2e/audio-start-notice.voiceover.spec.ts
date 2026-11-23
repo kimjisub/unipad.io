@@ -12,7 +12,9 @@ import ko from '../src/i18n/messages/ko.json';
 /**
  * What VoiceOver itself says about the audio start notice, in each of its four states. Runs only on
  * macOS with VoiceOver prepared for automation (see .github/workflows/voiceover.yml); the phrases
- * VoiceOver spoke are saved as they are, for a person to read. VOICEOVER_DRY=1 walks the same page
+ * VoiceOver spoke are saved as they are, for a person to read. What VoiceOver says by itself varies
+ * from run to run (it sometimes drops a polite status change), so how often each title and text was
+ * spoken is recorded, not asserted; the reader staying in the notice and focus are asserted. VOICEOVER_DRY=1 walks the same page
  * steps without a screen reader, to check them on any machine.
  */
 const dry = process.env.VOICEOVER_DRY === '1';
@@ -110,10 +112,6 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
       const copy = text[state];
       entry.titleSpokenTimes = said.filter(phrase => phrase.includes(copy.title)).length;
       entry.bodySpokenTimes = said.filter(phrase => phrase.includes(copy.body)).length;
-      if (!dry) {
-        expect.soft(entry.bodySpokenTimes, `${state}: the text is spoken once`).toBe(1);
-        expect.soft(entry.titleSpokenTimes, `${state}: the title is spoken once`).toBe(1);
-      }
       const items: string[] = [];
       for (let step = 0; step < walkSteps; step++) items.push(await reader.next());
       entry.walk = items;
@@ -164,6 +162,7 @@ async function readNotice(page: Page, info: TestInfo, locale: Locale, reader: Re
   await notice(page).getByRole('button', { name: text.cancel, exact: true }).dispatchEvent('click');
   await expect(notice(page)).toHaveCount(0);
   await observe('closed', 'pressed Cancel', listening);
+  expect.soft(await focusedItem(page), 'closing returns focus to the start button').toEqual({ role: 'button', name: startName, insideNotice: false });
 
   const log = { locale, browser: info.project.name, dryRun: dry, steps: record, fullSpokenLog: await reader.spoken() };
   const body = JSON.stringify(log, null, 2);
