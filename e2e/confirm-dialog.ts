@@ -12,6 +12,27 @@ export async function observeConfirmationKeys(page: Page) {
   });
 }
 
+/**
+ * Pauses every confirmation's native fade-out, as a busy device can, so the dialog stays painted
+ * after it closes. Clocks and the app stay real; `window.heldConfirmationExits` counts the holds.
+ */
+export async function holdConfirmationExits(page: Page) {
+  await page.addInitScript(() => {
+    let held = 0;
+    Object.defineProperty(window, 'heldConfirmationExits', { get: () => held });
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (...args: Parameters<typeof animate>) {
+      const animation = animate.apply(this, args);
+      const frames = (animation.effect as KeyframeEffect | null)?.getKeyframes();
+      if (frames?.at(-1)?.opacity === '0' && this.querySelector(':scope > [role="alertdialog"]')) {
+        held++;
+        queueMicrotask(() => animation.pause());
+      }
+      return animation;
+    };
+  });
+}
+
 /** Exercises the shared confirmation through native keys, including both ends of the tab order. */
 export async function expectConfirmationKeyboard(page: Page, dialog: Locator, info: TestInfo) {
   await expect(dialog).toBeVisible();
