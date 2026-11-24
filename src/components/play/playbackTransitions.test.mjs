@@ -500,10 +500,11 @@ test('an obsolete resume cannot restart a new pack after unloading', async () =>
 });
 
 
-test('autoplay wormholes do not repeat a parsed chain move 100 ms later', async () => {
+test('an explicit autoplay chain cancels a pending wormhole without a second manual move', async () => {
   const { result } = await mount({ wormhole: true, autoPlay: 'o 1 1\nd 50\nc 3\nd 1000' });
   await flush(() => result.current.switchPlayMode('autoPlay'));
-  await tick(1); assert.equal(result.current.state.chain, 1);
+  await tick(1); assert.equal(result.current.state.chain, 0);
+  assert.equal(starts.length, 1);
   await tick(50); assert.equal(result.current.state.chain, 2);
   await tick(51); assert.equal(result.current.state.chain, 2);
 });

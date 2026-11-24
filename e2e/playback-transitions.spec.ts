@@ -1222,11 +1222,13 @@ for (const mapped of [true, false]) test(`song-time wormhole keeps the early ${m
     keySound: `1 1 1 tone.wav 1 2\n${mapped ? '1 1 2 tone.wav 1\n' : ''}2 1 2 tone.wav 2`, leds: {},
   });
   await mode(page, 'Auto').dispatchEvent('click');
-  await page.clock.runFor(520);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(499);
+  await page.clock.runFor(20);
   expect(await page.evaluate(() => window.browserProbe.audio.starts.map(s => s.loop))).toEqual(mapped ? [false, false] : [false]);
   await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(1);
   await snapshot(page, info, 'source-chain-before-deadline');
-  await page.clock.runFor(90);
+  await page.clock.fastForward(90);
   await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
   await snapshot(page, info, 'destination-after-100ms');
 });
@@ -1234,10 +1236,11 @@ for (const mapped of [true, false]) test(`song-time wormhole keeps the early ${m
 for (const stop of [false, true]) test(`song-time wormhole ${stop ? 'stop cancels' : 'pause freezes and resume preserves'} the pending switch`, async ({ page }, info) => {
   await open(page, 'd 500\non 1 1\nd 1000', true, { leds: {} });
   await mode(page, 'Auto').dispatchEvent('click');
-  await page.clock.runFor(550);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(549);
   expect(await soundRequests(page)).toBe(1);
   await (stop ? mode(page, 'Auto') : page.getByRole('button', { name: 'Pause', exact: true })).dispatchEvent('click');
-  await page.clock.runFor(2000);
+  await page.clock.fastForward(2000);
   const first = page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10');
   await expect(first).toHaveCount(1);
   await snapshot(page, info, stop ? 'stopped-before-deadline' : 'paused-before-deadline');
@@ -1257,7 +1260,8 @@ test('song-time wormhole practice guides the early voice on the original chain',
     keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},
   });
   await mode(page, 'Guide').dispatchEvent('click');
-  await page.clock.runFor(220);
+  await page.clock.runFor(1);
+  await page.clock.fastForward(219);
   // Both first-chain notes fall inside the 800 ms lookahead; neither asks for chain two.
   await expect(padGuide(page, '0,0')).toHaveCount(1);
   await expect(padGuide(page, '0,1')).toHaveCount(1);
