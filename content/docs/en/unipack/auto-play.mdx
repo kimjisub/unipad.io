@@ -53,7 +53,7 @@ Manual and auto-play releases end only what their own press currently owns. App 
 
 ## Presses right after a wormhole
 
-In the revised shared format, auto-play and practice switch chains 100 ms of song time after the wormhole press. Manual play switches 100 ms after the press. A press within those 100 ms still plays from the original chain; if its pad has no sound on that chain, it is silent.
+In auto-play and practice, a sound's wormhole switches the chain 100 ms of song time after the press. In manual play, the chain switches 100 ms after the press. Older app versions switch immediately in auto-play; each app follows this timing starting from the update that includes it. A press within those 100 ms still plays from the original chain; if its pad has no sound on that chain, it is silent.
 
 To make such a press play from the new chain, add `chain N` after the wormhole press, directly before the first press that should play from chain N. The `chain` line selects chain N at that point and cancels the pending switch. It adds no delay, so every press keeps its song time.
 
