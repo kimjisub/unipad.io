@@ -522,7 +522,8 @@ current corpus and hash; historical pins never change what gets copied.
 
 `product-cases.mjs` extends the same canonical corpus with 122 cases: 21 exact integer costs,
 85 physical audio files, eight physical WAV generation recipes, one ordered selection, five mapper
-outputs and two trailing-wait observations. The resulting corpus has 391 cases. The nine PB items in
+outputs and two trailing-wait observations. Together with the two song-time wormhole cases above,
+the corpus has 393 cases. The nine PB items in
 GRAMMAR.md state the adopted behavior. Their app-level confirmation remains limited: common operation
 results never certify interruption, screen input ownership, stored settings, atomic backup/restore,
 real decoding, device output or resource failures. Missing app evidence remains unverified.
