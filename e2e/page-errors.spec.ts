@@ -197,3 +197,59 @@ for (const kind of ['same route', 'different route', 'different query', 'missing
     checkedPage.errors.length = 0;
   });
 }
+
+for (const navigation of ['stay', 'language switch'] as const) {
+  test(`a rejected installation is handled during ${navigation}`, async ({ page, checkedPage, browserName }, info) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    const pending: Route[] = [];
+    let rejectInstallations = false;
+    let requests = 0;
+    await page.route('**/firebaseinstallations.googleapis.com/**', route => {
+      requests++;
+      if (rejectInstallations) return route.abort('accessdenied');
+      pending.push(route);
+    });
+    let performanceFailed = false;
+    const failures: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.stack ?? error.message));
+    page.on('console', message => {
+      if (message.text().includes('Performance: Could not fetch config, will use default configs')) performanceFailed = true;
+      if (message.type() === 'error' && message.text().includes('TypeError')) failures.push(message.text());
+    });
+    await page.goto('/docs/guide#launchpad');
+    await expect.poll(() => pending.length).toBeGreaterThan(0);
+    await expect(page.locator('h2#launchpad')).toBeVisible();
+    const language = await page.locator('html').getAttribute('lang');
+    const fail = async () => {
+      rejectInstallations = true;
+      await Promise.all(pending.map(route => route.abort('accessdenied')));
+      // Registration waiters retry after the first failure. Reject those requests
+      // too, so Performance's token consumer observes a failure of its own.
+      await expect.poll(() => requests).toBeGreaterThan(1);
+      // Wait for the real Performance consumer to handle its token failure,
+      // then let the browser report any orphaned promise on the next task.
+      await expect.poll(() => performanceFailed).toBe(true);
+      await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
+      rejectInstallations = false;
+    };
+    if (navigation === 'language switch') {
+      await checkedPage.navigate(async () => {
+        await fail();
+        await page.getByRole('button', { name: /한국어로 전환|Switch to English/ }).press('Enter');
+      });
+      await expect(page.locator('html')).toHaveAttribute('lang', language === 'ko' ? 'en' : 'ko');
+      await expect(page).toHaveURL('/docs/guide#launchpad');
+    } else {
+      await fail();
+      // WebKit's access-control console line is distinct from the rejection.
+      const accessLines = checkedPage.errors.filter(message => /^\/firebaseinstallations\.googleapis\.com\/.* due to access control checks\.$/.test(message));
+      if (browserName === 'webkit') expect(accessLines.length).toBeGreaterThan(0);
+      else expect(accessLines).toEqual([]);
+      for (const line of accessLines) checkedPage.errors.splice(checkedPage.errors.indexOf(line), 1);
+    }
+    await info.attach('installation-failure', { body: JSON.stringify({ requests, performanceFailed, failures, pageErrors, errors: checkedPage.errors, ignored: checkedPage.ignored }), contentType: 'application/json' });
+    await info.attach('guide', { body: await page.screenshot(), contentType: 'image/png' });
+    expect(checkedPage.errors).toEqual([]);
+  });
+}

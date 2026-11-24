@@ -8,6 +8,11 @@ overrides:
   '@tailwindcss/typography>postcss-selector-parser': 6.1.5
   '@typescript-eslint/typescript-estree>minimatch': ^11.0.5
 
+patchedDependencies:
+  '@firebase/performance@0.7.14':
+    hash: c4d83399b9764e07b8551e0a12b291d352e07d1c33efd800eb33329041fbef27
+    path: patches/@firebase__performance@0.7.14.patch
+
 importers:
 
   .:
@@ -4872,14 +4877,14 @@ snapshots:
       '@firebase/app-compat': 0.5.18
       '@firebase/component': 0.7.5
       '@firebase/logger': 0.5.2
-      '@firebase/performance': 0.7.14(@firebase/app@0.16.2)
+      '@firebase/performance': 0.7.14(patch_hash=c4d83399b9764e07b8551e0a12b291d352e07d1c33efd800eb33329041fbef27)(@firebase/app@0.16.2)
       '@firebase/performance-types': 0.2.5
       '@firebase/util': 1.15.3
       tslib: 2.8.1
 
   '@firebase/performance-types@0.2.5': {}
 
-  '@firebase/performance@0.7.14(@firebase/app@0.16.2)':
+  '@firebase/performance@0.7.14(patch_hash=c4d83399b9764e07b8551e0a12b291d352e07d1c33efd800eb33329041fbef27)(@firebase/app@0.16.2)':
     dependencies:
       '@firebase/app': 0.16.2
       '@firebase/component': 0.7.5
@@ -7203,7 +7208,7 @@ snapshots:
       '@firebase/installations-compat': 0.2.24(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
       '@firebase/messaging': 0.13.3(@firebase/app@0.16.2)
       '@firebase/messaging-compat': 0.2.30(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
-      '@firebase/performance': 0.7.14(@firebase/app@0.16.2)
+      '@firebase/performance': 0.7.14(patch_hash=c4d83399b9764e07b8551e0a12b291d352e07d1c33efd800eb33329041fbef27)(@firebase/app@0.16.2)
       '@firebase/performance-compat': 0.2.27(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
       '@firebase/remote-config': 0.9.2(@firebase/app@0.16.2)
       '@firebase/remote-config-compat': 0.2.29(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
