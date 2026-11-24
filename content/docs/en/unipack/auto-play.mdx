@@ -51,6 +51,29 @@ off 1 1
 The shared format applies parsed chain switches at their calculated song time; an auto-play press must not also schedule the manual sound's 100 ms switch. Stopping auto-play cancels its pending changes. Before each scripted press or release, auto-play restores the chain calculated from its file; a player's chain selection or an LED `chain` event lasts only until that next event.
 Manual and auto-play releases end only what their own press currently owns. App updates are aligning these overlapping-input and wormhole rules.
 
+## Presses right after a wormhole
+
+In the revised shared format, auto-play and practice switch chains 100 ms of song time after the wormhole press. Manual play switches 100 ms after the press. A press within those 100 ms still plays from the original chain; if its pad has no sound on that chain, it is silent.
+
+To make such a press play from the new chain, add `chain N` after the wormhole press, directly before the first press that should play from chain N. The `chain` line selects chain N at that point and cancels the pending switch. It adds no delay, so every press keeps its song time.
+
+Add one `chain` line per switch, not one before every press. Any chain change, even to the chain already selected, restarts that chain's sound queues from the first sound, so a pad pressed twice in that stretch would play its first sound twice.
+
+Example: `t 4 8` has a wormhole to chain 3, and the `t 5 8` 2 ms later should play chain 3's sound. Add `chain 3` once, before the first `t 5 8`:
+
+```
+t 4 8
+d 2
+chain 3
+t 5 8
+d 1
+t 5 1
+d 2
+t 4 1
+d 66
+t 5 8
+```
+
 ## Completion and editing
 
 The final delay is part of auto-play, including a pause during that wait. Completion releases only auto-play-owned inputs. See [Playback behavior](playback) for interruptions, explicit resume and auto-map with backup and restore.
