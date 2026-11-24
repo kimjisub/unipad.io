@@ -106,6 +106,27 @@ export NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-FAKE-CI
 pnpm build
 ```
 
+### Firebase Performance installation failures
+
+`patches/@firebase__performance@0.7.14.patch` removes an unused success-only
+continuation of the installation token promise in both SDK entry points. That
+continuation creates an unhandled rejection when registration fails, even though
+Performance handles the original token failure and falls back to its defaults.
+The patch returns the original promise unchanged, preserving its value and error.
+It does not suppress window errors or change Analytics collection.
+
+The version-pinned patch is applied by pnpm, including frozen-lockfile installs.
+Remove it when a future SDK version fixes this continuation, after running:
+
+```bash
+pnpm test:e2e --project=webkit e2e/page-errors.spec.ts
+```
+
+The regression holds installation requests, rejects registration and its retries,
+waits for the real Performance fallback, and checks both a stationary guide and
+language switching. Existing controls still require unrelated fetch failures and
+unhandled rejections to be reported.
+
 ### Browser playback checks
 
 In a Git checkout, `pnpm build` records the commit and a content fingerprint of tracked and
