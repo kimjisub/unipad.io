@@ -659,6 +659,8 @@ async function parseAutoPlay(
     Array.from({ length: info.buttonY }, () => 0),
   );
   let currChain = 0;
+  let songTime = 0;
+  const pending: { at: number; chain: number }[] = [];
 
   function soundGet(c: number, x: number, y: number, num: number): Sound | null {
     const sounds = soundTable[c]?.[x]?.[y];
@@ -672,13 +674,28 @@ async function parseAutoPlay(
     for (const row of map) row.fill(0);
   }
 
-  /** `on` and `touch` press the pad: its sound advances, and a wormhole on it switches the chain. */
+  // Reservations are appended in press order, so equal deadlines retain file order.
+  function applyDue(until: number): void {
+    while (pending.length && pending[0].at <= until) {
+      const next = pending.shift()!;
+      if (next.at > songTime) {
+        elements.push({ type: 'delay', delay: next.at - songTime });
+        songTime = next.at;
+      }
+      switchChain(next.chain);
+    }
+  }
+
+  /** A press advances its queue now; its wormhole changes chains later in song time. */
   function press(x: number, y: number, touch: boolean): void {
     elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
     if (touch) elements.push({ type: 'off', x, y, currChain });
     const sound = soundGet(currChain, x, y, map[x][y]);
     map[x][y]++;
-    if (sound && sound.wormhole !== NO_WORMHOLE) switchChain(sound.wormhole);
+    if (sound && sound.wormhole !== NO_WORMHOLE) {
+      pending.push({ at: songTime + 100, chain: sound.wormhole });
+      pending.sort((a, b) => a.at - b.at);
+    }
   }
 
   for (const line of splitLines(text)) {
@@ -730,6 +747,7 @@ async function parseAutoPlay(
       continue;
     }
 
+    applyDue(songTime);
     switch (option) {
       case 'on':
       case 'o':
@@ -745,14 +763,26 @@ async function parseAutoPlay(
         break;
       case 'chain':
       case 'c':
+        pending.length = 0;
         switchChain(chain);
         break;
       case 'delay':
       case 'd':
-        elements.push({ type: 'delay', delay });
+        if (delay <= 0) {
+          // Retain authored nonpositive waits and their contribution to the delay sum.
+          elements.push({ type: 'delay', delay });
+          songTime += delay;
+        } else {
+          const end = songTime + delay;
+          applyDue(end);
+          if (end > songTime) elements.push({ type: 'delay', delay: end - songTime });
+          songTime = end;
+        }
         break;
     }
   }
 
+  // Normal completion applies the tail at the final song time, without extending the file.
+  for (const next of pending) switchChain(next.chain);
   return { elements };
 }

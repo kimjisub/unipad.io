@@ -88,7 +88,7 @@ test('iOS sound-stop and chain-reset cases require observed results', () => {
 
 test('G6 cases cannot count a missing result, a claimed pass or an injected wrong output', () => {
   const added = corpus.cases.filter((c) => /-G6/.test(c.id));
-  assert.equal(added.length, 55);
+  assert.equal(added.length, 57);
   for (const c of added) for (const platform of PLATFORMS) {
     const only = { corpus: { ...corpus, cases: [c] }, sha256: canonical.sha256 };
     const result = (cases) => ({ platform, corpusSha256: canonical.sha256, cases });
@@ -1066,11 +1066,14 @@ test('iOS playback observations distinguish stored repeats from a delayed chain 
   assert.equal(fixed.cases.length, 382);
   const corrected = fixed.cases.find(c => c.id === delayed.id);
   assert.equal(corrected.fingerprint, delayed.fingerprint);
-  assert.deepEqual(corrected.actual, delayed.expected);
-  assert.equal(classify(delayed, corrected.actual, 'ios'), 'pass');
-  // A synthetic current-corpus envelope checks classification, not an iOS rerun.
+  // This fixed callback observation still used immediate auto-play wormholes. Preserve it as
+  // history: wrapping it in a current-corpus envelope must not turn it into new timing evidence.
+  assert.deepEqual(corrected.actual, { checkpoints: [[['autoOn', 0, 0], ['sound', 0, 0, 0, 'a.wav', 0], ['autoChain', 1]], []] });
+  assert.equal(classify(delayed, corrected.actual, 'ios'), 'fail');
   const changed = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: corrected }));
-  assert.equal(changed.get(delayed.id).status, 'pass');
+  assert.equal(changed.get(delayed.id).status, 'unverified', 'an old claimed pass contradicts the new expected output');
+  const reclassified = judge(canonical, 'ios', fullResults('ios', { [delayed.id]: { ...corrected, status: 'fail' } }));
+  assert.equal(reclassified.get(delayed.id).status, 'fail');
   assert.equal(judge(canonical, 'ios', fixed).get(delayed.id).status, 'unverified',
     'the retained fixed observation must not be relabelled with the regenerated corpus hash');
   assert.notEqual(original.corpusSha256, canonical.sha256);

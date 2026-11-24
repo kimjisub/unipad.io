@@ -1214,3 +1214,53 @@ test('opening the menu lets go of a held key, keeps autoplay going and plays no 
   expect(await soundRequests(page), 'a key pressed after the menu closes plays').toBe(before + 2);
   await page.keyboard.up('1');
 });
+
+// Synthetic version of the short wormhole-to-voice gap: finite source-chain voice versus
+// looping destination drum. No third-party pack or audio is included.
+for (const mapped of [true, false]) test(`song-time wormhole keeps the early ${mapped ? 'voice' : 'silent pad'} on the source chain`, async ({ page }, info) => {
+  await open(page, 'd 500\non 1 1\nd 1\ntouch 1 2\nd 199', false, {
+    keySound: `1 1 1 tone.wav 1 2\n${mapped ? '1 1 2 tone.wav 1\n' : ''}2 1 2 tone.wav 2`, leds: {},
+  });
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(520);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.map(s => s.loop))).toEqual(mapped ? [false, false] : [false]);
+  await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await snapshot(page, info, 'source-chain-before-deadline');
+  await page.clock.runFor(90);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await snapshot(page, info, 'destination-after-100ms');
+});
+
+for (const stop of [false, true]) test(`song-time wormhole ${stop ? 'stop cancels' : 'pause freezes and resume preserves'} the pending switch`, async ({ page }, info) => {
+  await open(page, 'd 500\non 1 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(550);
+  expect(await soundRequests(page)).toBe(1);
+  await (stop ? mode(page, 'Auto') : page.getByRole('button', { name: 'Pause', exact: true })).dispatchEvent('click');
+  await page.clock.runFor(2000);
+  const first = page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10');
+  await expect(first).toHaveCount(1);
+  await snapshot(page, info, stop ? 'stopped-before-deadline' : 'paused-before-deadline');
+  if (!stop) {
+    await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(20);
+    await expect(first).toHaveCount(1);
+    await page.clock.runFor(50);
+    await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+    expect(await soundRequests(page)).toBe(1);
+    await snapshot(page, info, 'resumed-switch-without-repress');
+  }
+});
+
+test('song-time wormhole practice guides the early voice on the original chain', async ({ page }, info) => {
+  await open(page, 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 1 3\nd 1000', false, {
+    keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},
+  });
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(220);
+  // Both first-chain notes fall inside the 800 ms lookahead; neither asks for chain two.
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(0);
+  await snapshot(page, info, 'practice-source-chain-voice');
+});

@@ -209,9 +209,19 @@ harness measures"). RUN-A-001, RUN-A-002, RUN-RP-003, RUN-RP-004 (the autoPlay r
 clock) and RUN-L-006, RUN-L-007 (leaving the play screen) were marked on iOS until its harness came to
 record results for them (see `stop` and autoPlay below).
 
+## Song-time wormholes
+
+Auto-play and practice schedule sound wormholes 100 ms after the press in song time. Presses before
+the switch keep the original chain and its queues, including silence on an unmapped pad. Delays split
+at deadlines without extending the song. An explicit file chain cancels outstanding switches; normal
+end applies the remainder at the final song time, while stop cancels it. Queue resets occur on application,
+not reservation. AP-003/AP-006 and RUN-G605/RUN-G616 use this timing; AP-G602/AP-G603 cover a
+minimal voice transition and its unmapped-pad variant. Earlier observation files and investigations
+retain their original hashes and expectations as history, including the superseded immediate rule.
+
 ## G6 cases and current app corrections
 
-`g6-cases.mjs` adds 55 cases (49 initial cases and six archive-identity collision cases). Each declares `expectedFailing`: the apps expected to need a
+`g6-cases.mjs` adds 57 cases (49 initial cases, six archive-identity collision cases and two song-time wormhole cases). Each declares `expectedFailing`: the apps expected to need a
 correction, based on the code comparison. This field never changes classification or expected output.
 Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
 KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
