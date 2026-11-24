@@ -3,7 +3,7 @@ import { setTimeout as wallTimeout, clearTimeout as clearWallTimeout } from 'nod
 import assert from 'node:assert/strict';
 import { downloadStoreItem } from './store.ts';
 
-const item = { code: 'test', title: 'Test Pack', producerName: 'Tests', isAutoPlay: false, isLED: false, downloadCount: 0 };
+const item = { url: 'https://unipack.unipad.io/store/test.zip', code: 'test', title: 'Test Pack', producerName: 'Tests', isAutoPlay: false, isLED: false, downloadCount: 0 };
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 for (const stage of ['headers', 'body']) {

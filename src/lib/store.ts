@@ -1,8 +1,6 @@
 import { get, onValue, ref } from 'firebase/database';
 import { initFirebaseServices } from './firebase';
 
-const LEGACY_DOWNLOAD_BASE_URL =
-  'https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy';
 const STORE_CACHE_KEY = 'store_items_cache_v1';
 const STORE_COUNT_CACHE_KEY = 'store_count_cache_v1';
 const STORE_NETWORK_IDLE_TIMEOUT_MS = 5000;
@@ -230,11 +228,39 @@ export async function subscribeStoreCount(
   return unsubscribe;
 }
 
-function getStoreDownloadUrl(item: StoreItem): string {
-  if (item.url && /^https?:\/\//i.test(item.url)) {
-    return item.url;
-  }
-  return `${LEGACY_DOWNLOAD_BASE_URL}?code=${encodeURIComponent(item.code)}`;
+function directDownloadUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    if (parsed.hostname.endsWith('.cloudfunctions.net')
+      && /^\/(downloadUniPackLegacy|increaseDownloadCount)(\/|$)/.test(parsed.pathname)) return null;
+    return url;
+  } catch { return null; }
+}
+
+async function getStoreDownloadUrl(item: StoreItem, controller: AbortController): Promise<string> {
+  const direct = directDownloadUrl(item.url);
+  if (direct) return direct;
+  // An old cache can omit the file URL. Read current metadata instead of a redirect that counts requests.
+  const refreshed = await withNetworkDeadline((async () => {
+    const services = await initFirebaseServices();
+    if (!services?.database) return null;
+    // The SDK can satisfy get() from an active list subscription. A REST read bypasses that cache.
+    const address = new URL(`${ref(services.database, 'store').toString()}.json`);
+    const response = await fetch(address, { signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+    if (!response.ok) throw new StoreDownloadError('network', 'Could not refresh the pack file address.');
+    const items: unknown = await response.json();
+    if (!items || typeof items !== 'object' || Array.isArray(items)) return null;
+    let url: string | null = null;
+    for (const [key, raw] of Object.entries(items)) {
+      const candidate = normalizeStoreItem(raw, key);
+      if (candidate?.code === item.code) url = directDownloadUrl(candidate.url) ?? url;
+    }
+    return url;
+  })(), () => controller.abort());
+  if (refreshed) return refreshed;
+  throw new StoreDownloadError('http_404', 'Pack file address is unavailable.');
 }
 
 function sleep(ms: number): Promise<void> {
@@ -335,7 +361,13 @@ async function downloadStoreItemData(
   const waitForNetwork = <T>(pending: Promise<T>) => withNetworkDeadline(pending, () => controller.abort());
   // The file host serves CORS headers, so the browser downloads the pack from it directly. Nothing
   // goes through this site (its functions and CDN have small monthly data allowances).
-  const url = getStoreDownloadUrl(item);
+  let url: string;
+  try { url = await getStoreDownloadUrl(item, controller); }
+  catch (error) {
+    if (isNetworkTimeout(error)) throw new StoreDownloadError('network', error.message, { cause: error });
+    if (isAbortError(error)) throw new Error('Download was canceled.');
+    throw error;
+  }
   let response: Response | null = null;
   let lastError: unknown = null;
 

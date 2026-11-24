@@ -7,8 +7,8 @@ import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils
 import { seedSavedPacks, storedPackRecords } from './saved-packs';
 import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
 
-// The item has no address, so the store downloads it, straight from the browser, by its code.
-const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPackLegacy') && url.searchParams.get('code') === 'browser-pack';
+// Store metadata supplies the direct file address; no request-counting redirect is used.
+const STORE_PACK_DOWNLOAD = 'https://unipack.unipad.io/store/browser-pack.zip';
 
 test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
   await observeConfirmationKeys(page);
@@ -154,7 +154,7 @@ for (const answer of ['Enter', 'Escape']) test(`connection help and shared confi
 
 const storeItem = {
   code: 'browser-pack', title: 'Browser Test Pack', producerName: 'UniPad Tests',
-  isAutoPlay: true, isLED: true, downloadCount: 42,
+  isAutoPlay: true, isLED: true, downloadCount: 42, URL: STORE_PACK_DOWNLOAD,
 };
 
 // Keep the real Firebase SDK; only the network peer is local.

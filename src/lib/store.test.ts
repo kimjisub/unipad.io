@@ -11,6 +11,7 @@ import {
 
 const ITEM: StoreItem = {
   code: 'pack-1',
+  url: 'https://unipack.unipad.io/store/pack-1.zip',
   title: 'Pack',
   producerName: 'Producer',
   isAutoPlay: false,
@@ -100,10 +101,10 @@ test('a pack is fetched straight from its address, never through the site', asyn
   assert.deepEqual(calls, [url]);
 });
 
-test('an item without an address is fetched from the legacy download by its code', async () => {
+test('an item without a direct address never calls the counting legacy download', async () => {
   const calls = stubFetch([new Response(new Uint8Array([1]))]);
-  await downloadStoreItem(ITEM);
-  assert.deepEqual(calls, ['https://us-central1-unipad-e41ab.cloudfunctions.net/downloadUniPackLegacy?code=pack-1']);
+  await assert.rejects(downloadStoreItem({ ...ITEM, url: undefined }), error => storeDownloadErrorType(error) === 'http_404');
+  assert.deepEqual(calls, []);
 });
 
 test('a refused download is reported by its status, with no second request elsewhere', async () => {

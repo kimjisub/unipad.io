@@ -461,3 +461,33 @@ Both opt-out conditions must deliver zero requests, including after full
 navigation without the marker. This checks real tag execution rather than
 counting requests blocked by Playwright routing. Vercel Analytics and Firebase
 Performance are unaffected by this Google Analytics policy.
+
+
+### Saved-download accounting
+
+Store downloads request a receipt alongside the direct file transfer. Only a committed
+library save queues a completion report. Issuance, reporting and list refresh do not
+own the pack's success. Replaying or importing an external file never reports a store
+save. An old cached item without a direct file URL refreshes its metadata; it never
+falls back to the request-counting legacy redirect.
+
+Production reporting requires the exact origin `https://unipad.io`, a production build
+and a non-automated browser. Other origins do not fall back to production. Browsers
+without Web Locks skip this optional report; saving and playback still work. Web Locks
+serialize queue updates across tabs without holding a lock during network requests.
+The local queue keeps at most 1,000 reports, expires at the earlier of the server's
+expiry and seven days after save, and retries on page use, focus or reconnect only.
+Each request has a five-second deadline; a receipt has a one-minute minimum interval
+and at most three attempts in a rolling 24 hours. Reports that cannot be durably queued, including their retry budget, are omitted
+when browser storage is full or denied. Pack saving and playback still work.
+
+To exercise the client without a live counter, build with
+`NEXT_PUBLIC_DOWNLOAD_ACCOUNTING_EMULATOR=http://127.0.0.1:5051/demo-unipad/us-central1/`.
+This override accepts only that demo emulator URL, and only on local HTTP pages.
+`e2e/store-download-accounting.spec.ts` normally supplies local receipt responses.
+With the companion Firebase functions and database emulators running under
+`demo-unipad` (ports 5051 and 9051), run
+`ACCOUNTING_EMULATOR_TEST=1 pnpm test:e2e e2e/store-download-accounting.spec.ts` to forward
+the same requests to the real local handlers and check their persisted counts.
+The test seeds only the demo database, records request bodies and save order, and
+requires zero calls to production accounting and legacy counting endpoints.
