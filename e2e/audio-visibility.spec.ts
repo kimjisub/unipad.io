@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import JSZip from 'jszip';
 import { test, expect, expectPads, stateTimeout } from './browser';
+import { longTone } from './basic-pack';
 
 interface AudioSnapshot { soundTime: number; wallTime: number; state: AudioContextState; gain: number }
 interface AudioTimeline {
@@ -41,18 +42,6 @@ test.afterEach(async ({ page }, info) => {
   }).catch(() => null);
   await info.attach('failure-timeline', { body: JSON.stringify(observed ?? null, null, 2), contentType: 'application/json' });
 });
-
-function longTone(seconds = 8) {
-  const samples = 44100 * seconds;
-  const wav = Buffer.alloc(44 + samples * 2);
-  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
-  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-  wav.writeUInt32LE(44100, 24); wav.writeUInt32LE(88200, 28);
-  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
-  wav.writeUInt32LE(samples * 2, 40);
-  for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(4000 * Math.sin(i * 2 * Math.PI * 220 / 44100)), 44 + i * 2);
-  return wav;
-}
 
 async function prepare(page: Page, holdSuspension = false) {
   await page.addInitScript(holdSuspension => {

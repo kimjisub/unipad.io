@@ -53,6 +53,8 @@ export class SoundEngine {
   private pendingSuspensions = 0;
   private pendingResumptions = 0;
   private gestureResume: (() => void) | null = null;
+  /** A start the player asked for prepares the audio itself meanwhile; presses do not ask again. */
+  holdGestureResume = false;
 
   constructor(
     unipack: UniPackData,
@@ -83,7 +85,7 @@ export class SoundEngine {
     void (ready ? this.afterParking(ready, start) : start()).catch(() => {});
     if (typeof document !== 'undefined') {
       const resumeOnGesture = () => {
-        if (this.visibilitySuspended) return;
+        if (this.visibilitySuspended || this.holdGestureResume) return;
         if (this.audioContext.state === 'running' || this.audioContext.state === 'closed') {
           this.removeGestureResume();
           return;
@@ -150,12 +152,17 @@ export class SoundEngine {
       seen.add(bytes);
     }
     seen.clear();
+    const vorbisLengths = new Map<string, { frames: bigint; sampleRate: number }>();
     const plan = await selectAudio(
       audioReferences(this.unipack),
       { chains: info.chain, width: info.buttonX, height: info.buttonY },
-      identity => {
+      async identity => {
         const bytes = soundFiles.get(identity);
-        return bytes ? inspector.inspect(bytes) : { exclusion: 'READ_FAILURE' };
+        if (!bytes) return { exclusion: 'READ_FAILURE' };
+        const result = await inspector.inspect(bytes);
+        if (result.exclusion === null && result.facts.format === 'ogg' && result.facts.vorbisEndTrimSafe)
+          vorbisLengths.set(identity, result.facts);
+        return result;
       },
     );
     // Worker copies are no longer needed; do not keep them alive during native decoding.
@@ -197,7 +204,7 @@ export class SoundEngine {
           // destroy() clears the map while a native decode can still be pending.
           const bytes = soundFiles.get(file);
           let reason;
-          try { reason = await this.decode(file, bytes); }
+          try { reason = await this.decode(file, bytes, vorbisLengths.get(file)); }
           finally { discardSound(file, bytes); }
           if (reason) failures.push({ file, reason, exclusion: null });
           settled++;
@@ -230,9 +237,27 @@ export class SoundEngine {
   }
 
   /** Pass the original bytes; WebKit may copy them internally. The caller discards them on settlement. */
-  private async decode(file: string, bytes: ArrayBuffer | undefined): Promise<'decode' | 'memory' | null> {
+  private async decode(file: string, bytes: ArrayBuffer | undefined,
+    vorbis?: { frames: bigint; sampleRate: number }): Promise<'decode' | 'memory' | null> {
     try {
-      const buffer = await this.audioContext.decodeAudioData(bytes!);
+      let buffer = await this.audioContext.decodeAudioData(bytes!);
+      if (vorbis && !this.destroyed) {
+        // Native decoders can keep padding beyond the final Vorbis granule. Convert the
+        // inspected length to the output rate, rounding up to keep a partial output frame.
+        const rate = BigInt(vorbis.sampleRate);
+        const frames = Number((vorbis.frames * BigInt(buffer.sampleRate) + rate - BigInt(1)) / rate);
+        if (frames > 0 && buffer.length > frames) {
+          try {
+            const trimmed = this.audioContext.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
+            for (let channel = 0; channel < buffer.numberOfChannels; channel++)
+              trimmed.copyToChannel(buffer.getChannelData(channel).subarray(0, frames), channel);
+            buffer = trimmed;
+          } catch (error) {
+            // Keep playable native output if the optional padding copy cannot fit.
+            if (!isMemoryFailure(error)) throw error;
+          }
+        }
+      }
       if (!this.destroyed) this.bufferCache.set(file, buffer);
       return null;
     } catch (error) {

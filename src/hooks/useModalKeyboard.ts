@@ -31,6 +31,10 @@ interface ModalKeyboardOptions {
    * meant for the dialog that just closed cannot confirm this one.
    */
   uncoveredFocusRef?: RefObject<HTMLButtonElement | null>;
+  /** Chooses where focus returns when the dialog closes, over the element focused when it opened. */
+  returnFocusTarget?: () => HTMLElement | null;
+  /** Held Enter or Space activates the focused button once, not again with each repeat. */
+  ignoreRepeatedActivation?: boolean;
   onEscape: () => void;
   onEnter?: (event: KeyboardEvent, inside: boolean) => void;
 }
@@ -44,9 +48,12 @@ interface ModalKeyboardOptions {
  * dialog still catches the pointer, so a click on what is still visible never lands underneath.
  */
 export function useModalKeyboard({
-  dialogRef, layerRef, initialFocusRef, returnFocusRef, uncoveredFocusRef, onEscape, onEnter,
+  dialogRef, layerRef, initialFocusRef, returnFocusRef, uncoveredFocusRef, returnFocusTarget, ignoreRepeatedActivation,
+  onEscape, onEnter,
 }: ModalKeyboardOptions) {
   const entryRef = useRef<ModalEntry | null>(null);
+  const returnFocusTargetRef = useRef(returnFocusTarget);
+  useLayoutEffect(() => { returnFocusTargetRef.current = returnFocusTarget; });
   const present = useIsPresent();
 
   // The painting order lasts until the layer unmounts, so a closing dialog fades above what it covered.
@@ -115,8 +122,12 @@ export function useModalKeyboard({
       entry.restoreFocus = () => {
         // A dialog mounted in the same commit already owns focus.
         if (!wasTop || openModals.at(-1) !== uncovered) return;
-        if (uncovered?.focusUncovered) uncovered.focusUncovered();
-        else if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+        if (uncovered?.focusUncovered) {
+          uncovered.focusUncovered();
+          return;
+        }
+        const target = returnFocusTargetRef.current?.() ?? returnFocus;
+        if (target?.isConnected) target.focus({ preventScroll: true });
         else uncovered?.focus();
       };
     };
@@ -139,7 +150,9 @@ export function useModalKeyboard({
     }
     entry.ignoreRepeats = false;
     const inside = event.target instanceof window.Node && entry.element.contains(event.target);
-    if (event.key === 'Escape') {
+    if (ignoreRepeatedActivation && event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+    } else if (event.key === 'Escape') {
       event.preventDefault();
       onEscape();
     } else if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
