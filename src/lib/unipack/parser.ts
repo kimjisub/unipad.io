@@ -12,6 +12,7 @@ import {
 import { LAUNCHPAD_ARGB } from './colors';
 import { LOGO_FUNCTION_KEY, ROUND_BUTTON_COUNT } from './MidiConnection';
 import { repairArchiveNameFlags } from './archiveNames';
+import { PriorityQueue } from './PriorityQueue';
 
 const ROUND_TOKENS = new Set(['*', 'mc']);
 const LOGO_TOKEN = 'l';
@@ -660,7 +661,10 @@ async function parseAutoPlay(
   );
   let currChain = 0;
   let songTime = 0;
-  const pending: { at: number; chain: number }[] = [];
+  let order = 0;
+  const pending = new PriorityQueue<{ at: number; chain: number; order: number }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
 
   function soundGet(c: number, x: number, y: number, num: number): Sound | null {
     const sounds = soundTable[c]?.[x]?.[y];
@@ -674,10 +678,10 @@ async function parseAutoPlay(
     for (const row of map) row.fill(0);
   }
 
-  // Reservations are appended in press order, so equal deadlines retain file order.
+  // Negative waits can put a later press's deadline first; equal deadlines retain press order.
   function applyDue(until: number): void {
-    while (pending.length && pending[0].at <= until) {
-      const next = pending.shift()!;
+    while (pending.peek() && pending.peek()!.at <= until) {
+      const next = pending.pop()!;
       if (next.at > songTime) {
         elements.push({ type: 'delay', delay: next.at - songTime });
         songTime = next.at;
@@ -693,8 +697,7 @@ async function parseAutoPlay(
     const sound = soundGet(currChain, x, y, map[x][y]);
     map[x][y]++;
     if (sound && sound.wormhole !== NO_WORMHOLE) {
-      pending.push({ at: songTime + 100, chain: sound.wormhole });
-      pending.sort((a, b) => a.at - b.at);
+      pending.push({ at: songTime + 100, chain: sound.wormhole, order: order++ });
     }
   }
 
@@ -763,7 +766,7 @@ async function parseAutoPlay(
         break;
       case 'chain':
       case 'c':
-        pending.length = 0;
+        pending.clear();
         switchChain(chain);
         break;
       case 'delay':
@@ -783,6 +786,6 @@ async function parseAutoPlay(
   }
 
   // Normal completion applies the tail at the final song time, without extending the file.
-  for (const next of pending) switchChain(next.chain);
+  for (let next = pending.pop(); next; next = pending.pop()) switchChain(next.chain);
   return { elements };
 }

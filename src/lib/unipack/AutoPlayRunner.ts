@@ -94,6 +94,7 @@ export class AutoPlayRunner {
   private stepScanned = false;
   private stepConsumedInput = false;
   private stepStartProgress = 0;
+  private stepGroupEnd: number | null = null;
   private stepScanOrigin: number | null = null;
   private stepChainValue = -1;
 
@@ -225,6 +226,8 @@ export class AutoPlayRunner {
               }
               if (event.timeMs <= elapsed + GUIDE_LOOKAHEAD_MS) {
                 if (event.chain !== this.chainValue()) {
+                  // Finish the notes already shown on this chain before asking for the next one.
+                  if (this.activeGuides.size > 0) break;
                   this.waitingForChain = event.chain;
                   this.waitStartTime = currTime;
                   this.turnOffActiveGuides();
@@ -332,17 +335,17 @@ export class AutoPlayRunner {
               // Re-scan only unperformed members. A manual wormhole may move the
               // chain while the player is still completing this step group.
               const elements = autoPlay.elements;
-              let pendingStart: number | null = null;
+              if (this.stepPendingPads.size > 0) this.stepGroupEnd ??= this.progress;
               for (let i = this.stepStartProgress; i < this.progress; i++) {
                 const element = elements[i];
                 if (element.type !== 'on' && element.type !== 'off') continue;
-                if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
-                  if (element.type === 'on') pendingStart ??= i;
-                } else {
+                if (!this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
                   this.skippedStepLines.add(i);
                 }
               }
-              if (pendingStart !== null) this.setProgress(pendingStart);
+              // Keep all authored gaps from the group's start, including those before a
+              // performed member. Re-anchoring at the first pending pad enlarges the group.
+              if (this.stepPendingPads.size > 0) this.setProgress(this.stepStartProgress);
               this.preserveStepPresses = true;
               this.stepPendingPads.clear();
               this.stepScanned = false;
@@ -365,6 +368,7 @@ export class AutoPlayRunner {
           }
 
           if (needsScan) {
+            if (this.stepGroupEnd !== null && this.progress >= this.stepGroupEnd) this.stepGroupEnd = null;
             // Lines skipped for an earlier autoplay pass expire on entering practice. A quick
             // return from timed guidance must still remember performed chord members.
             if (!this.preserveStepPresses) this.skippedStepLines.clear();
@@ -657,6 +661,7 @@ export class AutoPlayRunner {
     this.stepScanned = false;
     this.stepConsumedInput = false;
     this.stepStartProgress = 0;
+    this.stepGroupEnd = null;
     this.stepScanOrigin = null;
     this.stepChainValue = -1;
   }
@@ -686,7 +691,7 @@ export class AutoPlayRunner {
     const newPending = new Set<number>();
     let totalDelayMs = 0;
 
-    scanLoop: while (this.progress < autoPlay.elements.length) {
+    scanLoop: while (this.progress < (this.stepGroupEnd ?? autoPlay.elements.length)) {
       if (this.preserveStepPresses && this.skippedStepLines.has(this.progress)) {
         this.setProgress(this.progress + 1);
         continue;

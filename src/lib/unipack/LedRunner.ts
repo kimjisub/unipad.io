@@ -1,4 +1,5 @@
 import type { PlaybackTicker } from './PlaybackTicker';
+import { PriorityQueue } from './PriorityQueue';
 import { LedAnimation, LedEvent, UniPackData } from './types';
 
 interface Led {
@@ -50,37 +51,12 @@ interface Step {
 const compareSteps = (a: Step, b: Step) => a.at - b.at || a.rank - b.rank || a.order - b.order;
 
 /** A tick's next steps, earliest first, without repeatedly sorting the whole backlog. */
-class DueSteps {
-  private heap: Step[] = [];
+class DueSteps extends PriorityQueue<Step> {
+  constructor() { super(compareSteps); }
 
   push(step: Step | null): void {
     if (!step) return;
-    let i = this.heap.length;
-    this.heap.push(step);
-    while (i > 0) {
-      const parent = (i - 1) >> 1;
-      if (compareSteps(this.heap[parent], step) <= 0) break;
-      this.heap[i] = this.heap[parent];
-      i = parent;
-    }
-    this.heap[i] = step;
-  }
-
-  pop(): Step | undefined {
-    const first = this.heap[0];
-    const last = this.heap.pop();
-    if (last && this.heap.length > 0) {
-      let i = 0;
-      while (i * 2 + 1 < this.heap.length) {
-        let child = i * 2 + 1;
-        if (child + 1 < this.heap.length && compareSteps(this.heap[child + 1], this.heap[child]) < 0) child++;
-        if (compareSteps(last, this.heap[child]) <= 0) break;
-        this.heap[i] = this.heap[child];
-        i = child;
-      }
-      this.heap[i] = last;
-    }
-    return first;
+    super.push(step);
   }
 }
 

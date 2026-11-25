@@ -1287,6 +1287,25 @@ test('step practice keeps performed pads after a manual wormhole and a slow seco
   expect(await soundRequests(page)).toBe(2);
 });
 
+for (const firstKey of ['1', '2']) test(`step practice preserves the original 50 ms group after changing chains, first=${firstKey}`, async ({ page }, info) => {
+  await open(page, 'on 1 1\nd 40\non 1 2\nd 20\non 2 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(padGuide(page, '1,0')).toHaveCount(0);
+  await page.keyboard.press(firstKey); await page.clock.runFor(100);
+  if (firstKey === '2') await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20); await page.clock.fastForward(300);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, `original-step-boundary-first-${firstKey}`);
+  await expect(padGuide(page, firstKey === '1' ? '0,0' : '0,1')).toHaveCount(0);
+  await expect(padGuide(page, firstKey === '1' ? '0,1' : '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '1,0')).toHaveCount(0);
+  await page.keyboard.press(firstKey === '1' ? '2' : '1'); await page.clock.runFor(20);
+  await expect(padGuide(page, '1,0')).toHaveCount(1);
+});
+
 test('song-time wormhole practice guides the early voice on the original chain', async ({ page }, info) => {
   await open(page, 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 1 3\nd 1000', false, {
     keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},
@@ -1299,4 +1318,19 @@ test('song-time wormhole practice guides the early voice on the original chain',
   await expect(padGuide(page, '0,1')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(0);
   await snapshot(page, info, 'practice-source-chain-voice');
+  await page.clock.fastForward(180);
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(0);
+  await snapshot(page, info, 'practice-source-chain-at-400ms');
+  await page.clock.fastForward(600);
+  await expect(padGuide(page, '0,0')).toHaveCount(0);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,2')).toHaveCount(1);
+  await snapshot(page, info, 'practice-next-chain-after-source-notes');
 });

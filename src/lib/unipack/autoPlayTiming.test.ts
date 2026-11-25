@@ -56,3 +56,29 @@ test('negative waits retain their contribution to song time', async () => {
   const pack = await parse('on 1 1\nd -50\nd 100\ntouch 1 2\nd 50');
   assert.deepEqual(pack.autoPlay!.elements, [on(0, 0), delay(-50), delay(100), on(1, 0), off(1, 0), delay(50), chain(1)]);
 });
+
+for (const reversedTime of [false, true]) for (const drainInDelay of [false, true]) {
+  test(`large switch backlog keeps deadline and press order, reversedTime=${reversedTime}, drainInDelay=${drainInDelay}`, async () => {
+    const count = 30000;
+    const input = Array(count).fill(reversedTime ? 'on 1 1\nd -1' : 'on 1 1').join('\n');
+    const pack = await parse(input + (drainInDelay ? `\nd ${count + 200}` : ''), '1 1 1 a.wav 1 2\n1 1 1 voice.wav 1 1');
+    assert.deepEqual(pack.errors, []);
+    const elements = pack.autoPlay!.elements;
+    const presses = elements.filter(e => e.type === 'on');
+    const switches = elements.filter(e => e.type === 'chain');
+    assert.equal(presses.length, count); assert.equal(switches.length, count);
+    for (let i = 0; i < count; i++) {
+      assert.equal(presses[i].currChain, 0); assert.equal(presses[i].num, i);
+      const order = reversedTime ? count - 1 - i : i;
+      assert.equal(switches[i].c, order % 2 === 0 ? 1 : 0);
+    }
+    const songTime = elements.reduce((ms, e) => ms + (e.type === 'delay' ? e.delay : 0), 0);
+    assert.equal(songTime, (reversedTime ? -count : 0) + (drainInDelay ? count + 200 : 0));
+  });
+}
+
+test('an explicit chain discards a large backlog before later delays', async () => {
+  const pack = await parse(Array(30000).fill('on 1 1').join('\n') + '\nc 1\nd 200');
+  assert.deepEqual(pack.errors, []);
+  assert.deepEqual(pack.autoPlay!.elements.filter(e => e.type === 'chain'), [chain(0)]);
+});
