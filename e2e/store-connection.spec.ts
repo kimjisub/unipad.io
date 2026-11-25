@@ -13,12 +13,7 @@ const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPac
 test('shared install confirmation contains keyboard focus and restores its opener', async ({ page, context }, info) => {
   await observeConfirmationKeys(page);
   await connectStore(context);
-  await verifyDatabase(page);
-  // Warm the real store cache before navigation. This keyboard test needs a confirmation
-  // even if the new document's Firebase connection takes longer than the lookup deadline.
-  await page.getByRole('button', { name: /^Store/ }).click();
-  await expect(page.getByRole('option', { name: /Browser Test Pack/ })).toBeVisible();
-  await page.goto('/play?code=browser-pack');
+  await openConnectedSharedLink(page);
   const dialog = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   // This confirmation opens from navigation, so its previous focus is the document body.
   await expectConfirmationKeyboard(page, dialog, info);
@@ -242,38 +237,57 @@ async function openOverlappingConfirmations(page: Page, context: BrowserContext,
   // Prepare the lower dialog at each render, without driver round trips consuming the
   // real five-second lookup deadline. Only setup uses DOM events; the checks use native keys.
   await page.addInitScript(({ focusLowerCancel }) => {
-    Object.assign(window, { overlappingDialogsReady: new Promise<boolean>(resolve => {
-      let step = 0;
-      const observer = new MutationObserver(advance);
-      observer.observe(document, { childList: true, subtree: true, attributes: true });
-      function advance() {
-        const row = document.querySelector<HTMLElement>('[data-pack-id="saved-before-link"]');
-        if (!row) return;
-        if (step === 0) {
-          step++;
-          row.focus();
-          row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
-        } else if (step === 1) {
-          if (row.getAttribute('aria-selected') !== 'true') return;
-          step++;
-          row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
-        } else {
-          const deletion = document.querySelector('[role="alertdialog"][aria-label="Confirm deletion"]');
-          const target = Array.from(deletion?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === (focusLowerCancel ? 'Cancel' : 'Delete'));
-          if (!target) return;
-          // The normal initial focus is Delete; preserve that setup for the double-input checks.
-          if (focusLowerCancel) target.focus();
-          if (document.activeElement !== target) return;
-          const focused = document.activeElement === target;
-          observer.disconnect();
-          void (Reflect.get(window, 'releaseOverlappingDialogLookup') as () => Promise<void>)().then(() => resolve(focused));
-        }
+    // Init scripts survive navigation. Consume this setup once so a later reload is inert.
+    const key = 'overlapping-dialog-setup-consumed';
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, 'true');
+    const setup = { status: 'waiting for the saved row' };
+    Object.assign(window, { overlappingDialogSetup: setup });
+    let step = 0;
+    const observer = new MutationObserver(advance);
+    observer.observe(document, { childList: true, subtree: true, attributes: true });
+    // Initial focus can arrive without a DOM mutation.
+    const onFocus = () => queueMicrotask(advance);
+    document.addEventListener('focusin', onFocus);
+    function advance() {
+      if (step === 3) return;
+      const row = document.querySelector<HTMLElement>('[data-pack-id="saved-before-link"]');
+      if (!row) return;
+      if (step === 0) {
+        step++;
+        setup.status = 'waiting for row selection after Space';
+        row.focus();
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+      } else if (step === 1) {
+        if (row.getAttribute('aria-selected') !== 'true') return;
+        step++;
+        setup.status = 'waiting for the deletion dialog after Delete';
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      } else {
+        const deletion = document.querySelector('[role="alertdialog"][aria-label="Confirm deletion"]');
+        const label = focusLowerCancel ? 'Cancel' : 'Delete';
+        const target = Array.from(deletion?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === label);
+        if (!target) return;
+        // The normal initial focus is Delete; preserve that setup for the double-input checks.
+        setup.status = `waiting for lower ${label} focus (current: ${document.activeElement?.textContent})`;
+        if (focusLowerCancel) target.focus();
+        if (document.activeElement !== target) return;
+        step = 3;
+        observer.disconnect();
+        document.removeEventListener('focusin', onFocus);
+        setup.status = 'waiting for the held lookup reply';
+        void (Reflect.get(window, 'releaseOverlappingDialogLookup') as () => Promise<void>)().then(
+          () => { setup.status = 'ready'; },
+          error => { setup.status = `lookup release failed: ${String(error)}`; },
+        );
       }
-      advance();
-    }) });
+    }
+    advance();
   }, { focusLowerCancel });
   await page.goto('/play?code=browser-pack');
-  expect(await page.evaluate(() => Reflect.get(window, 'overlappingDialogsReady') as Promise<boolean>), 'the expected lower button was focused before the lookup reply').toBe(true);
+  await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'overlappingDialogSetup') as { status: string })?.status), {
+    message: 'prepare the lower dialog and focus its expected button before releasing the shared lookup',
+  }).toBe('ready');
   const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
   const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
   const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
