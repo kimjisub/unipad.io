@@ -1369,3 +1369,20 @@ test('song-time wormhole practice guides the early voice on the original chain',
   await expect(padGuide(page, '0,2')).toHaveCount(1);
   await snapshot(page, info, 'practice-next-chain-after-source-notes');
 });
+
+for (const gap of [0, 1, 2, 3]) test(`next-chain final guide stays visible across a ${gap} ms boundary`, async ({ page }, info) => {
+  await open(page, `d 1000\non 1 1\nc 2\nd ${gap}\non 1 2`, false, { leds: {} });
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(1);
+  await page.clock.fastForward(199); await page.clock.fastForward(800); await page.clock.runFor(1);
+  await page.clock.runFor(300);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(2);
+  await snapshot(page, info, 'next-chain-first-cue');
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.runFor(49);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await page.clock.runFor(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'false');
+});

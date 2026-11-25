@@ -71,6 +71,31 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  for (const gap of [0, 1, 2, 3]) for (const trailing of [false, true]) test(`first guide on another chain is visible at the deadline boundary gap=${gap}, trailing=${trailing}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: `d 1000\non 1 1\nc 2\nd ${gap}\non 1 2${trailing ? '\nd 500\non 1 1' : ''}`,
+    }));
+    let chain = 0, ended = 0;
+    const screen = new Set<string>(), targets: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() { ended++; }, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {},
+      onGuidePadOn(x, y, target) { screen.add(`${x},${y}`); targets.push(target); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.launch(); clock.tick(1); clock.tick(199); clock.tick(800); clock.tick(1); clock.tick(300);
+    chain = 1; clock.tick(1); clock.tick(1);
+    assert.equal(screen.has('0,1'), true, 'the first cue must survive its enabling tick');
+    assert.equal(ended, 0);
+    clock.tick(49);
+    assert.equal(screen.has('0,1'), true, 'the cue remains visible for at least 50 ms');
+    clock.tick(1);
+    assert.equal(screen.has('0,1'), false);
+    if (trailing) assert.equal(targets.at(-1), 2801 + gap, 'the following input retains its authored deadline');
+    else assert.equal(ended, 1);
+    runner.stop();
+  });
+
   for (const late of [false, true]) test(`guide retains a final cross-chain note until it can be displayed, late=${late}`, async () => {
     const pack = await parseUniPack(await packZip({
       info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,

@@ -1,4 +1,5 @@
-import type { AutoPlay, AutoPlayElement, AutoPlayElementOn, Sound } from './types';
+import { NO_WORMHOLE, type AutoPlay, type AutoPlayElement, type AutoPlayElementOn, type Sound } from './types';
+import { PriorityQueue } from './PriorityQueue';
 
 export interface AutoPlayMapperListener {
   onStart: () => void;
@@ -48,6 +49,12 @@ export function autoPlayMap(
   let waitTotal = 0;
   let progress = 0;
   let index = 0;
+  let sourceTime = 0;
+  const lastTimedIndex = elements.findLastIndex(e => e.type !== 'chain');
+  const pending = new PriorityQueue<{ at: number; chain: number; press: AutoPlayElementOn; order: number }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
+  const wormholes = new Map<AutoPlayElement, AutoPlayElementOn>();
 
   const replaceWaits = () => {
     if (lastPress === null) {
@@ -73,14 +80,30 @@ export function autoPlayMap(
             result.push(null);
           }
           waitTotal += element.delay;
+          sourceTime += element.delay;
         } else if (element.type === 'on') {
           replaceWaits();
           const { x, y, currChain } = element;
-          result.push({ ...element }, { type: 'off', x, y, currChain });
+          const press = { ...element };
+          result.push(press, { type: 'off', x, y, currChain });
+          const sounds = soundTable[currChain]?.[x]?.[y];
+          const sound = sounds?.[element.num % sounds.length];
+          if (sound && sound.wormhole !== NO_WORMHOLE) {
+            pending.push({ at: sourceTime + 100, chain: sound.wormhole, press, order: index });
+          }
           lastPress = element;
           listener.onProgress(++progress);
         } else if (element.type === 'chain') {
-          result.push({ ...element });
+          const chain = { ...element };
+          result.push(chain);
+          const due = pending.peek();
+          // Parsed wormholes occur at their deadline, or are flushed in order at EOF.
+          // Keep authored chain selections in their existing position.
+          if (due && due.chain === element.c && (due.at <= sourceTime || index > lastTimedIndex)) {
+            wormholes.set(chain, pending.pop()!.press);
+          } else {
+            pending.clear();
+          }
         }
       }
 
@@ -89,7 +112,8 @@ export function autoPlayMap(
         return;
       }
       // A trailing wait's placeholder is never filled, so it is dropped here with the others.
-      listener.onDone({ elements: result.filter((e): e is AutoPlayElement => e !== null) });
+      const mapped = result.filter((e): e is AutoPlayElement => e !== null);
+      listener.onDone({ elements: retimeWormholes(mapped, wormholes) });
     } catch (error) {
       listener.onError(error instanceof Error ? error : new Error(String(error)));
     }
@@ -106,4 +130,29 @@ function soundLengthMs(press: AutoPlayElementOn, soundTable: (Sound[] | null)[][
   const seconds = sounds[num % sounds.length]?.audioBuffer?.duration;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return null;
   return Math.round(seconds * 1000);
+}
+
+/** Reinsert parsed sound switches relative to the mapped press, retaining simultaneous order and EOF. */
+function retimeWormholes(elements: AutoPlayElement[], wormholes: Map<AutoPlayElement, AutoPlayElementOn>): AutoPlayElement[] {
+  if (wormholes.size === 0) return elements;
+  let end = 0;
+  const pressTimes = new Map<AutoPlayElementOn, number>();
+  const events = elements.flatMap((element, order) => {
+    if (element.type === 'delay') { end += element.delay; return []; }
+    if (element.type === 'on') pressTimes.set(element, end);
+    return [{ element, at: end, order }];
+  });
+  for (const event of events) {
+    const press = wormholes.get(event.element);
+    if (press) event.at = Math.min(end, pressTimes.get(press)! + 100);
+  }
+  events.sort((a, b) => a.at - b.at || a.order - b.order);
+  const result: AutoPlayElement[] = [];
+  let time = 0;
+  for (const event of events) {
+    if (event.at > time) result.push({ type: 'delay', delay: event.at - time });
+    time = event.at;
+    result.push(event.element);
+  }
+  return result;
 }

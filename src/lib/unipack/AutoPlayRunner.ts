@@ -69,6 +69,7 @@ export class AutoPlayRunner {
   private guideTimelineCache: GuideEvent[] = [];
   private guideIndex = 0;
   private waitingForChain = -1;
+  private chainGuidePending = false;
   // Step scans have no song clock to freeze; only timed guides start a wait clock.
   private waitStartTime: number | null = null;
   private activeGuides = new Map<number, number>();
@@ -212,6 +213,7 @@ export class AutoPlayRunner {
         if (this.practiceGuide && this.waitingForChain >= 0) {
           if (this.chainValue() === this.waitingForChain) {
             this.clearChainWait(currTime);
+            this.chainGuidePending = true;
             this.listener.onRemoveGuide();
           }
         } else {
@@ -238,10 +240,10 @@ export class AutoPlayRunner {
                 const authoredTarget = this.startTime + event.timeMs;
                 // A late tick or chain wait must still show a newly enabled note. This
                 // visibility window does not change song time or later note deadlines.
-                const overdue = authoredTarget <= currTime &&
-                  (this.restoringStepGuides || currTime - authoredTarget > LOOP_INTERVAL_MS);
+                const overdue = (this.chainGuidePending && authoredTarget < currTime + GUIDE_LED_UPDATE_INTERVAL_MS) || (authoredTarget <= currTime &&
+                  (this.restoringStepGuides || currTime - authoredTarget > LOOP_INTERVAL_MS));
                 const targetWallTimeMs = overdue
-                  ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
+                  ? Math.max(authoredTarget, currTime + GUIDE_LED_UPDATE_INTERVAL_MS) : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
                 if (overdue) {
@@ -253,7 +255,10 @@ export class AutoPlayRunner {
               }
             }
 
-            if (this.waitingForChain < 0) this.restoringStepGuides = false;
+            if (this.waitingForChain < 0) {
+              this.restoringStepGuides = false;
+              this.chainGuidePending = false;
+            }
 
             // Guide expiration + LED brightness
             if (this.activeGuides.size > 0) {
@@ -477,6 +482,7 @@ export class AutoPlayRunner {
 
   /** Settle a timed gate before any mode, chain or position change can discard it. */
   private clearChainWait(now?: number): void {
+    this.chainGuidePending = false;
     this.settleChainWait(now);
     this.waitingForChain = -1;
     this.waitStartTime = null;

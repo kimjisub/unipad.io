@@ -108,3 +108,46 @@ describe('auto mapping replaces waits with the length of the sound pressed befor
     assert.equal(JSON.stringify(pack.autoPlay), before);
   });
 });
+
+function timed(autoPlay: AutoPlay) {
+  let time = 0;
+  return autoPlay.elements.flatMap(element => {
+    if (element.type === 'delay') { time += element.delay; return []; }
+    return [{ time, ...element }];
+  });
+}
+
+for (const length of [50, 100, 300, 500, 800]) test(`mapping keeps wormholes 100 ms after their press with a ${length} ms sound`, async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n2 1 2 a.wav', 'd 1000\ntouch 1 1\nd 500\ntouch 1 2\nd 500\ntouch 1 2');
+  setLengths(pack, { 'a.wav': length });
+  const original = structuredClone(pack.autoPlay);
+  const mapped = timed(await map(pack));
+  assert.deepEqual(mapped.filter(e => e.type === 'on').map(e => e.time), [1000, 1000 + length, 1000 + length * 2]);
+  assert.equal(mapped.find(e => e.type === 'chain')?.time, 1100);
+  assert.deepEqual(pack.autoPlay, original);
+});
+
+test('mapping preserves queued wormhole order and flushes the tail without adding song time', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav 1 1', 'd 1000\ntouch 1 1\nd 50\ntouch 1 2\nd 450\ntouch 1 1');
+  setLengths(pack, { 'a.wav': 200, 'b.wav': 400 });
+  const mapped = timed(await map(pack));
+  assert.deepEqual(mapped.filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1100, 1], [1300, 0], [1600, 1]]);
+  assert.deepEqual(mapped.filter(e => e.type === 'on').map(e => e.time), [1000, 1200, 1600]);
+});
+
+test('mapping keeps explicit chain cancellation and remains stable on a second mapping', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav', 'd 1000\ntouch 1 1\nd 50\nc 1\nd 450\ntouch 1 2');
+  setLengths(pack, { 'a.wav': 300, 'b.wav': 500 });
+  const first = await map(pack);
+  assert.deepEqual(timed(first).filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1300, 0]]);
+  pack.autoPlay = first;
+  assert.deepEqual(await map(pack), first);
+});
+
+test('mapping a mapped delayed wormhole keeps its original relative deadline', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n2 1 2 a.wav', 'd 1000\ntouch 1 1\nd 500\ntouch 1 2');
+  setLengths(pack, { 'a.wav': 500 });
+  const first = await map(pack);
+  pack.autoPlay = first;
+  assert.deepEqual(await map(pack), first);
+});

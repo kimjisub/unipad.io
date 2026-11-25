@@ -223,3 +223,40 @@ test('a failed save keeps the stored autoPlay and does not report success', asyn
   await expect(restore(page)).toBeDisabled();
   await expect(autoMapping(page)).toBeEnabled();
 });
+
+test('auto mapping saves and reopens a wormhole at its press-relative song time', async ({ page }, info) => {
+  const zip = await JSZip.loadAsync(await readFile(resolve('e2e/fixtures/basic.uni')));
+  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=2'));
+  const originalWav = await zip.file('sounds/tone.wav')!.async('nodebuffer');
+  const samples = originalWav.subarray(44);
+  const wav = Buffer.concat([originalWav.subarray(0, 44), ...Array.from({ length: 5 }, () => samples)]);
+  wav.writeUInt32LE(wav.length - 8, 4); wav.writeUInt32LE(wav.length - 44, 40);
+  zip.file('sounds/tone.wav', wav);
+  zip.file('keySound', '1 1 1 tone.wav 1 2\n2 1 2 tone.wav');
+  zip.file('autoPlay', 'd 1000\ntouch 1 1\nd 500\ntouch 1 2');
+  await page.goto('/play');
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'mapped-wormhole.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await expectPads(page); await expectSavedPackCount(page, 1);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.5]);
+  const imported = (await storedPack(page))[0];
+  await openMenu(page); await autoMapping(page).click();
+  await confirm(page, 'Confirm auto mapping', 'Map', 'Saved the AutoPlay. You can restore the previous one from the menu.');
+  const saved = (await storedPack(page))[0];
+  expect(saved.zipSha256).toBe(imported.zipSha256);
+  const timeline = (elements: unknown[]) => {
+    let time = 0;
+    return (elements as { type: string; delay?: number; c?: number }[]).flatMap(e => {
+      if (e.type === 'delay') { time += e.delay!; return []; }
+      return [{ time, ...e }];
+    });
+  };
+  expect(timeline(saved.autoPlay!.current).filter(e => e.type === 'chain')).toEqual([{ time: 1100, type: 'chain', c: 1 }]);
+  expect(timeline(saved.autoPlay!.current).filter(e => e.type === 'on').map(e => e.time)).toEqual([1000, 1500]);
+  await info.attach('mapped-wormhole-saved', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.reload(); await expectPads(page);
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.decoded)).toEqual([0.5]);
+  expect(await storedPack(page)).toEqual([saved]);
+  await openMenu(page); await restore(page).click();
+  await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
+  expect((await storedPack(page))[0].autoPlay).toEqual({ current: saved.autoPlay!.backup, backup: saved.autoPlay!.current, timingVersion: 1 });
+});
