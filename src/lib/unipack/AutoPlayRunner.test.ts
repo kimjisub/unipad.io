@@ -71,6 +71,59 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  for (const late of [false, true]) test(`guide retains a final cross-chain note until it can be displayed, late=${late}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\non 1 1\nc 2\non 1 2',
+    }));
+    let chain = 0, ended = 0;
+    const screen = new Set<string>(), chains: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() { ended++; }, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {},
+      onGuideChainOn(c) { chains.push(c); }, onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.launch(); clock.tick(1);
+    if (late) clock.tick(1200);
+    else { clock.tick(199); clock.tick(800); }
+    assert.equal(ended, 0, 'an unshown final note still belongs to the song');
+    clock.tick(50); clock.tick(1);
+    assert.deepEqual(chains, [1]); assert.equal(runner.active, true);
+    chain = 1; clock.tick(1); clock.tick(1);
+    assert.deepEqual([...screen], ['0,1'], 'the final note needs an observable guide after choosing its chain');
+    assert.equal(ended, 0);
+    clock.tick(50); assert.equal(ended, 1);
+    runner.stop();
+  });
+
+  for (const gap of [1, 40]) for (const guide of [false, true]) {
+    test(`leaving a rewound step on another chain preserves a performed later member, gap=${gap}, guide=${guide}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+        autoPlay: `on 1 1\nd ${gap}\non 1 2\nd ${100 - gap}\nc 2\nd 100\non 1 2\nd 1000`,
+      }));
+      let chain = 0;
+      const shown: string[] = [], notes: string[] = [];
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onGuideChainOn() {}, onPadTouchOff() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {},
+        onChainChange(c) { chain = c; }, onPadTouchOn(x, y) { notes.push(`${x},${y}`); },
+        onGuidePadOn(x, y) { shown.push(`${x},${y}`); },
+      }, () => chain, () => {}, () => {}, () => {});
+      runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch(); clock.tick(1);
+      runner.stepPadPressed(0, 1); clock.tick(1); chain = 1; clock.tick(100);
+      shown.length = 0; runner.play(guide); clock.tick(1); chain = 0; clock.tick(1); clock.tick(1);
+      assert.deepEqual(guide ? shown : notes, ['0,0'], 'the performed member stays consumed even beyond rewound progress');
+      if (guide) {
+        clock.tick(50); clock.tick(1); chain = 1; clock.tick(1); clock.tick(1);
+        assert.equal(shown.at(-1), '0,1', 'a later input at the same coordinate on another chain is still owed');
+      } else {
+        clock.tick(200);
+        assert.deepEqual(notes, ['0,0', '0,1']);
+      }
+      runner.stop();
+    });
+  }
+
   for (const [firstGap, secondGap] of [[40, 20], [20, 40], [49, 1], [0, 50]]) {
     for (const pressedY of [0, 1]) test(`chain return retains the authored step boundary ${firstGap}+${secondGap}, pressed=${pressedY}`, async () => {
       const pack = await parseUniPack(await packZip({

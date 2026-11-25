@@ -23,6 +23,8 @@ import {
 } from '@/lib/unipack';
 import { PlaybackTicker } from '@/lib/unipack/PlaybackTicker';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { readLegacyAutoPlaySnapshot } from '@/lib/unipack/parser';
+import { refreshOriginalAutoPlay } from '@/lib/unipack/storedAutoPlay';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY, type MidiConnectResult } from '@/lib/unipack/MidiConnection';
@@ -1214,10 +1216,15 @@ export function useUniPadEngine() {
 
     try {
       let unipack: UniPackData;
+      let applicableAutoPlay = savedAutoPlay;
       try {
         unipack = await parseUniPack(zipData, (phase) => {
           if (!superseded()) setState((prev) => ({ ...prev, loadPhase: phase }));
         });
+        if (savedAutoPlay && savedAutoPlay.timingVersion !== 1 && unipack.autoPlay && !superseded()) {
+          const legacy = await readLegacyAutoPlaySnapshot(zipData, unipack);
+          if (legacy) applicableAutoPlay = refreshOriginalAutoPlay(savedAutoPlay, unipack.autoPlay.elements, legacy.elements);
+        }
       } finally {
         // The extracted sounds own their bytes. Release before inspection makes its copies.
         if (options.releaseArchive) releaseArrayBuffer(zipData);
@@ -1225,8 +1232,8 @@ export function useUniPadEngine() {
       // Nothing plays before a lowered volume is known: opening a pack must not raise it.
       await playPreferences;
       if (superseded()) return null;
-      if (savedAutoPlay && unipack.autoPlay) unipack.autoPlay = { elements: savedAutoPlay.current };
-      autoPlayBackupRef.current = savedAutoPlay && unipack.autoPlay ? savedAutoPlay.backup : null;
+      if (applicableAutoPlay && unipack.autoPlay) unipack.autoPlay = { elements: applicableAutoPlay.current };
+      autoPlayBackupRef.current = applicableAutoPlay && unipack.autoPlay ? applicableAutoPlay.backup : null;
       unipackRef.current = unipack;
 
       const { buttonX, buttonY, chain: chainCount } = unipack.info;
@@ -1873,13 +1880,13 @@ export function useUniPadEngine() {
       onDone: resolve,
       onError: reject,
     }));
-    return { current: mapped.elements, backup: autoPlay.elements };
+    return { current: mapped.elements, backup: autoPlay.elements, timingVersion: 1 };
   }, persist, 'autoMappingActive'), [editAutoPlay]);
 
   /** Swaps the current autoPlay with its backup, so restoring again swaps them back. */
   const restoreAutoPlay = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (_unipack, autoPlay) => {
     const backup = autoPlayBackupRef.current;
-    return backup ? { current: backup, backup: autoPlay.elements } : null;
+    return backup ? { current: backup, backup: autoPlay.elements, timingVersion: 1 } : null;
   }, persist, 'autoPlayRestoring'), [editAutoPlay]);
 
   useEffect(() => {

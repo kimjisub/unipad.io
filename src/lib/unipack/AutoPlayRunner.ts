@@ -236,15 +236,15 @@ export class AutoPlayRunner {
                   break;
                 }
                 const authoredTarget = this.startTime + event.timeMs;
-                // Every overdue note first enabled on step resume needs a visible LED update,
-                // including notes beyond the scanned group when pause beat a late tick.
-                // Keep that display separate from song time and later notes' deadlines.
-                const overdueOnResume = this.restoringStepGuides && authoredTarget <= currTime;
-                const targetWallTimeMs = overdueOnResume
+                // A late tick or chain wait must still show a newly enabled note. This
+                // visibility window does not change song time or later note deadlines.
+                const overdue = authoredTarget <= currTime &&
+                  (this.restoringStepGuides || currTime - authoredTarget > LOOP_INTERVAL_MS);
+                const targetWallTimeMs = overdue
                   ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
-                if (overdueOnResume) {
+                if (overdue) {
                   this.listener.onGuideLedUpdate(event.x, event.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
                 }
                 this.guideIndex++;
@@ -284,6 +284,8 @@ export class AutoPlayRunner {
             this.suspendedAt === null &&
             this.waitingForChain < 0 &&
             this.delayAccum <= currTime - this.startTime &&
+            (!this.practiceGuide || this.guideIndex >= this.guideTimeline.length ||
+              this.progress < this.guideTimeline[this.guideIndex].index) &&
             this.progress < autoPlay.elements.length
           ) {
             if (this.skippedStepLines.delete(this.progress)) {
@@ -584,7 +586,7 @@ export class AutoPlayRunner {
   leaveStepPractice(): boolean {
     this.drainPressedKeys();
     const scannedPads = this.hasScannedStepPads;
-    const skippedLines = new Set<number>();
+    const skippedLines = new Set(this.skippedStepLines);
     let pendingStart: number | null = null;
     const elements = this.unipack.autoPlay?.elements;
     if (this.stepPendingPads.size > 0 && elements) {
@@ -601,11 +603,12 @@ export class AutoPlayRunner {
     if (this.practiceGuide && this.stepScanOrigin !== null && elements) {
       let songTimeMs = 0;
       let lastPressedTimeMs: number | null = null;
-      for (let i = 0; i < this.progress; i++) {
+      for (let i = 0; i < Math.max(this.progress, this.stepGroupEnd ?? 0); i++) {
         const element = elements[i];
         if (element.type === 'delay') songTimeMs += element.delay;
         if (this.stepConsumedInput && i >= this.stepScanOrigin && element.type === 'on' &&
-          (i < this.stepStartProgress || !this.stepPendingPads.has(this.guideKey(element.x, element.y)))) {
+          (this.skippedStepLines.has(i) || (i < this.progress &&
+            (i < this.stepStartProgress || !this.stepPendingPads.has(this.guideKey(element.x, element.y)))))) {
           lastPressedTimeMs = songTimeMs;
         }
       }

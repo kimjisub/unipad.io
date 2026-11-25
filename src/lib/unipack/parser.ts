@@ -66,15 +66,7 @@ async function parseArchive(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  // Valid UTF-8 names keep their marks. Invalid ones, including incorrectly marked names from
-  // older Korean Windows archivers, reach the CP949 fallback. JSZip supplies a Uint8Array.
-  const zip = await JSZip.loadAsync(repairArchiveNameFlags(zipData), {
-    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
-  });
-  // Keep original keys and bytes when different archive names share a normalized path.
-  for (const file of Object.values(zip.files)) {
-    if (file.name.replace(/\\/g, '/').endsWith('/')) file.dir = true;
-  }
+  const zip = await openArchive(zipData);
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
@@ -134,6 +126,25 @@ async function parseArchive(
     ledCount,
     errors,
   };
+}
+
+async function openArchive(zipData: ArrayBuffer): Promise<JSZip> {
+  // Valid UTF-8 names keep their marks. Invalid ones, including incorrectly marked names from
+  // older Korean Windows archivers, reach the CP949 fallback. JSZip supplies a Uint8Array.
+  const zip = await JSZip.loadAsync(repairArchiveNameFlags(zipData), {
+    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
+  });
+  // Keep original keys and bytes when different archive names share a normalized path.
+  for (const file of Object.values(zip.files)) {
+    if (file.name.replace(/\\/g, '/').endsWith('/')) file.dir = true;
+  }
+  return zip;
+}
+
+/** Reconstruct only the old original for snapshot identity checks. Never used for playback. */
+export async function readLegacyAutoPlaySnapshot(zipData: ArrayBuffer, pack: Pick<UniPackData, 'info' | 'soundTable'>): Promise<AutoPlay | null> {
+  const zip = await openArchive(zipData);
+  return parseAutoPlay(zip, findRootPrefix(zip), pack.info, pack.soundTable, [], 0);
 }
 
 /** Older Windows ZIP writers used backslashes for directory separators. */
@@ -650,6 +661,7 @@ async function parseAutoPlay(
   info: UniPackInfo,
   soundTable: (Sound[] | null)[][][],
   errors: string[],
+  wormholeDelayMs: 0 | 100 = 100,
 ): Promise<AutoPlay | null> {
   const file = getFile(zip, prefix, 'autoPlay') || getFile(zip, prefix, 'autoplay');
   if (!file) return null;
@@ -697,7 +709,7 @@ async function parseAutoPlay(
     const sound = soundGet(currChain, x, y, map[x][y]);
     map[x][y]++;
     if (sound && sound.wormhole !== NO_WORMHOLE) {
-      pending.push({ at: songTime + 100, chain: sound.wormhole, order: order++ });
+      pending.push({ at: songTime + wormholeDelayMs, chain: sound.wormhole, order: order++ });
     }
   }
 

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { storedPackRecords, expectSavedPackCount } from './saved-packs';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import JSZip from 'jszip';
 import type { Page } from '@playwright/test';
 import { test, expect, expectPads } from './browser';
 import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
@@ -37,7 +39,46 @@ const MAPPED = [
   { type: 'on', x: 0, y: 0, currChain: 0, num: 1 }, { type: 'off', x: 0, y: 0, currChain: 0 },
 ];
 
-interface StoredPack { zipSha256: string; autoPlay?: { current: unknown[]; backup: unknown[] } }
+for (const originalIsCurrent of [false, true]) test(`legacy saved original adopts song-time timing without losing the mapping, originalIsCurrent=${originalIsCurrent}`, async ({ page }, info) => {
+  const zip = await JSZip.loadAsync(await readFile(resolve('e2e/fixtures/basic.uni')));
+  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=2'));
+  zip.file('keySound', '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 2 tone.wav');
+  zip.file('autoPlay', 'on 1 1\nd 1\ntouch 1 2\nd 199');
+  await page.goto('/play');
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'saved-timing.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await expectPads(page); await expectSavedPackCount(page, 1);
+  const imported = (await storedPack(page))[0];
+  const first = { type: 'on', x: 0, y: 0, currChain: 0, num: 0 };
+  const second = { type: 'on', x: 0, y: 1, currChain: 1, num: 0 };
+  const release = { type: 'off', x: 0, y: 1, currChain: 1 };
+  const legacy = [first, { type: 'chain', c: 1 }, { type: 'delay', delay: 1 }, second, release, { type: 'delay', delay: 199 }];
+  const original = [first, { type: 'delay', delay: 1 }, { ...second, currChain: 0 }, { ...release, currChain: 0 }, { type: 'delay', delay: 99 }, { type: 'chain', c: 1 }, { type: 'delay', delay: 100 }];
+  const custom = [{ type: 'delay', delay: 700 }, second, release];
+  const saved = originalIsCurrent ? { current: legacy, backup: custom } : { current: custom, backup: legacy };
+  await page.evaluate(saved => new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('unipad'); open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction('unipackMetadata', 'readwrite'), store = tx.objectStore('unipackMetadata');
+      const request = store.getAll(); request.onsuccess = () => store.put({ ...request.result[0], autoPlay: saved });
+      tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+  }), saved);
+  await reopenPack(page);
+  expect(await storedPack(page)).toEqual([{ ...imported, autoPlay: saved }]);
+  await openMenu(page); await restore(page).click();
+  await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
+  expect(await storedPack(page)).toEqual([{ ...imported, autoPlay: {
+    current: originalIsCurrent ? custom : original, backup: originalIsCurrent ? original : custom, timingVersion: 1,
+  } }]);
+  await info.attach('legacy-original-restored', { body: await page.screenshot(), contentType: 'image/png' });
+  await reopenPack(page); await openMenu(page); await restore(page).click();
+  await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
+  expect(await storedPack(page)).toEqual([{ ...imported, autoPlay: {
+    current: originalIsCurrent ? original : custom, backup: originalIsCurrent ? custom : original, timingVersion: 1,
+  } }]);
+});
+
+interface StoredPack { zipSha256: string; autoPlay?: { current: unknown[]; backup: unknown[]; timingVersion?: 1 } }
 
 /** The one stored pack: a digest of its archive and the autoPlay stored beside it. */
 async function storedPack(page: Page): Promise<StoredPack[]> {
@@ -101,7 +142,7 @@ async function confirm(page: Page, dialogName: string, action: string, message: 
 async function mapAndSave(page: Page, imported: StoredPack) {
   await autoMapping(page).click();
   await confirm(page, 'Confirm auto mapping', 'Map', 'Saved the AutoPlay. You can restore the previous one from the menu.');
-  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL } }]);
+  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL, timingVersion: 1 } }]);
   await expect(restore(page)).toBeEnabled();
 }
 
@@ -145,7 +186,7 @@ test('auto mapping saves its result beside the untouched archive and plays it af
 
   await reopenPack(page);
   await expectMappedTiming(page);
-  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL } }]);
+  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: MAPPED, backup: ORIGINAL, timingVersion: 1 } }]);
 });
 
 test('restoring autoPlay after a reload swaps the saved mapping and backup without changing the archive', async ({ page }) => {
@@ -157,7 +198,7 @@ test('restoring autoPlay after a reload swaps the saved mapping and backup witho
   await expect(restore(page)).toBeEnabled();
   await restore(page).click();
   await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
-  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: ORIGINAL, backup: MAPPED } }]);
+  expect(await storedPack(page)).toEqual([{ zipSha256: imported.zipSha256, autoPlay: { current: ORIGINAL, backup: MAPPED, timingVersion: 1 } }]);
   // Restoring swaps the two, so the mapped autoPlay can be brought back.
   await expect(restore(page)).toBeEnabled();
 });

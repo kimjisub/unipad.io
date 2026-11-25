@@ -54,6 +54,8 @@ function packMetadata(record: StoredUniPack): UniPackMetadata {
 export interface StoredAutoPlay {
   current: AutoPlayElement[];
   backup: AutoPlayElement[];
+  /** Original snapshots in this pair use song-time wormholes. Custom mappings remain literal. */
+  timingVersion?: 1;
 }
 
 export interface StoredTheme {

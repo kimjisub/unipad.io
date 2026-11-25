@@ -1306,6 +1306,41 @@ for (const firstKey of ['1', '2']) test(`step practice preserves the original 50
   await expect(padGuide(page, '1,0')).toHaveCount(1);
 });
 
+for (const late of [false, true]) test(`guide waits for a final same-time cross-chain input, late=${late}`, async ({ page }, info) => {
+  await open(page, 'd 1000\non 1 1\nc 2\non 1 2', false, { leds: {} });
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(1);
+  if (late) await page.clock.fastForward(1200);
+  else { await page.clock.fastForward(199); await page.clock.fastForward(800); }
+  await page.clock.runFor(70);
+  await snapshot(page, info, 'final-cross-chain-input-still-owed');
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(2);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await snapshot(page, info, 'final-cross-chain-input-displayed');
+  await page.clock.runFor(60);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const gap of [1, 40]) test(`guide handoff while away keeps a performed step consumed, gap=${gap}`, async ({ page }, info) => {
+  await open(page, `on 1 1\nd ${gap}\non 1 2\nd ${100 - gap}\nc 2\nd 100\non 1 2\nd 1000`, false, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+  await page.keyboard.press('2'); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(100);
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'guide-handoff-retains-performed-step');
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await page.clock.runFor(60);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+});
+
 test('song-time wormhole practice guides the early voice on the original chain', async ({ page }, info) => {
   await open(page, 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 1 3\nd 1000', false, {
     keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},
