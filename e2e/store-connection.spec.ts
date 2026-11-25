@@ -233,17 +233,65 @@ async function openOverlappingConfirmations(page: Page, context: BrowserContext,
   await verifyDatabase(page);
   await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
   database.holdReplies();
+  await page.exposeFunction('releaseOverlappingDialogLookup', () => database.releaseReplies());
+  // Prepare the lower dialog at each render, without driver round trips consuming the
+  // real five-second lookup deadline. Only setup uses DOM events; the checks use native keys.
+  await page.addInitScript(({ focusLowerCancel }) => {
+    // Init scripts survive navigation. Consume this setup once so a later reload is inert.
+    const key = 'overlapping-dialog-setup-consumed';
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, 'true');
+    const setup = { status: 'waiting for the saved row' };
+    Object.assign(window, { overlappingDialogSetup: setup });
+    let step = 0;
+    const observer = new MutationObserver(advance);
+    observer.observe(document, { childList: true, subtree: true, attributes: true });
+    // Initial focus can arrive without a DOM mutation.
+    const onFocus = () => queueMicrotask(advance);
+    document.addEventListener('focusin', onFocus);
+    function advance() {
+      if (step === 3) return;
+      const row = document.querySelector<HTMLElement>('[data-pack-id="saved-before-link"]');
+      if (!row) return;
+      if (step === 0) {
+        step++;
+        setup.status = 'waiting for row selection after Space';
+        row.focus();
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+      } else if (step === 1) {
+        if (row.getAttribute('aria-selected') !== 'true') return;
+        step++;
+        setup.status = 'waiting for the deletion dialog after Delete';
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      } else {
+        const deletion = document.querySelector('[role="alertdialog"][aria-label="Confirm deletion"]');
+        const label = focusLowerCancel ? 'Cancel' : 'Delete';
+        const target = Array.from(deletion?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === label);
+        if (!target) return;
+        // The normal initial focus is Delete; preserve that setup for the double-input checks.
+        setup.status = `waiting for lower ${label} focus (current: ${document.activeElement?.textContent})`;
+        if (focusLowerCancel) target.focus();
+        if (document.activeElement !== target) return;
+        step = 3;
+        observer.disconnect();
+        document.removeEventListener('focusin', onFocus);
+        setup.status = 'waiting for the held lookup reply';
+        void (Reflect.get(window, 'releaseOverlappingDialogLookup') as () => Promise<void>)().then(
+          () => { setup.status = 'ready'; },
+          error => { setup.status = `lookup release failed: ${String(error)}`; },
+        );
+      }
+    }
+    advance();
+  }, { focusLowerCancel });
   await page.goto('/play?code=browser-pack');
+  await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'overlappingDialogSetup') as { status: string })?.status), {
+    message: 'prepare the lower dialog and focus its expected button before releasing the shared lookup',
+  }).toBe('ready');
   const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
-  // Select through the keyboard without waiting for the row's entrance animation.
-  await opener.press('Space');
-  await page.keyboard.press('Delete');
   const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
   const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
   await expect(deletion).toBeVisible();
-  if (focusLowerCancel) await lowerCancel.focus();
-  else await expect(deletion.getByRole('button', { name: 'Delete', exact: true })).toBeFocused();
-  await database.releaseReplies();
   const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
   await expect(installation).toBeVisible();
   return { opener, deletion, lowerCancel, installation };
