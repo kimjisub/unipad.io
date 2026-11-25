@@ -70,6 +70,9 @@
     "overrides": {
       "@tailwindcss/typography>postcss-selector-parser": "6.1.5",
       "@typescript-eslint/typescript-estree>minimatch": "^11.0.5"
+    },
+    "patchedDependencies": {
+      "@firebase/performance@0.7.14": "patches/@firebase__performance@0.7.14.patch"
     }
   }
 }

@@ -1,0 +1,34 @@
+diff --git a/dist/esm/index.esm.js b/dist/esm/index.esm.js
+index 57efb15c95babd7fb9fa9220b66b8f1942c04b18..482f98ee0ee3ca20a7bc913bd9362ee2aaaf6452 100644
+--- a/dist/esm/index.esm.js
++++ b/dist/esm/index.esm.js
+@@ -248,11 +248,7 @@ function getIid() {
+     return iid;
+ }
+ function getAuthTokenPromise(installationsService) {
+-    const authTokenPromise = installationsService.getToken();
+-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+-    authTokenPromise.then((authTokenVal) => {
+-    });
+-    return authTokenPromise;
++    return installationsService.getToken();
+ }
+ 
+ /**
+diff --git a/dist/index.cjs.js b/dist/index.cjs.js
+index 7489eded9f05089ea59e38eea086f8775a322715..afe23d60eff5491f5082f260db42726b1aead843 100644
+--- a/dist/index.cjs.js
++++ b/dist/index.cjs.js
+@@ -252,11 +252,7 @@ function getIid() {
+     return iid;
+ }
+ function getAuthTokenPromise(installationsService) {
+-    const authTokenPromise = installationsService.getToken();
+-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+-    authTokenPromise.then((authTokenVal) => {
+-    });
+-    return authTokenPromise;
++    return installationsService.getToken();
+ }
+ 
+ /**

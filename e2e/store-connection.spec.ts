@@ -5,7 +5,7 @@ import { test, expect, expectPads } from './browser';
 import { recordStoreTransitions } from './store-transition-probe';
 import { corruptSoundArchive } from '../src/lib/unipack/corruptArchive.testUtils.mjs';
 import { seedSavedPacks, storedPackRecords } from './saved-packs';
-import { expectConfirmationKeyboard, observeConfirmationKeys } from './confirm-dialog';
+import { expectConfirmationKeyboard, holdConfirmationExits, observeConfirmationKeys } from './confirm-dialog';
 
 // The item has no address, so the store downloads it, straight from the browser, by its code.
 const STORE_PACK_DOWNLOAD = (url: URL) => url.pathname.endsWith('/downloadUniPackLegacy') && url.searchParams.get('code') === 'browser-pack';
@@ -23,23 +23,8 @@ test('shared install confirmation contains keyboard focus and restores its opene
 });
 
 for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give only the shared install dialog ${answer}`, async ({ page, context }, info) => {
-  const database = await connectStore(context);
-  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
-  await verifyDatabase(page);
-  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
-  database.holdReplies();
-  await page.goto('/play?code=browser-pack');
-  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
-  // Select through the keyboard without waiting for the row's entrance animation.
-  await opener.press('Space');
-  await page.keyboard.press('Delete');
-  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
-  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
-  await expect(deletion).toBeVisible();
-  await lowerCancel.focus();
-  await database.releaseReplies();
-  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
-  await expect(installation).toBeVisible();
+  // A closed confirmation must hand over keys even while its fade-out cannot finish.
+  const { opener, deletion, lowerCancel, installation } = await openOverlappingConfirmations(page, context, { holdExits: answer === 'Escape', focusLowerCancel: true });
   await info.attach('overlapping-confirmations', { body: await page.screenshot(), contentType: 'image/png' });
   await expect(installation.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
   for (const key of ['Tab', 'Shift+Tab', 'Tab', 'Shift+Tab']) {
@@ -51,15 +36,47 @@ for (const answer of ['Enter', 'Escape']) test(`overlapping confirmations give o
     await expectPads(page);
     await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
   } else {
+    // Hold the install dialog's fade-out, which starts a frame after the answer.
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, 'heldConfirmationExits')), {
+      message: 'no fade-out was held: holdConfirmationExits only sees exits run through Element.animate',
+    }).toBeGreaterThan(0);
+    await expect(page.locator('[role="alertdialog"][aria-label="Confirm install"]')).toHaveCount(1);
+    // While it is still painted, Enter must reach the deletion's Cancel, not the closed dialog.
     await expect(installation).toHaveCount(0);
     await expect(lowerCancel).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(deletion).toHaveCount(0);
     await expect(opener).toBeFocused();
     await expect(page.getByRole('option')).toHaveCount(1);
+    expect(await storedPackRecords(page)).toHaveLength(1);
   }
   expect((await storedPackRecords(page)).some(pack => pack.id === 'saved-before-link')).toBe(true);
   await info.attach('overlapping-after-answer', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+// The deletion opens on Delete, under where the install dialog's buttons are painted.
+for (const answer of ['Enter Enter', 'double click Install', 'double click Cancel']) test(`a second press meant for the shared install dialog never answers the deletion under it: ${answer}`, async ({ page, context }, info) => {
+  const { deletion, lowerCancel, installation } = await openOverlappingConfirmations(page, context);
+  const install = installation.getByRole('button', { name: 'Install', exact: true });
+  await expect(install).toBeFocused();
+  if (answer === 'Enter Enter') {
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+  } else {
+    await (answer.endsWith('Install') ? install : installation.getByRole('button', { name: 'Cancel', exact: true })).dblclick();
+  }
+  await expect(installation).toHaveCount(0);
+  if (answer === 'double click Cancel') {
+    // The second click falls on the closing dialog, so the deletion still waits for its own answer.
+    await expect(deletion).toBeVisible();
+    await expect(lowerCancel).toBeFocused();
+    await expect(page.getByRole('option')).toHaveCount(1);
+  } else {
+    await expectPads(page);
+    await expect.poll(async () => (await storedPackRecords(page)).length).toBe(2);
+  }
+  await info.attach('after-second-press', { body: await page.screenshot(), contentType: 'image/png' });
+  expect((await storedPackRecords(page)).map(pack => pack.id)).toContain('saved-before-link');
 });
 
 for (const answer of ['Enter', 'Escape']) test(`connection help and shared confirmation share focus and visible order on ${answer}`, async ({ page, context, checkedPage }, info) => {
@@ -206,6 +223,78 @@ async function connectStore(context: BrowserContext, firstHandshakeDelayMs = 0) 
       await expect.poll(() => blockedStoreRequests, { timeout: 15000 }).toBeGreaterThan(0);
     },
   };
+}
+
+/** Opens a saved pack's deletion, then lets the shared link's install confirmation open over it. */
+async function openOverlappingConfirmations(page: Page, context: BrowserContext, { holdExits = false, focusLowerCancel = false } = {}) {
+  const database = await connectStore(context);
+  if (holdExits) await holdConfirmationExits(page);
+  await context.route(STORE_PACK_DOWNLOAD, route => route.fulfill({ body: readFileSync('e2e/fixtures/basic.uni'), contentType: 'application/octet-stream' }));
+  await verifyDatabase(page);
+  await seedSavedPacks(page, [{ id: 'saved-before-link', title: 'Saved before link', producerName: 'Tests', addedAt: 1 }]);
+  database.holdReplies();
+  await page.exposeFunction('releaseOverlappingDialogLookup', () => database.releaseReplies());
+  // Prepare the lower dialog at each render, without driver round trips consuming the
+  // real five-second lookup deadline. Only setup uses DOM events; the checks use native keys.
+  await page.addInitScript(({ focusLowerCancel }) => {
+    // Init scripts survive navigation. Consume this setup once so a later reload is inert.
+    const key = 'overlapping-dialog-setup-consumed';
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, 'true');
+    const setup = { status: 'waiting for the saved row' };
+    Object.assign(window, { overlappingDialogSetup: setup });
+    let step = 0;
+    const observer = new MutationObserver(advance);
+    observer.observe(document, { childList: true, subtree: true, attributes: true });
+    // Initial focus can arrive without a DOM mutation.
+    const onFocus = () => queueMicrotask(advance);
+    document.addEventListener('focusin', onFocus);
+    function advance() {
+      if (step === 3) return;
+      const row = document.querySelector<HTMLElement>('[data-pack-id="saved-before-link"]');
+      if (!row) return;
+      if (step === 0) {
+        step++;
+        setup.status = 'waiting for row selection after Space';
+        row.focus();
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+      } else if (step === 1) {
+        if (row.getAttribute('aria-selected') !== 'true') return;
+        step++;
+        setup.status = 'waiting for the deletion dialog after Delete';
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      } else {
+        const deletion = document.querySelector('[role="alertdialog"][aria-label="Confirm deletion"]');
+        const label = focusLowerCancel ? 'Cancel' : 'Delete';
+        const target = Array.from(deletion?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === label);
+        if (!target) return;
+        // The normal initial focus is Delete; preserve that setup for the double-input checks.
+        setup.status = `waiting for lower ${label} focus (current: ${document.activeElement?.textContent})`;
+        if (focusLowerCancel) target.focus();
+        if (document.activeElement !== target) return;
+        step = 3;
+        observer.disconnect();
+        document.removeEventListener('focusin', onFocus);
+        setup.status = 'waiting for the held lookup reply';
+        void (Reflect.get(window, 'releaseOverlappingDialogLookup') as () => Promise<void>)().then(
+          () => { setup.status = 'ready'; },
+          error => { setup.status = `lookup release failed: ${String(error)}`; },
+        );
+      }
+    }
+    advance();
+  }, { focusLowerCancel });
+  await page.goto('/play?code=browser-pack');
+  await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'overlappingDialogSetup') as { status: string })?.status), {
+    message: 'prepare the lower dialog and focus its expected button before releasing the shared lookup',
+  }).toBe('ready');
+  const opener = page.getByRole('option', { name: 'Saved before link by Tests', exact: true });
+  const deletion = page.getByRole('alertdialog', { name: 'Confirm deletion', exact: true });
+  const lowerCancel = deletion.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(deletion).toBeVisible();
+  const installation = page.getByRole('alertdialog', { name: 'Confirm install', exact: true });
+  await expect(installation).toBeVisible();
+  return { opener, deletion, lowerCancel, installation };
 }
 
 async function verifyDatabase(page: Page) {

@@ -19,49 +19,72 @@ interface OutputRecord {
   now: () => number;
   /** The output clock at the latest press (pointer down or click) on the page. */
   pressedAt: number;
+  /** The recorder is listening to the pack's output. */
+  ready: boolean;
 }
 
 declare global {
   interface Window { outputRecord: OutputRecord }
 }
 
+/**
+ * Finds the tones on the audio rendering thread, timed by the rendering clock itself. A ScriptProcessorNode
+ * hands its samples to the page's main thread and dates them by when that thread got to them, so on a busy
+ * machine one unbroken tone could read as two with a silent gap between them.
+ */
+const recorderModule = `registerProcessor('output-record', class extends AudioWorkletProcessor {
+  sounding = false;
+  quietSince = 0;
+  start = 0;
+  process([input]) {
+    const samples = input[0];
+    const frames = samples ? samples.length : 128;
+    for (let i = 0; i < frames; i++) {
+      const time = (currentFrame + i) / sampleRate;
+      if (samples && Math.abs(samples[i]) > 0.01) {
+        if (!this.sounding && time - this.quietSince >= 0.05) { this.port.postMessage({ onset: time }); this.start = time; }
+        this.sounding = true;
+        this.quietSince = time;
+      } else if (this.sounding && time - this.quietSince >= 0.05) {
+        this.sounding = false;
+        this.port.postMessage({ length: this.quietSince - this.start });
+      }
+    }
+    return true;
+  }
+});`;
+
 async function recordOutput(page: Page) {
-  await page.addInitScript(() => {
-    const record: OutputRecord = { onsets: [], lengths: [], now: () => 0, pressedAt: 0 };
+  await page.addInitScript(module => {
+    const record: OutputRecord = { onsets: [], lengths: [], now: () => 0, pressedAt: 0, ready: false };
     window.outputRecord = record;
     for (const type of ['pointerdown', 'click'] as const) {
       window.addEventListener(type, () => { record.pressedAt = record.now(); }, { capture: true });
     }
+    const moduleUrl = URL.createObjectURL(new Blob([module], { type: 'text/javascript' }));
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (this: AudioNode, destination: AudioNode | AudioParam, ...rest: number[]) {
       if (this instanceof GainNode && destination === this.context.destination) {
-        // A silent tap beside the app's final gain: it sees every sample sent to the speakers.
+        // A tap beside the app's final gain: it sees every sample sent to the speakers, and the recorder
+        // behind it sends only silence on. The recorder joins once its module has loaded; open() waits.
         const context = this.context as AudioContext;
-        const tap = context.createScriptProcessor(1024, 1, 1);
-        let sounding = false;
-        let quietSince = 0;
-        let start = 0;
-        tap.onaudioprocess = event => {
-          const samples = event.inputBuffer.getChannelData(0);
-          for (let i = 0; i < samples.length; i++) {
-            const time = event.playbackTime + i / context.sampleRate;
-            if (Math.abs(samples[i]) > 0.01) {
-              if (!sounding && time - quietSince >= 0.05) { record.onsets.push(time); start = time; }
-              sounding = true;
-              quietSince = time;
-            } else if (sounding && time - quietSince >= 0.05) {
-              sounding = false;
-              record.lengths.push(quietSince - start);
-            }
-          }
-        };
+        const tap = context.createGain();
         Reflect.apply(connect, this, [tap]);
-        Reflect.apply(connect, tap, [destination]);
         record.now = () => context.currentTime;
+        void context.audioWorklet.addModule(moduleUrl).then(() => {
+          const recorder = new AudioWorkletNode(context, 'output-record');
+          recorder.port.onmessage = ({ data }: MessageEvent<{ onset: number } | { length: number }>) => {
+            if ('onset' in data) record.onsets.push(data.onset);
+            else record.lengths.push(data.length);
+          };
+          Reflect.apply(connect, tap, [recorder]);
+          Reflect.apply(connect, recorder, [destination]);
+          record.ready = true;
+        });
       }
       return Reflect.apply(connect, this, [destination, ...rest]);
     } as typeof connect;
-  });
+  }, recorderModule);
 }
 
 const mode = (page: Page, name: 'Auto' | 'Guide' | 'Step') => page.getByRole('button', { name: `Play mode: ${name}`, exact: true });
@@ -85,6 +108,7 @@ async function open(page: Page) {
   await recordOutput(page);
   await openBasicWith(page, {});
   await expectAudioOutputRunning(page);
+  await expect.poll(() => page.evaluate(() => window.outputRecord.ready), { message: 'the output recorder did not start' }).toBe(true);
 }
 
 async function attachRecord(page: Page, info: TestInfo, marks: Record<string, number>) {
