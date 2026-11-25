@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      firefox_comparison:
+        description: Compare native Firefox audio paths on the phone grid tests (five repetitions each)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,20 +20,15 @@ concurrency:
 
 jobs:
   playback:
-    name: Windows playback (${{ matrix.project }}${{ matrix.shards > 1 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
+    name: Windows playback (${{ matrix.project }}${{ matrix.shards > 1 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }}${{ matrix.audio && format(' audio={0}', matrix.audio) || '' }})
     runs-on: windows-2025
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { project: chromium, shard: 1, shards: 1 }
-          - { project: chrome, shard: 1, shards: 1 }
-          - { project: msedge, shard: 1, shards: 1 }
-          # Firefox alone needs about 11 of the 15 minutes for these tests, so it splits them across two jobs.
-          # Either job failing fails the run, as the single Firefox job did before.
-          - { project: firefox, shard: 1, shards: 2 }
-          - { project: firefox, shard: 2, shards: 2 }
+        # The comparison uses the same runner, audio driver and repeat count on both native paths.
+        # Normal Firefox keeps page scrolling; the stationary grid runs separately.
+        include: ${{ fromJSON(inputs.firefox_comparison && '[{"project":"firefox-grid","shard":1,"shards":1,"audio":"page"},{"project":"firefox-grid","shard":1,"shards":1,"audio":"broker"}]' || '[{"project":"chromium","shard":1,"shards":1},{"project":"chrome","shard":1,"shards":1},{"project":"msedge","shard":1,"shards":1},{"project":"firefox","shard":1,"shards":2},{"project":"firefox","shard":2,"shards":2},{"project":"firefox-grid","shard":1,"shards":1}]') }}
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       NEXT_PUBLIC_FIREBASE_API_KEY: 'FAKE_CI_KEY_DO_NOT_USE'
@@ -39,6 +39,7 @@ jobs:
       NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
       NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake-ci-placeholder'
       NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: 'G-FAKE-CI'
+      E2E_FIREFOX_AUDIO_PROCESS: ${{ matrix.audio || 'page' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,7 +51,7 @@ jobs:
         if: matrix.project == 'chromium'
         run: pnpm exec playwright install chromium
       - name: Install Firefox
-        if: matrix.project == 'firefox'
+        if: startsWith(matrix.project, 'firefox')
         run: pnpm exec playwright install firefox
       # Hosted Windows runners have Windows Audio running, but no audio output device.
       # Chromium then plays into a fake output, but Firefox never starts Web Audio, so a pad stays
@@ -83,13 +84,19 @@ jobs:
       # Chrome and Edge are installed on the Windows runner. A missing channel fails the job.
       - name: Check playback, multi-touch and layout
         id: playback
-        run: pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
+        run: |
+          if ('${{ inputs.firefox_comparison }}' -eq 'true') {
+            pnpm exec playwright test e2e/rectangular-pad-layout.spec.ts --project=firefox-grid --grep 'phone: 8x8' --repeat-each=5
+          } else {
+            pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts e2e/firefox-motion.spec.ts --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
+          }
+          exit $LASTEXITCODE
       # Only after the tests ran: an earlier setup or build failure stays the only error.
       - name: Save playback results, skip reasons and failure traces
         if: always() && steps.playback.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-playback-${{ matrix.project }}${{ matrix.shards > 1 && format('-{0}-of-{1}', matrix.shard, matrix.shards) || '' }}
+          name: windows-playback-${{ matrix.project }}${{ matrix.shards > 1 && format('-{0}-of-{1}', matrix.shard, matrix.shards) || '' }}${{ matrix.audio && format('-audio-{0}', matrix.audio) || '' }}
           path: |
             playwright-report/
             test-results/

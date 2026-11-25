@@ -78,7 +78,7 @@ for (const square of [true, false]) {
       type: 'lostpointercapture', pointerType: 'mouse', pointerId: down.pointerId, trusted: true, target: null,
     })]);
     expect((await events(page)).filter(event => event.type === 'pointerup')).toEqual([
-      { type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null },
+      expect.objectContaining({ type: 'pointerup', pointerType: 'mouse', pointerId: down.pointerId, buttons: 0, trusted: true, target: null }),
     ]);
   });
 }

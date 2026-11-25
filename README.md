@@ -81,7 +81,7 @@ uploads the Playwright report and traces as an artifact. A separate **Windows pl
 workflow runs `e2e/play.spec.ts`, `e2e/multi-touch.spec.ts`, `e2e/pad-layout.spec.ts`,
 `e2e/rectangular-pad-layout.spec.ts`, `e2e/large-text.spec.ts`, and `e2e/home.spec.ts`
 on Windows 2025 with Chromium, Firefox and the installed Chrome and Edge channels;
-Firefox, the slowest, splits them across two jobs. Failures fail their jobs, with no retries. None of these
+Ordinary Firefox tests split across two jobs, and its stationary grid uses a separate job. Failures fail their jobs, with no retries. None of these
 browser jobs is a required check yet. The other browser tests do not run in CI; run
 `pnpm test:e2e` locally before pushing. Every job also runs after a merge to `main`.
 GitHub records each step's duration; each job summary records elapsed time from setup
@@ -105,6 +105,27 @@ export NEXT_PUBLIC_FIREBASE_APP_ID=1:000000000000:web:fake-ci-placeholder
 export NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-FAKE-CI
 pnpm build
 ```
+
+### Firebase Performance installation failures
+
+`patches/@firebase__performance@0.7.14.patch` removes an unused success-only
+continuation of the installation token promise in both SDK entry points. That
+continuation creates an unhandled rejection when registration fails, even though
+Performance handles the original token failure and falls back to its defaults.
+The patch returns the original promise unchanged, preserving its value and error.
+It does not suppress window errors or change Analytics collection.
+
+The version-pinned patch is applied by pnpm, including frozen-lockfile installs.
+Remove it when a future SDK version fixes this continuation, after running:
+
+```bash
+pnpm test:e2e --project=webkit e2e/page-errors.spec.ts
+```
+
+The regression holds installation requests, rejects registration and its retries,
+waits for the real Performance fallback, and checks both a stationary guide and
+language switching. Existing controls still require unrelated fetch failures and
+unhandled rejections to be reported.
 
 ### Browser playback checks
 
@@ -268,7 +289,7 @@ pnpm test:e2e --project=chromium e2e/play.spec.ts e2e/offline-play.spec.ts e2e/s
 On Windows, reproduce the smoke jobs with:
 
 ```bash
-pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox
+pnpm exec playwright test e2e/play.spec.ts e2e/multi-touch.spec.ts e2e/pad-layout.spec.ts e2e/rectangular-pad-layout.spec.ts e2e/large-text.spec.ts e2e/home.spec.ts e2e/firefox-motion.spec.ts --project=chromium --project=chrome --project=msedge --project=firefox --project=firefox-grid
 node scripts/playback-summary.mjs
 ```
 
@@ -276,6 +297,36 @@ The machine needs an audio output device. GitHub's hosted Windows runners have n
 so the workflow installs the Scream virtual sound card and starts Windows Audio first.
 Without an output, Firefox never starts Web Audio: the output-signal and auto-play
 tests then fail on "the browser did not start the audio output of the opened pack".
+
+For a native Firefox input comparison, manually run **Windows playback** on the branch
+with `firefox_comparison=true`. It runs only the compact-phone and phone 8×8 square
+and rectangular grid cases, five times per audio path, in separate Windows jobs.
+`E2E_FIREFOX_AUDIO_PROCESS=page` uses the current page-process audio settings;
+`broker` uses Firefox's normal audio broker and content sandbox. Both keep real audio,
+zero retries and the existing test deadlines. Locally, set the same variable and run:
+
+```bash
+pnpm test:e2e e2e/rectangular-pad-layout.spec.ts --project=firefox-grid --grep 'phone: 8x8' --repeat-each=5
+```
+
+Grid-test failures attach input coordinates, the pad and its bounds at event time,
+audio calls and a screenshot from teardown, including when a press times out.
+Firefox displays a native warning bar when its content sandbox is disabled. After
+opening the input pack, the fixture reapplies the same viewport once so the browser
+window includes that bar outside the content area. Without this adjustment,
+Playwright can scroll its own browser stack during edge presses and deliver a
+mouse event 48 CSS pixels away from the requested position. The tests also verify
+the received coordinates. The `firefox-grid` project alone disables native Firefox UI motion to keep the warning
+stationary during preparation. This also makes smooth page scrolling jump immediately,
+even though media-query emulation reports `no-preference`, so only the stationary
+`rectangular-pad-layout.spec.ts` runs there. Ordinary `firefox` tests keep normal browser
+motion; `firefox-motion.spec.ts` rejects a project-wide native motion override and
+checks a smooth scroll in an isolated browser whose native motion is explicitly enabled.
+That single audio-free test uses native preference `0`; ordinary Firefox tests keep
+the host default. CSS media emulation alone does not enable native scrolling animation.
+Windows runs that regression and the grid in separate jobs.
+Lights and audio calls are read together on each press and release to reduce browser
+round trips without dropping any playback checks.
 
 The list/HTML reports and `test-results/results.json` retain skip counts and
 reasons. The summary separates intentional skips from interrupted and unrun tests,

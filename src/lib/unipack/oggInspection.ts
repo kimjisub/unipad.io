@@ -73,6 +73,7 @@ export function inspectOgg(d: AudioData): AudioFacts {
     lastPacketFrames = BigInt(0),
     granule = BigInt(0),
     origin: bigint | null = null,
+    vorbisEndTrimSafe = false,
     ended = false;
   while (at < d.size) {
     requireAudio(!ended && d.matches(at, 'OggS'));
@@ -188,7 +189,6 @@ export function inspectOgg(d: AudioData): AudioFacts {
           requireAudio(mode < modes.length);
           const block = modes[mode] ? longBlock : shortBlock;
           if (modes[mode]) bits.skip(2);
-          lastPacketFrames = BigInt(block);
           if (previousBlock !== 0)
             calculated += BigInt((previousBlock + block) / 4);
           previousBlock = block;
@@ -204,8 +204,12 @@ export function inspectOgg(d: AudioData): AudioFacts {
     );
     if (!unset) {
       const raw = d.uintBig(at + 6, 8, true);
-      if (calculated > BigInt(0) && origin === null)
+      if (calculated > BigInt(0) && origin === null) {
+        // On the final page alone, a shorter position cannot distinguish leading
+        // discard from end padding. Preserve native output in that ambiguous case.
+        vorbisEndTrimSafe = (flags & 4) === 0 && raw >= calculated;
         origin = raw > calculated ? raw - calculated : BigInt(0);
+      }
       const start = origin ?? BigInt(0);
       requireAudio(raw >= start);
       const current = raw - start;
@@ -220,7 +224,7 @@ export function inspectOgg(d: AudioData): AudioFacts {
           packetSize === 0 &&
           calculated > BigInt(0) &&
           granule >= preSkip &&
-          calculated - granule <= lastPacketFrames,
+          calculated - granule <= (opus ? lastPacketFrames : BigInt(longBlock)),
       );
       ended = true;
     }
@@ -232,6 +236,7 @@ export function inspectOgg(d: AudioData): AudioFacts {
     channels,
     frames: granule - preSkip,
     format: opus ? 'opus' : 'ogg',
+    ...(!opus ? { vorbisEndTrimSafe } : {}),
   };
 }
 function ilog(n: number): number {
