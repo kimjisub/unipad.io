@@ -329,7 +329,21 @@ export class AutoPlayRunner {
 
           if (currentChain !== this.stepChainValue && this.stepChainValue >= 0) {
             if (this.stepScanned) {
-              this.setProgress(this.stepStartProgress);
+              // Re-scan only unperformed members. A manual wormhole may move the
+              // chain while the player is still completing this step group.
+              const elements = autoPlay.elements;
+              let pendingStart: number | null = null;
+              for (let i = this.stepStartProgress; i < this.progress; i++) {
+                const element = elements[i];
+                if (element.type !== 'on' && element.type !== 'off') continue;
+                if (this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
+                  if (element.type === 'on') pendingStart ??= i;
+                } else {
+                  this.skippedStepLines.add(i);
+                }
+              }
+              if (pendingStart !== null) this.setProgress(pendingStart);
+              this.preserveStepPresses = true;
               this.stepPendingPads.clear();
               this.stepScanned = false;
             }

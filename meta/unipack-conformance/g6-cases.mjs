@@ -1,4 +1,4 @@
-// Expectations for G6. expectedFailing names apps whose current behavior needs a correction;
+// Expectations for G6. expectedFailing records apps needing a correction at the comparison baseline;
 // it is documentation, never an exception to the expected result or an assertion.
 import { ASSET_GENERATORS, sha256, anim, cell, decision, ev, ledCell, lines, loaded, pack, q, refused, STD_INFO } from './lib.mjs';
 

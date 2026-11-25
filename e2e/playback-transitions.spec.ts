@@ -1255,6 +1255,38 @@ for (const stop of [false, true]) test(`song-time wormhole ${stop ? 'stop cancel
   }
 });
 
+test('step practice keeps performed pads after a manual wormhole and a slow second press', async ({ page }, info) => {
+  await open(page, 'on 1 1\noff 1 1\nd 1\non 1 2\noff 1 2\nd 199\non 2 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20);
+  const guide = (pad: string) => page.locator(`[data-pad="${pad}"] .z-\\[25\\]`);
+  const press = async (pad: string, pointerId: number) => {
+    const target = page.locator(`[data-pad="${pad}"]`);
+    const box = (await target.boundingBox())!;
+    const pointer = { pointerId, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, bubbles: true };
+    await target.dispatchEvent('pointerdown', pointer);
+    await target.dispatchEvent('pointerup', pointer);
+  };
+  await expect(guide('0,0')).toHaveCount(1);
+  await expect(guide('0,1')).toHaveCount(1);
+  await press('0,0', 1);
+  await page.clock.runFor(100);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await page.clock.fastForward(300);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'step-return-after-manual-wormhole');
+  await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(1);
+  await press('0,1', 2);
+  await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(guide('1,0')).toHaveCount(1);
+  await expect(guide('0,0')).toHaveCount(0);
+  expect(await soundRequests(page)).toBe(2);
+});
+
 test('song-time wormhole practice guides the early voice on the original chain', async ({ page }, info) => {
   await open(page, 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 1 3\nd 1000', false, {
     keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},

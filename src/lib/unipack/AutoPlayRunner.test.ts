@@ -71,6 +71,43 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  for (const pressedY of [0, 1]) for (const resume of [false, true]) {
+    test(`step chain return preserves a performed group member y=${pressedY}, resume=${resume}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav 1 2\n1 1 2 a.wav\n2 2 1 a.wav',
+        'sounds/a.wav': SILENT_WAV,
+        autoPlay: 'on 1 1\noff 1 1\nd 1\non 1 2\noff 1 2\nd 199\non 2 1\nd 1000',
+      }));
+      let chain = 0;
+      const screen = new Set<string>();
+      const notes: string[] = [];
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onGuideChainOn() {},
+        onChainChange(c) { chain = c; }, onPadTouchOff() {}, onGuideLedUpdate() {},
+        onPadTouchOn(x, y) { notes.push(`${x},${y}`); },
+        onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+        onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+      }, () => chain, () => {}, () => {}, () => {});
+      runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false;
+      runner.launch(); clock.tick(1);
+      runner.stepPadPressed(0, pressedY); clock.tick(1);
+      assert.deepEqual([...screen], [`0,${1 - pressedY}`]);
+      // The first pad's manual wormhole can fire before the other chord member is played.
+      clock.tick(99); chain = 1; clock.tick(1); clock.tick(300);
+      chain = 0; clock.tick(1);
+      assert.deepEqual([...screen], [`0,${1 - pressedY}`], 'only the unplayed member is guided again');
+      if (resume) {
+        runner.play(false); clock.tick(1); clock.tick(1); clock.tick(200);
+        assert.deepEqual(notes, [`0,${1 - pressedY}`, '1,0'], 'timed playback must not repeat a performed member');
+      } else {
+        runner.stepPadPressed(0, 1 - pressedY); clock.tick(1);
+        chain = 1; clock.tick(1);
+        assert.deepEqual([...screen], ['1,0'], 'a completed group must not be rewound by the next chain change');
+      }
+      runner.stop();
+    });
+  }
+
   for (const pauseMs of [500, 1500]) for (const pressed of [false, true]) {
     test(`guide resume at song time ${pauseMs} preserves ${pressed ? 'the gap after a pressed note' : 'an unpressed note'}`, async () => {
       const pack = await parseUniPack(await packZip({

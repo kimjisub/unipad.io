@@ -222,7 +222,11 @@ retain their original hashes and expectations as history, including the supersed
 ## G6 cases and current app corrections
 
 `g6-cases.mjs` adds 57 cases (49 initial cases, six archive-identity collision cases and two song-time wormhole cases). Each declares `expectedFailing`: the apps expected to need a
-correction, based on the code comparison. This field never changes classification or expected output.
+correction at the original code-comparison baseline. These historical annotations do not describe
+the latest app versions: use results from the exact app commit and corpus hash for current status.
+In particular, RUN-G605/RUN-G616 retain their pre-song-time implementation annotations so the
+393-case corpus stays byte-identical to the reviewed app copies. This field never changes
+classification or expected output.
 Observed failures can be recorded in `divergences.json`; the report still calls them `fail`.
 KS-B08 and KL-BE10 deliberately have no Android pin or representation exception.
 
