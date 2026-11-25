@@ -149,7 +149,15 @@ function retimeWormholes(elements: AutoPlayElement[], wormholes: Map<AutoPlayEle
   events.sort((a, b) => a.at - b.at || a.order - b.order);
   const result: AutoPlayElement[] = [];
   let time = 0;
+  let selection = 0;
+  const pressSelections = new Map<AutoPlayElementOn, number>();
   for (const event of events) {
+    const press = wormholes.get(event.element);
+    // Shortening a wait can move an explicit selection ahead of a formerly due wormhole.
+    // It cancels that pending switch, just as it does in the parsed song.
+    if (press && pressSelections.get(press) !== selection) continue;
+    if (event.element.type === 'chain' && !press) selection++;
+    if (event.element.type === 'on') pressSelections.set(event.element, selection);
     if (event.at > time) result.push({ type: 'delay', delay: event.at - time });
     time = event.at;
     result.push(event.element);
