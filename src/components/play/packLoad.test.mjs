@@ -98,10 +98,11 @@ for (const originalIsCurrent of [false, true]) test(`an unversioned saved mappin
   await flush(async () => result.current.loadUniPack(bytes, saved, { releaseArchive: true }));
   assert.equal(bytes.byteLength, 0);
   assert.deepEqual(result.current.state.unipack.autoPlay.elements, originalIsCurrent ? original : custom);
+  const savedOriginal = original.map(e => e.type === 'chain' ? { ...e, fromSound: true } : e);
   const writes = [];
   await flush(async () => assert.equal(await result.current.restoreAutoPlay(async value => writes.push(value)), 'saved'));
-  assert.deepEqual(result.current.state.unipack.autoPlay.elements, originalIsCurrent ? custom : original);
-  assert.deepEqual(writes[0], { current: originalIsCurrent ? custom : original, backup: originalIsCurrent ? original : custom, timingVersion: 1 });
+  assert.deepEqual(result.current.state.unipack.autoPlay.elements, originalIsCurrent ? custom : savedOriginal);
+  assert.deepEqual(writes[0], { current: originalIsCurrent ? custom : savedOriginal, backup: originalIsCurrent ? savedOriginal : custom, timingVersion: 1 });
   assert.deepEqual(saved, untouched, 'loading must not rewrite the saved record or the custom arrays');
 });
 
