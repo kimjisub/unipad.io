@@ -25,8 +25,8 @@ export interface PageErrors {
   errors: string[];
   /** Firebase or same-origin prefetches cut off while their page was being replaced. */
   ignored: string[];
-  /** Wait for a UI control's navigation to commit, including same-URL reloads. */
-  navigate: <T>(action: () => Promise<T>) => Promise<T>;
+  /** Mark the UI action; only document-replacing controls wait beyond its return. */
+  navigate: <T>(action: () => Promise<T>, options?: { waitForDocument?: boolean }) => Promise<T>;
 }
 
 // WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
@@ -48,7 +48,8 @@ const prefetchTarget = (url: URL) => {
 
 /**
  * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
- * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
+ * Client-side links end it when the action returns. Document-replacing controls opt in to
+ * waiting until the new document takes over, including language changes that keep the URL.
  */
 function collectPageErrors(page: Page): PageErrors {
   let leaving = false;
@@ -73,7 +74,10 @@ function collectPageErrors(page: Page): PageErrors {
     leavingPrefetches = new Set([...prefetches].map(request => prefetchTarget(new URL(request.url()))));
     return navigation().finally(finishLeaving);
   };
-  const collected: PageErrors = { errors: [], ignored: [], navigate: action => whileLeaving(async () => {
+  const collected: PageErrors = { errors: [], ignored: [], navigate: (action, options) => whileLeaving(async () => {
+    // Next links keep the current document running. Its failures must count
+    // once the action returns, even while a route response is still pending.
+    if (!options?.waitForDocument) return action();
     // A key press can return while the old document is still running and the
     // replacement is pending. Only the main frame's commit ends that interval.
     let commit!: () => void;

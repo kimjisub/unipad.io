@@ -104,7 +104,7 @@ for (const namespace of ['firebase', 'fireperf']) {
     const navigation = checkedPage.navigate(async () => {
       await page.evaluate(() => document.querySelector<HTMLAnchorElement>('a')!.click());
       actionReturned();
-    }).then(() => { navigationDone = true; });
+    }, { waitForDocument: true }).then(() => { navigationDone = true; });
     const destinationRoute = await destination;
     await actionDone;
     // The old document still runs after the action returns. WebKit refuses
@@ -119,6 +119,47 @@ for (const namespace of ['firebase', 'fireperf']) {
     expect(checkedPage.ignored).toEqual([accessDenied(url)]);
     expect(checkedPage.errors).toEqual([]);
     expect(endedEarly).toBe(false);
+  });
+}
+
+// Next's guide link keeps the document alive while its route response is pending.
+for (const namespace of ['firebase', 'fireperf']) {
+  test(`a ${namespace} failure after the guide link action returns still belongs to the current document`, async ({ page, checkedPage, browserName }, info) => {
+    reportsFetchFailures(browserName);
+    const url = REMOTE_CONFIG.replace('namespaces/firebase:', `namespaces/${namespace}:`);
+    const pending: Route[] = [];
+    let release = false;
+    await page.route('**/docs/guide?*', route => {
+      if (release) return route.continue();
+      pending.push(route);
+    });
+    await page.goto('/docs');
+    const link = page.getByRole('link', { name: /^(User Guide|사용 안내)$/ });
+    await link.waitFor();
+    await page.evaluate(() => { document.documentElement.dataset.errorProbe = 'original'; });
+    const before = { errors: checkedPage.errors.length, ignored: checkedPage.ignored.length };
+    let actionReturned!: () => void;
+    const actionDone = new Promise<void>(resolve => { actionReturned = resolve; });
+    const navigation = checkedPage.navigate(async () => {
+      await link.click();
+      actionReturned();
+    });
+    await actionDone;
+    await expect.poll(() => pending.length).toBeGreaterThan(0);
+    await page.route(url, route => route.abort('accessdenied'));
+    await fetchInPage(page, url);
+    await expect.poll(() => checkedPage.errors.length + checkedPage.ignored.length - before.errors - before.ignored).toBeGreaterThan(0);
+    const observed = { errors: checkedPage.errors.slice(before.errors), ignored: checkedPage.ignored.slice(before.ignored) };
+    // Release before asserting so a rejected collector can finish its navigation.
+    release = true;
+    await Promise.all(pending.map(route => route.continue()));
+    await navigation;
+    const identity = await page.evaluate(() => document.documentElement.dataset.errorProbe);
+    await info.attach('current-document', { body: JSON.stringify({ identity, ...observed }), contentType: 'application/json' });
+    expect(identity).toBe('original');
+    expect(observed.ignored).not.toContain(accessDenied(url));
+    expect(observed.errors).toContain(accessDenied(url));
+    checkedPage.errors.length = 0;
   });
 }
 
@@ -222,18 +263,20 @@ test('a Firebase-shaped application exception during navigation still counts', a
   checkedPage.errors.length = 0;
 });
 
-// A rejected action never committed a new document, so it must end the exception.
-test('a failed navigation action does not hide a later Firebase failure', async ({ page, checkedPage, browserName }) => {
-  reportsFetchFailures(browserName);
-  await openBlankPage(page);
-  await expect(checkedPage.navigate(async () => { throw new Error('action failed'); })).rejects.toThrow('action failed');
-  const request = holdRequest(page, REMOTE_CONFIG);
-  await fetchInPage(page, REMOTE_CONFIG);
-  await (await request).abort('accessdenied');
-  await expect.poll(() => checkedPage.errors).toEqual([accessDenied(REMOTE_CONFIG)]);
-  expect(checkedPage.ignored).toEqual([]);
-  checkedPage.errors.length = 0;
-});
+// A rejected action never committed a new document, so it must end either exception interval.
+for (const waitForDocument of [false, true]) {
+  test(`a failed navigation action does not hide a later Firebase failure (document wait: ${waitForDocument})`, async ({ page, checkedPage, browserName }) => {
+    reportsFetchFailures(browserName);
+    await openBlankPage(page);
+    await expect(checkedPage.navigate(async () => { throw new Error('action failed'); }, { waitForDocument })).rejects.toThrow('action failed');
+    const request = holdRequest(page, REMOTE_CONFIG);
+    await fetchInPage(page, REMOTE_CONFIG);
+    await (await request).abort('accessdenied');
+    await expect.poll(() => checkedPage.errors).toEqual([accessDenied(REMOTE_CONFIG)]);
+    expect(checkedPage.ignored).toEqual([]);
+    checkedPage.errors.length = 0;
+  });
+}
 
 // WebKit can report an aborted segment before its request event. Replay the recorded error
 // after an observed tree prefetch completes, with the segment's different cache key.
@@ -300,7 +343,7 @@ for (const navigation of ['stay', 'language switch'] as const) {
       await checkedPage.navigate(async () => {
         await fail();
         await page.getByRole('button', { name: /한국어로 전환|Switch to English/ }).press('Enter');
-      });
+      }, { waitForDocument: true });
       await expect(page.locator('html')).toHaveAttribute('lang', language === 'ko' ? 'en' : 'ko');
       await expect(page).toHaveURL('/docs/guide#launchpad');
     } else {
