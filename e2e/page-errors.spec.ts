@@ -91,6 +91,37 @@ const failDuringLink = (page: Page, held: Route) => Promise.all([
   held.abort('accessdenied'), page.getByRole('link', { name: 'Leave', exact: true }).click(),
 ]);
 
+
+for (const namespace of ['firebase', 'fireperf']) {
+  test(`a ${namespace} config fetch started after the navigation action returns belongs to the departing document`, async ({ page, checkedPage, browserName }, info) => {
+    reportsFetchFailures(browserName);
+    const url = REMOTE_CONFIG.replace('namespaces/firebase:', `namespaces/${namespace}:`);
+    await openLinkPage(page);
+    const destination = holdRequest(page, '**/destination');
+    let actionReturned!: () => void;
+    const actionDone = new Promise<void>(resolve => { actionReturned = resolve; });
+    let navigationDone = false;
+    const navigation = checkedPage.navigate(async () => {
+      await page.evaluate(() => document.querySelector<HTMLAnchorElement>('a')!.click());
+      actionReturned();
+    }).then(() => { navigationDone = true; });
+    const destinationRoute = await destination;
+    await actionDone;
+    // The old document still runs after the action returns. WebKit refuses
+    // its real fetch before emitting a request event, but reports a native line.
+    await fetchInPage(page, url);
+    await expect.poll(() => checkedPage.errors.length + checkedPage.ignored.length).toBe(1);
+    await info.attach('departing-document', { body: JSON.stringify({ navigationDone, errors: checkedPage.errors, ignored: checkedPage.ignored }), contentType: 'application/json' });
+    // Always release the document before asserting, including on the base collector.
+    const endedEarly = navigationDone;
+    await destinationRoute.fulfill({ contentType: 'text/html', body: '<p>Destination</p>' });
+    await navigation;
+    expect(checkedPage.ignored).toEqual([accessDenied(url)]);
+    expect(checkedPage.errors).toEqual([]);
+    expect(endedEarly).toBe(false);
+  });
+}
+
 test('a same-origin prefetch cut off by a checked link is not an app error', async ({ page, checkedPage, browserName, baseURL }) => {
   reportsFetchFailures(browserName);
   const url = `${baseURL}/docs/terms?_rsc=prefetch`;
@@ -154,21 +185,53 @@ test('an app exception during a checked link still counts', async ({ page, check
   checkedPage.errors.length = 0;
 });
 
-test('an uncaught prefetch rejection during a checked link still counts', async ({ page, checkedPage, browserName, baseURL }) => {
-  reportsFetchFailures(browserName);
-  const url = `${baseURL}/docs/terms?_rsc=uncaught`;
-  const prefetch = holdRequest(page, url);
-  await openLinkPage(page);
-  await page.evaluate(url => { void fetch(url, { headers: { RSC: '1', 'Next-Router-Prefetch': '1' } }); }, url);
-  const held = await prefetch;
-  await checkedPage.navigate(async () => {
-    await held.abort('accessdenied');
-    // Let the real rejection surface while the old document still exists.
-    await expect.poll(() => checkedPage.errors).toHaveLength(1);
-    await page.getByRole('link', { name: 'Leave', exact: true }).click();
+for (const kind of ['prefetch', 'Firebase'] as const) {
+  test(`an uncaught ${kind} rejection during a checked link still counts`, async ({ page, checkedPage, browserName, baseURL }) => {
+    reportsFetchFailures(browserName);
+    const url = kind === 'Firebase' ? REMOTE_CONFIG : `${baseURL}/docs/terms?_rsc=uncaught`;
+    const request = holdRequest(page, url);
+    await openLinkPage(page);
+    await page.evaluate(({ url, kind }) => {
+      void fetch(url, kind === 'Firebase' ? { method: 'POST' } : { headers: { RSC: '1', 'Next-Router-Prefetch': '1' } });
+    }, { url, kind });
+    const held = await request;
+    await checkedPage.navigate(async () => {
+      await held.abort('accessdenied');
+      // Let the real rejection surface while the old document still exists.
+      await expect.poll(() => checkedPage.errors).toHaveLength(1);
+      await page.getByRole('link', { name: 'Leave', exact: true }).click();
+    });
+    expect(checkedPage.ignored).toEqual([accessDenied(url)]);
+    expect(checkedPage.errors[0]).toContain('Load failed');
+    checkedPage.errors.length = 0;
   });
-  expect(checkedPage.ignored).toEqual([accessDenied(url)]);
-  expect(checkedPage.errors[0]).toContain('Load failed');
+}
+
+// The name alone must not hide an application exception with different text.
+test('a Firebase-shaped application exception during navigation still counts', async ({ page, checkedPage }) => {
+  await openLinkPage(page);
+  const message = '/firebaseremoteconfig.googleapis.com/application failure';
+  await page.evaluate(message => document.querySelector('a')!.addEventListener('click', () => {
+    const error = new Error(message);
+    error.name = 'Fetch API cannot load https';
+    throw error;
+  }), message);
+  await checkedPage.navigate(() => page.getByRole('link', { name: 'Leave', exact: true }).click());
+  expect(checkedPage.errors).toEqual([message]);
+  expect(checkedPage.ignored).toEqual([]);
+  checkedPage.errors.length = 0;
+});
+
+// A rejected action never committed a new document, so it must end the exception.
+test('a failed navigation action does not hide a later Firebase failure', async ({ page, checkedPage, browserName }) => {
+  reportsFetchFailures(browserName);
+  await openBlankPage(page);
+  await expect(checkedPage.navigate(async () => { throw new Error('action failed'); })).rejects.toThrow('action failed');
+  const request = holdRequest(page, REMOTE_CONFIG);
+  await fetchInPage(page, REMOTE_CONFIG);
+  await (await request).abort('accessdenied');
+  await expect.poll(() => checkedPage.errors).toEqual([accessDenied(REMOTE_CONFIG)]);
+  expect(checkedPage.ignored).toEqual([]);
   checkedPage.errors.length = 0;
 });
 

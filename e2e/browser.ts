@@ -1,4 +1,4 @@
-import { test as base, expect, type Page, type Request } from '@playwright/test';
+import { test as base, expect, type Frame, type Page, type Request } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { attachLogsSince, firefoxLogsEnabled, logOffsets, withFirefoxLogs } from './firefox-logs';
@@ -25,15 +25,12 @@ export interface PageErrors {
   errors: string[];
   /** Firebase or same-origin prefetches cut off while their page was being replaced. */
   ignored: string[];
-  /** Page navigation triggered by a UI control rather than page.goto/reload. */
+  /** Wait for a UI control's navigation to commit, including same-URL reloads. */
   navigate: <T>(action: () => Promise<T>) => Promise<T>;
 }
 
 // WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
 // text at the URL's first colon. The fetch's own rejection is a separate error, so ignoring the line hides no exception.
-const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
-  && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
-
 const webkitFetchUrl = (error: Error) => {
   const protocol = /^Fetch API cannot load (https?)$/.exec(error.name)?.[1];
   const suffix = ' due to access control checks.';
@@ -76,12 +73,29 @@ function collectPageErrors(page: Page): PageErrors {
     leavingPrefetches = new Set([...prefetches].map(request => prefetchTarget(new URL(request.url()))));
     return navigation().finally(finishLeaving);
   };
-  const collected: PageErrors = { errors: [], ignored: [], navigate: whileLeaving };
+  const collected: PageErrors = { errors: [], ignored: [], navigate: action => whileLeaving(async () => {
+    // A key press can return while the old document is still running and the
+    // replacement is pending. Only the main frame's commit ends that interval.
+    let commit!: () => void;
+    const committed = new Promise<void>(resolve => { commit = resolve; });
+    const onNavigated = (frame: Frame) => { if (frame === page.mainFrame()) commit(); };
+    page.on('framenavigated', onNavigated);
+    try {
+      const result = await action();
+      await committed;
+      return result;
+    } finally {
+      page.off('framenavigated', onNavigated);
+    }
+  }) };
   page.on('pageerror', error => {
     const failedUrl = webkitFetchUrl(error);
     const failedPrefetch = failedUrl && URL.canParse(failedUrl) ? new URL(failedUrl) : undefined;
     const cutOffPrefetch = failedPrefetch?.searchParams.has('_rsc') && leavingPrefetches.has(prefetchTarget(failedPrefetch));
-    const cutOffFetch = leaving && (webkitFirebaseFetchLine(error) || cutOffPrefetch);
+    // WebKit can refuse an old document's fetch before emitting a request event.
+    // Match its complete native line; the fetch's actual rejection still counts.
+    const firebaseFetchLine = failedUrl?.startsWith('https://') && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
+    const cutOffFetch = leaving && (firebaseFetchLine || cutOffPrefetch);
     (cutOffFetch ? collected.ignored : collected.errors).push(error.message);
   });
   page.on('framenavigated', frame => {
