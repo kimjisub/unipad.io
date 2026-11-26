@@ -23,8 +23,9 @@ import {
 } from '@/lib/unipack';
 import { PlaybackTicker } from '@/lib/unipack/PlaybackTicker';
 import { autoPlayMap } from '@/lib/unipack/AutoPlayMapper';
+import { saveChainOrigins } from '@/lib/unipack/autoPlayChainOrigin';
 import { readLegacyAutoPlaySnapshot } from '@/lib/unipack/parser';
-import { refreshOriginalAutoPlay } from '@/lib/unipack/storedAutoPlay';
+import { refreshOriginalAutoPlay, restoreOriginalChainOrigins } from '@/lib/unipack/storedAutoPlay';
 import { changeChain, ledPushToNum } from '@/lib/unipack/chainChange';
 import { PlayerHolds } from '@/lib/unipack/PlayerHolds';
 import { LOGO_FUNCTION_KEY, type MidiConnectResult } from '@/lib/unipack/MidiConnection';
@@ -1225,6 +1226,10 @@ export function useUniPadEngine() {
           const legacy = await readLegacyAutoPlaySnapshot(zipData, unipack);
           if (legacy) applicableAutoPlay = refreshOriginalAutoPlay(savedAutoPlay, unipack.autoPlay.elements, legacy.elements);
         }
+        if (applicableAutoPlay && unipack.autoPlay) {
+          restoreOriginalChainOrigins(applicableAutoPlay.current, unipack.autoPlay.elements);
+          restoreOriginalChainOrigins(applicableAutoPlay.backup, unipack.autoPlay.elements);
+        }
       } finally {
         // The extracted sounds own their bytes. Release before inspection makes its copies.
         if (options.releaseArchive) releaseArrayBuffer(zipData);
@@ -1880,13 +1885,13 @@ export function useUniPadEngine() {
       onDone: resolve,
       onError: reject,
     }));
-    return { current: mapped.elements, backup: autoPlay.elements, timingVersion: 1 };
+    return { current: mapped.elements, backup: saveChainOrigins(autoPlay.elements), timingVersion: 1 };
   }, persist, 'autoMappingActive'), [editAutoPlay]);
 
   /** Swaps the current autoPlay with its backup, so restoring again swaps them back. */
   const restoreAutoPlay = useCallback((persist: PersistAutoPlay) => editAutoPlay(async (_unipack, autoPlay) => {
     const backup = autoPlayBackupRef.current;
-    return backup ? { current: backup, backup: autoPlay.elements, timingVersion: 1 } : null;
+    return backup ? { current: saveChainOrigins(backup), backup: saveChainOrigins(autoPlay.elements), timingVersion: 1 } : null;
   }, persist, 'autoPlayRestoring'), [editAutoPlay]);
 
   useEffect(() => {

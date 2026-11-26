@@ -1,5 +1,6 @@
 import type { StoredAutoPlay } from './storage';
 import type { AutoPlayElement } from './types';
+import { chainOrigin, rememberChainOrigin } from './autoPlayChainOrigin';
 
 function sameElements(a: AutoPlayElement[], b: AutoPlayElement[]): boolean {
   return a.length === b.length && a.every((element, i) => {
@@ -23,4 +24,15 @@ export function refreshOriginalAutoPlay(saved: StoredAutoPlay, original: AutoPla
     backup: sameElements(saved.backup, legacy) ? original : saved.backup,
     timingVersion: 1,
   };
+}
+
+/** Recover only an exact archive-original identity, never infer origins in a custom timeline. */
+export function restoreOriginalChainOrigins(elements: AutoPlayElement[], original: AutoPlayElement[]): void {
+  if (!sameElements(elements, original)) return;
+  elements.forEach((element, i) => {
+    const source = original[i];
+    if (element.type !== 'chain' || source.type !== 'chain' || chainOrigin(element) !== undefined) return;
+    const fromSound = chainOrigin(source);
+    if (fromSound !== undefined) rememberChainOrigin(element, fromSound);
+  });
 }

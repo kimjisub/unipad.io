@@ -58,7 +58,7 @@ export function autoPlayMap(
   const switchChain = (c: number, fromSound: boolean) => {
     chain = c;
     counts.clear();
-    const element = { type: 'chain' as const, c };
+    const element = { type: 'chain' as const, c, fromSound };
     rememberChainOrigin(element, fromSound);
     result.push(element);
   };
@@ -109,7 +109,7 @@ export function autoPlayMap(
           counts.set(key, num + 1);
           const sounds = soundTable[chain]?.[x]?.[y];
           const sound = sounds?.[num % sounds.length];
-          if (sound && sound.wormhole !== NO_WORMHOLE && !cancelled.has(element)) {
+          if (sound && sound.wormhole !== NO_WORMHOLE && cancelled.get(element) !== sound) {
             pending.push({ at: time + 100, chain: sound.wormhole, order: index });
           }
           lastPress = press;
@@ -138,43 +138,27 @@ function soundLengthMs(press: AutoPlayElementOn, soundTable: (Sound[] | null)[][
   return Math.round(seconds * 1000);
 }
 
-/** Recover old serialized timelines conservatively; freshly parsed chains have exact provenance. */
-function findGeneratedChains(elements: AutoPlayElement[], soundTable: (Sound[] | null)[][][]): { generated: Set<AutoPlayElement>; cancelled: Set<AutoPlayElement> } {
+/** Unmarked saved selections are literal user data; do not guess their origin from timing. */
+function findGeneratedChains(elements: AutoPlayElement[], soundTable: (Sound[] | null)[][][]): { generated: Set<AutoPlayElement>; cancelled: Map<AutoPlayElement, Sound> } {
   const generated = new Set<AutoPlayElement>();
-  const cancelled = new Set<AutoPlayElement>();
-  const pending = new PriorityQueue<{ at: number; chain: number; order: number; press: AutoPlayElement }>(
+  const cancelled = new Map<AutoPlayElement, Sound>();
+  const pending = new PriorityQueue<{ at: number; order: number; press: AutoPlayElement; sound: Sound }>(
     (a, b) => a.at - b.at || a.order - b.order,
   );
-  const tailStart = elements.findLastIndex(e => e.type !== 'chain') + 1;
   let time = 0;
-  let flushTail = false;
   for (let i = 0; i < elements.length; i++) {
     const element = elements[i];
     if (element.type === 'delay') time += element.delay;
     else if (element.type === 'on') {
       const sounds = soundTable[element.currChain]?.[element.x]?.[element.y];
       const sound = sounds?.[element.num % sounds.length];
-      if (sound && sound.wormhole !== NO_WORMHOLE) pending.push({ at: time + 100, chain: sound.wormhole, order: i, press: element });
+      if (sound && sound.wormhole !== NO_WORMHOLE) pending.push({ at: time + 100, order: i, press: element, sound });
     } else if (element.type === 'chain') {
-      // Only a complete matching suffix can represent an unmarked EOF flush. A matching first
-      // destination alone must never swallow an explicit selection followed by another one.
-      if (i === tailStart) {
-        const rest = [];
-        for (let next = pending.pop(); next; next = pending.pop()) rest.push(next);
-        flushTail = rest.length === elements.length - i && rest.every((next, n) => {
-          const tail = elements[i + n];
-          return tail.type === 'chain' && tail.c === next.chain && chainOrigin(tail) !== false;
-        });
-        for (const next of rest) pending.push(next);
-      }
-      const origin = chainOrigin(element);
-      const due = pending.peek();
-      const inferred = due && due.chain === element.c && (due.at <= time || flushTail);
-      if (origin === true || (origin === undefined && inferred)) {
+      if (chainOrigin(element) === true) {
         generated.add(element);
         pending.pop();
       } else {
-        for (let next = pending.pop(); next; next = pending.pop()) cancelled.add(next.press);
+        for (let next = pending.pop(); next; next = pending.pop()) cancelled.set(next.press, next.sound);
       }
     }
   }

@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import { AutoPlayRunner } from './AutoPlayRunner';
 import { ManualClock } from './testUtils';
 import { autoPlayMap } from './AutoPlayMapper';
+import { saveChainOrigins } from './autoPlayChainOrigin';
 import { parseUniPack } from './parser';
 import type { AutoPlay, AutoPlayElement, UniPackData } from './types';
 import { SILENT_WAV, packZip } from './testUtils';
@@ -235,4 +236,51 @@ for (const length of [50, 100, 800]) test(`saved mapped wormholes can be remappe
   const mapped = await map(pack);
   pack.autoPlay = JSON.parse(JSON.stringify(mapped));
   assert.deepEqual(await map(pack), mapped);
+});
+
+for (const source of [
+  'touch 1 1\nd 50\ntouch 1 2\nc 2',
+  'd 1000\ntouch 1 1\nd 50\nc 2\nd 450\ntouch 1 2',
+]) test(`serialized remapping preserves authored same-destination selections: ${source}`, async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav', source);
+  setLengths(pack, { 'a.wav': source.startsWith('d') ? 500 : 300, 'b.wav': 300 });
+  const first = await map(pack);
+  pack.autoPlay = first;
+  assert.deepEqual(await map(pack), first);
+  pack.autoPlay = JSON.parse(JSON.stringify(first));
+  assert.deepEqual(await map(pack), first);
+});
+
+test('a new sound selected on the mapped chain gets its own wormhole despite the old sound cancellation', async () => {
+  const pack = await parseUniPack(await packZip({ info: INFO.replace('chain=2', 'chain=4'),
+    keySound: '1 1 1 a.wav 1 2\n1 1 2 b.wav 1 4\n2 1 2 b.wav 1 3',
+    'sounds/a.wav': SILENT_WAV, 'sounds/b.wav': SILENT_WAV,
+    autoPlay: 'touch 1 1\nd 150\ntouch 1 2\nd 50\nc 1\ntouch 2 1',
+  }));
+  setLengths(pack, { 'a.wav': 50, 'b.wav': 300 });
+  const mapped = timed(await map(pack));
+  assert.deepEqual(mapped.filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1100, 1], [1150, 3], [1350, 0]]);
+});
+
+test('saving and restoring the parsed backup retains exact chain provenance without changing the parser array', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav', 'touch 1 1\nd 50\ntouch 1 2\nc 2');
+  setLengths(pack, { 'a.wav': 300, 'b.wav': 300 });
+  const original = structuredClone(pack.autoPlay);
+  const expected = await map(pack);
+  const saved = JSON.parse(JSON.stringify(saveChainOrigins(pack.autoPlay!.elements)));
+  assert.deepEqual(pack.autoPlay, original);
+  assert.equal(saved.find((e: AutoPlayElement) => e.type === 'chain').fromSound, false);
+  pack.autoPlay = { elements: saved };
+  assert.deepEqual(await map(pack), expected);
+});
+
+test('an old unmarked custom tail remains an authored selection rather than a guessed wormhole', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav', 'touch 1 1\nd 50\ntouch 1 2\nc 2');
+  setLengths(pack, { 'a.wav': 300, 'b.wav': 300 });
+  const first = await map(pack);
+  const old = JSON.parse(JSON.stringify(first)) as AutoPlay;
+  for (const e of old.elements) if (e.type === 'chain') delete e.fromSound;
+  pack.autoPlay = old;
+  assert.deepEqual(script((await map(pack)).elements), script(first.elements));
+  assert.deepEqual(pack.autoPlay, old);
 });

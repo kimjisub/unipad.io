@@ -58,6 +58,8 @@ export interface AutoPlayElementOff {
 export interface AutoPlayElementChain {
   type: 'chain';
   c: number;
+  /** Saved mappings distinguish sound-generated switches from authored selections. */
+  fromSound?: boolean;
 }
 
 export interface AutoPlayElementDelay {
