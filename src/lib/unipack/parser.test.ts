@@ -378,7 +378,7 @@ describe('parseUniPack', () => {
       assert.deepEqual(pack.errors, []);
     });
 
-    // touch is on + off in one line, so its sound's wormhole moves the following lines as on does.
+    // touch releases immediately; both spellings apply the wormhole after 100 ms of song time.
     for (const command of ['o', 'on', 't', 'touch']) {
       test(`moves autoPlay presses after \`${command}\` of a wormhole sound to that chain`, async () => {
         const pack = await parseUniPack(await packZip({
@@ -393,8 +393,8 @@ describe('parseUniPack', () => {
         assert.deepEqual(pack.autoPlay!.elements, [
           { type: 'on', x: 0, y: 0, currChain: 0, num: 0 },
           ...(touch ? [{ type: 'off', x: 0, y: 0, currChain: 0 }] : []),
-          { type: 'chain', c: 1 },
           { type: 'delay', delay: 100 },
+          { type: 'chain', c: 1 },
           { type: 'on', x: 0, y: 0, currChain: 1, num: 0 },
         ]);
       });

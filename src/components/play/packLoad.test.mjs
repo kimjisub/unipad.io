@@ -79,6 +79,33 @@ async function pack(keyLedExist) {
 const pressedPads = result => result.current.state.padStates.flat().filter(pad => pad.pressed).length;
 const key = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code.slice(-1).toLowerCase() }));
 
+for (const originalIsCurrent of [false, true]) test(`an unversioned saved mapping retains custom work and refreshes its original snapshot, originalIsCurrent=${originalIsCurrent}`, async () => {
+  const zip = await JSZip.loadAsync(readFileSync(new URL('../../../e2e/fixtures/basic.uni', import.meta.url)));
+  zip.file('info', (await zip.file('info').async('string')).replace('chain=1', 'chain=2'));
+  zip.file('keySound', '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 2 tone.wav');
+  zip.file('autoPlay', 'on 1 1\nd 1\ntouch 1 2\nd 199');
+  const bytes = await zip.generateAsync({ type: 'arraybuffer' });
+  const original = (await real.parseUniPack(bytes)).autoPlay.elements;
+  // Exact pre-song-time storage shape: the original snapshot switches immediately.
+  const legacy = [
+    { type: 'on', x: 0, y: 0, currChain: 0, num: 0 }, { type: 'chain', c: 1 }, { type: 'delay', delay: 1 },
+    { type: 'on', x: 0, y: 1, currChain: 1, num: 0 }, { type: 'off', x: 0, y: 1, currChain: 1 }, { type: 'delay', delay: 199 },
+  ];
+  const custom = [{ type: 'delay', delay: 700 }, { type: 'on', x: 0, y: 1, currChain: 1, num: 0 }, { type: 'off', x: 0, y: 1, currChain: 1 }];
+  const saved = originalIsCurrent ? { current: legacy, backup: custom } : { current: custom, backup: legacy };
+  const untouched = structuredClone(saved);
+  const { result } = renderHook(useUniPadEngine);
+  await flush(async () => result.current.loadUniPack(bytes, saved, { releaseArchive: true }));
+  assert.equal(bytes.byteLength, 0);
+  assert.deepEqual(result.current.state.unipack.autoPlay.elements, originalIsCurrent ? original : custom);
+  const savedOriginal = original.map(e => e.type === 'chain' ? { ...e, fromSound: true } : e);
+  const writes = [];
+  await flush(async () => assert.equal(await result.current.restoreAutoPlay(async value => writes.push(value)), 'saved'));
+  assert.deepEqual(result.current.state.unipack.autoPlay.elements, originalIsCurrent ? custom : savedOriginal);
+  assert.deepEqual(writes[0], { current: originalIsCurrent ? custom : savedOriginal, backup: originalIsCurrent ? savedOriginal : custom, timingVersion: 1 });
+  assert.deepEqual(saved, untouched, 'loading must not rewrite the saved record or the custom arrays');
+});
+
 test('a saved archive stays readable through parsing and is discarded before sound loading', async () => {
   const { result } = renderHook(useUniPadEngine);
   const bytes = await pack(true);

@@ -1,4 +1,6 @@
-import type { AutoPlay, AutoPlayElement, AutoPlayElementOn, Sound } from './types';
+import { NO_WORMHOLE, type AutoPlay, type AutoPlayElement, type AutoPlayElementOn, type Sound } from './types';
+import { PriorityQueue } from './PriorityQueue';
+import { chainOrigin, rememberChainOrigin } from './autoPlayChainOrigin';
 
 export interface AutoPlayMapperListener {
   onStart: () => void;
@@ -21,7 +23,7 @@ const CHUNK_SIZE = 100;
  * - The first press is preceded by {@link AUTO_MAP_LEAD_IN_MS}; waits after the last press are dropped.
  * - A wait after a sound whose length is unknown keeps its original length.
  * - Every press becomes a press and an immediate release, so no pad stays held. Chain changes and the
- *   order of each pad's sounds stay as they were.
+ *   each press's sound queue follow the chain selected at its mapped song time.
  *
  * Runs in chunks so a long autoPlay does not block the page. The input is not changed.
  */
@@ -41,25 +43,53 @@ export function autoPlayMap(
     return;
   }
 
-  const result: (AutoPlayElement | null)[] = [];
+  const result: AutoPlayElement[] = [];
   let lastPress: AutoPlayElementOn | null = null;
-  // The waits since the last press: where the replacement goes and their original total.
-  let waitIndex = -1;
-  let waitTotal = 0;
   let progress = 0;
   let index = 0;
-
-  const replaceWaits = () => {
-    if (lastPress === null) {
-      const leadIn = { type: 'delay' as const, delay: AUTO_MAP_LEAD_IN_MS };
-      if (waitIndex >= 0) result[waitIndex] = leadIn;
-      else result.push(leadIn);
-    } else if (waitIndex >= 0) {
-      const lengthMs = soundLengthMs(lastPress, soundTable);
-      result[waitIndex] = { type: 'delay', delay: lengthMs ?? waitTotal };
+  let time = 0;
+  let chain = 0;
+  const counts = new Map<string, number>();
+  const gap: AutoPlayElement[] = [];
+  const { generated, cancelled } = findGeneratedChains(elements, soundTable);
+  const pending = new PriorityQueue<{ at: number; chain: number; order: number; press: AutoPlayElementOn }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
+  const switchChain = (c: number, fromSound: boolean) => {
+    chain = c;
+    counts.clear();
+    const element = { type: 'chain' as const, c, fromSound };
+    rememberChainOrigin(element, fromSound);
+    result.push(element);
+  };
+  const advance = (delay: number) => {
+    const end = time + delay;
+    while (pending.peek() && pending.peek()!.at <= end) {
+      const next = pending.pop()!;
+      if (next.at > time) result.push({ type: 'delay', delay: next.at - time });
+      time = Math.max(time, next.at);
+      switchChain(next.chain, true);
     }
-    waitIndex = -1;
-    waitTotal = 0;
+    // Signed waits retain their authored order even if song time moves backwards.
+    if (end !== time) result.push({ type: 'delay', delay: end - time });
+    time = end;
+  };
+  const applyGap = (trailing: boolean) => {
+    const hasWait = gap.some(e => e.type === 'delay');
+    const originalWait = gap.reduce((sum, e) => sum + (e.type === 'delay' ? e.delay : 0), 0);
+    const duration = lastPress === null ? AUTO_MAP_LEAD_IN_MS : soundLengthMs(lastPress, soundTable) ?? originalWait;
+    let waited = false;
+    for (const element of gap) {
+      if (element.type === 'delay') {
+        if (!trailing && !waited) advance(duration);
+        waited = true;
+      } else if (element.type === 'chain') {
+        for (let next = pending.pop(); next; next = pending.pop()) next.press.wormholeCancelled = true;
+        switchChain(element.c, false);
+      }
+    }
+    if (!trailing && lastPress === null && !hasWait) advance(AUTO_MAP_LEAD_IN_MS);
+    gap.length = 0;
   };
 
   const processNextChunk = () => {
@@ -67,34 +97,36 @@ export function autoPlayMap(
       const end = Math.min(index + CHUNK_SIZE, elements.length);
       for (; index < end; index++) {
         const element = elements[index];
-        if (element.type === 'delay') {
-          if (waitIndex < 0) {
-            waitIndex = result.length;
-            result.push(null);
-          }
-          waitTotal += element.delay;
+        if (element.type === 'delay' || (element.type === 'chain' && !generated.has(element))) {
+          gap.push(element);
         } else if (element.type === 'on') {
-          replaceWaits();
-          const { x, y, currChain } = element;
-          result.push({ ...element }, { type: 'off', x, y, currChain });
-          lastPress = element;
+          applyGap(false);
+          const { x, y } = element;
+          const key = `${x},${y}`;
+          const num = counts.get(key) ?? 0;
+          const press = { ...element, currChain: chain, num };
+          const sounds = soundTable[chain]?.[x]?.[y];
+          const sound = sounds?.[num % sounds.length];
+          if (sound && cancelled.get(element) === sound) press.wormholeCancelled = true;
+          else delete press.wormholeCancelled;
+          result.push(press, { type: 'off', x, y, currChain: chain });
+          counts.set(key, num + 1);
+          if (sound && sound.wormhole !== NO_WORMHOLE && !press.wormholeCancelled) {
+            pending.push({ at: time + 100, chain: sound.wormhole, order: index, press });
+          }
+          lastPress = press;
           listener.onProgress(++progress);
-        } else if (element.type === 'chain') {
-          result.push({ ...element });
         }
       }
-
-      if (index < elements.length) {
-        setTimeout(processNextChunk, 0);
-        return;
-      }
-      // A trailing wait's placeholder is never filled, so it is dropped here with the others.
-      listener.onDone({ elements: result.filter((e): e is AutoPlayElement => e !== null) });
+      if (index < elements.length) { setTimeout(processNextChunk, 0); return; }
+      applyGap(true);
+      // Normal EOF flushes scheduled switches without extending the mapped song.
+      for (let next = pending.pop(); next; next = pending.pop()) switchChain(next.chain, true);
+      listener.onDone({ elements: result });
     } catch (error) {
       listener.onError(error instanceof Error ? error : new Error(String(error)));
     }
   };
-
   setTimeout(processNextChunk, 0);
 }
 
@@ -106,4 +138,34 @@ function soundLengthMs(press: AutoPlayElementOn, soundTable: (Sound[] | null)[][
   const seconds = sounds[num % sounds.length]?.audioBuffer?.duration;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return null;
   return Math.round(seconds * 1000);
+}
+
+/** Unmarked saved selections are literal user data; do not guess their origin from timing. */
+function findGeneratedChains(elements: AutoPlayElement[], soundTable: (Sound[] | null)[][][]): { generated: Set<AutoPlayElement>; cancelled: Map<AutoPlayElement, Sound> } {
+  const generated = new Set<AutoPlayElement>();
+  const cancelled = new Map<AutoPlayElement, Sound>();
+  const pending = new PriorityQueue<{ at: number; order: number; press: AutoPlayElement; sound: Sound }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
+  let time = 0;
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.type === 'delay') time += element.delay;
+    else if (element.type === 'on') {
+      const sounds = soundTable[element.currChain]?.[element.x]?.[element.y];
+      const sound = sounds?.[element.num % sounds.length];
+      if (sound && sound.wormhole !== NO_WORMHOLE) {
+        if (element.wormholeCancelled) cancelled.set(element, sound);
+        else pending.push({ at: time + 100, order: i, press: element, sound });
+      }
+    } else if (element.type === 'chain') {
+      if (chainOrigin(element) === true) {
+        generated.add(element);
+        pending.pop();
+      } else {
+        for (let next = pending.pop(); next; next = pending.pop()) cancelled.set(next.press, next.sound);
+      }
+    }
+  }
+  return { generated, cancelled };
 }

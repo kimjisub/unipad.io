@@ -1,5 +1,7 @@
 # Two iOS playback observations
 
+> Historical observation: these runs predate the 2026-11-24 song-time wormhole revision. RUN-G616 then expected an immediate parsed switch. Its archived results and hashes are preserved; they do not establish a pass under the revised 100 ms expectation.
+
 The retained [`ios.json`](ios.json) is a nine-case partial run on unipad-ios
 `e8ac34d11373b3ed071535e365ddc382c1929496`. Its SHA256 is
 `c4b39c69a4611761a0e011a1c20266a6845a1f76c89f55e137c47a7e348ffdf2`.

@@ -1,5 +1,7 @@
 # Results
 
+> Historical observations below predate the 2026-11-24 song-time wormhole revision unless explicitly identified otherwise. Their immediate auto-play expectations and counts do not certify the revised rule.
+
 ## iOS copy reference moved to the current corpus (2026-11-04)
 
 `copies.json` now selects iOS merge `1754b9a3d3fc9a43b92b559d5e307e2468d0f7c5`

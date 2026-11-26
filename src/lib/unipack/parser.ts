@@ -1,3 +1,4 @@
+import { rememberChainOrigin } from './autoPlayChainOrigin';
 import JSZip from 'jszip';
 import {
   AutoPlay,
@@ -12,6 +13,7 @@ import {
 import { LAUNCHPAD_ARGB } from './colors';
 import { LOGO_FUNCTION_KEY, ROUND_BUTTON_COUNT } from './MidiConnection';
 import { repairArchiveNameFlags } from './archiveNames';
+import { PriorityQueue } from './PriorityQueue';
 
 const ROUND_TOKENS = new Set(['*', 'mc']);
 const LOGO_TOKEN = 'l';
@@ -65,15 +67,7 @@ async function parseArchive(
   onPhase?: (phase: string) => void,
 ): Promise<UniPackData> {
   onPhase?.('Reading archive...');
-  // Valid UTF-8 names keep their marks. Invalid ones, including incorrectly marked names from
-  // older Korean Windows archivers, reach the CP949 fallback. JSZip supplies a Uint8Array.
-  const zip = await JSZip.loadAsync(repairArchiveNameFlags(zipData), {
-    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
-  });
-  // Keep original keys and bytes when different archive names share a normalized path.
-  for (const file of Object.values(zip.files)) {
-    if (file.name.replace(/\\/g, '/').endsWith('/')) file.dir = true;
-  }
+  const zip = await openArchive(zipData);
   const errors: string[] = [];
 
   const rootPrefix = findRootPrefix(zip);
@@ -133,6 +127,25 @@ async function parseArchive(
     ledCount,
     errors,
   };
+}
+
+async function openArchive(zipData: ArrayBuffer): Promise<JSZip> {
+  // Valid UTF-8 names keep their marks. Invalid ones, including incorrectly marked names from
+  // older Korean Windows archivers, reach the CP949 fallback. JSZip supplies a Uint8Array.
+  const zip = await JSZip.loadAsync(repairArchiveNameFlags(zipData), {
+    decodeFileName: (bytes) => decodeUtf8OrCp949(bytes as Uint8Array),
+  });
+  // Keep original keys and bytes when different archive names share a normalized path.
+  for (const file of Object.values(zip.files)) {
+    if (file.name.replace(/\\/g, '/').endsWith('/')) file.dir = true;
+  }
+  return zip;
+}
+
+/** Reconstruct only the old original for snapshot identity checks. Never used for playback. */
+export async function readLegacyAutoPlaySnapshot(zipData: ArrayBuffer, pack: Pick<UniPackData, 'info' | 'soundTable'>): Promise<AutoPlay | null> {
+  const zip = await openArchive(zipData);
+  return parseAutoPlay(zip, findRootPrefix(zip), pack.info, pack.soundTable, [], 0);
 }
 
 /** Older Windows ZIP writers used backslashes for directory separators. */
@@ -649,6 +662,7 @@ async function parseAutoPlay(
   info: UniPackInfo,
   soundTable: (Sound[] | null)[][][],
   errors: string[],
+  wormholeDelayMs: 0 | 100 = 100,
 ): Promise<AutoPlay | null> {
   const file = getFile(zip, prefix, 'autoPlay') || getFile(zip, prefix, 'autoplay');
   if (!file) return null;
@@ -659,6 +673,11 @@ async function parseAutoPlay(
     Array.from({ length: info.buttonY }, () => 0),
   );
   let currChain = 0;
+  let songTime = 0;
+  let order = 0;
+  const pending = new PriorityQueue<{ at: number; chain: number; order: number }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
 
   function soundGet(c: number, x: number, y: number, num: number): Sound | null {
     const sounds = soundTable[c]?.[x]?.[y];
@@ -666,19 +685,35 @@ async function parseAutoPlay(
     return sounds[num % sounds.length];
   }
 
-  function switchChain(c: number): void {
+  function switchChain(c: number, fromSound = false): void {
     currChain = c;
-    elements.push({ type: 'chain', c: currChain });
+    const element = { type: 'chain' as const, c: currChain };
+    rememberChainOrigin(element, fromSound);
+    elements.push(element);
     for (const row of map) row.fill(0);
   }
 
-  /** `on` and `touch` press the pad: its sound advances, and a wormhole on it switches the chain. */
+  // Negative waits can put a later press's deadline first; equal deadlines retain press order.
+  function applyDue(until: number): void {
+    while (pending.peek() && pending.peek()!.at <= until) {
+      const next = pending.pop()!;
+      if (next.at > songTime) {
+        elements.push({ type: 'delay', delay: next.at - songTime });
+        songTime = next.at;
+      }
+      switchChain(next.chain, true);
+    }
+  }
+
+  /** A press advances its queue now; its wormhole changes chains later in song time. */
   function press(x: number, y: number, touch: boolean): void {
     elements.push({ type: 'on', x, y, currChain, num: map[x][y] });
     if (touch) elements.push({ type: 'off', x, y, currChain });
     const sound = soundGet(currChain, x, y, map[x][y]);
     map[x][y]++;
-    if (sound && sound.wormhole !== NO_WORMHOLE) switchChain(sound.wormhole);
+    if (sound && sound.wormhole !== NO_WORMHOLE) {
+      pending.push({ at: songTime + wormholeDelayMs, chain: sound.wormhole, order: order++ });
+    }
   }
 
   for (const line of splitLines(text)) {
@@ -730,6 +765,7 @@ async function parseAutoPlay(
       continue;
     }
 
+    applyDue(songTime);
     switch (option) {
       case 'on':
       case 'o':
@@ -745,14 +781,26 @@ async function parseAutoPlay(
         break;
       case 'chain':
       case 'c':
+        pending.clear();
         switchChain(chain);
         break;
       case 'delay':
       case 'd':
-        elements.push({ type: 'delay', delay });
+        if (delay <= 0) {
+          // Retain authored nonpositive waits and their contribution to the delay sum.
+          elements.push({ type: 'delay', delay });
+          songTime += delay;
+        } else {
+          const end = songTime + delay;
+          applyDue(end);
+          if (end > songTime) elements.push({ type: 'delay', delay: end - songTime });
+          songTime = end;
+        }
         break;
     }
   }
 
+  // Normal completion applies the tail at the final song time, without extending the file.
+  for (let next = pending.pop(); next; next = pending.pop()) switchChain(next.chain, true);
   return { elements };
 }

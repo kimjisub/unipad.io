@@ -6,6 +6,11 @@ inputs; manual and autoPlay wormhole timing; and autoPlay's authority over its s
 Subtracting one from -2147483648 must store -2147483649 on every platform: there is no Android
 representation exception. G6 also specifies archive-name decoding even with a wrong UTF-8 flag,
 Info-ZIP Unicode paths, refusal of multiple packs in one archive, and Ogg Opus playback (A-07).
+G6 song-time revision, 2026-11-24: autoPlay wormholes apply 100 ms after a press in song time,
+including silence on an unmapped pad before the deadline. Explicit file chains cancel pending switches;
+normal end applies the remaining switches without a tail wait, while stop cancels them. Queues reset
+only when a switch is applied. This replaces the earlier immediate autoPlay rule in P-03/P-04,
+RA-04 and RS-08/RS-09; earlier observations and proposals remain historical, not current guidance.
 The current availability of each rule is measured by tests, not implied by this specification.
 
 G6 archive identity revision, 2026-10-23: S-12 is judged by the original archive entry name and
@@ -217,9 +222,9 @@ These screen and hardware conventions need app or device tests; a parser result 
 | Item | Rule | Kind | Basis | Where |
 |---|---|---|---|---|
 | P-01 | The commands `on`/`o`, `off`/`f`, `touch`/`t`, `chain`/`c` and `delay`/`d`. | parse | doc | auto-play.mdx Commands |
-| P-02 | `on` and `touch` advance the pad's sound queue number by one, and `chain` sets every pad's number back to 0. | parse | doc | auto-play.mdx Behavior |
-| P-03 | When the sound an `on` plays has a wormhole, the chain becomes that chain from there on and the numbers go back to 0. | parse | doc | auto-play.mdx Behavior |
-| P-04 | `touch` is `on` + `off`; a touched sound with a wormhole switches the parsed chain as in P-03. | parse | doc | AP-006; Android UniPackFolder, iOS UniPackFolder and web parser now all emit on, off, chain. |
+| P-02 | `on` and `touch` advance the pad's sound queue number by one. Applying a chain switch sets every pad's number back to 0; scheduling a switch does not reset numbers. | parse | doc | auto-play.mdx Behavior |
+| P-03 | When an `on` selects a sound with a wormhole, schedule its chain switch for 100 ms after that press in song time, following RA-04. Before that switch, resolve presses on the current chain, including silence on unmapped pads. Reset queue indices when the switch is applied, not when scheduled. | parse | doc | auto-play.mdx Behavior |
+| P-04 | `touch` is `on` + immediate `off` on the press's chain. A touched sound's wormhole follows P-03 and RA-04; neither the release nor an unmapped pad applies it early. | parse | doc | AP-006; on and immediate off stay on the press chain; RA-04 determines the later chain event. |
 | P-05 | A line with a coordinate or chain outside the pack is skipped with a range warning. | parse | doc | auto-play.mdx Notes |
 | P-06 | A number column that is not an integer, or missing, skips the line with a format warning. | parse | apps agree | the basis of cases.mjs AP-M |
 | P-07 | A line with an unknown command is skipped with a format warning. | parse | apps agree | cases.mjs AP-M10 (AGREED) |
@@ -236,9 +241,9 @@ These screen and hardware conventions need app or device tests; a parser result 
 | RS-05 | Releasing an input stops only an endless sound owned by that press; finite sounds finish. When several player inputs press one pad, each release stops only the endless sound that input started; only the pressed indicator waits for the last release. Manual and autoPlay presses have separate ownership: one release never cancels the other source's current sound. | output | G6 decision | key-sound.mdx; screen input tests must exercise distinct identities, not a recorder that substitutes one player input. |
 | RS-06 | When the chain changes while a pad is held, its release still stops the endless sound its press started. | output | apps agree | Not in the docs. |
 | RS-07 | Pressing the same pad in the same chain again replaces its previous sound with the next one. Sounds from different pads or different chains may overlap. | output | G6 decision | key-sound.mdx; the voice key is (chain,x,y), preserving chain transition sounds. |
-| RS-08 | Pressing a sound with a wormhole switches to that chain, and the next press plays a sound of the new chain. | output | doc | key-sound.mdx syntax and example |
-| RS-09 | A manually pressed sound's wormhole switches the chain 100 ms after its press unless the player directly selects a chain on screen, by keyboard or on a Launchpad during that wait. That later choice cancels the pending switch and stays selected. Closing the play screen also cancels pending manual wormholes. AutoPlay applies its parsed wormhole immediately instead, without a second delayed switch (RA-04); LED chain commands keep their own rules. | output | G6 decision | Revised 2026-10-23; key-sound.mdx and auto-play.mdx; a later explicit player selection takes precedence over an earlier press. |
-| RS-10 | Every change of chain (by the user, a wormhole, a light or autoPlay, even to the same chain) sets the sound and light queues of every pad of that chain back to their first entry. | output | G1 decision | auto-play.mdx speaks of the autoPlay `chain` only. The three play screens do it on every change (Android `PlayActivityViewModel.kt` 454-462, iOS `PlayViewModel.swift` 476-487, web `useUniPadEngine.ts` 358-381). Decided: the three apps' behaviour becomes the grammar. |
+| RS-08 | Pressing a sound with a wormhole schedules its chain switch under RS-09. Presses before that switch use the current chain; presses at or after the switch use the destination chain unless a later explicit chain choice has cancelled the pending switch. | output | doc | key-sound.mdx syntax and example |
+| RS-09 | A manually pressed sound's wormhole switches the chain 100 ms after its press unless a later direct player chain selection cancels it; closing the play screen cancels pending manual switches. AutoPlay also uses a 100 ms song-time delay, with explicit-chain cancellation and end-of-file handling in RA-04, without a second manual switch. LED chain commands keep their existing rules. | output | G6 decision | Revised 2026-11-24; key-sound.mdx and auto-play.mdx; a later explicit player selection takes precedence over an earlier press. |
+| RS-10 | Every applied change of chain (by the user, a wormhole, a light or autoPlay, even to the same chain) sets the sound and light queues of every pad of that chain back to their first entry. Scheduling a future switch does not reset queues. | output | G1 decision | auto-play.mdx speaks of the autoPlay `chain` only. The three play screens do it on every change (Android `PlayActivityViewModel.kt` 454-462, iOS `PlayViewModel.swift` 476-487, web `useUniPadEngine.ts` 358-381). Decided: the three apps' behaviour becomes the grammar. |
 
 ### RL. Running: lights (12)
 
@@ -264,7 +269,7 @@ These screen and hardware conventions need app or device tests; a parser result 
 | RA-01 | autoPlay presses and releases from top to bottom, waiting for each `delay`. Commands without a delay between them come out at the same time. | output | doc | auto-play.mdx Behavior and Notes |
 | RA-02 | autoPlay's presses and releases sound and light as if pressed by hand. | output | doc | auto-play.mdx ("play sound + start LED") |
 | RA-03 | Leaving the play screen stops autoPlay, and no press follows. | output | apps agree | the basis of cases.mjs RUN-A-002 |
-| RA-04 | AutoPlay's parsed chain and wormholes switch at their scripted time. Do not also schedule the sound's 100 ms manual wormhole, and cancel pending autoPlay changes when stopped. Before each scripted press or release restore the parsed chain; an LED or user chain change lasts only until that event. Queue numbers come from parsing. | output | G6 decision | auto-play.mdx; chain and sound event ordering must be observed at each checkpoint. |
+| RA-04 | AutoPlay schedules each sound's wormhole 100 ms after its press in song time. Before resolving a scripted event, apply due switches in order. A press before a pending switch continues the current chain's queue. If that pad has no valid sound mapping on that chain, it is silent; do not bring switches forward. An explicit script chain cancels remaining switches. Split delays without extending song time, apply remaining switches at normal end of file, and cancel them on stop. Do not also schedule the manual sound's delayed switch. Before each scripted press or release restore the chain calculated from the file; player and LED chain changes last only until that event. Queue numbers come from parsing. | output | G6 decision | auto-play.mdx; chain and sound event ordering must be observed at each checkpoint. |
 
 ### PB. Product behavior (9)
 

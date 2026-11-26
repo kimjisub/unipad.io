@@ -1214,3 +1214,175 @@ test('opening the menu lets go of a held key, keeps autoplay going and plays no 
   expect(await soundRequests(page), 'a key pressed after the menu closes plays').toBe(before + 2);
   await page.keyboard.up('1');
 });
+
+// Synthetic version of the short wormhole-to-voice gap: finite source-chain voice versus
+// looping destination drum. No third-party pack or audio is included.
+for (const mapped of [true, false]) test(`song-time wormhole keeps the early ${mapped ? 'voice' : 'silent pad'} on the source chain`, async ({ page }, info) => {
+  await open(page, 'd 500\non 1 1\nd 1\ntouch 1 2\nd 199', false, {
+    keySound: `1 1 1 tone.wav 1 2\n${mapped ? '1 1 2 tone.wav 1\n' : ''}2 1 2 tone.wav 2`, leds: {},
+  });
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(499);
+  await page.clock.runFor(20);
+  expect(await page.evaluate(() => window.browserProbe.audio.starts.map(s => s.loop))).toEqual(mapped ? [false, false] : [false]);
+  await expect(page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await snapshot(page, info, 'source-chain-before-deadline');
+  await page.clock.fastForward(90);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await snapshot(page, info, 'destination-after-100ms');
+});
+
+for (const stop of [false, true]) test(`song-time wormhole ${stop ? 'stop cancels' : 'pause freezes and resume preserves'} the pending switch`, async ({ page }, info) => {
+  await open(page, 'd 500\non 1 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Auto').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(549);
+  expect(await soundRequests(page)).toBe(1);
+  await (stop ? mode(page, 'Auto') : page.getByRole('button', { name: 'Pause', exact: true })).dispatchEvent('click');
+  await page.clock.fastForward(2000);
+  const first = page.getByRole('button', { name: 'Chain 9', exact: true }).locator('div.z-10');
+  await expect(first).toHaveCount(1);
+  await snapshot(page, info, stop ? 'stopped-before-deadline' : 'paused-before-deadline');
+  if (!stop) {
+    await page.getByRole('button', { name: 'Play', exact: true }).dispatchEvent('click');
+    await page.clock.runFor(20);
+    await expect(first).toHaveCount(1);
+    await page.clock.runFor(50);
+    await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+    expect(await soundRequests(page)).toBe(1);
+    await snapshot(page, info, 'resumed-switch-without-repress');
+  }
+});
+
+test('step practice keeps performed pads after a manual wormhole and a slow second press', async ({ page }, info) => {
+  await open(page, 'on 1 1\noff 1 1\nd 1\non 1 2\noff 1 2\nd 199\non 2 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click');
+  await page.clock.runFor(20);
+  const guide = (pad: string) => page.locator(`[data-pad="${pad}"] .z-\\[25\\]`);
+  const press = async (pad: string, pointerId: number) => {
+    const target = page.locator(`[data-pad="${pad}"]`);
+    const box = (await target.boundingBox())!;
+    const pointer = { pointerId, pointerType: 'touch', clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, bubbles: true };
+    await target.dispatchEvent('pointerdown', pointer);
+    await target.dispatchEvent('pointerup', pointer);
+  };
+  await expect(guide('0,0')).toHaveCount(1);
+  await expect(guide('0,1')).toHaveCount(1);
+  await press('0,0', 1);
+  await page.clock.runFor(100);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await page.clock.fastForward(300);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'step-return-after-manual-wormhole');
+  await expect(guide('0,0')).toHaveCount(0);
+  await expect(guide('0,1')).toHaveCount(1);
+  await press('0,1', 2);
+  await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(guide('1,0')).toHaveCount(1);
+  await expect(guide('0,0')).toHaveCount(0);
+  expect(await soundRequests(page)).toBe(2);
+});
+
+for (const firstKey of ['1', '2']) test(`step practice preserves the original 50 ms group after changing chains, first=${firstKey}`, async ({ page }, info) => {
+  await open(page, 'on 1 1\nd 40\non 1 2\nd 20\non 2 1\nd 1000', true, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(padGuide(page, '1,0')).toHaveCount(0);
+  await page.keyboard.press(firstKey); await page.clock.runFor(100);
+  if (firstKey === '2') await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20); await page.clock.fastForward(300);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, `original-step-boundary-first-${firstKey}`);
+  await expect(padGuide(page, firstKey === '1' ? '0,0' : '0,1')).toHaveCount(0);
+  await expect(padGuide(page, firstKey === '1' ? '0,1' : '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '1,0')).toHaveCount(0);
+  await page.keyboard.press(firstKey === '1' ? '2' : '1'); await page.clock.runFor(20);
+  await expect(padGuide(page, '1,0')).toHaveCount(1);
+});
+
+for (const late of [false, true]) test(`guide waits for a final same-time cross-chain input, late=${late}`, async ({ page }, info) => {
+  await open(page, 'd 1000\non 1 1\nc 2\non 1 2', false, { leds: {} });
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(1);
+  if (late) await page.clock.fastForward(1200);
+  else { await page.clock.fastForward(199); await page.clock.fastForward(800); }
+  await page.clock.runFor(70);
+  await snapshot(page, info, 'final-cross-chain-input-still-owed');
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(2);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await snapshot(page, info, 'final-cross-chain-input-displayed');
+  await page.clock.runFor(60);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'false');
+});
+
+for (const gap of [1, 40]) test(`guide handoff while away keeps a performed step consumed, gap=${gap}`, async ({ page }, info) => {
+  await open(page, `on 1 1\nd ${gap}\non 1 2\nd ${100 - gap}\nc 2\nd 100\non 1 2\nd 1000`, false, { leds: {} });
+  await mode(page, 'Step').dispatchEvent('click'); await page.clock.runFor(20);
+  await page.keyboard.press('2'); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(100);
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(20);
+  await page.getByRole('button', { name: 'Chain 9', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await snapshot(page, info, 'guide-handoff-retains-performed-step');
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await page.clock.runFor(60);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+});
+
+test('song-time wormhole practice guides the early voice on the original chain', async ({ page }, info) => {
+  await open(page, 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 1 3\nd 1000', false, {
+    keySound: '1 1 1 tone.wav 1 2\n1 1 2 tone.wav\n2 1 3 tone.wav', leds: {},
+  });
+  await mode(page, 'Guide').dispatchEvent('click');
+  await page.clock.runFor(1);
+  await page.clock.fastForward(219);
+  // Both first-chain notes fall inside the 800 ms lookahead; neither asks for chain two.
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(0);
+  await snapshot(page, info, 'practice-source-chain-voice');
+  await page.clock.fastForward(180);
+  await expect(padGuide(page, '0,0')).toHaveCount(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(0);
+  await snapshot(page, info, 'practice-source-chain-at-400ms');
+  await page.clock.fastForward(600);
+  await expect(padGuide(page, '0,0')).toHaveCount(0);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Chain 10', exact: true }).locator('div.z-10')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(20);
+  await expect(padGuide(page, '0,2')).toHaveCount(1);
+  await snapshot(page, info, 'practice-next-chain-after-source-notes');
+});
+
+for (const gap of [0, 1, 2, 3]) test(`next-chain final guide stays visible across a ${gap} ms boundary`, async ({ page }, info) => {
+  await open(page, `d 1000\non 1 1\nc 2\nd ${gap}\non 1 2`, false, { leds: {} });
+  await mode(page, 'Guide').dispatchEvent('click'); await page.clock.runFor(1);
+  await page.clock.fastForward(199); await page.clock.fastForward(800); await page.clock.runFor(1);
+  await page.clock.runFor(300);
+  await page.getByRole('button', { name: 'Chain 10', exact: true }).dispatchEvent('pointerdown');
+  await page.clock.runFor(2);
+  await snapshot(page, info, 'next-chain-first-cue');
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.runFor(49);
+  await expect(padGuide(page, '0,1')).toHaveCount(1);
+  await page.clock.runFor(1);
+  await expect(padGuide(page, '0,1')).toHaveCount(0);
+  await expect(mode(page, 'Guide')).toHaveAttribute('aria-pressed', 'false');
+});

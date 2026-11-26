@@ -551,10 +551,10 @@ export function buildCases(palette) {
     basis: [doc('auto-play.mdx', 'The on event advances to the next sound in the circular queue; whenever the chain changes, every button of that chain starts its circular queue from the first sound and LED again')],
   });
   add({
-    id: 'AP-003', items: ['P-03'], area: 'autoPlay', title: 'a sound with a wormhole switches the chain after its on',
+    id: 'AP-003', items: ['P-03'], area: 'autoPlay', title: 'same-time presses stay on the original chain before normal-end wormholes',
     ...play(lines('on 1 1', 'on 1 1'), lines('1 1 1 a.wav 1 2', '2 1 1 b.wav')),
-    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(1, 0, 0, [q('b.wav')])], autoPlay: [ap.on(0, 0, 0, 0), ap.chain(1), ap.on(0, 0, 1, 0)] }),
-    basis: [doc('auto-play.mdx', 'If a sound has a wormhole set, executing on will automatically switch to that chain')],
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(1, 0, 0, [q('b.wav')])], autoPlay: [ap.on(0, 0, 0, 0), ap.on(0, 0, 0, 1), ap.chain(1), ap.chain(1)] }),
+    basis: [doc('auto-play.mdx', 'Sound wormholes apply after 100 ms of song time, or at normal end without adding a wait; queues reset only on application')],
   });
   add({
     id: 'AP-004', items: ['P-05'], area: 'autoPlay', title: 'coordinates and chains outside the pack are skipped',
@@ -572,10 +572,10 @@ export function buildCases(palette) {
     basis: [doc('auto-play.mdx', 'Commands table, Shorthand column: o, f, t, c, d')],
   });
   add({
-    id: 'AP-006', items: ['P-04'], area: 'autoPlay', title: 'a touch of a pad whose sound has a wormhole switches the chain',
+    id: 'AP-006', items: ['P-04'], area: 'autoPlay', title: 'same-time touches release on the original chain before normal-end wormholes',
     ...play(lines('touch 1 1', 'touch 1 1'), lines('1 1 1 a.wav 1 2', '2 1 1 b.wav')),
-    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(1, 0, 0, [q('b.wav')])], autoPlay: [ap.on(0, 0, 0, 0), ap.off(0, 0, 0), ap.chain(1), ap.on(0, 0, 1, 0), ap.off(0, 0, 1)] }),
-    basis: [doc('auto-play.mdx', 'touch is on + off in one line, and an on of a sound with a wormhole switches to that chain; the pad is released on the chain it was pressed on')],
+    expected: loaded({ sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), cell(1, 0, 0, [q('b.wav')])], autoPlay: [ap.on(0, 0, 0, 0), ap.off(0, 0, 0), ap.on(0, 0, 0, 1), ap.off(0, 0, 0), ap.chain(1), ap.chain(1)] }),
+    basis: [doc('auto-play.mdx', 'touch is on + immediate off on the press chain; its wormhole uses the same song-time delay and normal-end handling as on')],
   });
   const badAuto = [
     ['M01', 'x is not a number', 'on a 1'],

@@ -69,6 +69,7 @@ export class AutoPlayRunner {
   private guideTimelineCache: GuideEvent[] = [];
   private guideIndex = 0;
   private waitingForChain = -1;
+  private chainGuidePending = false;
   // Step scans have no song clock to freeze; only timed guides start a wait clock.
   private waitStartTime: number | null = null;
   private activeGuides = new Map<number, number>();
@@ -94,6 +95,7 @@ export class AutoPlayRunner {
   private stepScanned = false;
   private stepConsumedInput = false;
   private stepStartProgress = 0;
+  private stepGroupEnd: number | null = null;
   private stepScanOrigin: number | null = null;
   private stepChainValue = -1;
 
@@ -211,6 +213,7 @@ export class AutoPlayRunner {
         if (this.practiceGuide && this.waitingForChain >= 0) {
           if (this.chainValue() === this.waitingForChain) {
             this.clearChainWait(currTime);
+            this.chainGuidePending = true;
             this.listener.onRemoveGuide();
           }
         } else {
@@ -225,6 +228,8 @@ export class AutoPlayRunner {
               }
               if (event.timeMs <= elapsed + GUIDE_LOOKAHEAD_MS) {
                 if (event.chain !== this.chainValue()) {
+                  // Finish the notes already shown on this chain before asking for the next one.
+                  if (this.activeGuides.size > 0) break;
                   this.waitingForChain = event.chain;
                   this.waitStartTime = currTime;
                   this.turnOffActiveGuides();
@@ -233,15 +238,15 @@ export class AutoPlayRunner {
                   break;
                 }
                 const authoredTarget = this.startTime + event.timeMs;
-                // Every overdue note first enabled on step resume needs a visible LED update,
-                // including notes beyond the scanned group when pause beat a late tick.
-                // Keep that display separate from song time and later notes' deadlines.
-                const overdueOnResume = this.restoringStepGuides && authoredTarget <= currTime;
-                const targetWallTimeMs = overdueOnResume
-                  ? currTime + GUIDE_LED_UPDATE_INTERVAL_MS : authoredTarget;
+                // A late tick or chain wait must still show a newly enabled note. This
+                // visibility window does not change song time or later note deadlines.
+                const overdue = (this.chainGuidePending && authoredTarget < currTime + GUIDE_LED_UPDATE_INTERVAL_MS) || (authoredTarget <= currTime &&
+                  (this.restoringStepGuides || currTime - authoredTarget > LOOP_INTERVAL_MS));
+                const targetWallTimeMs = overdue
+                  ? Math.max(authoredTarget, currTime + GUIDE_LED_UPDATE_INTERVAL_MS) : authoredTarget;
                 this.activeGuides.set(this.guideKey(event.x, event.y), targetWallTimeMs);
                 this.listener.onGuidePadOn(event.x, event.y, targetWallTimeMs);
-                if (overdueOnResume) {
+                if (overdue) {
                   this.listener.onGuideLedUpdate(event.x, event.y, GUIDE_VELOCITIES[GUIDE_VELOCITIES.length - 1]);
                 }
                 this.guideIndex++;
@@ -250,7 +255,10 @@ export class AutoPlayRunner {
               }
             }
 
-            if (this.waitingForChain < 0) this.restoringStepGuides = false;
+            if (this.waitingForChain < 0) {
+              this.restoringStepGuides = false;
+              this.chainGuidePending = false;
+            }
 
             // Guide expiration + LED brightness
             if (this.activeGuides.size > 0) {
@@ -281,6 +289,8 @@ export class AutoPlayRunner {
             this.suspendedAt === null &&
             this.waitingForChain < 0 &&
             this.delayAccum <= currTime - this.startTime &&
+            (!this.practiceGuide || this.guideIndex >= this.guideTimeline.length ||
+              this.progress < this.guideTimeline[this.guideIndex].index) &&
             this.progress < autoPlay.elements.length
           ) {
             if (this.skippedStepLines.delete(this.progress)) {
@@ -329,7 +339,21 @@ export class AutoPlayRunner {
 
           if (currentChain !== this.stepChainValue && this.stepChainValue >= 0) {
             if (this.stepScanned) {
-              this.setProgress(this.stepStartProgress);
+              // Re-scan only unperformed members. A manual wormhole may move the
+              // chain while the player is still completing this step group.
+              const elements = autoPlay.elements;
+              if (this.stepPendingPads.size > 0) this.stepGroupEnd ??= this.progress;
+              for (let i = this.stepStartProgress; i < this.progress; i++) {
+                const element = elements[i];
+                if (element.type !== 'on' && element.type !== 'off') continue;
+                if (!this.stepPendingPads.has(this.guideKey(element.x, element.y))) {
+                  this.skippedStepLines.add(i);
+                }
+              }
+              // Keep all authored gaps from the group's start, including those before a
+              // performed member. Re-anchoring at the first pending pad enlarges the group.
+              if (this.stepPendingPads.size > 0) this.setProgress(this.stepStartProgress);
+              this.preserveStepPresses = true;
               this.stepPendingPads.clear();
               this.stepScanned = false;
             }
@@ -351,6 +375,7 @@ export class AutoPlayRunner {
           }
 
           if (needsScan) {
+            if (this.stepGroupEnd !== null && this.progress >= this.stepGroupEnd) this.stepGroupEnd = null;
             // Lines skipped for an earlier autoplay pass expire on entering practice. A quick
             // return from timed guidance must still remember performed chord members.
             if (!this.preserveStepPresses) this.skippedStepLines.clear();
@@ -457,6 +482,7 @@ export class AutoPlayRunner {
 
   /** Settle a timed gate before any mode, chain or position change can discard it. */
   private clearChainWait(now?: number): void {
+    this.chainGuidePending = false;
     this.settleChainWait(now);
     this.waitingForChain = -1;
     this.waitStartTime = null;
@@ -566,7 +592,7 @@ export class AutoPlayRunner {
   leaveStepPractice(): boolean {
     this.drainPressedKeys();
     const scannedPads = this.hasScannedStepPads;
-    const skippedLines = new Set<number>();
+    const skippedLines = new Set(this.skippedStepLines);
     let pendingStart: number | null = null;
     const elements = this.unipack.autoPlay?.elements;
     if (this.stepPendingPads.size > 0 && elements) {
@@ -583,11 +609,12 @@ export class AutoPlayRunner {
     if (this.practiceGuide && this.stepScanOrigin !== null && elements) {
       let songTimeMs = 0;
       let lastPressedTimeMs: number | null = null;
-      for (let i = 0; i < this.progress; i++) {
+      for (let i = 0; i < Math.max(this.progress, this.stepGroupEnd ?? 0); i++) {
         const element = elements[i];
         if (element.type === 'delay') songTimeMs += element.delay;
         if (this.stepConsumedInput && i >= this.stepScanOrigin && element.type === 'on' &&
-          (i < this.stepStartProgress || !this.stepPendingPads.has(this.guideKey(element.x, element.y)))) {
+          (this.skippedStepLines.has(i) || (i < this.progress &&
+            (i < this.stepStartProgress || !this.stepPendingPads.has(this.guideKey(element.x, element.y)))))) {
           lastPressedTimeMs = songTimeMs;
         }
       }
@@ -643,6 +670,7 @@ export class AutoPlayRunner {
     this.stepScanned = false;
     this.stepConsumedInput = false;
     this.stepStartProgress = 0;
+    this.stepGroupEnd = null;
     this.stepScanOrigin = null;
     this.stepChainValue = -1;
   }
@@ -672,7 +700,7 @@ export class AutoPlayRunner {
     const newPending = new Set<number>();
     let totalDelayMs = 0;
 
-    scanLoop: while (this.progress < autoPlay.elements.length) {
+    scanLoop: while (this.progress < (this.stepGroupEnd ?? autoPlay.elements.length)) {
       if (this.preserveStepPresses && this.skippedStepLines.has(this.progress)) {
         this.setProgress(this.progress + 1);
         continue;

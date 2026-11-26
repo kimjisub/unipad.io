@@ -1,4 +1,4 @@
-// Expectations for G6. expectedFailing names apps whose current behavior needs a correction;
+// Expectations for G6. expectedFailing records apps needing a correction at the comparison baseline;
 // it is documentation, never an exception to the expected result or an assertion.
 import { ASSET_GENERATORS, sha256, anim, cell, decision, ev, ledCell, lines, loaded, pack, q, refused, STD_INFO } from './lib.mjs';
 
@@ -109,10 +109,10 @@ export function g6Cases() {
     pack({ keySound: '', keyLed: { '1 1 1 0': endless }, autoPlay: 'on 1 1\nd 100\nc 2\noff 1 1\nd 1000' }),
     [{ do: 'autoplay', toPads: true }, advance(50), observe, advance(100), observe],
     [[['autoOn', 0, 0], on], [['autoChain', 1], ['autoOff', 0, 0], off]], ['ios', 'web']);
-  run('RUN-G605', ['RA-04', 'RS-09'], 'autoPlay applies a wormhole immediately without a delayed second switch',
+  run('RUN-G605', ['RA-04', 'RS-09'], 'an explicit autoPlay chain cancels a pending song-time wormhole without a second manual switch',
     pack({ info: STD_INFO.replace('chain=2', 'chain=3'), keySound: '1 1 1 a.wav 1 2', autoPlay: 'on 1 1\nd 50\nc 3\nd 200' }),
     [{ do: 'autoplay', toPads: true }, advance(20), observe, advance(40), observe, advance(100), observe],
-    [[['autoOn', 0, 0], snd(0), ['autoChain', 1]], [['autoChain', 2]], []], ['android', 'ios', 'web']);
+    [[['autoOn', 0, 0], snd(0)], [['autoChain', 2]], []], ['android', 'ios', 'web']);
   run('RUN-G606', ['RS-09'], 'a later manual chain selection cancels a pending manual wormhole',
     pack({ info: STD_INFO.replace('chain=2', 'chain=3'), keySound: '1 1 1 a.wav 1 2' }),
     [press(), observe, advance(50), chain(2), observe, advance(60), observe],
@@ -155,6 +155,19 @@ export function g6Cases() {
   run('RUN-G616', ['RA-04', 'RS-09'], 'stopping autoPlay cancels any delayed chain change from its sound',
     pack({ info: STD_INFO.replace('chain=2', 'chain=3'), keySound: '1 1 1 a.wav 1 2', autoPlay: 'on 1 1\nd 1000' }),
     [{ do: 'autoplay', toPads: true }, advance(20), observe, { do: 'autoplayOff' }, advance(150), observe],
-    [[['autoOn', 0, 0], snd(0), ['autoChain', 1]], []], ['android', 'ios', 'web'], { screenInputs: true });
+    [[['autoOn', 0, 0], snd(0)], []], ['android', 'ios', 'web'], { screenInputs: true });
+  for (const [id, mapped] of [['AP-G602', true], ['AP-G603', false]]) {
+    add(id, ['P-03', 'P-04', 'RA-04', 'RS-09'], mapped
+      ? 'an early voice stays on the original chain until the 100 ms wormhole'
+      : 'an unmapped early press stays silent and never advances a wormhole',
+    pack({
+      keySound: lines('1 1 1 a.wav 1 2', ...(mapped ? ['1 1 2 voice.wav'] : []), '2 1 2 drum.wav'),
+      sounds: ['a.wav'], extra: [{ path: 'sounds/voice.wav', asset: 'tone-440' }, { path: 'sounds/drum.wav', asset: 'tone-660' }],
+      autoPlay: lines('on 1 1', 'd 1', 'touch 1 2', 'd 199'),
+    }), loaded({
+      sounds: [cell(0, 0, 0, [q('a.wav', 0, 1)]), ...(mapped ? [cell(0, 0, 1, [q('voice.wav')])] : []), cell(1, 0, 1, [q('drum.wav')])],
+      autoPlay: [['on', 0, 0, 0, 0], ['delay', 1], ['on', 0, 1, 0, 0], ['off', 0, 1, 0], ['delay', 99], ['chain', 1], ['delay', 100]],
+    }));
+  }
   return cases;
 }

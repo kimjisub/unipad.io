@@ -71,6 +71,173 @@ describe('AutoPlayRunner', () => {
     clock.uninstall();
   });
 
+  for (const gap of [0, 1, 2, 3]) for (const trailing of [false, true]) test(`first guide on another chain is visible at the deadline boundary gap=${gap}, trailing=${trailing}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: `d 1000\non 1 1\nc 2\nd ${gap}\non 1 2${trailing ? '\nd 500\non 1 1' : ''}`,
+    }));
+    let chain = 0, ended = 0;
+    const screen = new Set<string>(), targets: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() { ended++; }, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {}, onGuideChainOn() {},
+      onGuidePadOn(x, y, target) { screen.add(`${x},${y}`); targets.push(target); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.launch(); clock.tick(1); clock.tick(199); clock.tick(800); clock.tick(1); clock.tick(300);
+    chain = 1; clock.tick(1); clock.tick(1);
+    assert.equal(screen.has('0,1'), true, 'the first cue must survive its enabling tick');
+    assert.equal(ended, 0);
+    clock.tick(49);
+    assert.equal(screen.has('0,1'), true, 'the cue remains visible for at least 50 ms');
+    clock.tick(1);
+    assert.equal(screen.has('0,1'), false);
+    if (trailing) assert.equal(targets.at(-1), 2801 + gap, 'the following input retains its authored deadline');
+    else assert.equal(ended, 1);
+    runner.stop();
+  });
+
+  for (const late of [false, true]) test(`guide retains a final cross-chain note until it can be displayed, late=${late}`, async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\non 1 1\nc 2\non 1 2',
+    }));
+    let chain = 0, ended = 0;
+    const screen = new Set<string>(), chains: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() { ended++; }, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {},
+      onGuideChainOn(c) { chains.push(c); }, onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.launch(); clock.tick(1);
+    if (late) clock.tick(1200);
+    else { clock.tick(199); clock.tick(800); }
+    assert.equal(ended, 0, 'an unshown final note still belongs to the song');
+    clock.tick(50); clock.tick(1);
+    assert.deepEqual(chains, [1]); assert.equal(runner.active, true);
+    chain = 1; clock.tick(1); clock.tick(1);
+    assert.deepEqual([...screen], ['0,1'], 'the final note needs an observable guide after choosing its chain');
+    assert.equal(ended, 0);
+    clock.tick(50); assert.equal(ended, 1);
+    runner.stop();
+  });
+
+  for (const gap of [1, 40]) for (const guide of [false, true]) {
+    test(`leaving a rewound step on another chain preserves a performed later member, gap=${gap}, guide=${guide}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav\n1 1 2 a.wav\n2 1 2 a.wav', 'sounds/a.wav': SILENT_WAV,
+        autoPlay: `on 1 1\nd ${gap}\non 1 2\nd ${100 - gap}\nc 2\nd 100\non 1 2\nd 1000`,
+      }));
+      let chain = 0;
+      const shown: string[] = [], notes: string[] = [];
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onGuideChainOn() {}, onPadTouchOff() {}, onGuidePadOff() {}, onGuideLedUpdate() {}, onRemoveGuide() {},
+        onChainChange(c) { chain = c; }, onPadTouchOn(x, y) { notes.push(`${x},${y}`); },
+        onGuidePadOn(x, y) { shown.push(`${x},${y}`); },
+      }, () => chain, () => {}, () => {}, () => {});
+      runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false; runner.launch(); clock.tick(1);
+      runner.stepPadPressed(0, 1); clock.tick(1); chain = 1; clock.tick(100);
+      shown.length = 0; runner.play(guide); clock.tick(1); chain = 0; clock.tick(1); clock.tick(1);
+      assert.deepEqual(guide ? shown : notes, ['0,0'], 'the performed member stays consumed even beyond rewound progress');
+      if (guide) {
+        clock.tick(50); clock.tick(1); chain = 1; clock.tick(1); clock.tick(1);
+        assert.equal(shown.at(-1), '0,1', 'a later input at the same coordinate on another chain is still owed');
+      } else {
+        clock.tick(200);
+        assert.deepEqual(notes, ['0,0', '0,1']);
+      }
+      runner.stop();
+    });
+  }
+
+  for (const [firstGap, secondGap] of [[40, 20], [20, 40], [49, 1], [0, 50]]) {
+    for (const pressedY of [0, 1]) test(`chain return retains the authored step boundary ${firstGap}+${secondGap}, pressed=${pressedY}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav', 'sounds/a.wav': SILENT_WAV,
+        autoPlay: `on 1 1\nd ${firstGap}\non 1 2\nd ${secondGap}\non 2 1\nd 1000`,
+      }));
+      let chain = 0;
+      const screen = new Set<string>();
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onGuideChainOn() {}, onChainChange() {},
+        onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {},
+        onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+        onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+      }, () => chain, () => {}, () => {}, () => {});
+      runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false;
+      runner.launch(); clock.tick(1);
+      assert.deepEqual([...screen], ['0,0', '0,1']);
+      runner.stepPadPressed(0, pressedY); clock.tick(1);
+      chain = 1; clock.tick(1); clock.tick(300); chain = 0; clock.tick(1);
+      assert.deepEqual([...screen], [`0,${1 - pressedY}`], 'the next group must stay beyond the original 50 ms boundary');
+      runner.stepPadPressed(0, 1 - pressedY); clock.tick(1);
+      assert.deepEqual([...screen], ['1,0']);
+      runner.stop();
+    });
+  }
+
+  test('guide keeps source-chain notes until their deadlines before requesting the next chain', async () => {
+    const pack = await parseUniPack(await packZip({
+      info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav 1 2\n1 1 2 a.wav\n2 2 1 a.wav',
+      'sounds/a.wav': SILENT_WAV,
+      autoPlay: 'd 1000\non 1 1\nd 1\ntouch 1 2\nd 199\ntouch 2 1\nd 1000',
+    }));
+    let chain = 0;
+    const screen = new Set<string>();
+    const chains: number[] = [];
+    const runner = new AutoPlayRunner(pack, {
+      onStart() {}, onEnd() {}, onProgressUpdate() {}, onChainChange() {}, onPadTouchOn() {}, onPadTouchOff() {}, onGuideLedUpdate() {},
+      onGuideChainOn(c) { chains.push(c); }, onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+      onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+    }, () => chain, () => {}, () => {}, () => {});
+    runner.practiceGuide = true; runner.launch(); clock.tick(1); clock.tick(219);
+    assert.deepEqual([...screen], ['0,0', '0,1']);
+    clock.tick(180);
+    assert.deepEqual([...screen], ['0,0', '0,1'], 'lookahead for a later chain must not discard current notes');
+    assert.deepEqual(chains, []);
+    clock.tick(600); assert.deepEqual([...screen], ['0,1']);
+    clock.tick(1); clock.tick(1); assert.deepEqual(chains, [1]);
+    chain = 1; clock.tick(1); clock.tick(1);
+    assert.deepEqual([...screen], ['1,0']);
+    runner.stop();
+  });
+
+  for (const pressedY of [0, 1]) for (const resume of [false, true]) {
+    test(`step chain return preserves a performed group member y=${pressedY}, resume=${resume}`, async () => {
+      const pack = await parseUniPack(await packZip({
+        info: INFO_2X2_2CHAIN, keySound: '1 1 1 a.wav 1 2\n1 1 2 a.wav\n2 2 1 a.wav',
+        'sounds/a.wav': SILENT_WAV,
+        autoPlay: 'on 1 1\noff 1 1\nd 1\non 1 2\noff 1 2\nd 199\non 2 1\nd 1000',
+      }));
+      let chain = 0;
+      const screen = new Set<string>();
+      const notes: string[] = [];
+      const runner = new AutoPlayRunner(pack, {
+        onStart() {}, onEnd() {}, onProgressUpdate() {}, onGuideChainOn() {},
+        onChainChange(c) { chain = c; }, onPadTouchOff() {}, onGuideLedUpdate() {},
+        onPadTouchOn(x, y) { notes.push(`${x},${y}`); },
+        onGuidePadOn(x, y) { screen.add(`${x},${y}`); },
+        onGuidePadOff(x, y) { screen.delete(`${x},${y}`); }, onRemoveGuide() { screen.clear(); },
+      }, () => chain, () => {}, () => {}, () => {});
+      runner.practiceGuide = true; runner.stepMode = true; runner.playmode = false;
+      runner.launch(); clock.tick(1);
+      runner.stepPadPressed(0, pressedY); clock.tick(1);
+      assert.deepEqual([...screen], [`0,${1 - pressedY}`]);
+      // The first pad's manual wormhole can fire before the other chord member is played.
+      clock.tick(99); chain = 1; clock.tick(1); clock.tick(300);
+      chain = 0; clock.tick(1);
+      assert.deepEqual([...screen], [`0,${1 - pressedY}`], 'only the unplayed member is guided again');
+      if (resume) {
+        runner.play(false); clock.tick(1); clock.tick(1); clock.tick(200);
+        assert.deepEqual(notes, [`0,${1 - pressedY}`, '1,0'], 'timed playback must not repeat a performed member');
+      } else {
+        runner.stepPadPressed(0, 1 - pressedY); clock.tick(1);
+        chain = 1; clock.tick(1);
+        assert.deepEqual([...screen], ['1,0'], 'a completed group must not be rewound by the next chain change');
+      }
+      runner.stop();
+    });
+  }
+
   for (const pauseMs of [500, 1500]) for (const pressed of [false, true]) {
     test(`guide resume at song time ${pauseMs} preserves ${pressed ? 'the gap after a pressed note' : 'an unpressed note'}`, async () => {
       const pack = await parseUniPack(await packZip({
