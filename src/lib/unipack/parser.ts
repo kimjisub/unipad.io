@@ -1,3 +1,4 @@
+import { rememberChainOrigin } from './autoPlayChainOrigin';
 import JSZip from 'jszip';
 import {
   AutoPlay,
@@ -684,9 +685,11 @@ async function parseAutoPlay(
     return sounds[num % sounds.length];
   }
 
-  function switchChain(c: number): void {
+  function switchChain(c: number, fromSound = false): void {
     currChain = c;
-    elements.push({ type: 'chain', c: currChain });
+    const element = { type: 'chain' as const, c: currChain };
+    rememberChainOrigin(element, fromSound);
+    elements.push(element);
     for (const row of map) row.fill(0);
   }
 
@@ -698,7 +701,7 @@ async function parseAutoPlay(
         elements.push({ type: 'delay', delay: next.at - songTime });
         songTime = next.at;
       }
-      switchChain(next.chain);
+      switchChain(next.chain, true);
     }
   }
 
@@ -798,6 +801,6 @@ async function parseAutoPlay(
   }
 
   // Normal completion applies the tail at the final song time, without extending the file.
-  for (let next = pending.pop(); next; next = pending.pop()) switchChain(next.chain);
+  for (let next = pending.pop(); next; next = pending.pop()) switchChain(next.chain, true);
   return { elements };
 }

@@ -260,3 +260,69 @@ test('auto mapping saves and reopens a wormhole at its press-relative song time'
   await confirm(page, 'Confirm restoring the AutoPlay', 'Restore', 'Restored the previous AutoPlay.');
   expect((await storedPack(page))[0].autoPlay).toEqual({ current: saved.autoPlay!.backup, backup: saved.autoPlay!.current, timingVersion: 1 });
 });
+
+for (const length of [50, 800]) test(`mapped wormhole playback uses the actual chain after saving and reopening a ${length} ms sound`, async ({ page }, info) => {
+  const zip = await JSZip.loadAsync(await readFile(resolve('e2e/fixtures/basic.uni')));
+  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=2'));
+  const original = await zip.file('sounds/tone.wav')!.async('nodebuffer');
+  const wav = (ms: number) => {
+    const data = original.subarray(44);
+    const size = Math.round(data.length * ms / 100);
+    const buffer = Buffer.alloc(44 + size); original.copy(buffer, 0, 0, 44);
+    for (let i = 0; i < size; i++) buffer[44 + i] = data[i % data.length];
+    buffer.writeUInt32LE(buffer.length - 8, 4); buffer.writeUInt32LE(size, 40);
+    return buffer;
+  };
+  zip.file('sounds/a.wav', wav(length)); zip.file('sounds/b.wav', wav(500));
+  zip.remove('sounds/tone.wav');
+  zip.file('keySound', '1 1 1 a.wav 1 2\n2 1 2 b.wav');
+  zip.file('autoPlay', 'd 1000\ntouch 1 1\nd 500\ntouch 1 2\nd 500\ntouch 1 2');
+  await page.goto('/play');
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'mapped-boundary.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await expectPads(page); await expectSavedPackCount(page, 1);
+  const imported = (await storedPack(page))[0];
+  await openMenu(page); await autoMapping(page).click();
+  await confirm(page, 'Confirm auto mapping', 'Map', 'Saved the AutoPlay. You can restore the previous one from the menu.');
+  const saved = (await storedPack(page))[0];
+  expect(saved.zipSha256).toBe(imported.zipSha256);
+  let time = 0;
+  const timeline = (saved.autoPlay!.current as { type: string; delay?: number; currChain?: number; num?: number; c?: number }[]).flatMap(e => {
+    if (e.type === 'delay') { time += e.delay!; return []; } return [{ time, ...e }];
+  });
+  await page.reload(); await expectPads(page);
+  expect(await storedPack(page)).toEqual([saved]);
+  const before = await page.evaluate(() => window.browserProbe.audio.starts.length);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await expect.poll(() => page.evaluate(before => window.browserProbe.audio.starts.length - before, before)).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: 'Play mode: Auto', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await info.attach('mapped-boundary-replayed', { body: await page.screenshot(), contentType: 'image/png' });
+  await info.attach('mapped-boundary-events', { body: JSON.stringify({ timeline, audio: await page.evaluate(before => window.browserProbe.audio.starts.slice(before), before) }, null, 2), contentType: 'application/json' });
+  expect(timeline.filter(e => e.type === 'on').map(e => [e.time, e.currChain, e.num])).toEqual([
+    [1000, 0, 0], [1000 + length, length < 100 ? 0 : 1, 0], [1500 + length, 1, length < 100 ? 0 : 1],
+  ]);
+  expect(timeline.filter(e => e.type === 'chain').map(e => [e.time, e.c])).toEqual([[1100, 1]]);
+  await expect.poll(() => page.evaluate(before => window.browserProbe.audio.starts.slice(before).map(s => s.duration), before), { timeout: 6500 })
+    .toEqual(length < 100 ? [0.05, 0.5] : [0.8, 0.5, 0.5]);
+
+});
+
+test('mapping preserves consecutive explicit tail selections after saving and reopening', async ({ page }, info) => {
+  const zip = await JSZip.loadAsync(await readFile(resolve('e2e/fixtures/basic.uni')));
+  zip.file('info', (await zip.file('info')!.async('string')).replace('chain=1', 'chain=3'));
+  zip.file('keySound', '1 1 1 tone.wav 1 2');
+  zip.file('autoPlay', 'd 1000\ntouch 1 1\nd 50\nc 2\nc 3');
+  await page.goto('/play');
+  await page.locator('input[data-unipack-import]').setInputFiles({ name: 'explicit-tail.uni', mimeType: 'application/octet-stream', buffer: await zip.generateAsync({ type: 'nodebuffer' }) });
+  await expectPads(page); await expectSavedPackCount(page, 1);
+  const imported = (await storedPack(page))[0];
+  await openMenu(page); await autoMapping(page).click();
+  await confirm(page, 'Confirm auto mapping', 'Map', 'Saved the AutoPlay. You can restore the previous one from the menu.');
+  const saved = (await storedPack(page))[0];
+  expect(saved.zipSha256).toBe(imported.zipSha256);
+  expect(saved.autoPlay!.current.filter(e => (e as { type: string }).type === 'chain')).toEqual([{ type: 'chain', c: 1 }, { type: 'chain', c: 2 }]);
+  await page.reload(); await expectPads(page);
+  expect(await storedPack(page)).toEqual([saved]);
+  await page.getByRole('button', { name: 'Play mode: Auto', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.browserProbe.audio.starts.length)).toBe(1);
+  await info.attach('explicit-tail-replayed', { body: await page.screenshot(), contentType: 'image/png' });
+});
