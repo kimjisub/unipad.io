@@ -132,35 +132,46 @@ function soundLengthMs(press: AutoPlayElementOn, soundTable: (Sound[] | null)[][
   return Math.round(seconds * 1000);
 }
 
-/** Reinsert parsed sound switches relative to the mapped press, retaining simultaneous order and EOF. */
+/** Reinsert parsed sound switches relative to the mapped press, retaining authored order and EOF. */
 function retimeWormholes(elements: AutoPlayElement[], wormholes: Map<AutoPlayElement, AutoPlayElementOn>): AutoPlayElement[] {
   if (wormholes.size === 0) return elements;
   let end = 0;
-  const pressTimes = new Map<AutoPlayElementOn, number>();
+  const switches = new Map<AutoPlayElementOn, AutoPlayElement>();
+  for (const [element, press] of wormholes) switches.set(press, element);
   const events = elements.flatMap((element, order) => {
     if (element.type === 'delay') { end += element.delay; return []; }
-    if (element.type === 'on') pressTimes.set(element, end);
     return [{ element, at: end, order }];
   });
-  for (const event of events) {
-    const press = wormholes.get(event.element);
-    if (press) event.at = Math.min(end, pressTimes.get(press)! + 100);
-  }
-  events.sort((a, b) => a.at - b.at || a.order - b.order);
+  const pending = new PriorityQueue<{ at: number; element: AutoPlayElement; order: number }>(
+    (a, b) => a.at - b.at || a.order - b.order,
+  );
   const result: AutoPlayElement[] = [];
   let time = 0;
-  let selection = 0;
-  const pressSelections = new Map<AutoPlayElementOn, number>();
+  const advanceTo = (at: number) => {
+    while (pending.peek() && pending.peek()!.at <= at) {
+      const due = pending.pop()!;
+      if (due.at > time) {
+        result.push({ type: 'delay', delay: due.at - time });
+        time = due.at;
+      }
+      result.push(due.element);
+    }
+    // Authored negative waits keep their signed duration and never reorder presses.
+    if (at !== time) result.push({ type: 'delay', delay: at - time });
+    time = at;
+  };
   for (const event of events) {
-    const press = wormholes.get(event.element);
-    // Shortening a wait can move an explicit selection ahead of a formerly due wormhole.
-    // It cancels that pending switch, just as it does in the parsed song.
-    if (press && pressSelections.get(press) !== selection) continue;
-    if (event.element.type === 'chain' && !press) selection++;
-    if (event.element.type === 'on') pressSelections.set(event.element, selection);
-    if (event.at > time) result.push({ type: 'delay', delay: event.at - time });
-    time = event.at;
+    if (wormholes.has(event.element)) continue;
+    advanceTo(event.at);
+    // A shorter mapped wait may put an explicit selection before a sound's deadline.
+    if (event.element.type === 'chain') pending.clear();
     result.push(event.element);
+    if (event.element.type === 'on') {
+      const element = switches.get(event.element);
+      if (element) pending.push({ at: event.at + 100, element, order: event.order });
+    }
   }
+  advanceTo(end);
+  for (let due = pending.pop(); due; due = pending.pop()) result.push(due.element);
   return result;
 }

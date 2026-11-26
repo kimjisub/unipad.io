@@ -159,3 +159,11 @@ test('a mapped explicit chain selection cancels a wormhole whose new deadline fo
   assert.deepEqual(mapped.filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1050, 0]]);
   assert.deepEqual(mapped.filter(e => e.type === 'on').map(e => e.time), [1000, 1050, 1550]);
 });
+
+test('retiming a wormhole preserves a negative wait and its authored press order', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav', 'd 1000\ntouch 1 1\nd -50\ntouch 1 2\nd 500\ntouch 1 2');
+  setLengths(pack, { 'a.wav': null, 'b.wav': 500 });
+  const mapped = timed(await map(pack));
+  assert.deepEqual(mapped.filter(e => e.type === 'on').map(e => [e.time, e.y]), [[1000, 0], [950, 1], [1450, 1]]);
+  assert.deepEqual(mapped.filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1100, 1]]);
+});
