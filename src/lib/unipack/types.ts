@@ -46,6 +46,8 @@ export interface AutoPlayElementOn {
   y: number;
   currChain: number;
   num: number;
+  /** The selected sound's switch was cancelled before the source timeline was retimed. */
+  wormholeCancelled?: true;
 }
 
 export interface AutoPlayElementOff {

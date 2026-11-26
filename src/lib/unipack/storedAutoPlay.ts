@@ -10,7 +10,7 @@ function sameElements(a: AutoPlayElement[], b: AutoPlayElement[]): boolean {
       case 'delay': return other.type === 'delay' && element.delay === other.delay;
       case 'chain': return other.type === 'chain' && element.c === other.c;
       case 'off': return other.type === 'off' && element.x === other.x && element.y === other.y && element.currChain === other.currChain;
-      case 'on': return other.type === 'on' && element.x === other.x && element.y === other.y && element.currChain === other.currChain && element.num === other.num;
+      case 'on': return other.type === 'on' && element.x === other.x && element.y === other.y && element.currChain === other.currChain && element.num === other.num && element.wormholeCancelled === other.wormholeCancelled;
     }
   });
 }

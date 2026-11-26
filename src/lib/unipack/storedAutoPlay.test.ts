@@ -69,4 +69,8 @@ test('an exact saved song-time original recovers provenance in memory for remapp
   const choice = marked.find(e => e.type === 'chain')!; choice.fromSound = false;
   restoreOriginalChainOrigins(marked, pack.autoPlay!.elements);
   assert.equal(chainOrigin(choice), false);
+  const suppressed = structuredClone(saved);
+  suppressed.find(e => e.type === 'on')!.wormholeCancelled = true;
+  restoreOriginalChainOrigins(suppressed, pack.autoPlay!.elements);
+  assert.equal(chainOrigin(suppressed.find(e => e.type === 'chain')!), undefined);
 });

@@ -52,7 +52,7 @@ export function autoPlayMap(
   const counts = new Map<string, number>();
   const gap: AutoPlayElement[] = [];
   const { generated, cancelled } = findGeneratedChains(elements, soundTable);
-  const pending = new PriorityQueue<{ at: number; chain: number; order: number }>(
+  const pending = new PriorityQueue<{ at: number; chain: number; order: number; press: AutoPlayElementOn }>(
     (a, b) => a.at - b.at || a.order - b.order,
   );
   const switchChain = (c: number, fromSound: boolean) => {
@@ -84,7 +84,7 @@ export function autoPlayMap(
         if (!trailing && !waited) advance(duration);
         waited = true;
       } else if (element.type === 'chain') {
-        pending.clear();
+        for (let next = pending.pop(); next; next = pending.pop()) next.press.wormholeCancelled = true;
         switchChain(element.c, false);
       }
     }
@@ -105,12 +105,14 @@ export function autoPlayMap(
           const key = `${x},${y}`;
           const num = counts.get(key) ?? 0;
           const press = { ...element, currChain: chain, num };
-          result.push(press, { type: 'off', x, y, currChain: chain });
-          counts.set(key, num + 1);
           const sounds = soundTable[chain]?.[x]?.[y];
           const sound = sounds?.[num % sounds.length];
-          if (sound && sound.wormhole !== NO_WORMHOLE && cancelled.get(element) !== sound) {
-            pending.push({ at: time + 100, chain: sound.wormhole, order: index });
+          if (sound && cancelled.get(element) === sound) press.wormholeCancelled = true;
+          else delete press.wormholeCancelled;
+          result.push(press, { type: 'off', x, y, currChain: chain });
+          counts.set(key, num + 1);
+          if (sound && sound.wormhole !== NO_WORMHOLE && !press.wormholeCancelled) {
+            pending.push({ at: time + 100, chain: sound.wormhole, order: index, press });
           }
           lastPress = press;
           listener.onProgress(++progress);
@@ -152,7 +154,10 @@ function findGeneratedChains(elements: AutoPlayElement[], soundTable: (Sound[] |
     else if (element.type === 'on') {
       const sounds = soundTable[element.currChain]?.[element.x]?.[element.y];
       const sound = sounds?.[element.num % sounds.length];
-      if (sound && sound.wormhole !== NO_WORMHOLE) pending.push({ at: time + 100, order: i, press: element, sound });
+      if (sound && sound.wormhole !== NO_WORMHOLE) {
+        if (element.wormholeCancelled) cancelled.set(element, sound);
+        else pending.push({ at: time + 100, order: i, press: element, sound });
+      }
     } else if (element.type === 'chain') {
       if (chainOrigin(element) === true) {
         generated.add(element);

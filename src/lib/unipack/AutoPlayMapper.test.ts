@@ -260,6 +260,8 @@ test('a new sound selected on the mapped chain gets its own wormhole despite the
   setLengths(pack, { 'a.wav': 50, 'b.wav': 300 });
   const mapped = timed(await map(pack));
   assert.deepEqual(mapped.filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[1100, 1], [1150, 3], [1350, 0]]);
+  pack.autoPlay!.elements.filter(e => e.type === 'on')[1].wormholeCancelled = true;
+  assert.deepEqual(timed(await map(pack)), mapped, 'a saved cancellation belongs only to the old selected sound');
 });
 
 test('saving and restoring the parsed backup retains exact chain provenance without changing the parser array', async () => {
@@ -283,4 +285,14 @@ test('an old unmarked custom tail remains an authored selection rather than a gu
   pack.autoPlay = old;
   assert.deepEqual(script((await map(pack)).elements), script(first.elements));
   assert.deepEqual(pack.autoPlay, old);
+});
+
+test('a suppressed source wormhole cannot consume another press reservation after serialization', async () => {
+  const pack = await parse('1 1 1 a.wav 1 2\n1 1 2 b.wav 1 1\n2 1 1 b.wav 1 1\n2 1 2 a.wav 1 2',
+    'c 2\ntouch 1 2\nd -20\ntouch 1 1\nd 100\nc 2\ntouch 1 2');
+  setLengths(pack, { 'a.wav': 50, 'b.wav': 300 });
+  const first = await map(pack);
+  assert.deepEqual(timed(first).filter(e => e.type === 'chain').map(e => [e.time, e.c]), [[0, 1], [1150, 0], [1350, 1], [1350, 1]]);
+  pack.autoPlay = JSON.parse(JSON.stringify(first));
+  assert.deepEqual(await map(pack), first);
 });
