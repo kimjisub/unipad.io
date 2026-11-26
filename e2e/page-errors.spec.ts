@@ -123,8 +123,8 @@ for (const namespace of ['firebase', 'fireperf']) {
 }
 
 // Next's guide link keeps the document alive while its route response is pending.
-for (const namespace of ['firebase', 'fireperf']) {
-  test(`a ${namespace} failure after the guide link action returns still belongs to the current document`, async ({ page, checkedPage, browserName }, info) => {
+for (const namespace of ['firebase', 'fireperf']) for (const withAppErrors of [false, true]) {
+  test(`a ${namespace} failure after the guide link action returns still belongs to the current document${withAppErrors ? ' with unrelated app errors' : ''}`, async ({ page, checkedPage, browserName }, info) => {
     reportsFetchFailures(browserName);
     const url = REMOTE_CONFIG.replace('namespaces/firebase:', `namespaces/${namespace}:`);
     const pending: Route[] = [];
@@ -137,6 +137,12 @@ for (const namespace of ['firebase', 'fireperf']) {
     const link = page.getByRole('link', { name: /^(User Guide|사용 안내)$/ });
     await link.waitFor();
     await page.evaluate(() => { document.documentElement.dataset.errorProbe = 'original'; });
+    const appErrors = ['app failure before navigation', 'app failure alongside the request'];
+    const throwAppError = async (message: string) => {
+      await page.evaluate(message => { setTimeout(() => { throw new Error(message); }, 0); }, message);
+      await expect.poll(() => checkedPage.errors).toContain(message);
+    };
+    if (withAppErrors) await throwAppError(appErrors[0]);
     const before = { errors: checkedPage.errors.length, ignored: checkedPage.ignored.length };
     let actionReturned!: () => void;
     const actionDone = new Promise<void>(resolve => { actionReturned = resolve; });
@@ -149,6 +155,7 @@ for (const namespace of ['firebase', 'fireperf']) {
     await page.route(url, route => route.abort('accessdenied'));
     await fetchInPage(page, url);
     await expect.poll(() => checkedPage.errors.length + checkedPage.ignored.length - before.errors - before.ignored).toBeGreaterThan(0);
+    if (withAppErrors) await throwAppError(appErrors[1]);
     const observed = { errors: checkedPage.errors.slice(before.errors), ignored: checkedPage.ignored.slice(before.ignored) };
     // Release before asserting so a rejected collector can finish its navigation.
     release = true;
@@ -159,7 +166,15 @@ for (const namespace of ['firebase', 'fireperf']) {
     expect(identity).toBe('original');
     expect(observed.ignored).not.toContain(accessDenied(url));
     expect(observed.errors).toContain(accessDenied(url));
-    checkedPage.errors.length = 0;
+    // Consume this request's expected error without hiding earlier or concurrent exceptions.
+    const expectedIndex = checkedPage.errors.indexOf(accessDenied(url), before.errors);
+    expect(expectedIndex).toBeGreaterThanOrEqual(before.errors);
+    checkedPage.errors.splice(expectedIndex, 1);
+    if (withAppErrors) {
+      expect(checkedPage.errors).toEqual(appErrors);
+      // Only the two deliberate browser exceptions are consumed here.
+      for (const message of appErrors) checkedPage.errors.splice(checkedPage.errors.indexOf(message), 1);
+    }
   });
 }
 
