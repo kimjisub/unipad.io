@@ -87,7 +87,8 @@ browser jobs is a required check yet. The other browser tests do not run in CI; 
 GitHub records each step's duration; each job summary records elapsed time from setup
 through verification. Required-check configuration is a separate step after these
 workflows are merged.
-Vercel deployment settings are unchanged.
+Vercel builds only `main` (preview) and `prod` (production); `vercel.json` turns off
+automatic deployments for every other branch, so feature branches get no preview URL.
 
 The workflow uses deliberately fake Firebase public configuration with `.invalid`
 hosts and `FAKE_CI_KEY_DO_NOT_USE`; it reads no GitHub secrets. To reproduce that
