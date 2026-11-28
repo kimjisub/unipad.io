@@ -1,4 +1,4 @@
-import { test as base, expect, type Page, type Request } from '@playwright/test';
+import { test as base, expect, type Frame, type Page, type Request } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { attachLogsSince, firefoxLogsEnabled, logOffsets, withFirefoxLogs } from './firefox-logs';
@@ -25,15 +25,12 @@ export interface PageErrors {
   errors: string[];
   /** Firebase or same-origin prefetches cut off while their page was being replaced. */
   ignored: string[];
-  /** Page navigation triggered by a UI control rather than page.goto/reload. */
-  navigate: <T>(action: () => Promise<T>) => Promise<T>;
+  /** Mark the UI action; only document-replacing controls wait beyond its return. */
+  navigate: <T>(action: () => Promise<T>, options?: { waitForDocument?: boolean }) => Promise<T>;
 }
 
 // WebKit writes a failed fetch to its console, and Playwright reports that line as a page error, splitting the
 // text at the URL's first colon. The fetch's own rejection is a separate error, so ignoring the line hides no exception.
-const webkitFirebaseFetchLine = (error: Error) => error.name === 'Fetch API cannot load https'
-  && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
-
 const webkitFetchUrl = (error: Error) => {
   const protocol = /^Fetch API cannot load (https?)$/.exec(error.name)?.[1];
   const suffix = ' due to access control checks.';
@@ -51,7 +48,8 @@ const prefetchTarget = (url: URL) => {
 
 /**
  * The line can arrive before the navigation's first event, so leaving starts when the test asks to navigate.
- * It ends when the new document takes over: from then on a failed fetch belongs to the page the test is on.
+ * Client-side links end it when the action returns. Document-replacing controls opt in to
+ * waiting until the new document takes over, including language changes that keep the URL.
  */
 function collectPageErrors(page: Page): PageErrors {
   let leaving = false;
@@ -76,12 +74,32 @@ function collectPageErrors(page: Page): PageErrors {
     leavingPrefetches = new Set([...prefetches].map(request => prefetchTarget(new URL(request.url()))));
     return navigation().finally(finishLeaving);
   };
-  const collected: PageErrors = { errors: [], ignored: [], navigate: whileLeaving };
+  const collected: PageErrors = { errors: [], ignored: [], navigate: (action, options) => whileLeaving(async () => {
+    // Next links keep the current document running. Its failures must count
+    // once the action returns, even while a route response is still pending.
+    if (!options?.waitForDocument) return action();
+    // A key press can return while the old document is still running and the
+    // replacement is pending. Only the main frame's commit ends that interval.
+    let commit!: () => void;
+    const committed = new Promise<void>(resolve => { commit = resolve; });
+    const onNavigated = (frame: Frame) => { if (frame === page.mainFrame()) commit(); };
+    page.on('framenavigated', onNavigated);
+    try {
+      const result = await action();
+      await committed;
+      return result;
+    } finally {
+      page.off('framenavigated', onNavigated);
+    }
+  }) };
   page.on('pageerror', error => {
     const failedUrl = webkitFetchUrl(error);
     const failedPrefetch = failedUrl && URL.canParse(failedUrl) ? new URL(failedUrl) : undefined;
     const cutOffPrefetch = failedPrefetch?.searchParams.has('_rsc') && leavingPrefetches.has(prefetchTarget(failedPrefetch));
-    const cutOffFetch = leaving && (webkitFirebaseFetchLine(error) || cutOffPrefetch);
+    // WebKit can refuse an old document's fetch before emitting a request event.
+    // Match its complete native line; the fetch's actual rejection still counts.
+    const firebaseFetchLine = failedUrl?.startsWith('https://') && /^\/firebase[a-z]*\.googleapis\.com\//.test(error.message);
+    const cutOffFetch = leaving && (firebaseFetchLine || cutOffPrefetch);
     (cutOffFetch ? collected.ignored : collected.errors).push(error.message);
   });
   page.on('framenavigated', frame => {
